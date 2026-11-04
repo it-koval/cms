@@ -1,0 +1,4 @@
+# What a site puts into its translations/ folder: one text of a domain of the bundle in its own words.
+'i18n.locale_unknown_field': 'Свой текст сайта'
+'i18n.site_found': 'Found: {count}'
+'i18n.site_short': 'Пункт | {count}'

@@ -1,0 +1,13 @@
+# The words around a page in the preview of the editor: preview.js shows them, PreviewController hands them over in the language of the person; a site may override any key with its own translations/itk_preview.kk.yaml
+'preview.unavailable': 'Алдын ала қарау қолжетімсіз'
+'preview.edit': 'Өңдеу'
+'preview.view': 'Қарау'
+'preview.edit_section': '«{label}» секциясын өңдеу'
+'preview.view_section': '«{label}» секциясын қарау'
+'preview.section_actions': '«{label}» секциясымен әрекеттер'
+'preview.move_up': 'Жоғары'
+'preview.move_down': 'Төмен'
+'preview.duplicate': 'Көшірме жасау'
+'preview.hide': 'Жасыру'
+'preview.delete': 'Жою'
+'preview.unpublished': 'Жарияланбаған өзгерістер бар'
