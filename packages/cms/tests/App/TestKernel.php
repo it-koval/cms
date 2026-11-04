@@ -183,7 +183,6 @@ final class TestKernel extends BaseKernel
         // the queries that reach the database are counted (QueryCounter::during()), for the tests that say «not one query per page»
         $services->set(QueryCounter::class)->tag('doctrine.middleware');
 
-        // the critical CSS of the test site is cut by a fake, not by Node and Chrome
         $services->set(FakeCssExtractor::class)->public();
         $services->alias(CssExtractor::class, FakeCssExtractor::class);
     }

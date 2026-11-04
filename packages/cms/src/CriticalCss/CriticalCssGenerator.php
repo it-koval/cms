@@ -24,8 +24,6 @@ use Psr\Log\LoggerInterface;
 /**
  * Critical CSS of live pages, worker side (the message handler and the command --now): render each page in PHP, hand the pages to the CssExtractor,
  * store each result as it comes. The one writer of itk_critical_css.
- * Split from CriticalCssService only because PageRenderer needs that one (renderLive) and this one needs PageRenderer (renderSource);
- * the policy both use lives in Model\Freshness, Model\When and CriticalCssService::wanted(), not in either class.
  *
  * @internal
  */
@@ -44,8 +42,7 @@ final class CriticalCssGenerator
     }
 
     /**
-     * For a set of translation ids (one message, or a chunk of the command --now). CLI only: a web request never launches Chrome (with a sync transport
-     * it would hold the editor's publish for a minute), it throws LogicException there.
+     * CLI only: it throws LogicException inside a web request.
      * Idempotent: everything is derived from the rows and the pages as they are now; a crash leaves the pages done so far stored and the rest Stale.
      *
      * @param array<string, When> $ids translation id => which states still run
@@ -76,13 +73,13 @@ final class CriticalCssGenerator
         foreach ($ids as $id => $when) {
             $t = $this->em->find(PageTranslation::class, $id);
             if (null === $t || !$t->isLive()) {
-                ++$skipped; // gone or unpublished: nothing to measure (a delete also drops the row by the foreign key)
+                ++$skipped;
                 continue;
             }
             $basis = $this->critical->wanted($t);
             $row = $this->em->find(CriticalCss::class, $t->id);
             if (!$when->admits(Freshness::of($row, $basis))) {
-                ++$skipped; // a duplicate or late message, or a page another worker just did
+                ++$skipped;
                 continue;
             }
             if (null !== $cssProblem) {
@@ -98,10 +95,9 @@ final class CriticalCssGenerator
                 $failed[$t->id] = $reason;
                 continue;
             }
-            // the ?v= of the links follows the stat of the file, and a deploy that copies an unchanged file still changes it: the version is not an input
-            $inputs = \sha1(\preg_replace('~\?v=[0-9a-f]{8}~', '', $html) . "\x1f" . $css . "\x1f" . $config);
+            $inputs = \sha1($html . "\x1f" . $css . "\x1f" . $config);
             if ($when->reusesIdenticalInputs() && null !== $row && CriticalCss::READY === $row->status && $row->inputs === $inputs && null !== $row->styles && [] !== $row->styles) {
-                $this->store($t, $row, $basis, $inputs, CriticalStyles::fromStored($row->styles)); // a deploy that changed nothing visible costs no Chrome
+                $this->store($t, $row, $basis, $inputs, CriticalStyles::fromStored($row->styles));
                 ++$reused;
                 continue;
             }
@@ -124,10 +120,6 @@ final class CriticalCssGenerator
                     $failed[$t->id] = $styles;
                 }
             }
-            foreach ($todo as $id => [$t, $basis, $inputs]) { // the extractor promises a result for every page; a missing one is still a failure, not a page left Stale forever
-                $this->store($t, $this->em->find(CriticalCss::class, $t->id), $basis, $inputs, 'no result');
-                $failed[$id] = 'no result';
-            }
         }
 
         return new GenerationReport($generated, $reused, $skipped, $failed);
@@ -135,7 +127,7 @@ final class CriticalCssGenerator
 
     /**
      * Writes the row with one upsert keyed by the translation: two workers on the same page never meet a UniqueConstraintViolation that would close the
-     * EntityManager; the last write wins, and both wrote a basis they really rendered, so a stale winner is caught as Stale by the next render and asked again.
+     * EntityManager.
      */
     private function store(PageTranslation $t, ?CriticalCss $row, Basis $basis, string $inputs, CriticalStyles|string $outcome): void
     {
@@ -152,6 +144,6 @@ final class CriticalCssGenerator
             ['id' => $t->id, 'basis' => $row->basis, 'inputs' => $row->inputs, 'status' => $row->status, 'styles' => $row->styles, 'error' => $row->error, 'at' => $row->generatedAt],
             ['styles' => Types::JSON, 'at' => Types::DATETIME_IMMUTABLE],
         );
-        $this->em->detach($row); // the row went in by SQL: the unit of work must not write it a second time, and the next find() reads it fresh
+        $this->em->detach($row);
     }
 }

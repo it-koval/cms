@@ -30,7 +30,7 @@ use Symfony\Component\Console\Style\SymfonyStyle;
  *                                           exit code 1 when any page failed, so a deploy script notices a broken Node install
  *   --dry-run                               list what would be queued, send nothing
  *
- * Both paths go through the module (CriticalCssService::request() or CriticalCssGenerator::generate()): the command holds no policy of its own. Safe to run any number of times.
+ * Safe to run any number of times.
  * Not needed after a CSS deploy: the first render of each page asks for it (CriticalCssService::forLiveRender); running it in the deploy script only does it sooner.
  */
 #[AsCommand(name: 'itk:critical-css:generate', description: 'ops.cmd_critical_css_description')]

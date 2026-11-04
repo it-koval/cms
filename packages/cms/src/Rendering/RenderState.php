@@ -15,6 +15,8 @@ use Itk\Cms\CriticalCss\Model\CriticalStyles;
 final class RenderState
 {
     public bool $preview = false;
+    /** The generator's own render: stylesheet links print without ?v=, so the page hashes the same until its content changes. */
+    public bool $source = false;
     public ?string $locale = null;
     public string $path = '/';
     /** @var array<string, mixed>|null snapshot on the live site (preview only) */
@@ -22,10 +24,7 @@ final class RenderState
     public string $template = 'default';
     /** What itk_cache() asked of the cache of pages in this render: seconds the entry may live at most, false = do not keep, null = nothing asked. */
     public int|false|null $cache = null;
-    /**
-     * The critical CSS itk_stylesheets() inlines in this render. Set ONLY by PageRenderer::renderLive(), and only when the row is Ready for the page's
-     * current basis; null in preview, in the generator's own render (renderSource), in site controllers and on error pages.
-     */
+    /** The critical CSS itk_stylesheets() inlines in this render. */
     public ?CriticalStyles $critical = null;
 
     /** The one rule for several calls of itk_cache() (the layout and a section both ask): false wins over any number, otherwise the smallest; a number below one is false. */
@@ -41,6 +40,7 @@ final class RenderState
     public function reset(): void
     {
         $this->preview = false;
+        $this->source = false;
         $this->locale = null;
         $this->path = '/';
         $this->published = null;

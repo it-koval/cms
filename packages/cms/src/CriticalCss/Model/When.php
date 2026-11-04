@@ -30,12 +30,4 @@ enum When
     {
         return self::Always !== $this;
     }
-
-    /** The wider of two asks for one page (several messages about one page in one run). */
-    public function widest(self $other): self
-    {
-        $rank = [self::Outdated->name => 0, self::NotReady->name => 1, self::Always->name => 2];
-
-        return $rank[$this->name] >= $rank[$other->name] ? $this : $other;
-    }
 }

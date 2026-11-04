@@ -132,7 +132,6 @@ final class Stylesheets
         });
     }
 
-    /** The public directory the Node server answers static files from. */
     public function publicDir(): string
     {
         return $this->projectDir . '/public';

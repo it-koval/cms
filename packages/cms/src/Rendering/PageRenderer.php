@@ -65,8 +65,6 @@ final class PageRenderer
 
     /**
      * The live page as the critical CSS generator measures it: the published snapshot with the plain stylesheet links, outside any request (worker or console).
-     * It pushes a request of its own (the site's address or http://localhost plus the page's path, a throwaway session so app.request and csrf_token() work
-     * in layouts) and renders in the page's language, then pops it. No HTTP, so no deadlock, no error page, no proxy in the way, and the page never sees its own inlined CSS.
      *
      * @throws \Throwable whatever the templates throw (the caller records it as the page's failure)
      */
@@ -78,7 +76,7 @@ final class PageRenderer
         $request->setLocale($t->locale);
         $this->requests->push($request);
         try {
-            $render = fn (): string => $this->render($t, $t->published ?? [], false, null);
+            $render = fn (): string => $this->render($t, $t->published ?? [], false, null, true);
 
             return null === $this->locales ? $render() : $this->locales->runWithLocale($t->locale, $render);
         } finally {
@@ -125,9 +123,8 @@ final class PageRenderer
 
     /**
      * @param array<string, mixed> $version draft or snapshot
-     * @param CriticalStyles|null $critical what itk_stylesheets() inlines: only the live render gives any, and only when the row is Ready
      */
-    private function render(PageTranslation $t, array $version, bool $preview, ?CriticalStyles $critical): string
+    private function render(PageTranslation $t, array $version, bool $preview, ?CriticalStyles $critical, bool $source = false): string
     {
         $p = $t->page;
         $tpl = $this->schema->template($p->template);
@@ -150,11 +147,12 @@ final class PageRenderer
         $this->cacheDirective = null;
         $this->state->reset();
         $this->state->preview = $preview;
+        $this->state->source = $source;
         $this->state->locale = $t->locale;
         $this->state->path = $page['url'];
         $this->state->template = $p->template;
         $this->state->published = $preview ? $this->pages->liveSnapshot($t) : null;
-        $this->state->critical = $preview ? null : $critical;
+        $this->state->critical = $critical;
         try {
             $names = ['pages/' . $p->template . '.html.twig', '@ItkCms/pages/' . $p->template . '.html.twig', '@ItkCms/pages/default.html.twig'];
 

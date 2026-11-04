@@ -44,7 +44,7 @@ return static function (ContainerConfigurator $container): void {
             '../src/Mail/{MailConfig,MailRoute,MailDeliveryException,SendMail}.php',
             '../src/Security/RequestPasswordLink.php',
             '../src/Mcp/{McpScopes,McpToolException,McpProtocolError,ApiTokenException,ArgumentChecker,McpContext}.php',
-            '../src/CriticalCss/Model', // every value object and the message of the critical CSS live there: a new one needs no line here
+            '../src/CriticalCss/Model',
         ]);
 
     // the one class of the page cache that site code calls (clear() after its own import); public so that a site can also take it from a service locator

@@ -101,7 +101,6 @@ final class CriticalCssTest extends WebTestCase
         $client->catchExceptions(false);
         $client->disableReboot(); // the in-memory queue and the fake browser must outlive one request: the tests read them between visits
         self::getContainer()->get(PageCache::class)->clear();
-        // the host the cache of pages accepts («Настройки → Сайт»)
         $settings = self::getContainer()->get(SettingsService::class);
         if (!$this->domainTouched) {
             $this->domainTouched = true;
@@ -251,7 +250,7 @@ final class CriticalCssTest extends WebTestCase
         $this->storeRow($id, true);
 
         $requests = self::getContainer()->get(RequestStack::class);
-        $requests->push(Request::create('/admin/preview/' . $id)); // the layout reads app.request, as PreviewController's request would give it
+        $requests->push(Request::create('/admin/preview/' . $id));
         try {
             $html = (string) self::getContainer()->get(PageRenderer::class)->renderPreview($id)->getContent();
         } finally {
@@ -341,8 +340,7 @@ final class CriticalCssTest extends WebTestCase
         self::assertCount(1, $calls);
         self::assertSame('body{margin:0}', $calls[0]['css'], 'the source CSS is the configured file, prepared');
         self::assertSame('/test-cc-worker', $calls[0]['pages'][0]->path);
-        self::assertStringContainsString('<link rel="stylesheet" href="' . self::CSS . '?v=', $calls[0]['pages'][0]->html, 'the page is rendered by PHP with the plain link, never with its own critical CSS');
-        self::assertStringNotContainsString('<style', $calls[0]['pages'][0]->html);
+        self::assertPlainLink($calls[0]['pages'][0]->html, false);
 
         $pages = self::getContainer()->get(PageService::class);
         $pages->update($id, null, ['title' => 'Изменилась']);
@@ -399,7 +397,7 @@ final class CriticalCssTest extends WebTestCase
         $this->consume($this->queued());
         self::assertCount(1, $this->fake()->calls);
 
-        \touch(self::cssFile(), \time() + 2); // a deploy that copied the same file: the stat changes, the content does not
+        \touch(self::cssFile(), \time() + 2);
         self::assertPlainLink((string) $this->visit($client, '/test-cc-reuse')->getContent());
         $asked = $this->queued();
         self::assertCount(1, $asked, 'the render asked the worker once');

@@ -34,8 +34,7 @@ use Symfony\Component\Process\Process;
  *   Pages without a line after the exit get ExtractionFailed with the reason of the exit code.
  *
  * Timeout: deadlineMs = timeout × pages × viewports; the script closes Chrome and exits 124 at deadlineMs, this process stops the script at
- * deadlineMs + 15 s (SIGTERM, then SIGKILL by Process::stop). Chrome is launched with pipe: true, so it goes when the script dies hard
- * (checked on the stand: no chrome survives a SIGKILL of node). Nothing secret is passed: no headers, no cookies, no URL of the live site.
+ * deadlineMs + 15 s (SIGTERM, then SIGKILL by Process::stop). Nothing secret is passed: no headers, no cookies, no URL of the live site.
  *
  * @internal
  */

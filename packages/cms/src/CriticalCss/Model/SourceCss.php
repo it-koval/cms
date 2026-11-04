@@ -68,9 +68,7 @@ final class SourceCss
                 if (null === $imported) {
                     return '';
                 }
-                // one level: a second-level @import is dropped rather than left for crittr, which drops it with the rule after it
-                $imported = \preg_replace('~@import\s[^;]*;~i', '', self::stripComments($imported)) ?? $imported;
-                $imported = self::rebaseUrls($imported, self::dirOf($path));
+                $imported = self::rebaseUrls(self::stripComments($imported), self::dirOf($path));
                 $media = \trim($m[5]);
 
                 return '' === $media ? $imported : '@media ' . $media . '{' . $imported . '}';

@@ -5,8 +5,7 @@ declare(strict_types=1);
 namespace Itk\Cms\CriticalCss\Model;
 
 /**
- * Ready critical CSS of one page: one block per media range. Separate blocks instead of one union because each crittr run returns its rules
- * in source order, and concatenating two runs can put a rule after one that followed it in the stylesheet, which changes the cascade.
+ * Ready critical CSS of one page: one block per media range.
  * Adjacent ranges with identical CSS are merged into one block (the usual case on simple pages), so the duplicate bytes are paid only when the screens differ.
  */
 final readonly class CriticalStyles

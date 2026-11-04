@@ -36,8 +36,9 @@ final class StylesheetsRuntime implements RuntimeExtensionInterface
         $nonce = isset($options['nonce']) && '' !== $options['nonce'] ? ' nonce="' . self::attr((string) $options['nonce']) . '"' : '';
         $links = $this->stylesheets->links();
         $critical = $this->state->critical;
+        $key = $this->state->source ? 'href' : 'versioned';
         if (null === $critical) {
-            return \implode('', \array_map(static fn (array $l): string => '<link rel="stylesheet" href="' . self::attr($l['versioned']) . '">', $links));
+            return \implode('', \array_map(static fn (array $l): string => '<link rel="stylesheet" href="' . self::attr($l[$key]) . '">', $links));
         }
         $html = '';
         foreach ($critical->blocks as $block) {
@@ -45,7 +46,7 @@ final class StylesheetsRuntime implements RuntimeExtensionInterface
             $html .= '<style' . $nonce . $media . '>' . \str_replace('</', '<\/', $block['css']) . '</style>';
         }
         foreach ($links as $l) {
-            $href = self::attr($l['versioned']);
+            $href = self::attr($l[$key]);
             $html .= '<link rel="stylesheet" href="' . $href . '"' . $nonce . ' media="print" onload="this.media=\'all\'">';
             $html .= '<noscript><link rel="stylesheet" href="' . $href . '"></noscript>';
         }

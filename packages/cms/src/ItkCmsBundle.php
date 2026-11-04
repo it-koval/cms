@@ -544,8 +544,6 @@ final class ItkCmsBundle extends AbstractBundle
         if (!isset($transports['async'])) {
             $out['transports']['async'] = 'doctrine://default';
         }
-        // its own queue: a page is a minute of Chrome, and letters and password links must not wait behind a mass publish.
-        // Always there, even with the feature off (a route to a missing transport stops the container; an unused queue costs nothing)
         if (!isset($transports['critical_css'])) {
             $out['transports']['critical_css'] = 'doctrine://default?queue_name=critical_css';
         }

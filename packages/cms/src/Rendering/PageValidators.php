@@ -106,7 +106,7 @@ final class PageValidators
         return ['etag' => '"' . \substr($fingerprint, 0, 24) . '"', 'lastModified' => $this->last[1]];
     }
 
-    /** The build of the code and of the cache the site runs on: the time of the file of the compiled container. Also one of the inputs of a page's critical CSS basis (CriticalCssService::wanted). */
+    /** The build of the code and of the cache the site runs on: the time of the file of the compiled container. */
     public function build(): string
     {
         $file = $this->cacheDir . '/' . $this->containerClass . '.php';

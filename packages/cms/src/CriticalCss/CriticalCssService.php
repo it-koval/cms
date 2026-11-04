@@ -66,7 +66,6 @@ final class CriticalCssService
 
     /**
      * Asks the worker to bring one page up to date when $when admits its Freshness. Returns whether a message was sent.
-     * The publish listener uses Outdated, the command NotReady and Always; safe to call any number of times.
      */
     public function request(PageTranslation $t, When $when = When::Outdated): bool
     {
@@ -81,13 +80,11 @@ final class CriticalCssService
         return $this->ask($t, $wanted, $when);
     }
 
-    /** The Freshness of a live page's row right now (for the command's listing). */
     public function state(PageTranslation $t): Freshness
     {
         return Freshness::of($this->em->find(CriticalCss::class, $t->id), $this->wanted($t));
     }
 
-    /** The basis the page wants right now (the snapshot, the build and the stylesheet stamp). The generator stamps rows with it. */
     public function wanted(PageTranslation $t): Basis
     {
         return Basis::of($t->published ?? [], $this->validators->build(), $this->stylesheets->stamp());
@@ -95,8 +92,6 @@ final class CriticalCssService
 
     /**
      * Sends GenerateCriticalCss once per (translation, basis) per ASKED_TTL: a stale page rendered a thousand times while the worker is busy sends one message.
-     * The marker is a cache key, not a column: the request side never writes itk_critical_css, and losing the marker only costs a duplicate message
-     * that the handler drops after one SELECT. An ask wider than Outdated (the command) always sends.
      */
     private function ask(PageTranslation $t, Basis $wanted, When $when): bool
     {

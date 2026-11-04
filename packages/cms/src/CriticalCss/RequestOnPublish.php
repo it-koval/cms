@@ -14,7 +14,6 @@ use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
  * Only RecordPublished: an autosave (RecordUpdated) changes the draft, not what visitors see; unpublish keeps the row (a republish of the same
  * snapshot finds it Ready again); a delete removes it by the foreign key.
  * The event comes synchronously in the editor's request after flush, so this reads one row, dispatches one message and never throws.
- * The page's URL is not taken from the event (record->meta['url'] is the draft's): the handler re-reads the translation.
  *
  * @internal
  */

@@ -69,9 +69,6 @@ final class CriticalCssModelTest extends TestCase
         self::assertTrue(When::Always->admits(Freshness::Ready));
         self::assertFalse(When::Always->reusesIdenticalInputs());
         self::assertTrue(When::Outdated->reusesIdenticalInputs());
-
-        self::assertSame(When::Always, When::Outdated->widest(When::Always));
-        self::assertSame(When::NotReady, When::NotReady->widest(When::Outdated));
     }
 
     #[Test]

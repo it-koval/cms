@@ -36,7 +36,7 @@ function fail(code, message) {
     process.exit(code);
 }
 
-/** Error | unknown[] | anything => one short line. crittr rejects with an array of errors when every URL failed. */
+/** crittr rejects with an array of errors when every URL failed. */
 function describe(error) {
     const one = (e) => (e instanceof Error ? e.message : typeof e === 'string' ? e : JSON.stringify(e));
     const text = Array.isArray(error) ? error.map(one).join('; ') : one(error);
@@ -89,7 +89,6 @@ function entryOf(dir) {
     return path.join(dir, file);
 }
 
-/** <dir>/node_modules/<name>, from `from` upwards to `root`. */
 function packageDir(name, from, root) {
     let dir = from;
     for (;;) {
@@ -106,7 +105,7 @@ function packageDir(name, from, root) {
 
 /**
  * crittr from the SITE's node_modules and puppeteer from next to crittr (the copy crittr uses), never from this file's location:
- * the bundle may be a symlinked path repository. Node < 22 or a missing package => "not installed: …", exit EX_UNAVAILABLE.
+ * the bundle may be a symlinked path repository.
  */
 async function loadLibraries(projectDir) {
     const major = Number(process.versions.node.split('.')[0]);
@@ -131,11 +130,6 @@ async function loadLibraries(projectDir) {
     }
 }
 
-/**
- * 127.0.0.1, ephemeral port, GET and HEAD only: the current page's path answers its HTML, anything else the file under publicDir
- * (resolved and checked to stay inside it; the query is ignored, so ?v= works), else 404. Image variants PHP makes on first request
- * may 404 here: the layout does not wait for them (itk_img prints width and height).
- */
 function startServer(publicDir) {
     const root = path.resolve(publicDir);
     let current = null;
@@ -210,8 +204,6 @@ async function main() {
     const browser = await launchBrowser(puppeteer, input.chrome);
 
     let stopping = false;
-    // Own deadline below PHP's: close Chrome first, then leave with EX_DEADLINE (pages without a line become 'timeout' in PHP).
-    // SIGTERM from Process::stop() takes the same path. A browser that will not close is killed, so the exit never waits on it.
     const stop = async (code) => {
         if (stopping) {
             return;
@@ -238,7 +230,6 @@ async function main() {
         try {
             const perViewport = [];
             for (const viewport of input.viewports) {
-                // sequential: one tab at a time keeps the memory of the batch near one page, not ten
                 const { critical } = await crittr({
                     urls: [url],
                     css,
@@ -255,7 +246,7 @@ async function main() {
             await report({ id: page.id, ok: true, css: perViewport });
         } catch (e) {
             if (stopping) {
-                break; // the browser was closed under this page by the deadline: PHP records it as a timeout, not as a page error
+                break;
             }
             await report({ id: page.id, ok: false, error: describe(e) });
         }
