@@ -12,6 +12,7 @@ use Itk\Cms\CriticalCss\Model\CriticalStyles;
 use Itk\Cms\CriticalCss\Model\ExtractedCss;
 use Itk\Cms\CriticalCss\Model\ExtractionFailed;
 use Itk\Cms\CriticalCss\Model\GenerateCriticalCss;
+use Itk\Cms\CriticalCss\Model\SourcePage;
 use Itk\Cms\CriticalCss\Model\When;
 use Itk\Cms\Entity\CriticalCss;
 use Itk\Cms\Entity\PageTranslation;
@@ -22,8 +23,10 @@ use Itk\Cms\Repository\PageRepository;
 use Itk\Cms\Tests\App\FakeCssExtractor;
 use Itk\Cms\Tests\App\TestKernel;
 use PHPUnit\Framework\Attributes\Test;
+use Symfony\Bundle\FrameworkBundle\Console\Application;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
+use Symfony\Component\Console\Tester\CommandTester;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\RequestStack;
 use Symfony\Component\HttpFoundation\Response;
@@ -407,6 +410,80 @@ final class CriticalCssTest extends WebTestCase
 
         self::assertCount(1, $this->fake()->calls, 'no browser run: the rendered HTML and CSS were byte-identical');
         self::assertStringContainsString('<style media="(max-width:1365.98px)">h1{width:390px}</style>', (string) $this->visit($client, '/test-cc-reuse')->getContent());
+    }
+
+    /** @param array<string, mixed> $options */
+    private function command(array $options = []): CommandTester
+    {
+        $tester = new CommandTester((new Application(self::$kernel))->find('itk:critical-css:generate'));
+        $tester->execute($options, ['interactive' => false]);
+
+        return $tester;
+    }
+
+    #[Test]
+    public function theCommandQueuesWhatIsNotReadyAndRetriesFailures(): void
+    {
+        $this->client();
+        $id = $this->publish('/test-cc-cmd');
+        $this->consume($this->queued());
+        $other = $this->publish('/test-cc-cmd-other');
+        $this->storeRow($other, false);
+        self::getContainer()->get('messenger.transport.critical_css')->reset();
+
+        $dry = $this->command(['--dry-run' => true]);
+        self::assertSame(0, $dry->getStatusCode(), $dry->getDisplay());
+        self::assertStringContainsString('/test-cc-cmd-other (ru): Failed', $dry->getDisplay());
+        self::assertStringNotContainsString('/test-cc-cmd (ru)', $dry->getDisplay(), 'a ready page is not listed');
+        self::assertSame([], $this->queued(), 'a dry run sends nothing');
+
+        $run = $this->command();
+        self::assertSame(0, $run->getStatusCode(), $run->getDisplay());
+        $queued = $this->queued();
+        self::assertSame([$this->translation($other)->id], \array_map(static fn (GenerateCriticalCss $m): string => $m->translationId, $queued), 'the failed page is retried, the ready one is left alone');
+        self::assertSame(When::NotReady, $queued[0]->when);
+        self::getContainer()->get('messenger.transport.critical_css')->reset();
+
+        $all = $this->command(['--all' => true, '--page' => $id]);
+        self::assertSame(0, $all->getStatusCode(), $all->getDisplay());
+        $queued = $this->queued();
+        self::assertCount(1, $queued);
+        self::assertSame($this->translation($id)->id, $queued[0]->translationId);
+        self::assertSame(When::Always, $queued[0]->when);
+    }
+
+    #[Test]
+    public function theCommandWithNowMakesThePagesHereAndFailsWhenOneFails(): void
+    {
+        $client = $this->client();
+        $this->publish('/test-cc-now');
+        $broken = $this->publish('/test-cc-now-broken');
+        self::getContainer()->get('messenger.transport.critical_css')->reset();
+        $this->fake()->answer = static fn (SourcePage $p): ExtractedCss|ExtractionFailed => '/test-cc-now-broken' === $p->path ? new ExtractionFailed('selector bug') : new ExtractedCss(['a{x:1}', 'a{x:1}']);
+
+        $now = $this->command(['--now' => true]);
+
+        self::assertSame(1, $now->getStatusCode(), $now->getDisplay());
+        self::assertStringContainsString('/test-cc-now-broken (ru): selector bug', $now->getDisplay());
+        self::assertStringContainsString('<style>a{x:1}</style>', (string) $this->visit($client, '/test-cc-now')->getContent(), 'identical viewports merge into one block without media');
+        self::assertPlainLink((string) $this->visit($client, '/test-cc-now-broken')->getContent());
+        self::assertSame([], $this->queued(), '--now queues nothing');
+
+        $this->fake()->answer = null;
+        $again = $this->command(['--now' => true, '--page' => $broken]);
+        self::assertSame(0, $again->getStatusCode(), $again->getDisplay());
+        self::assertStringContainsString('<style media="(max-width:1365.98px)">h1{width:390px}</style>', (string) $this->visit($client, '/test-cc-now-broken')->getContent());
+    }
+
+    #[Test]
+    public function theCommandRefusesWhenTheFeatureIsOff(): void
+    {
+        $this->client(['itk' => self::on(false)]);
+
+        $off = $this->command();
+
+        self::assertSame(2, $off->getStatusCode());
+        self::assertStringContainsString('itk_cms.critical_css.enabled', $off->getDisplay());
     }
 
     #[Test]

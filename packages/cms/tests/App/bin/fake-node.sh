@@ -1,6 +1,10 @@
 #!/bin/sh
 # A stand-in for node in the tests of NodeCssExtractor: reads the job from stdin and answers as ITK_FAKE_NODE says.
 # The job is printed to stderr, so a test can see what PHP sent.
+if [ "$1" = "--version" ]; then
+    echo "${ITK_FAKE_NODE_VERSION:-v22.12.0}"
+    exit 0
+fi
 job=$(cat)
 printf '%s\n' "$job" >&2
 case "$ITK_FAKE_NODE" in

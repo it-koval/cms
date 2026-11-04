@@ -81,6 +81,12 @@ final class CriticalCssService
         return $this->ask($t, $wanted, $when);
     }
 
+    /** The Freshness of a live page's row right now (for the command's listing). */
+    public function state(PageTranslation $t): Freshness
+    {
+        return Freshness::of($this->em->find(CriticalCss::class, $t->id), $this->wanted($t));
+    }
+
     /** The basis the page wants right now (the snapshot, the build and the stylesheet stamp). The generator stamps rows with it. */
     public function wanted(PageTranslation $t): Basis
     {

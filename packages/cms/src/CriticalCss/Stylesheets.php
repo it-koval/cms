@@ -59,12 +59,6 @@ final class Stylesheets
         return $out;
     }
 
-    /** @return list<string> */
-    public function hrefs(): array
-    {
-        return $this->hrefs;
-    }
-
     /** @return list<string> the configured stylesheets that are not under public/ */
     public function missing(): array
     {
