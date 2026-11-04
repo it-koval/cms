@@ -511,6 +511,7 @@ final class ItkCmsBundle extends AbstractBundle
                         'Itk\\Cms\\Media\\GenerateImageVariants' => 'async',
                         'Itk\\Cms\\Mail\\SendMail' => 'async',
                         'Itk\\Cms\\Security\\RequestPasswordLink' => 'async',
+                        'Itk\\Cms\\CriticalCss\\Model\\GenerateCriticalCss' => 'critical_css',
                     ],
                 ] + $this->defaultTransports($builder),
             ]);
@@ -519,7 +520,7 @@ final class ItkCmsBundle extends AbstractBundle
 
     /**
      * The queue the routing above leads to. A clean project has no transports, and a router that names a missing `async` stops the container, so the bundle gives
-     * the site `async` and a failure transport on its own database (doctrine://default, the table is made on first use; itk:install sets it up at once).
+     * the site `async`, `critical_css` and a failure transport on its own database (doctrine://default, the table is made on first use; itk:install sets it up at once).
      * What the site configured wins: a transport it named `async`, and a failure_transport it chose (or switched off with null), are left alone.
      *
      * @return array<string, mixed>
@@ -542,6 +543,11 @@ final class ItkCmsBundle extends AbstractBundle
         $out = [];
         if (!isset($transports['async'])) {
             $out['transports']['async'] = 'doctrine://default';
+        }
+        // its own queue: a page is a minute of Chrome, and letters and password links must not wait behind a mass publish.
+        // Always there, even with the feature off (a route to a missing transport stops the container; an unused queue costs nothing)
+        if (!isset($transports['critical_css'])) {
+            $out['transports']['critical_css'] = 'doctrine://default?queue_name=critical_css';
         }
         if (!$failureChosen) {
             $out['failure_transport'] = 'failed';

@@ -14,10 +14,16 @@ use Itk\Cms\CriticalCss\CriticalCssService;
 use Itk\Cms\CriticalCss\Model\CriticalStyles;
 use Itk\Cms\Entity\PageTranslation;
 use Itk\Cms\I18n\I18n;
+use Itk\Cms\Mail\PublicUrl;
 use Itk\Cms\Schema\Schema;
+use Itk\Cms\Support\Url;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
+use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\RequestStack;
 use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\HttpFoundation\Session\Session;
+use Symfony\Component\HttpFoundation\Session\Storage\MockArraySessionStorage;
+use Symfony\Component\Translation\LocaleSwitcher;
 use Twig\Environment;
 
 /**
@@ -50,9 +56,34 @@ final class PageRenderer
         private readonly RequestStack $requests,
         private readonly AdminTheme $theme,
         private readonly CriticalCssService $critical,
+        private readonly PublicUrl $publicUrl,
         #[Autowire(param: 'itk_cms.main_locale')]
         private readonly string $mainLocale,
+        private readonly ?LocaleSwitcher $locales = null,
     ) {
+    }
+
+    /**
+     * The live page as the critical CSS generator measures it: the published snapshot with the plain stylesheet links, outside any request (worker or console).
+     * It pushes a request of its own (the site's address or http://localhost plus the page's path, a throwaway session so app.request and csrf_token() work
+     * in layouts) and renders in the page's language, then pops it. No HTTP, so no deadlock, no error page, no proxy in the way, and the page never sees its own inlined CSS.
+     *
+     * @throws \Throwable whatever the templates throw (the caller records it as the page's failure)
+     */
+    public function renderSource(PageTranslation $t): string
+    {
+        $path = (string) ($t->published['url'] ?? '/');
+        $request = Request::create(($this->publicUrl->base() ?? 'http://localhost') . Url::encodePath('' === $path ? '/' : $path));
+        $request->setSession(new Session(new MockArraySessionStorage()));
+        $request->setLocale($t->locale);
+        $this->requests->push($request);
+        try {
+            $render = fn (): string => $this->render($t, $t->published ?? [], false, null);
+
+            return null === $this->locales ? $render() : $this->locales->runWithLocale($t->locale, $render);
+        } finally {
+            $this->requests->pop();
+        }
     }
 
     /** The live page: the only render that may inline critical CSS. */

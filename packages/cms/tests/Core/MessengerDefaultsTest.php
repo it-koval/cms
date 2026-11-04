@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Itk\Cms\Tests\Core;
 
 use Doctrine\DBAL\Connection;
+use Itk\Cms\CriticalCss\Model\GenerateCriticalCss;
 use Itk\Cms\Health\MessengerMonitor;
 use Itk\Cms\Request\SendRequestNotification;
 use Itk\Cms\Tests\App\TestKernel;
@@ -42,8 +43,26 @@ final class MessengerDefaultsTest extends KernelTestCase
 
         self::assertInstanceOf(DoctrineTransport::class, $this->transport('async'));
         self::assertInstanceOf(DoctrineTransport::class, $this->transport('failed'));
+        self::assertInstanceOf(DoctrineTransport::class, $this->transport('critical_css'));
         self::assertTrue(self::getContainer()->get(MessengerMonitor::class)->failed()['available'], 'the failure transport is on');
         self::assertNotSame($this->transport('async'), $this->transport('failed'));
+        self::assertNotSame($this->transport('async'), $this->transport('critical_css'));
+    }
+
+    #[Test]
+    public function theCriticalCssMessageWaitsInItsOwnQueueOfACleanProject(): void
+    {
+        self::bootKernel(['framework' => self::CLEAN]);
+        $db = self::getContainer()->get(Connection::class);
+        $before = (int) $db->fetchOne('SELECT COALESCE(MAX(id), 0) FROM messenger_messages');
+
+        self::getContainer()->get('messenger.bus.default')->dispatch(new GenerateCriticalCss('no-such-version'));
+
+        try {
+            self::assertSame(['critical_css'], $db->fetchFirstColumn('SELECT queue_name FROM messenger_messages WHERE id > ?', [$before]), 'letters never wait behind Chrome');
+        } finally {
+            $db->executeStatement('DELETE FROM messenger_messages WHERE id > ?', [$before]);
+        }
     }
 
     #[Test]
@@ -112,7 +131,7 @@ final class MessengerDefaultsTest extends KernelTestCase
             self::assertSame(0, $install->execute(['--no-home' => true], ['interactive' => false]), $install->getDisplay());
 
             self::assertTrue($db->createSchemaManager()->tablesExist(['messenger_messages']), 'the table of the queue is there before the first message');
-            self::assertStringContainsString('Очередь сообщений: подготовлено транспортов — 2', $install->getDisplay());
+            self::assertStringContainsString('Очередь сообщений: подготовлено транспортов — 3', $install->getDisplay());
         } finally {
             $this->transport('failed')->setup(); // the test site\'s «failed» has auto_setup=0: leave the table as the other tests expect it
         }

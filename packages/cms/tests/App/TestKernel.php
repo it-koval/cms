@@ -7,6 +7,7 @@ namespace Itk\Cms\Tests\App;
 use Composer\InstalledVersions;
 use Doctrine\Bundle\DoctrineBundle\DoctrineBundle;
 use Doctrine\Bundle\MigrationsBundle\DoctrineMigrationsBundle;
+use Itk\Cms\CriticalCss\CssExtractor;
 use Itk\Cms\ItkCmsBundle;
 use Symfony\Bundle\FrameworkBundle\FrameworkBundle;
 use Symfony\Bundle\FrameworkBundle\Kernel\MicroKernelTrait;
@@ -99,6 +100,7 @@ final class TestKernel extends BaseKernel
                 'transports' => [
                     'sync' => 'sync://',
                     'async' => 'in-memory://',
+                    'critical_css' => 'in-memory://',
                     'failed' => 'doctrine://default?queue_name=failed&auto_setup=0',
                 ],
             ],
@@ -180,6 +182,10 @@ final class TestKernel extends BaseKernel
 
         // the queries that reach the database are counted (QueryCounter::during()), for the tests that say «not one query per page»
         $services->set(QueryCounter::class)->tag('doctrine.middleware');
+
+        // the critical CSS of the test site is cut by a fake, not by Node and Chrome
+        $services->set(FakeCssExtractor::class)->public();
+        $services->alias(CssExtractor::class, FakeCssExtractor::class);
     }
 
     protected function configureRoutes(RoutingConfigurator $routes): void

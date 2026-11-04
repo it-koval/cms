@@ -9,12 +9,17 @@ use Itk\Cms\Content\PageService;
 use Itk\Cms\Content\SettingsService;
 use Itk\Cms\CriticalCss\CriticalCssService;
 use Itk\Cms\CriticalCss\Model\CriticalStyles;
+use Itk\Cms\CriticalCss\Model\ExtractedCss;
+use Itk\Cms\CriticalCss\Model\ExtractionFailed;
+use Itk\Cms\CriticalCss\Model\GenerateCriticalCss;
+use Itk\Cms\CriticalCss\Model\When;
 use Itk\Cms\Entity\CriticalCss;
 use Itk\Cms\Entity\PageTranslation;
 use Itk\Cms\Rendering\PageCache;
 use Itk\Cms\Rendering\PageRenderer;
 use Itk\Cms\Rendering\RenderState;
 use Itk\Cms\Repository\PageRepository;
+use Itk\Cms\Tests\App\FakeCssExtractor;
 use Itk\Cms\Tests\App\TestKernel;
 use PHPUnit\Framework\Attributes\Test;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
@@ -23,6 +28,8 @@ use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\RequestStack;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\KernelInterface;
+use Symfony\Component\Messenger\Envelope;
+use Symfony\Component\Messenger\Stamp\ReceivedStamp;
 use Twig\Environment;
 
 /**
@@ -79,6 +86,8 @@ final class CriticalCssTest extends WebTestCase
             }
         }
         $c->get(PageCache::class)->clear();
+        $c->get(FakeCssExtractor::class)->forget();
+        $c->get('messenger.transport.critical_css')->reset();
         parent::tearDown();
     }
 
@@ -87,6 +96,7 @@ final class CriticalCssTest extends WebTestCase
     {
         $client = static::createClient($options);
         $client->catchExceptions(false);
+        $client->disableReboot(); // the in-memory queue and the fake browser must outlive one request: the tests read them between visits
         self::getContainer()->get(PageCache::class)->clear();
         // the host the cache of pages accepts («Настройки → Сайт»)
         $settings = self::getContainer()->get(SettingsService::class);
@@ -258,6 +268,145 @@ final class CriticalCssTest extends WebTestCase
         $this->storeRow($id, true);
 
         self::assertPlainLink((string) $this->visit($client, '/test-cc-off')->getContent(), false);
+    }
+
+    /** @return list<GenerateCriticalCss> what was put into the critical_css transport since the last request (the in-memory queue of a test is emptied by the next one) */
+    private function queued(): array
+    {
+        return \array_map(static fn (Envelope $e): object => $e->getMessage(), self::getContainer()->get('messenger.transport.critical_css')->getSent());
+    }
+
+    /**
+     * Runs the worker over these messages, as `messenger:consume critical_css` would.
+     *
+     * @param list<GenerateCriticalCss> $messages
+     */
+    private function consume(array $messages): void
+    {
+        $bus = self::getContainer()->get('messenger.bus.default');
+        foreach ($messages as $message) {
+            $bus->dispatch((new Envelope($message))->with(new ReceivedStamp('critical_css')));
+        }
+        self::getContainer()->get('messenger.transport.critical_css')->reset();
+        self::getContainer()->get(EntityManagerInterface::class)->clear();
+    }
+
+    private function fake(): FakeCssExtractor
+    {
+        return self::getContainer()->get(FakeCssExtractor::class);
+    }
+
+    #[Test]
+    public function publishingQueuesOneMessageAndAnAutosaveDoesNot(): void
+    {
+        $this->client();
+        $pages = self::getContainer()->get(PageService::class);
+        $page = $pages->create(['template' => 'default', 'title' => 'В очередь', 'url' => '/test-cc-queue']);
+        $this->created[] = $page['id'];
+        self::assertSame([], $this->queued(), 'a draft is not a page visitors see');
+
+        $pages->update($page['id'], null, ['title' => 'В очередь (черновик)']);
+        self::assertSame([], $this->queued(), 'an autosave changes the draft only');
+
+        $pages->publish($page['id']);
+        $t = $this->translation($page['id']);
+        $queued = $this->queued();
+        self::assertCount(1, $queued);
+        self::assertSame($t->id, $queued[0]->translationId);
+        self::assertSame(When::Outdated, $queued[0]->when);
+
+        $pages->update($page['id'], null, ['title' => 'Опубликовано, правится']);
+        self::assertCount(1, $this->queued(), 'an autosave of a live page does not ask again');
+    }
+
+    #[Test]
+    public function theWorkerMakesThePageReadyAndAChangedPublishMakesItStaleAgain(): void
+    {
+        $client = $this->client();
+        $id = $this->publish('/test-cc-worker');
+        $asked = $this->queued();
+        self::assertCount(1, $asked);
+        self::assertPlainLink((string) $this->visit($client, '/test-cc-worker')->getContent());
+
+        $this->consume($asked);
+
+        $html = (string) $this->visit($client, '/test-cc-worker')->getContent();
+        self::assertStringContainsString('<style media="(max-width:1365.98px)">h1{width:390px}</style>', $html);
+        self::assertStringContainsString('<style media="(min-width:1366px)">h1{width:1366px}</style>', $html);
+        self::assertStringContainsString('media="print" onload="this.media=\'all\'"><noscript>', $html);
+        $calls = $this->fake()->calls;
+        self::assertCount(1, $calls);
+        self::assertSame('body{margin:0}', $calls[0]['css'], 'the source CSS is the configured file, prepared');
+        self::assertSame('/test-cc-worker', $calls[0]['pages'][0]->path);
+        self::assertStringContainsString('<link rel="stylesheet" href="' . self::CSS . '?v=', $calls[0]['pages'][0]->html, 'the page is rendered by PHP with the plain link, never with its own critical CSS');
+        self::assertStringNotContainsString('<style', $calls[0]['pages'][0]->html);
+
+        $pages = self::getContainer()->get(PageService::class);
+        $pages->update($id, null, ['title' => 'Изменилась']);
+        $pages->publish($id);
+        $asked = $this->queued();
+        self::assertCount(1, $asked, 'the new snapshot is asked for once');
+        self::assertPlainLink((string) $this->visit($client, '/test-cc-worker')->getContent());
+
+        $this->consume($asked);
+        self::assertStringContainsString('<style media="(max-width:1365.98px)">', (string) $this->visit($client, '/test-cc-worker')->getContent());
+    }
+
+    #[Test]
+    public function aFailedExtractionIsStoredAndThePageKeepsThePlainLink(): void
+    {
+        $client = $this->client();
+        $id = $this->publish('/test-cc-fail');
+        $this->fake()->answer = static fn (): ExtractionFailed => new ExtractionFailed('Chrome did not start');
+
+        $this->consume($this->queued());
+
+        self::assertPlainLink((string) $this->visit($client, '/test-cc-fail')->getContent());
+        $row = self::getContainer()->get(EntityManagerInterface::class)->find(CriticalCss::class, $this->translation($id)->id);
+        self::assertNotNull($row);
+        self::assertSame(CriticalCss::FAILED, $row->status);
+        self::assertSame('Chrome did not start', $row->error);
+        self::assertNull($row->styles);
+
+        self::assertSame([], $this->queued());
+        $this->visit($client, '/test-cc-fail');
+        self::assertSame([], $this->queued(), 'a failure on the same basis is not retried by a visit (no Chrome loop)');
+    }
+
+    #[Test]
+    public function anEmptyOrOversizedResultIsAFailureNotAnEmptyStyleTag(): void
+    {
+        $client = $this->client();
+        $id = $this->publish('/test-cc-empty');
+        $this->fake()->answer = static fn (): ExtractedCss => new ExtractedCss(['', '']);
+
+        $this->consume($this->queued());
+
+        $html = (string) $this->visit($client, '/test-cc-empty')->getContent();
+        self::assertPlainLink($html);
+        $row = self::getContainer()->get(EntityManagerInterface::class)->find(CriticalCss::class, $this->translation($id)->id);
+        self::assertSame('empty', $row?->error);
+    }
+
+    #[Test]
+    public function anUnchangedPageAfterAStylesheetTouchReusesItsStylesWithoutTheBrowser(): void
+    {
+        $client = $this->client();
+        $this->publish('/test-cc-reuse');
+        $this->consume($this->queued());
+        self::assertCount(1, $this->fake()->calls);
+
+        \touch(self::cssFile(), \time() + 2); // a deploy that copied the same file: the stat changes, the content does not
+        self::assertPlainLink((string) $this->visit($client, '/test-cc-reuse')->getContent());
+        $asked = $this->queued();
+        self::assertCount(1, $asked, 'the render asked the worker once');
+        $this->visit($client, '/test-cc-reuse');
+        self::assertSame([], $this->queued(), 'and not again for the same basis');
+
+        $this->consume($asked);
+
+        self::assertCount(1, $this->fake()->calls, 'no browser run: the rendered HTML and CSS were byte-identical');
+        self::assertStringContainsString('<style media="(max-width:1365.98px)">h1{width:390px}</style>', (string) $this->visit($client, '/test-cc-reuse')->getContent());
     }
 
     #[Test]

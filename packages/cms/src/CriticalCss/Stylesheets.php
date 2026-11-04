@@ -109,7 +109,13 @@ final class Stylesheets
             $stats[$href] = $this->stat($href);
         }
 
-        return \sha1((string) \json_encode([self::GENERATOR_VERSION, $this->viewports, $this->keepSelectors, $this->removeSelectors, $stats]));
+        return \sha1($this->generatorConfig() . "\x1f" . (string) \json_encode($stats));
+    }
+
+    /** Everything that changes crittr's output for the same page and CSS: viewports, selectors, GENERATOR_VERSION. Part of the stamp and of the worker's `inputs`. */
+    public function generatorConfig(): string
+    {
+        return (string) \json_encode([self::GENERATOR_VERSION, $this->viewports, $this->keepSelectors, $this->removeSelectors]);
     }
 
     /**
