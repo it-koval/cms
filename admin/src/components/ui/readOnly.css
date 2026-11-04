@@ -1,0 +1,5 @@
+/* A screen the role may look at but not change: the area is wrapped in .ro-zone + inert (nothing can be clicked or typed); the action buttons are not drawn. */
+.ro-note { background: var(--sheet-2); border: 1px solid var(--hair); color: var(--ink-2); margin-bottom: 14px; align-items: center; }
+.ro-note .ic { color: var(--ink-3); }
+.ro-zone .btn:not(.keep), .ro-zone .ibtn, .ro-zone .rep-add, .ro-zone .mark, .ro-zone .rt-tb, .ro-zone .photo-strip button { display: none; }
+.ro-zone :is(input:not([type=checkbox]):not([type=radio]), textarea, select) { background: var(--sheet-2); color: var(--ink-2); }

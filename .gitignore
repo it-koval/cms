@@ -1,0 +1,25 @@
+# System and IDE
+.DS_Store
+.idea/
+*.iml
+
+# Dependencies
+node_modules/
+vendor/
+
+# Build output of tools (the built admin, packages/cms/public/admin, is committed on purpose)
+dist/
+coverage/
+
+# Caches
+.phpunit.cache/
+.phpstan.cache/
+.php-cs-fixer.cache
+
+# Local settings and secrets
+.env.local
+*.local
+
+# Other
+.impeccable
+docs/

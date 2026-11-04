@@ -1,0 +1,137 @@
+{
+    "name": "itk/cms",
+    "description": "Symfony bundle that adds a CMS to a site: pages built from sections, collections, menus, settings, media library, SEO, redirects, form requests, users and roles, a JSON API and a Vue admin.",
+    "keywords": [
+        "cms",
+        "symfony",
+        "symfony-bundle",
+        "admin",
+        "content-management",
+        "doctrine",
+        "mysql",
+        "mcp"
+    ],
+    "type": "symfony-bundle",
+    "license": "MIT",
+    "homepage": "https://github.com/it-koval/cms",
+    "support": {
+        "issues": "https://github.com/it-koval/cms/issues",
+        "source": "https://github.com/it-koval/cms"
+    },
+    "require": {
+        "php": ">=8.3",
+        "ext-ctype": "*",
+        "ext-dom": "*",
+        "ext-gd": "*",
+        "ext-json": "*",
+        "ext-mbstring": "*",
+        "ext-pdo_mysql": "*",
+        "ext-sodium": "*",
+        "doctrine/collections": "^2.2 || ^3.1",
+        "doctrine/dbal": "^4.2",
+        "doctrine/doctrine-bundle": "^2.13 || ^3.0",
+        "doctrine/doctrine-migrations-bundle": "^3.3 || ^4.0",
+        "doctrine/migrations": "^3.8",
+        "doctrine/orm": "^3.2",
+        "doctrine/persistence": "^3.3.1 || ^4.0",
+        "psr/cache": "^2.0 || ^3.0",
+        "psr/clock": "^1.0",
+        "psr/container": "^1.1 || ^2.0",
+        "psr/log": "^1.1 || ^2.0 || ^3.0",
+        "symfony/cache-contracts": "^3.5",
+        "symfony/config": "^7.4 || ^8.0",
+        "symfony/console": "^7.4 || ^8.0",
+        "symfony/dependency-injection": "^7.4 || ^8.0",
+        "symfony/doctrine-bridge": "^7.4 || ^8.0",
+        "symfony/doctrine-messenger": "^7.4 || ^8.0",
+        "symfony/event-dispatcher": "^7.4 || ^8.0",
+        "symfony/event-dispatcher-contracts": "^3.5",
+        "symfony/framework-bundle": "^7.4 || ^8.0",
+        "symfony/http-client-contracts": "^3.5",
+        "symfony/http-foundation": "^7.4 || ^8.0",
+        "symfony/http-kernel": "^7.4 || ^8.0",
+        "symfony/lock": "^7.4 || ^8.0",
+        "symfony/mailer": "^7.4 || ^8.0",
+        "symfony/messenger": "^7.4 || ^8.0",
+        "symfony/mime": "^7.4 || ^8.0",
+        "symfony/password-hasher": "^7.4 || ^8.0",
+        "symfony/rate-limiter": "^7.4 || ^8.0",
+        "symfony/routing": "^7.4 || ^8.0",
+        "symfony/security-bundle": "^7.4 || ^8.0",
+        "symfony/security-core": "^7.4 || ^8.0",
+        "symfony/security-csrf": "^7.4 || ^8.0",
+        "symfony/security-http": "^7.4 || ^8.0",
+        "symfony/service-contracts": "^3.5",
+        "symfony/translation": "^7.4 || ^8.0",
+        "symfony/translation-contracts": "^3.5",
+        "symfony/twig-bundle": "^7.4 || ^8.0",
+        "symfony/uid": "^7.4 || ^8.0",
+        "symfony/var-exporter": "^7.4 || ^8.0",
+        "symfony/yaml": "^7.4 || ^8.0",
+        "twig/twig": "^3.10"
+    },
+    "autoload": {
+        "psr-4": {
+            "Itk\\Cms\\": "src/"
+        }
+    },
+    "require-dev": {
+        "monolog/monolog": "^3.5",
+        "php-cs-fixer/shim": "^3.58",
+        "phpstan/phpstan": "^2.1",
+        "phpunit/phpunit": "^12.5 || ^13.0",
+        "symfony/browser-kit": "^7.4 || ^8.0",
+        "symfony/clock": "^7.4 || ^8.0",
+        "symfony/css-selector": "^7.4 || ^8.0",
+        "symfony/dom-crawler": "^7.4 || ^8.0",
+        "symfony/error-handler": "^7.4 || ^8.0",
+        "symfony/filesystem": "^7.4 || ^8.0",
+        "symfony/finder": "^7.4 || ^8.0",
+        "symfony/http-client": "^7.4 || ^8.0",
+        "symfony/notifier": "^7.4 || ^8.0",
+        "symfony/options-resolver": "^7.4 || ^8.0",
+        "symfony/property-access": "^7.4 || ^8.0",
+        "symfony/property-info": "^7.4 || ^8.0",
+        "symfony/stopwatch": "^7.4 || ^8.0",
+        "symfony/string": "^7.4 || ^8.0",
+        "symfony/telegram-notifier": "^7.4 || ^8.0",
+        "symfony/twig-bridge": "^7.4 || ^8.0",
+        "symfony/type-info": "^7.4 || ^8.0",
+        "symfony/var-dumper": "^7.4 || ^8.0"
+    },
+    "conflict": {
+        "monolog/monolog": "<3.5"
+    },
+    "suggest": {
+        "symfony/notifier": "Telegram notifications of new requests (with symfony/telegram-notifier and framework.notifier.chatter_transports); the site works without them",
+        "symfony/telegram-notifier": "Telegram bridge of the Notifier, see symfony/notifier",
+        "symfony/http-client": "Needed by the Telegram bridge and by the check for a new version of the CMS (itk_cms.update_source)",
+        "monolog/monolog": "Hides the Telegram bot token from logs and gives the audit of the MCP server its own channel",
+        "ext-exif": "Turns JPEG pictures upright by their EXIF orientation when resized"
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Itk\\Cms\\Tests\\": "tests/"
+        }
+    },
+    "scripts": {
+        "test": [
+            "@test:prepare",
+            "@test:run"
+        ],
+        "test:prepare": [
+            "@php tests/bin/console doctrine:database:drop --if-exists --force --env=test",
+            "@php tests/bin/console doctrine:database:create --env=test",
+            "@php tests/bin/console doctrine:migrations:migrate -n --env=test",
+            "@php tests/bin/console messenger:setup-transports failed --env=test",
+            "@php tests/bin/console itk:install -n --env=test"
+        ],
+        "test:run": "@php vendor/bin/phpunit",
+        "stan": "@php vendor/bin/phpstan analyse --memory-limit=1G",
+        "cs": "@php vendor/bin/php-cs-fixer fix --config=../../.php-cs-fixer.dist.php --dry-run --diff --verbose",
+        "cs:fix": "@php vendor/bin/php-cs-fixer fix --config=../../.php-cs-fixer.dist.php"
+    },
+    "config": {
+        "sort-packages": true
+    }
+}

@@ -1,0 +1,123 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Itk\Cms\Mail;
+
+use Itk\Cms\Content\SettingsService;
+use Itk\Cms\I18n\I18n;
+use Symfony\Component\DependencyInjection\Attribute\Autowire;
+use Symfony\Component\Mailer\Transport;
+use Symfony\Component\Mailer\Transport\TransportInterface;
+use Symfony\Component\Mime\Address;
+use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
+
+/**
+ * Decides how the site sends mail and builds the Symfony Mailer transport at the moment of sending, so a change in «Настройки → Почта» works at once, without a restart.
+ *   1. «Настройки → Почта» is on and has a server and a sender address → that server;
+ *   2. otherwise the environment variable MAILER_DSN, when it holds a real transport (null://null means «ничего не отправлять» and counts as not configured);
+ *   3. otherwise mail is «не настроена».
+ * The sender (from) is always the one of «Настройки → Почта»; with only MAILER_DSN and no address saved, noreply@<домен сайта> is used when the site has a domain.
+ */
+final class MailerFactory
+{
+    public function __construct(
+        private readonly MailSettings $settings,
+        private readonly SettingsService $site,
+        private readonly EventDispatcherInterface $dispatcher,
+        #[Autowire('%env(default::MAILER_DSN)%')]
+        #[\SensitiveParameter]
+        private readonly ?string $envDsn = null,
+    ) {
+    }
+
+    /** The way letters go out now, or null when mail is not configured. */
+    public function route(): ?MailRoute
+    {
+        $c = $this->settings->config();
+        $from = $this->sender($c);
+        if (null === $from) {
+            return null;
+        }
+        if ($c->hasServer()) {
+            return new MailRoute(DsnBuilder::build($c), MailRoute::SETTINGS, $from, [$c->password, $c->username]);
+        }
+        $env = $this->envDsn();
+        if (null !== $env) {
+            return new MailRoute($env, MailRoute::ENV, $from, [$env, $this->passwordOf($env)]);
+        }
+
+        return null;
+    }
+
+    public function isConfigured(): bool
+    {
+        return null !== $this->route();
+    }
+
+    /** A transport for the route. No logger on purpose: the SMTP conversation of the debug log holds the login and password in base64. */
+    public function transport(MailRoute $route): TransportInterface
+    {
+        return Transport::fromDsn($route->dsn, $this->dispatcher, null, null);
+    }
+
+    /** Is MAILER_DSN set to a real transport? (The settings screen tells the admin that this is the fallback.) */
+    public function hasEnvFallback(): bool
+    {
+        return null !== $this->envDsn();
+    }
+
+    /** Why mail is not configured, in plain words (null when it is). */
+    public function problem(): ?string
+    {
+        if (null !== $this->route()) {
+            return null;
+        }
+        $c = $this->settings->config();
+        if (null === $this->sender($c)) {
+            return I18n::t('http.mail_problem_sender');
+        }
+
+        return I18n::t('http.mail_problem_server');
+    }
+
+    private function sender(MailConfig $c): ?Address
+    {
+        $address = $c->fromAddress;
+        if ('' === $address || false === \filter_var($address, \FILTER_VALIDATE_EMAIL)) {
+            $domain = \preg_replace('~^https?://~i', '', \trim((string) $this->site->get('domain', null, '')));
+            $domain = \strtolower(\explode('/', (string) $domain)[0]);
+            if ('' === $domain || !\preg_match('/^[a-z0-9]([a-z0-9.\-]*[a-z0-9])?\.[a-z]{2,}$/', $domain)) {
+                return null;
+            }
+            $address = 'noreply@' . $domain;
+        }
+        $name = \str_replace(['"', "\r", "\n"], '', $c->fromName);
+        if ('' === $name) {
+            $name = \trim((string) $this->site->get('siteName', null, ''));
+        }
+
+        try {
+            return new Address($address, \str_replace(['"', "\r", "\n"], '', $name));
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+
+    private function envDsn(): ?string
+    {
+        $dsn = \trim((string) $this->envDsn);
+        if ('' === $dsn || 1 === \preg_match('~^null(\+[a-z]+)?:~i', $dsn)) {
+            return null;
+        }
+
+        return $dsn;
+    }
+
+    private function passwordOf(string $dsn): string
+    {
+        $parts = \parse_url($dsn);
+
+        return \is_array($parts) && isset($parts['pass']) ? \rawurldecode($parts['pass']) : '';
+    }
+}

@@ -1,0 +1,11 @@
+{{ itk_t('http.mail_subject_request', {id: id, form: form}) }}
+{{ created }}
+
+{% for row in rows %}
+{{ row.label }}: {{ row.value }}
+{% endfor %}
+{% if source %}
+{{ itk_t('http.request_page_line', {url: source}) }}
+{% endif %}
+
+{{ itk_t('http.mail_request_open_line', {url: url}) }}

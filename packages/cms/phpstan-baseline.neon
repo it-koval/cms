@@ -1,0 +1,13 @@
+parameters:
+	ignoreErrors:
+		-
+			message: '#^Method Itk\\Cms\\Mcp\\AbstractMcpTool\:\:annotations\(\) should return array\{readOnly\: bool, destructive\: bool, idempotent\?\: bool\} but returns array\{\}\.$#'
+			identifier: return.type
+			count: 1
+			path: src/Mcp/AbstractMcpTool.php
+
+		-
+			message: '#^Empty array passed to foreach\.$#'
+			identifier: foreach.emptyArray
+			count: 1
+			path: src/Resource/HookDispatcher.php

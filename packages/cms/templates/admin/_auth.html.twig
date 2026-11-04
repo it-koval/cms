@@ -1,0 +1,54 @@
+{# The frame of the public pages of the admin that have no login behind them: forgot password, new password. Same look as login.html.twig. Blocks: title, content. #}
+<!doctype html>
+<html lang="{{ itk_locale() }}">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="robots" content="noindex, nofollow">
+    <meta name="referrer" content="no-referrer">
+    <meta name="theme-color" content="{{ theme_brand }}">
+    <title>{% block title %}{% endblock %} — {{ site_name != '' ? site_name : itk_t('http.admin_default_name') }}</title>
+    <style>{{ itk_admin_font() }}</style>
+    <style>
+        :root { --ground: #F2F4F5; --sheet: #fff; --ink: #14181C; --ink-2: #3F4D57; --ink-3: #586873; --hair: #D9DEE2; --stroke: #8A97A0; --cyan: var(--brand, #0B5D80); --cyan-deep: var(--cy-d, #084A66); --cyan-wash: var(--cy-50, #E8F3F8); --on-brand: var(--brand-ink, #fff); --red: #C62828; --red-wash: #FDECEC; --green: #1B6E3C; --green-wash: #E8F5EC; }
+        * { box-sizing: border-box; }
+        body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: var(--ground); color: var(--ink); font: 400 15px/1.5 "Golos Text Variable", system-ui, -apple-system, "Segoe UI", sans-serif; }
+        main { width: min(24rem, calc(100vw - 32px)); padding: 28px; background: var(--sheet); border: 1px solid var(--hair); border-radius: 12px; box-shadow: 0 1px 2px rgba(20, 24, 28, .06); }
+        .brand { display: flex; align-items: center; gap: 10px; margin-bottom: 20px; color: var(--ink-3); font-size: .8125rem; font-weight: 580; }
+        .brand i { width: 24px; height: 24px; border-radius: 6px; background: var(--cyan); display: block; position: relative; }
+        .brand i::before { content: ""; position: absolute; left: 6px; top: 6px; width: 12px; height: 3px; border-radius: 1px; background: var(--on-brand); box-shadow: 0 4.5px 0 color-mix(in srgb, var(--on-brand) 60%, transparent), 0 9px 0 color-mix(in srgb, var(--on-brand) 30%, transparent); }
+        .brand img { height: 24px; max-width: 160px; display: block; }
+        h1 { margin: 0 0 4px; font-size: 1.375rem; line-height: 1.2; font-weight: 650; letter-spacing: -.012em; }
+        .lead { margin: 0 0 20px; color: var(--ink-2); }
+        label { display: block; margin: 14px 0 6px; font-size: .8125rem; font-weight: 580; }
+        input { display: block; width: 100%; height: 42px; padding: 0 12px; border: 1px solid var(--stroke); border-radius: 8px; background: #fff; color: var(--ink); font: inherit; }
+        input:focus-visible { outline: 3px solid var(--cyan-wash); outline-offset: 0; border-color: var(--cyan); }
+        .hint { margin: 6px 0 0; color: var(--ink-3); font-size: .8125rem; }
+        button { display: block; width: 100%; height: 44px; margin-top: 22px; border: 0; border-radius: 8px; background: var(--cyan); color: var(--on-brand); font: inherit; font-weight: 600; cursor: pointer; }
+        button:hover { background: var(--cyan-deep); }
+        button:focus-visible { outline: 3px solid var(--cy-200, #9CCAE0); outline-offset: 2px; }
+        .error { margin: 0 0 4px; padding: 10px 12px; border-radius: 8px; background: var(--red-wash); color: var(--red); font-weight: 520; }
+        .ok { margin: 0 0 4px; padding: 10px 12px; border-radius: 8px; background: var(--green-wash); color: var(--green); font-weight: 520; }
+        .back { display: block; margin-top: 18px; text-align: center; color: var(--brand-text, var(--cyan)); font-weight: 560; text-decoration: none; }
+        .back:hover { text-decoration: underline; }
+        body { min-height: 100vh; min-height: 100dvh; padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left)); }
+        main { max-width: 100%; }
+        a, .back { overflow-wrap: anywhere; }
+        @media (max-width: 767px) {
+            body { place-items: start center; padding-top: max(24px, env(safe-area-inset-top)); }
+            main { width: 100%; padding: 24px 18px; }
+            input { height: 48px; font-size: 16px; }
+            button { height: 48px; }
+            .back { padding: 12px 0; margin-top: 8px; }
+            .forgot, .out a { display: inline-block; padding: 12px 0; }
+        }
+    </style>
+    <style>{{ theme_css|raw }}</style>
+</head>
+<body>
+<main>
+    <div class="brand">{% if theme_logo %}<img src="{{ theme_logo }}" alt="">{% else %}<i aria-hidden="true"></i>{% endif %}<span>{{ site_name != '' ? site_name : 'ITK CMS' }}</span></div>
+{% block content %}{% endblock %}
+</main>
+</body>
+</html>

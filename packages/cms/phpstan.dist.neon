@@ -1,0 +1,13 @@
+# Static analysis of the bundle: composer stan. Level 5; the types in docblocks are hints, not facts (treatPhpDocTypesAsCertain),
+# because the data of the site comes out of JSON columns and the docblocks describe what the code expects to find there.
+# What PHPStan reports without being wrong is fixed; what it reports wrongly is in phpstan-baseline.neon: AbstractMcpTool::annotations() answers [] on purpose (the registry
+# refuses a tool that says nothing, see McpToolRegistry), and HookDispatcher::run() reads a queue that the closure fills while it runs (PHPStan does not see that).
+includes:
+    - phpstan-baseline.neon
+
+parameters:
+    level: 5
+    treatPhpDocTypesAsCertain: false
+    paths:
+        - src
+    tmpDir: .phpstan.cache

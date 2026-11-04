@@ -1,0 +1,131 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  php:
+    name: PHP ${{ matrix.php }}, Symfony ${{ matrix.symfony }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { php: '8.3', symfony: '7.4.*' }
+          - { php: '8.4', symfony: '7.4.*' }
+          - { php: '8.4', symfony: '8.1.*' }
+
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: itk-test
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -pitk-test"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+      mailpit:
+        image: axllent/mailpit
+        ports:
+          - 1025:1025
+          - 8025:8025
+        options: >-
+          --health-cmd="/mailpit readyz"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+
+    env:
+      DATABASE_URL: mysql://root:itk-test@127.0.0.1:3306/itk?serverVersion=8.4&charset=utf8mb4
+      ITK_TEST_MAILPIT_URL: http://127.0.0.1:8025
+      ITK_TEST_MAILPIT_SMTP_PORT: '1025'
+
+    defaults:
+      run:
+        working-directory: packages/cms
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: ctype, dom, exif, gd, json, mbstring, pdo_mysql, sodium
+          coverage: none
+          tools: composer:v2
+
+      # symfony/flex only to pin the Symfony line through SYMFONY_REQUIRE; the bundle itself does not use it
+      - name: Install symfony/flex globally
+        run: |
+          composer global config --no-plugins allow-plugins.symfony/flex true
+          composer global require --no-progress --no-scripts --no-plugins symfony/flex
+
+      # composer.lock of the bundle is not committed (a library), so this resolves the newest versions inside the pinned Symfony line
+      - name: composer install
+        env:
+          SYMFONY_REQUIRE: ${{ matrix.symfony }}
+        run: composer install --no-progress --prefer-dist
+
+      - run: composer validate --strict
+
+      - name: composer test (database, migrations, itk:install, PHPUnit)
+        run: composer test
+
+      - name: Doctrine schema is in sync with the mapping
+        run: php tests/bin/console doctrine:schema:validate --env=test
+
+      - name: PHPStan
+        run: composer stan
+
+      - name: PHP CS Fixer (dry run)
+        run: composer cs
+
+  admin:
+    name: Admin (Vue)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    defaults:
+      run:
+        working-directory: admin
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: admin/.nvmrc
+          cache: npm
+          cache-dependency-path: admin/package-lock.json
+
+      - run: npm ci
+
+      - run: npm run lint
+
+      # the catalogues of the interface (admin/src/i18n, packages/cms/translations): the same keys and {params} in en, ru, kk, every key used and present, no Cyrillic in the code
+      - run: npm run check:i18n
+
+      - run: npm test
+
+      - run: npm run build
+
+      # the built admin is committed: it must be what the sources build to. -N makes files that the build added show up in the diff
+      - name: The built admin matches the sources
+        working-directory: .
+        run: |
+          git add --intent-to-add packages/cms/public/admin
+          git diff --exit-code packages/cms/public/admin

@@ -1,0 +1,50 @@
+{
+  "name": "itk-cms-admin",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "ITK CMS — админка (Vue 3 + Vite): тонкий клиент к /admin/api",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/it-koval/cms.git",
+    "directory": "admin"
+  },
+  "engines": {
+    "node": ">=18.18"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "dev:mock": "vite --mode mock",
+    "check:i18n": "node scripts/check-i18n.mjs --strict"
+  },
+  "dependencies": {
+    "@fontsource-variable/golos-text": "5.2.8",
+    "@tiptap/core": "2.27.3",
+    "@tiptap/extension-image": "2.27.3",
+    "@tiptap/extension-link": "2.27.3",
+    "@tiptap/extension-table": "2.27.3",
+    "@tiptap/extension-table-cell": "2.27.3",
+    "@tiptap/extension-table-header": "2.27.3",
+    "@tiptap/extension-table-row": "2.27.3",
+    "@tiptap/pm": "2.27.3",
+    "@tiptap/starter-kit": "2.27.3",
+    "@tiptap/vue-3": "2.27.3",
+    "qrcode-generator": "1.4.4",
+    "vue": "3.5.44",
+    "vue-router": "4.6.4"
+  },
+  "devDependencies": {
+    "@eslint/js": "9.39.5",
+    "@vitejs/plugin-vue": "5.2.4",
+    "eslint": "9.39.5",
+    "eslint-plugin-vue": "10.12.0",
+    "globals": "17.13.0",
+    "vite": "6.4.5",
+    "vitest": "3.2.7"
+  }
+}

@@ -1,0 +1,5 @@
+{# Include before </body> of a site layout to place the preview script yourself. Otherwise the renderer adds it for the admin canvas. #}
+{% if itk_preview|default(false) %}
+    <link rel="stylesheet" href="/bundles/itkcms/preview.css">
+    <script src="/bundles/itkcms/preview.js" defer></script>
+{% endif %}

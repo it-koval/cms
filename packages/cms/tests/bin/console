@@ -1,0 +1,17 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+// Console of the test site (tests/App): composer test uses it to make the database. APP_ENV is test unless --env says otherwise.
+
+use Itk\Cms\Tests\App\TestKernel;
+use Symfony\Bundle\FrameworkBundle\Console\Application;
+use Symfony\Component\Console\Input\ArgvInput;
+
+require \dirname(__DIR__, 2) . '/vendor/autoload.php';
+
+$input = new ArgvInput();
+$env = $input->getParameterOption(['--env', '-e'], 'test', true);
+
+(new Application(new TestKernel($env, true)))->run($input);

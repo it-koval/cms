@@ -1,0 +1,11 @@
+{% extends ['layout.html.twig', '@ItkCms/layout.html.twig'] %}
+
+{% block content %}
+    {{ render_sections(page) }}
+    <div>{{ itk_field(page, 'description') }}</div>
+    <ul class="itk-article-list">
+        {% for article in listing(page) %}
+            <li><a href="{{ article.url }}">{{ article.title }}</a></li>
+        {% endfor %}
+    </ul>
+{% endblock %}

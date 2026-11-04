@@ -1,0 +1,8 @@
+{{ name != '' ? itk_t('http.mail_greeting_name', {name: name}) : itk_t('http.mail_greeting') }}
+
+{{ site_name != '' ? itk_t('http.mail_invite_created_site', {site: site_name}) : itk_t('http.mail_invite_created') }} {{ itk_t('http.mail_invite_email', {email: email}) }}
+
+{{ itk_t('http.mail_link_valid', {valid: valid}) }}
+{{ url }}
+
+{{ itk_t('http.mail_invite_login', {link: login_url}) }}

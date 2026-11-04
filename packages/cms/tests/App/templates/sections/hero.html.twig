@@ -1,0 +1,7 @@
+{%- set d = section.data -%}
+<section class="hero hero--{{ d.layout|default('simple') }}"{{ itk_section_attrs(section) }}>
+    <{{ is_h1|default(false) ? 'h1' : 'h2' }}>{{ itk_field(section, 'headline') }}</{{ is_h1|default(false) ? 'h1' : 'h2' }}>
+    {%- if d.description|default('') %}
+    <p>{{ itk_field(section, 'description') }}</p>
+    {%- endif %}
+</section>
