@@ -10,6 +10,7 @@ use Itk\Cms\Content\CollectionService;
 use Itk\Cms\Content\MenuService;
 use Itk\Cms\Content\PageService;
 use Itk\Cms\Content\SettingsService;
+use Itk\Cms\CriticalCss\Stylesheets;
 use Itk\Cms\Entity\MediaFile;
 use Itk\Cms\Rendering\PageValidators;
 use Itk\Cms\Repository\PageRepository;
@@ -302,7 +303,7 @@ final class ConditionalResponseTest extends WebTestCase
         $t = $c->get(PageRepository::class)->find($id)?->translation('ru');
         self::assertNotNull($t);
         $tag = static function (string $now) use ($c, $t): string {
-            $validators = new PageValidators($c->get(Connection::class), true, false, $c->getParameter('kernel.cache_dir'), $c->getParameter('kernel.container_class'), new MockClock($now));
+            $validators = new PageValidators($c->get(Connection::class), true, false, $c->getParameter('kernel.cache_dir'), $c->getParameter('kernel.container_class'), new MockClock($now), $c->get(Stylesheets::class));
 
             return (string) $validators->forPage($t, Request::create('/test-cond-7'))['etag'];
         };

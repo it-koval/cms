@@ -12,6 +12,7 @@
 <head>
     <meta charset="UTF-8"/>
     <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    {{ itk_stylesheets() }}
 
     {% block meta %}
         {%- if probe|length == 2 and probe[1] != 'none' %}{% do itk_cache(probe[1] == 'off' ? false : probe[1] + 0) %}{% endif -%}

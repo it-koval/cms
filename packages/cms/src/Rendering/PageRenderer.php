@@ -10,6 +10,8 @@ use Itk\Cms\Content\H1Rule;
 use Itk\Cms\Content\PageService;
 use Itk\Cms\Content\SeoResolver;
 use Itk\Cms\Content\SettingsService;
+use Itk\Cms\CriticalCss\CriticalCssService;
+use Itk\Cms\CriticalCss\Model\CriticalStyles;
 use Itk\Cms\Entity\PageTranslation;
 use Itk\Cms\I18n\I18n;
 use Itk\Cms\Schema\Schema;
@@ -47,16 +49,17 @@ final class PageRenderer
         private readonly SeoResolver $seo,
         private readonly RequestStack $requests,
         private readonly AdminTheme $theme,
+        private readonly CriticalCssService $critical,
         #[Autowire(param: 'itk_cms.main_locale')]
         private readonly string $mainLocale,
     ) {
     }
 
-    /** The live page. */
+    /** The live page: the only render that may inline critical CSS. */
     public function renderLive(PageTranslation $t): Response
     {
         $snapshot = $t->published ?? [];
-        $html = $this->render($t, $snapshot, false);
+        $html = $this->render($t, $snapshot, false, $this->critical->forLiveRender($t));
 
         return new Response($html);
     }
@@ -73,7 +76,7 @@ final class PageRenderer
         $locale ??= $this->mainLocale;
         $page = $this->pages->find($pageId);
         $t = $page->translation($locale) ?? throw new ContentException(I18n::t(PageService::NO_VERSION), 404);
-        $html = $this->render($t, $t->draft, true);
+        $html = $this->render($t, $t->draft, true, null);
 
         $head = '<style>' . $this->theme->previewCss() . '</style><link rel="stylesheet" href="' . self::PREVIEW_CSS . '">'; // the colours of the overlay follow the admin theme
         $tail = '<script src="' . self::PREVIEW_JS . '" defer></script>';
@@ -91,8 +94,9 @@ final class PageRenderer
 
     /**
      * @param array<string, mixed> $version draft or snapshot
+     * @param CriticalStyles|null $critical what itk_stylesheets() inlines: only the live render gives any, and only when the row is Ready
      */
-    private function render(PageTranslation $t, array $version, bool $preview): string
+    private function render(PageTranslation $t, array $version, bool $preview, ?CriticalStyles $critical): string
     {
         $p = $t->page;
         $tpl = $this->schema->template($p->template);
@@ -119,6 +123,7 @@ final class PageRenderer
         $this->state->path = $page['url'];
         $this->state->template = $p->template;
         $this->state->published = $preview ? $this->pages->liveSnapshot($t) : null;
+        $this->state->critical = $preview ? null : $critical;
         try {
             $names = ['pages/' . $p->template . '.html.twig', '@ItkCms/pages/' . $p->template . '.html.twig', '@ItkCms/pages/default.html.twig'];
 

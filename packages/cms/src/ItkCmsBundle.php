@@ -182,6 +182,49 @@ final class ItkCmsBundle extends AbstractBundle
                         ->integerNode('ttl')->info('Seconds an entry lives at most (a template shortens it with itk_cache()); it limits what the fingerprint cannot see, such as the tables of the site')->defaultValue(3600)->min(1)->end()
                     ->end()
                 ->end()
+                ->arrayNode('critical_css')
+                    ->info('Critical CSS of live pages: made by crittr in the worker after each publish, inlined by itk_stylesheets(); needs Node 22+ and `npm install crittr` in the project')
+                    ->addDefaultsIfNotSet()
+                    ->validate()
+                        ->ifTrue(static fn (array $v): bool => $v['enabled'] && [] === $v['stylesheets'])
+                        ->thenInvalid('critical_css.stylesheets must list at least one stylesheet when critical_css is enabled')
+                    ->end()
+                    ->children()
+                        ->booleanNode('enabled')->defaultFalse()->end()
+                        ->arrayNode('stylesheets')
+                            ->info('Public paths of the site\'s stylesheets in cascade order (/css/site.css): itk_stylesheets() links them, the generator reads them from public/')
+                            ->scalarPrototype()
+                                ->validate()
+                                    ->ifTrue(static fn ($v): bool => !\is_string($v) || 1 !== \preg_match('~^/(?!/)[^?#\s]*\.css$~', $v) || \str_contains($v, '..'))
+                                    ->thenInvalid('A public path like /css/site.css is expected (no scheme, no query string, no ..)')
+                                ->end()
+                            ->end()
+                            ->defaultValue([])
+                        ->end()
+                        ->arrayNode('viewports')
+                            ->info('One crittr run per viewport; its CSS is inlined for screens from its width up to the next one\'s. Put one at each breakpoint of the layout')
+                            ->arrayPrototype()
+                                ->children()
+                                    ->integerNode('width')->isRequired()->min(240)->max(3840)->end()
+                                    ->integerNode('height')->isRequired()->min(320)->max(2160)->end()
+                                    ->booleanNode('mobile')->info('Measure as a phone: touch and a mobile user agent')->defaultFalse()->end()
+                                ->end()
+                            ->end()
+                            ->requiresAtLeastOneElement()
+                            ->validate()
+                                ->ifTrue(static fn (array $v): bool => \count(\array_unique(\array_column($v, 'width'))) !== \count($v))
+                                ->thenInvalid('Two viewports have the same width')
+                            ->end()
+                            ->defaultValue([['width' => 390, 'height' => 844, 'mobile' => true], ['width' => 1366, 'height' => 900, 'mobile' => false]])
+                        ->end()
+                        ->arrayNode('keep_selectors')->info('Selectors crittr keeps in the critical CSS whatever the first screen shows (passed as is)')->scalarPrototype()->end()->defaultValue([])->end()
+                        ->arrayNode('remove_selectors')->info('Selectors crittr leaves out of the critical CSS (passed as is)')->scalarPrototype()->end()->defaultValue([])->end()
+                        ->scalarNode('node')->info('The Node 22+ binary the worker runs')->defaultValue('node')->end()
+                        ->scalarNode('chrome')->info('Path of Chrome or Chromium; null = the one puppeteer downloaded for the user who ran npm install')->defaultNull()->end()
+                        ->integerNode('timeout')->info('Seconds for one page in one viewport; the Node process gets this times pages times viewports')->defaultValue(60)->min(10)->end()
+                        ->integerNode('max_kb')->info('Critical CSS of one viewport above this many kilobytes is not inlined: the page is served with the plain link')->defaultValue(75)->min(1)->end()
+                    ->end()
+                ->end()
                 ->booleanNode('blog')
                     ->info('false = a site without a blog: the templates blog, blog_category and blog_article are not registered and the "Blog articles" link is not in the rail (the same as $s->withoutBlog() in schema.php)')
                     ->defaultTrue()
@@ -299,6 +342,18 @@ final class ItkCmsBundle extends AbstractBundle
         $parameters->set('itk_cms.conditional_responses', $config['conditional_responses']);
         $parameters->set('itk_cms.page_cache.enabled', $config['page_cache']['enabled']);
         $parameters->set('itk_cms.page_cache.ttl', $config['page_cache']['ttl']);
+        $critical = $config['critical_css'];
+        $viewports = $critical['viewports'];
+        \usort($viewports, static fn (array $a, array $b): int => $a['width'] <=> $b['width']);
+        $parameters->set('itk_cms.critical_css.enabled', $critical['enabled']);
+        $parameters->set('itk_cms.critical_css.stylesheets', \array_values($critical['stylesheets']));
+        $parameters->set('itk_cms.critical_css.viewports', $viewports);
+        $parameters->set('itk_cms.critical_css.keep_selectors', \array_values(\array_map('strval', $critical['keep_selectors'])));
+        $parameters->set('itk_cms.critical_css.remove_selectors', \array_values(\array_map('strval', $critical['remove_selectors'])));
+        $parameters->set('itk_cms.critical_css.node', (string) $critical['node']);
+        $parameters->set('itk_cms.critical_css.chrome', null === $critical['chrome'] ? null : (string) $critical['chrome']);
+        $parameters->set('itk_cms.critical_css.timeout', $critical['timeout']);
+        $parameters->set('itk_cms.critical_css.max_kb', $critical['max_kb']);
         $parameters->set('itk_cms.strict', $config['strict'] ?? (bool) $builder->getParameter('kernel.debug'));
         $parameters->set('itk_cms.admin_path', $config['admin_path']);
         $parameters->set('itk_cms.admin_path_segments', \ltrim($config['admin_path'], '/')); // for the prefix of config/routes/admin.php, which adds the slash itself
