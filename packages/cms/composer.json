@@ -55,6 +55,7 @@
         "symfony/messenger": "^7.4 || ^8.0",
         "symfony/mime": "^7.4 || ^8.0",
         "symfony/password-hasher": "^7.4 || ^8.0",
+        "symfony/process": "^7.4 || ^8.0",
         "symfony/rate-limiter": "^7.4 || ^8.0",
         "symfony/routing": "^7.4 || ^8.0",
         "symfony/security-bundle": "^7.4 || ^8.0",
