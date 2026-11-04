@@ -8,6 +8,16 @@ Symfony-бандл: страницы из секций, шаблоны стра�
 
 - [Первый сайт за 10 минут](#первый-сайт-за-10-минут)
 - [Установка в сайт](#установка-в-сайт)
+- [Docker](#docker)
+  - [Первый запуск](#первый-запуск)
+  - [Если не запускается](#если-не-запускается)
+  - [Почта в Docker](#почта-в-docker)
+  - [Воркер](#воркер)
+  - [Критический CSS в Docker](#критический-css-в-docker)
+  - [Сборка для продакшена](#сборка-для-продакшена)
+  - [Обновление](#обновление)
+  - [Проверка](#проверка)
+- [ИИ-агент в проекте сайта](#ии-агент-в-проекте-сайта)
 - [Схема сайта (публичный контракт)](#схема-сайта-публичный-контракт)
   - [Проверка схемы: Schema::validate() и itk:schema:lint](#проверка-схемы-schemavalidate-и-itkschemalint)
   - [Twig](#twig)
@@ -73,7 +83,7 @@ Symfony-бандл: страницы из секций, шаблоны стра�
    composer config repositories.itk path /path/to/the/repository/packages/cms
    composer require itk/cms:'*@dev'
    ```
-   Symfony Flex сам впишет бандл в `config/bundles.php` и поставит зависимости (Doctrine, Messenger, Mailer, Security, Twig). Если Flex спросит про конфигурацию Docker, для CMS она не нужна.
+   Symfony Flex сам впишет бандл в `config/bundles.php` и поставит зависимости (Doctrine, Messenger, Mailer, Security, Twig). Если Flex спросит про конфигурацию Docker, откажитесь: готовый комплект для CMS лежит в пакете, см. раздел «Docker». Чтобы Flex не спрашивал и не добавлял свои файлы, выполните до `composer require`: `composer config extra.symfony.docker false`.
 3. **База и секрет**, файл `.env.local` (Flex кладёт в `.env` строку `DATABASE_URL` для PostgreSQL, `.env.local` её перекрывает):
    ```dotenv
    DATABASE_URL="mysql://user:password@127.0.0.1:3306/mysite?serverVersion=8.4&charset=utf8mb4"
@@ -151,7 +161,7 @@ Symfony-бандл: страницы из секций, шаблоны стра�
    require __DIR__ . '/public/index.php';
    ```
    Откройте `http://127.0.0.1:8000/admin/login` и войдите. `itk:install` создаёт главную страницу **черновиком**: пока её не опубликовали (в админке «Страницы» → «Главная» → «Опубликовать»), адрес `/` отвечает 404. Опубликованная главная пока пустая: у сайта нет секций и своих шаблонов. Проверить установку можно командой `php bin/console itk:doctor`.
-8. **Дальше.** Опишите структуру сайта в `config/itk/schema.php` (раздел «Схема сайта»), положите шаблоны в `templates/` и запустите воркер очереди (`bin/console messenger:consume async`, шаг 5 установки): без него не уходят письма и сообщения в Telegram. Заготовки делают команды `itk:make:*` (раздел «Генераторы»).
+8. **Дальше.** Опишите структуру сайта в `config/itk/schema.php` (раздел «Схема сайта»), положите шаблоны в `templates/` и запустите воркер очереди (`bin/console messenger:consume async`, шаг 5 установки): без него не уходят письма и сообщения в Telegram. Заготовки делают команды `itk:make:*` (раздел «Генераторы»). Если сайт делает ИИ-агент, подключите ему правила ядра (раздел «ИИ-агент в проекте сайта»).
 
 ## Установка в сайт
 
@@ -272,6 +282,187 @@ Symfony-бандл: страницы из секций, шаблоны стра�
 9. **Первый запуск**: `bin/console itk:install --email=you@example.com --site-name="My site" --domain=example.com` (пароль спросит, либо `--password` / переменная `ITK_ADMIN_PASSWORD`; `--no-home` не создаёт главную страницу, если вы заведёте её сами). Команда безопасна для повторного запуска: роли, области меню из схемы, настройки по умолчанию, таблица очереди сообщений (транспорты Messenger, которые умеют подготовить себя, например `doctrine://`), главная страница, первый администратор. Пустой `APP_SECRET` она отмечает предупреждением. **Порядок на новом сайте:** `doctrine:migrations:migrate`, затем `itk:install`, и только потом `doctrine:schema:validate` и `doctrine:migrations:diff`. Таблицу `messenger_messages` создаёт `itk:install`, а транспорт Doctrine добавляет её в ожидаемую схему: раньше этого шага `validate` красный, а `diff` запишет `CREATE TABLE messenger_messages` в миграцию сайта.
 10. **Админка**: собранная админка уже лежит в пакете (`public/admin`); достаточно `bin/console assets:install` (Flex делает это сам при `composer install` и `update`) — файлы доступны как `/bundles/itkcms/admin/`. Собирать её самим нужно только при разработке CMS (раздел «Разработка самой CMS»).
 11. **Схема сайта** `config/itk/schema.php` и шаблоны `templates/layout.html.twig`, `templates/pages/<шаблон>.html.twig`, `templates/sections/<секция>.html.twig`.
+
+## Docker
+
+Сайт на ITK CMS целиком запускается в Docker. Готовый комплект лежит в пакете, в каталоге `docker/` (в `vendor/itk/cms/docker` у сайта, в `packages/cms/docker` у клона репозитория). Вы копируете его в сайт и правите как свои файлы.
+
+**Что в комплекте.**
+
+| Файл | Зачем |
+|---|---|
+| `compose.yaml` | Сервисы `php` (php-fpm), `nginx`, `worker` (очередь), `database` (MySQL 8.4) и `mailer` (Mailpit). Порты открыты только на `127.0.0.1` |
+| `Dockerfile` | Образ PHP: стадии `php_base`, `php_dev`, `php_prod`; расширения бандла, Composer, проверка здоровья через `php-fpm ping` |
+| `Dockerfile.dockerignore` | Что не попадает в сборку: `.git`, `vendor`, `node_modules`, `var`, `public/uploads`, `public/bundles`, `.env.local`, `.env.*.local`, `.env.local.php`, ключ `config/secrets/*/*.decrypt.private.php`, `compose.override.yaml` |
+| `nginx/default.conf` | Статика, кэш файлов сборки, заголовки безопасности, отдача в `index.php` |
+| `php/conf.d/10-app.ini`, `php/php-fpm.d/zz-app.conf` | Настройки PHP и пула php-fpm |
+| `php/docker-entrypoint.sh` | При старте `php`: `composer install`, ожидание базы, миграции, `itk:install` |
+
+**Как собирается образ.** Пути `COPY` в `Dockerfile` начинаются с `docker/`, поэтому один файл работает в двух раскладках: из корня сайта (комплект лежит в `docker/`, контекст `.`) и из `packages/cms` (так собирает CI). Команда в обоих случаях одна: `docker build -f docker/Dockerfile --target php_dev .`.
+
+**Сборочные аргументы.** `PHP_VERSION` (по умолчанию `8.4`; бандл работает с 8.3), `CRITICAL_CSS` (`0` или `1`, см. «Критический CSS в Docker»), `UID` и `GID` (пользователь `www-data` в контейнере получает ваши идентификаторы, чтобы файлы в смонтированном каталоге не принадлежали root).
+
+### Первый запуск
+
+На хосте нужен только Docker. PHP и Composer ставить не нужно.
+
+1. **Сайт.** Если сайта ещё нет, создайте Symfony skeleton Composer'ом из образа и перейдите в него. Если сайт есть, пропустите шаг.
+   ```bash
+   docker run --rm --user "$(id -u):$(id -g)" -v "$PWD":/app -w /app composer:2 create-project symfony/skeleton:"7.4.*" mysite
+   cd mysite
+   ```
+2. **Комплект.** Скопируйте его в корень сайта.
+   ```bash
+   cp -R vendor/itk/cms/docker docker                      # пакет уже в vendor сайта
+   cp -R /path/to/the/repository/packages/cms/docker docker   # или из клона
+   mv docker/compose.yaml compose.yaml
+   ```
+3. **Пакет.** Пока он не на Packagist, подключите его как `path`-репозиторий. В `compose.yaml` у сервисов `php`, `nginx` и `worker` раскомментируйте строки с пометкой `# bundle` и поправьте левую часть пути на ваш клон (`../itkcms:/itk`). В `composer.json` сайта добавьте путь внутри контейнера и отключите Docker-рецепты Symfony Flex:
+   ```json
+   "repositories": [{ "type": "path", "url": "/itk/packages/cms", "options": { "symlink": true } }],
+   "require": { "itk/cms": "*@dev" },
+   "extra": { "symfony": { "docker": false } }
+   ```
+   Запись `docker: false` нужна до первого запуска Composer. В контейнере Flex не спрашивает, а молча применяет рецепты Docker для Doctrine и Mailer: они дописывают второй `database` в `compose.yaml` и создают `compose.override.yaml`.
+4. **Маршруты, безопасность и секрет.** Выполните шаги 4 и 5 раздела «Первый сайт за 10 минут» (`config/routes/itk.yaml`, `security.yaml`) и положите `APP_SECRET` в `.env.local`. `DATABASE_URL` в `.env.local` не нужен: его задаёт `compose.yaml`. Каталог `vendor` с хоста контейнеру бесполезен (ссылка на `/itk` в нём висит в пустоте), `composer` внутри контейнера поставит свой.
+5. **Переменные** (необязательно). Compose берёт их из окружения оболочки и из файла `.env` рядом с `compose.yaml`. Это тот самый `.env` сайта, который лежит в git: пишите в него только безопасные значения по умолчанию. `.env.local` Compose не читает; свой файл подключается ключом `--env-file`.
+
+   | Переменная | По умолчанию | Что делает |
+   |---|---|---|
+   | `HTTP_PORT`, `DB_PORT`, `MAILPIT_PORT` | `8080`, `3307`, `8025` | Порты на хосте: сайт, MySQL, Mailpit |
+   | `DB_NAME` | `app` | Имя базы данных |
+   | `COMPOSE_PROJECT_NAME` | имя каталога | Имя проекта Compose; у каждого сайта своё, иначе базы и контейнеры двух сайтов смешаются |
+   | `PHP_VERSION` | `8.4` | Версия PHP |
+   | `CRITICAL_CSS` | `0` | `1` ставит Node 22 и Chromium в образ |
+   | `ADMIN_EMAIL`, `ADMIN_PASSWORD` | пусто | Если заданы обе, первый администратор создаётся при старте |
+   | `SITE_NAME`, `SITE_DOMAIN` | пусто | Название и домен для `itk:install` |
+   | `UID`, `GID` | `1000` | Пользователь контейнера |
+
+   Пароль администратора в `.env` не пишите: он попадёт в git и в образ `php_prod`. Передайте его один раз из оболочки (`ADMIN_EMAIL=you@example.com ADMIN_PASSWORD=... docker compose up -d`) или создайте администратора шагом 7. `UID` и `GID` на Linux задайте своими значениями строками `UID=1000` и `GID=1000` в `.env` (узнать: `id -u`, `id -g`). Командой `export UID=...` задать их нельзя: в bash и zsh `UID` служебная переменная. Docker Desktop на macOS работает и с `1000`.
+6. **Запуск.**
+   ```bash
+   docker compose up -d --build
+   docker compose logs -f php        # дождитесь строки «ready to handle connections»
+   ```
+   Для `php` entrypoint выполняет `composer install` (при первом запуске и когда `itk/cms` указан в `composer.json`, но не установлен), ждёт базу, применяет миграции и запускает `itk:install`. Файлы админки (`assets:install`) он тоже кладёт сам. Миграции и `itk:install` отключает `AUTO_MIGRATE: "0"` в `environment` сервиса `php` в `compose.yaml` (из `.env` эта переменная не читается).
+7. **Администратор.** Если он не создан (не заданы `ADMIN_EMAIL` и `ADMIN_PASSWORD`), создайте его:
+   ```bash
+   docker compose exec php bin/console itk:install --email=you@example.com --site-name="My site" --domain=example.com
+   ```
+   При `AUTO_MIGRATE: "0"` сначала примените миграции: `docker compose exec php bin/console doctrine:migrations:migrate -n`. Порядок важен, как и в «Первом сайте».
+
+Сайт: `http://localhost:8080`, админка: `http://localhost:8080/admin/login`. Главная создаётся черновиком, опубликуйте её в админке (шаг 7 раздела «Первый сайт за 10 минут»). Шаблоны страниц и макет сайт пишет сам, как и в «Первом сайте».
+
+### Если не запускается
+
+- **Смотрите журнал `php`:** `docker compose logs php`. Строки `[entrypoint] ... failed` называют шаг, на котором контейнер остановился: миграции или `itk:install`. Исправьте причину и выполните `docker compose up -d`.
+- **`php` ещё не здоров.** На первом старте php-fpm поднимается после `composer install`, а `nginx` и `worker` ждут здоровья `php`. Подождите несколько минут и повторите `docker compose up -d`.
+- **Порт занят.** Задайте другие `HTTP_PORT`, `DB_PORT`, `MAILPIT_PORT` в `.env`.
+- **Воркер молчит.** Он ждёт `vendor/autoload_runtime.php`, который создаёт `php`. Смотрите журнал `php`.
+
+### Почта в Docker
+
+Все письма сайта (в том числе «Забыли пароль?») собирает Mailpit: `http://localhost:8025`. Бандл отправляет их через очередь `async`, поэтому письма приходят, только когда работает `worker`. В контейнерах заданы `MAILER_DSN=smtp://mailer:1025` и `MESSENGER_TRANSPORT_DSN=doctrine://default?auto_setup=0`; значения из `.env` сайта они перекрывают.
+
+### Воркер
+
+Сервис `worker` собран из того же образа, что и `php`, и выполняет `messenger:consume async critical_css --time-limit=3600 --memory-limit=256M`. Транспорт `critical_css` бандл регистрирует всегда, даже когда критический CSS выключен: очередь остаётся пустой. Через час или при превышении памяти воркер завершается, а `restart: unless-stopped` его поднимает. По `docker compose stop` воркер доделывает текущее задание (до двух минут), потому что в образе есть `pcntl`.
+
+Воркер держит ядро Symfony в памяти. После правки PHP-кода, конфигурации, шаблонов и CSS выполните `docker compose restart worker`. Журнал: `docker compose logs -f worker`. Если сайт задал свои транспорты Messenger, поправьте их имена в `command`.
+
+### Критический CSS в Docker
+
+Критическому CSS нужны Node 22, пакет `crittr` и Chrome в том же контейнере, где работает PHP. Проверку «Критический CSS» в «Состоянии сайта» выполняет php-fpm во время веб-запроса, а страницы считает воркер. Поэтому `php` и `worker` собираются из одного образа, а Node и Chromium включаются сборочным аргументом.
+
+1. **Соберите образ с Node и Chromium.** Строка `CRITICAL_CSS=1` пишется в `.env` рядом с `compose.yaml` (это `.env` сайта) или задаётся из оболочки. Лучше сделать это до первого `docker compose up`: тогда образ не пересобирается.
+   ```bash
+   echo 'CRITICAL_CSS=1' >> .env
+   docker compose up -d --build
+   ```
+   В образ попадают Node 22 с npm (из официального образа `node:22-bookworm-slim`), пакет Debian `chromium` и шрифты с кириллицей и латиницей. Переменные `PUPPETEER_SKIP_DOWNLOAD=1` и `PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium` заданы в образе: puppeteer не качает свой браузер и берёт системный. Опцию `itk_cms.critical_css.chrome` задавать не нужно.
+2. **Поставьте crittr в проект** внутри контейнера, чтобы Node был той версии, что и у воркера:
+   ```bash
+   docker compose exec php npm install 'crittr@^5'
+   ```
+   Каталог `node_modules` окажется на хосте, добавьте его в `.gitignore`; `package.json` и `package-lock.json` закоммитьте. Для сборки `php_prod` crittr должен быть в `dependencies`, а не в `devDependencies`: `npm install` пишет именно туда.
+3. **Включите опцию** в `config/packages/itk_cms.yaml` и замените `<link>` на `{{ itk_stylesheets() }}` (шаги 2 и 3 раздела «Критический CSS»). Минимальный макет:
+   ```twig
+   <!doctype html>
+   <html lang="ru">
+   <head>
+       <meta charset="utf-8">
+       <title>{{ page.title }}</title>
+       {{ itk_stylesheets() }}
+   </head>
+   <body>{% block body %}{% endblock %}</body>
+   </html>
+   ```
+   Затем сбросьте кэш и перезапустите воркер: новый файл конфигурации сначала не виден ни `php`, ни воркеру, а воркер без перезапуска считает страницы по старой конфигурации и записывает их как `failed`.
+   ```bash
+   docker compose exec php bin/console cache:clear
+   docker compose restart worker
+   ```
+4. **Проверьте на одной странице.** Команда печатает причину каждой неудачи:
+   ```bash
+   docker compose exec php bin/console itk:critical-css:generate --page=<id> --now
+   docker compose exec php bin/console itk:critical-css:generate     # поставить в очередь страницы без готового CSS (--all: все)
+   ```
+   Если у всех окон получились одинаковые правила, посетитель получит один `<style>` без `media`.
+
+### Сборка для продакшена
+
+Стадия `php_prod` копирует сайт в образ, ставит зависимости без dev-пакетов (`composer install --no-dev`, а при `CRITICAL_CSS=1` ещё `npm ci --omit=dev`) и включает `php.ini-production`:
+
+```bash
+docker build -f docker/Dockerfile --target php_prod --build-arg CRITICAL_CSS=1 -t mysite:1.0 .
+```
+
+- **В образ не попадают** `.env.local`, `.env.*.local`, `.env.local.php` и ключ расшифровки секретов `config/secrets/*/*.decrypt.private.php`. `.env` из git копируется: держите в нём только значения по умолчанию. `APP_SECRET`, `DATABASE_URL` и `MAILER_DSN` передавайте окружением контейнера при запуске.
+- **Файлов админки (`public/bundles`) в образе нет.** Их кладёт entrypoint при старте `php`. Чтобы nginx их отдавал, дайте ему общий том или выполните `assets:install public` в своей стадии сборки.
+- **Миграции и `itk:install` идут при каждом старте `php`.** При нескольких репликах задайте `AUTO_MIGRATE=0` и запускайте миграции отдельной задачей.
+- **Пакет должен ставиться без монтирования:** `path`-репозиторий на `/itk` в образе не работает, нужны Packagist или `vcs`-репозиторий.
+- **Воркер** запускается из того же образа с `SKIP_ENTRYPOINT=1` и командой `php bin/console messenger:consume async critical_css --time-limit=3600 --memory-limit=256M`.
+- **`compose.yaml` из комплекта рассчитан на разработку:** код монтируется с хоста, образ `php_dev`. Оркестрацию продакшена, в том числе образ nginx с каталогом `public/`, сайт описывает сам.
+
+### Обновление
+
+Комплект копируется в сайт и дальше принадлежит сайту, поэтому обновление пакета его не меняет. После `composer update itk/cms` сравните каталоги и перенесите изменения Dockerfile, команды воркера и сборочных аргументов.
+
+```bash
+docker compose exec php composer update itk/cms
+# пакет на Packagist:
+diff -r -x compose.yaml vendor/itk/cms/docker docker && diff vendor/itk/cms/docker/compose.yaml compose.yaml
+# path-репозиторий: ссылка vendor/itk/cms на хосте висит в пустоте, сравнивайте с клоном
+diff -r -x compose.yaml /path/to/the/repository/packages/cms/docker docker
+docker compose up -d --build
+```
+
+Что менялось в комплекте, записано в [UPGRADE.md](../../UPGRADE.md) и [CHANGELOG.md](../../CHANGELOG.md).
+
+### Проверка
+
+```bash
+docker compose exec php bin/console itk:doctor
+```
+
+Команда проверяет окружение (расширения PHP), настройки, миграции, файрволы, очередь, сборку админки и схему сайта. Группа «Состояние сайта» включает проверку «Критический CSS» (Node, `crittr`, свежесть строк). В контейнере `php` она видит тот же Node, что и воркер. С ключом `--ci` команда завершается кодом 1, если проверка не прошла, и годится для скрипта выкладки.
+
+## ИИ-агент в проекте сайта
+
+Правила для ИИ-агента, который делает сайт на ITK CMS, лежат в пакете: [SITE-AGENTS.md](SITE-AGENTS.md) (у сайта это `vendor/itk/cms/SITE-AGENTS.md`). Главное в них такое. Возможность, которой не хватает ядру и которая пригодится другим сайтам, агент предлагает pull request'ом в [it-koval/cms](https://github.com/it-koval/cms), а не копирует и не дорабатывает ядро внутри сайта. Мейнтейнеры принимают PR, и доработку получают все сайты на CMS.
+
+Файл не подхватывается сам: агенты читают инструкции из корня проекта. Подключите его в файле инструкций сайта, и правила будут обновляться вместе с пакетом.
+
+- **Claude Code**, строка в `CLAUDE.md` сайта:
+  ```markdown
+  @vendor/itk/cms/SITE-AGENTS.md
+  ```
+- **Codex, Cursor и другие агенты, которые читают `AGENTS.md`**, строка в `AGENTS.md` сайта:
+  ```markdown
+  Перед работой прочитай vendor/itk/cms/SITE-AGENTS.md: это правила ядра ITK CMS, они обязательны.
+  ```
+
+Пока пакет подключён `path`-репозиторием, ссылка `vendor/itk/cms` на хосте может вести в путь контейнера (`/itk/packages/cms`, раздел «Docker»). Тогда укажите путь к клону репозитория, например `@../itkcms/packages/cms/SITE-AGENTS.md`.
 
 ## Схема сайта (публичный контракт)
 
@@ -406,7 +597,9 @@ return static function (SchemaBuilder $s): void {
 3. В макете замените `<link rel="stylesheet" href="/css/site.css">` на `{{ itk_stylesheets() }}`.
 4. Примените миграцию (`bin/console doctrine:migrations:migrate`) и проверьте установку на одной странице: `bin/console itk:critical-css:generate --page=<id> --now`. Команда печатает причину каждой неудачи.
 5. Запустите воркер для транспорта `critical_css`: `bin/console messenger:consume async critical_css` (один воркер, письма первыми) или отдельный `messenger:consume critical_css`.
-6. Поставьте в очередь все опубликованные страницы: `bin/console itk:critical-css:generate`.
+6. Поставьте в очередь страницы без готового CSS: `bin/console itk:critical-css:generate` (`--all`: все опубликованные).
+
+**В Docker.** Образ из комплекта собирается с Node 22 и Chromium аргументом `CRITICAL_CSS=1` (раздел «Docker», «Критический CSS в Docker»). Браузер, который puppeteer скачивает при `npm install`, в контейнере не годится. Он ложится в домашний каталог того контейнера, где выполнили `npm install`: воркер его не видит, а после пересоздания контейнера его нет. При установке на хосте он ещё и собран под систему хоста (сборка под macOS в Linux-контейнере не запустится). Поэтому в образе заданы `PUPPETEER_SKIP_DOWNLOAD=1` и `PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium`, и опцию `chrome` задавать не нужно.
 
 **Что получает посетитель.** На живой странице, чей критический CSS готов и актуален, `itk_stylesheets()` печатает по одному `<style media="…">` на диапазон экранов, ссылку на полный файл с `media="print" onload="this.media='all'"` и `<noscript>` с обычной ссылкой:
 
@@ -1249,6 +1442,7 @@ composer test          # база itk_test: drop, create, migrate, itk:install, 
 - **Symfony 8.** Ограничения `symfony/*` — `^7.4 || ^8.0`, `doctrine/doctrine-bundle` — `^2.13 || ^3.0`, `doctrine/doctrine-migrations-bundle` — `^3.3 || ^4.0`. Подписи `PermissionVoter::voteOnAttribute()` и `UserChecker::checkPostAuth()` имеют необязательные параметры (`?Vote $vote = null`, `?TokenInterface $token = null`), которые 8-я версия делает частью интерфейса, поэтому классы годятся для обеих. Проверено на Symfony 8.1 в отдельной копии: `composer update` ставит Symfony 8.1, DoctrineBundle 3 и MigrationsBundle 4, все тесты проходят (`TestKernel` сам пропускает опции DoctrineBundle 2, которых нет в 3).
 - **Статический анализ.** `composer stan` — PHPStan, уровень 5 (`phpstan.dist.neon`, `treatPhpDocTypesAsCertain: false`: типы в докблоках здесь подсказки, а не факты, потому что данные приходят из JSON-колонок). То, что PHPStan находит по делу, исправлено; два ложных срабатывания лежат в `phpstan-baseline.neon` с объяснением в `phpstan.dist.neon`.
 - Порядок тестов не важен: `composer test:run -- --order-by=random` (после `composer test:prepare`). Telegram и `TELEGRAM_DSN` тестам не нужны.
+- **Комплект Docker.** `tests/docker/smoke.sh` проверяет образ из `docker/` (расширения PHP из `composer.json`, Node 22, `crittr`, Chromium и `node/critical-css.mjs` на одной странице в двух окнах). Его запускает job `docker` в CI; локально: `docker build -f docker/Dockerfile --target php_dev --build-arg CRITICAL_CSS=1 -t itk-docker:dev .`, затем `docker run --rm -v "$PWD/../..:/repo:ro" itk-docker:dev bash /repo/packages/cms/tests/docker/smoke.sh`.
 
 ## Что в бандле
 

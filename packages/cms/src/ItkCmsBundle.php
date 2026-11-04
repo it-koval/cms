@@ -220,7 +220,7 @@ final class ItkCmsBundle extends AbstractBundle
                         ->arrayNode('keep_selectors')->info('Selectors crittr keeps in the critical CSS whatever the first screen shows (passed as is)')->scalarPrototype()->end()->defaultValue([])->end()
                         ->arrayNode('remove_selectors')->info('Selectors crittr leaves out of the critical CSS (passed as is)')->scalarPrototype()->end()->defaultValue([])->end()
                         ->scalarNode('node')->info('The Node 22+ binary the worker runs')->defaultValue('node')->end()
-                        ->scalarNode('chrome')->info('Path of Chrome or Chromium; null = the one puppeteer downloaded for the user who ran npm install')->defaultNull()->end()
+                        ->scalarNode('chrome')->info('Path of Chrome or Chromium; null = PUPPETEER_EXECUTABLE_PATH if set, else the one puppeteer downloaded for the user who ran npm install')->defaultNull()->end()
                         ->integerNode('timeout')->info('Seconds for one page in one viewport; the Node process gets this times pages times viewports')->defaultValue(60)->min(10)->end()
                         ->integerNode('max_kb')->info('Critical CSS of one viewport above this many kilobytes is not inlined: the page is served with the plain link')->defaultValue(75)->min(1)->end()
                     ->end()

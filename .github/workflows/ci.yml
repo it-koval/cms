@@ -129,3 +129,46 @@ jobs:
         run: |
           git add --intent-to-add packages/cms/public/admin
           git diff --exit-code packages/cms/public/admin
+
+  docker:
+    name: Docker kit
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      # the context is packages/cms: the COPY paths of docker/Dockerfile start with docker/, the same as in a site root
+      - name: Build php_dev with Node and Chromium
+        uses: docker/build-push-action@v6
+        with:
+          context: packages/cms
+          file: packages/cms/docker/Dockerfile
+          target: php_dev
+          build-args: |
+            CRITICAL_CSS=1
+          load: true
+          tags: itk-docker:dev
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Smoke test inside the image
+        run: docker run --rm -v "$PWD:/repo:ro" itk-docker:dev bash /repo/packages/cms/tests/docker/smoke.sh
+
+      - name: Build php_dev without Node (the default for sites)
+        uses: docker/build-push-action@v6
+        with:
+          context: packages/cms
+          file: packages/cms/docker/Dockerfile
+          target: php_dev
+          load: true
+          tags: itk-docker:plain
+          cache-from: type=gha
+
+      - name: The default image has no Node, php-fpm and nginx configs are valid
+        run: |
+          docker run --rm itk-docker:plain sh -c '! command -v node'
+          docker run --rm -e SKIP_ENTRYPOINT=1 itk-docker:dev php-fpm -t
+          docker run --rm --add-host php:127.0.0.1 -v "$PWD/packages/cms/docker/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro" nginx:1.27-alpine nginx -t
