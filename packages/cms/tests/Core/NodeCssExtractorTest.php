@@ -82,6 +82,27 @@ final class NodeCssExtractorTest extends KernelTestCase
     }
 
     #[Test]
+    public function theJobAlwaysKeepsRootAndTheConfiguredSelectorsOnce(): void
+    {
+        $c = self::getContainer();
+        $run = function (array $keep) use ($c): array {
+            $_ENV['ITK_FAKE_NODE'] = 'ok';
+            $sheets = new Stylesheets(true, [], [], $keep, [], 100, $c->getParameter('kernel.project_dir'));
+            $extractor = new NodeCssExtractor(\dirname(__DIR__) . '/App/bin/fake-node.sh', '/opt/chrome', 10, $c->getParameter('kernel.project_dir'), $sheets, $c->get('logger'));
+            $c->get('logger')->records = [];
+            $this->measure($extractor, 'a');
+            $logger = $c->get('logger');
+            \assert($logger instanceof RecordingLogger);
+            $stderr = \implode("\n", \array_map(static fn (array $r): string => (string) ($r['context']['stderr'] ?? ''), \array_filter($logger->records, static fn (array $r): bool => 'debug' === $r['level'])));
+
+            return \json_decode((string) \strtok($stderr, "\n"), true)['keepSelectors'];
+        };
+
+        self::assertSame([':root'], $run([]));
+        self::assertSame(['.hero', ':root'], $run(['.hero', ':root']));
+    }
+
+    #[Test]
     public function aScriptThatCannotRunHereNamesTheReasonForEveryPage(): void
     {
         $results = $this->measure($this->extractor('unavailable'), 'a');

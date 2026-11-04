@@ -21,7 +21,7 @@ use Symfony\Component\DependencyInjection\Attribute\Autowire;
 final class Stylesheets
 {
     /** Bump when SourceCss or node/critical-css.mjs changes what comes out of the same input: every page becomes stale once. */
-    public const GENERATOR_VERSION = 1;
+    public const GENERATOR_VERSION = 2;
 
     /**
      * @param list<string> $hrefs public paths, validated by the config node (start with /, no query, no ..)

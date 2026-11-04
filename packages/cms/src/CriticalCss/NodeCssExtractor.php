@@ -72,7 +72,8 @@ final class NodeCssExtractor implements CssExtractor
             'timeoutMs' => $this->timeoutPerRun * 1000,
             'css' => $sourceCss,
             'viewports' => \array_map(static fn (Viewport $v): array => $v->toArray(), $viewports),
-            'keepSelectors' => $this->stylesheets->keepSelectors(),
+            // crittr empties a bare `:root` before querying it, so only keepSelectors can carry the custom properties
+            'keepSelectors' => \array_values(\array_unique([...$this->stylesheets->keepSelectors(), ':root'])),
             'removeSelectors' => $this->stylesheets->removeSelectors(),
             'pages' => \array_map(static fn (SourcePage $p): array => ['id' => $p->id, 'path' => $p->path, 'html' => $p->html], $pages),
         ], \JSON_UNESCAPED_UNICODE | \JSON_UNESCAPED_SLASHES | \JSON_INVALID_UTF8_SUBSTITUTE);

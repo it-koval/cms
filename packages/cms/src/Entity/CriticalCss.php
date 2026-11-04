@@ -26,7 +26,7 @@ class CriticalCss
 
     #[ORM\Id]
     #[ORM\OneToOne(targetEntity: PageTranslation::class)]
-    #[ORM\JoinColumn(name: 'translation_id', referencedColumnName: 'id', nullable: false, onDelete: 'CASCADE')]
+    #[ORM\JoinColumn(name: 'translation_id', referencedColumnName: 'id', onDelete: 'CASCADE')]
     public PageTranslation $translation;
 
     /** sha1 of what the page looked like to the request side when the attempt started (CriticalCss\Model\Basis) */
