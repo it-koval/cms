@@ -10,6 +10,7 @@ use Itk\Cms\Admin\Theme\Color;
 use Itk\Cms\Doctrine\JsonGet;
 use Itk\Cms\Doctrine\JsonNumber;
 use Itk\Cms\Doctrine\JsonText;
+use Itk\Cms\Doctrine\VectorType;
 use Itk\Cms\I18n\AdminLocale;
 use Itk\Cms\I18n\I18n;
 use Itk\Cms\Mail\PublicUrl;
@@ -402,6 +403,11 @@ final class ItkCmsBundle extends AbstractBundle
 
         if ($builder->hasExtension('doctrine')) {
             $builder->prependExtensionConfig('doctrine', [
+                // the pgvector column of itk_kb_chunk, knowledge base on or off: without the mapping type the schema manager cannot read the table at all
+                'dbal' => [
+                    'types' => [VectorType::NAME => VectorType::class],
+                    'mapping_types' => [VectorType::NAME => VectorType::NAME],
+                ],
                 'orm' => [
                     // JSON_TEXT / JSON_GET / JSON_NUMBER: filter and sort the list of a collection by a field inside its jsonb
                     'dql' => [
