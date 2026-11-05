@@ -224,7 +224,7 @@ final class Doctor
             if (!$this->db->createSchemaManager()->tablesExist(['messenger_messages'])) {
                 return null;
             }
-            $rows = $this->db->fetchAllAssociative("SELECT queue_name, COUNT(*) AS n, MIN(available_at) AS oldest FROM messenger_messages WHERE delivered_at IS NULL AND available_at <= UTC_TIMESTAMP() AND queue_name <> 'failed' GROUP BY queue_name");
+            $rows = $this->db->fetchAllAssociative("SELECT queue_name, COUNT(*) AS n, MIN(available_at) AS oldest FROM messenger_messages WHERE delivered_at IS NULL AND available_at <= (now() AT TIME ZONE 'UTC') AND queue_name <> 'failed' GROUP BY queue_name");
         } catch (\Throwable) {
             return null;
         }

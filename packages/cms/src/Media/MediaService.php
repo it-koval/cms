@@ -196,14 +196,14 @@ final class MediaService
         $like = '%' . \addcslashes($m->path, '%_\\') . '%';
         $out = [];
         $rows = $this->db->fetchAllAssociative(
-            "SELECT t.page_id, t.locale, JSON_UNQUOTE(JSON_EXTRACT(t.draft, '\$.title')) AS title FROM itk_page_translation t
-             WHERE CAST(t.draft AS CHAR) LIKE :p OR CAST(t.published AS CHAR) LIKE :p",
+            "SELECT t.page_id, t.locale, t.draft ->> 'title' AS title FROM itk_page_translation t
+             WHERE t.draft::text LIKE :p OR t.published::text LIKE :p",
             ['p' => $like],
         );
         foreach ($rows as $r) {
             $out[] = ['label' => I18n::t('http.media_used_page', ['title' => $r['title'] ?? '']), 'to' => '/pages/' . $r['page_id']];
         }
-        $rows = $this->db->fetchAllAssociative('SELECT id, collection_key, CAST(translations AS CHAR) AS tr FROM itk_collection_item WHERE CAST(translations AS CHAR) LIKE :p', ['p' => $like]);
+        $rows = $this->db->fetchAllAssociative('SELECT id, collection_key, translations::text AS tr FROM itk_collection_item WHERE translations::text LIKE :p', ['p' => $like]);
         foreach ($rows as $r) {
             $c = $this->schema->collection((string) $r['collection_key']);
             $tr = \json_decode((string) $r['tr'], true) ?: [];
@@ -211,7 +211,7 @@ final class MediaService
             $name = null !== $c ? (string) ($first['draft'][$c->titleFieldKey()] ?? '') : '';
             $out[] = ['label' => ($c?->title() ?? $r['collection_key']) . ('' !== $name ? ' · ' . $name : ''), 'to' => '/collections/' . $r['collection_key'] . '/' . $r['id']];
         }
-        $n = (int) $this->db->fetchOne('SELECT COUNT(*) FROM itk_setting WHERE CAST(setting_value AS CHAR) LIKE :p', ['p' => $like]);
+        $n = (int) $this->db->fetchOne('SELECT COUNT(*) FROM itk_setting WHERE setting_value::text LIKE :p', ['p' => $like]);
         if ($n > 0) {
             $out[] = ['label' => I18n::t('http.media_used_settings'), 'to' => '/settings'];
         }

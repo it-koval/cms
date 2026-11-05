@@ -52,7 +52,7 @@ class PageTranslationRepository extends ServiceEntityRepository
     public function findLiveAddresses(string $locale): array
     {
         $rows = $this->createQueryBuilder('t')->join('t.page', 'p')
-            ->select('IDENTITY(t.page) AS id', 't.publishedUrl AS key', "JSON_UNQUOTE(JSON_EXTRACT(t.published, '$.title')) AS title", "JSON_UNQUOTE(JSON_EXTRACT(t.published, '$.url')) AS url")
+            ->select('IDENTITY(t.page) AS id', 't.publishedUrl AS key', "JSON_TEXT(t.published, '{\"title\"}') AS title", "JSON_TEXT(t.published, '{\"url\"}') AS url")
             ->where('t.locale = :locale AND t.status = :status AND t.published IS NOT NULL')->setParameter('locale', $locale)->setParameter('status', PageTranslation::PUBLISHED)
             ->orderBy('p.position', 'ASC')->getQuery()->getArrayResult();
 

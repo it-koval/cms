@@ -52,7 +52,7 @@ trait McpSupport
         $em = $c->get(EntityManagerInterface::class);
         $em->clear();
         $db = $c->get(Connection::class);
-        $ids = $db->fetchFirstColumn("SELECT page_id FROM itk_page_translation WHERE JSON_UNQUOTE(JSON_EXTRACT(draft, '\$.title')) LIKE 'TestMcp%'");
+        $ids = $db->fetchFirstColumn("SELECT page_id FROM itk_page_translation WHERE draft ->> 'title' LIKE 'TestMcp%'");
         $ids = \array_values(\array_unique([...$ids, ...$this->mcpPageIds]));
         // a page with children cannot be removed: what is refused waits for the next round, after its children are gone (the order of the list is not the order of the tree)
         for ($pending = $ids; [] !== $pending;) {

@@ -7,9 +7,9 @@ namespace Itk\Cms;
 use Doctrine\Migrations\Version\Comparator;
 use Itk\Cms\Admin\Theme\AdminTheme;
 use Itk\Cms\Admin\Theme\Color;
-use Itk\Cms\Doctrine\JsonExtract;
+use Itk\Cms\Doctrine\JsonGet;
 use Itk\Cms\Doctrine\JsonNumber;
-use Itk\Cms\Doctrine\JsonUnquote;
+use Itk\Cms\Doctrine\JsonText;
 use Itk\Cms\I18n\AdminLocale;
 use Itk\Cms\I18n\I18n;
 use Itk\Cms\Mail\PublicUrl;
@@ -403,9 +403,9 @@ final class ItkCmsBundle extends AbstractBundle
         if ($builder->hasExtension('doctrine')) {
             $builder->prependExtensionConfig('doctrine', [
                 'orm' => [
-                    // JSON_EXTRACT / JSON_UNQUOTE / JSON_NUMBER: filter and sort the list of a collection by a field inside its JSON
+                    // JSON_TEXT / JSON_GET / JSON_NUMBER: filter and sort the list of a collection by a field inside its jsonb
                     'dql' => [
-                        'string_functions' => ['JSON_EXTRACT' => JsonExtract::class, 'JSON_UNQUOTE' => JsonUnquote::class],
+                        'string_functions' => ['JSON_TEXT' => JsonText::class, 'JSON_GET' => JsonGet::class],
                         'numeric_functions' => ['JSON_NUMBER' => JsonNumber::class],
                     ],
                     'mappings' => [

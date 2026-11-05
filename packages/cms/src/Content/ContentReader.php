@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Itk\Cms\Content;
 
 use Doctrine\ORM\QueryBuilder;
+use Itk\Cms\Doctrine\JsonPath;
 use Itk\Cms\Entity\PageTranslation;
 use Itk\Cms\I18n\I18n;
 use Itk\Cms\Repository\CollectionItemRepository;
@@ -112,9 +113,9 @@ final class ContentReader implements ResetInterface
         $locale = $this->language($locale);
 
         $qb = $this->items->createQueryBuilder('i')
-            ->select('i.id AS id', "JSON_EXTRACT(i.translations, '" . $this->path($locale, 'published') . "') AS live")
+            ->select('i.id AS id', "JSON_GET(i.translations, '" . $this->path($locale, 'published') . "') AS live")
             ->where('i.collection = :collection')->setParameter('collection', $c->key())
-            ->andWhere("JSON_UNQUOTE(JSON_EXTRACT(i.translations, '" . $this->path($locale, 'status') . "')) = 'published'");
+            ->andWhere("JSON_TEXT(i.translations, '" . $this->path($locale, 'status') . "') = 'published'");
         $n = 0;
         foreach ((array) ($options['where'] ?? []) as $field => $value) {
             $this->where($qb, $c, $locale, (string) $field, $value, 'w' . $n++);
@@ -162,10 +163,10 @@ final class ContentReader implements ResetInterface
                 'p.template AS template',
                 'p.position AS position',
                 't.publishedAt AS publishedAt',
-                "JSON_UNQUOTE(JSON_EXTRACT(t.published, '$.title')) AS title",
-                "JSON_UNQUOTE(JSON_EXTRACT(t.published, '$.url')) AS url",
-                "JSON_EXTRACT(t.published, '$.seo') AS seo",
-                "JSON_EXTRACT(t.published, '$.fields') AS fields",
+                "JSON_TEXT(t.published, '{\"title\"}') AS title",
+                "JSON_TEXT(t.published, '{\"url\"}') AS url",
+                "JSON_GET(t.published, '{\"seo\"}') AS seo",
+                "JSON_GET(t.published, '{\"fields\"}') AS fields",
             )
             ->where('t.locale = :locale AND t.status = :status AND t.published IS NOT NULL')
             ->setParameter('locale', $locale)->setParameter('status', PageTranslation::PUBLISHED);
@@ -229,8 +230,8 @@ final class ContentReader implements ResetInterface
                     throw new \InvalidArgumentException(I18n::t('content.reader_sort_no_template_field', ['field' => $field]));
                 }
                 $number = [] !== $defs && [] === \array_filter($defs, static fn (mixed $d): bool => 'number' !== $d?->type());
-                $path = '$.fields."' . $field . '"';
-                $out[] = [$number ? "JSON_NUMBER(t.published, '$path')" : "JSON_UNQUOTE(JSON_EXTRACT(t.published, '$path'))", $dir];
+                $path = JsonPath::of('fields', $field);
+                $out[] = [$number ? "JSON_NUMBER(t.published, '$path')" : "JSON_TEXT(t.published, '$path')", $dir];
 
                 continue;
             }
@@ -239,7 +240,7 @@ final class ContentReader implements ResetInterface
                 'createdAt' => 'p.createdAt',
                 'publishedAt' => 't.publishedAt',
                 'url' => 't.publishedUrl',
-                'title' => "JSON_UNQUOTE(JSON_EXTRACT(t.published, '$.title'))",
+                'title' => "JSON_TEXT(t.published, '{\"title\"}')",
                 default => throw new \InvalidArgumentException(I18n::t('content.reader_sort_key_unknown', ['key' => $key])),
             };
             $out[] = [$expr, $dir];
@@ -258,13 +259,13 @@ final class ContentReader implements ResetInterface
             $this->assertKey($key, 'key');
         }
 
-        return '$."' . $locale . '".' . $part . (null === $key ? '' : '."' . $key . '"');
+        return null === $key ? JsonPath::of($locale, $part) : JsonPath::of($locale, $part, $key);
     }
 
     private function where(QueryBuilder $qb, Collection $c, string $locale, string $key, mixed $value, string $p): void
     {
         $field = $c->field($key) ?? throw new \InvalidArgumentException(I18n::t('content.reader_where_no_field', ['collection' => $c->key(), 'field' => $key, 'names' => $this->names($this->fieldKeys($c))]));
-        $text = "JSON_UNQUOTE(JSON_EXTRACT(i.translations, '" . $this->path($locale, 'published', $key) . "'))";
+        $text = "JSON_TEXT(i.translations, '" . $this->path($locale, 'published', $key) . "')";
         $number = "JSON_NUMBER(i.translations, '" . $this->path($locale, 'published', $key) . "')";
         if (null === $value) {
             $qb->andWhere("($text IS NULL OR $text IN ('', 'null'))");
@@ -308,7 +309,7 @@ final class ContentReader implements ResetInterface
             }
             $field = $c->field($key) ?? throw new \InvalidArgumentException(I18n::t('content.reader_sort_no_collection_field', ['collection' => $c->key(), 'field' => $key, 'names' => $this->names($this->fieldKeys($c))]));
             $path = $this->path($locale, 'published', $key);
-            $out[] = ['number' === $field->type() ? "JSON_NUMBER(i.translations, '$path')" : "JSON_UNQUOTE(JSON_EXTRACT(i.translations, '$path'))", $dir];
+            $out[] = ['number' === $field->type() ? "JSON_NUMBER(i.translations, '$path')" : "JSON_TEXT(i.translations, '$path')", $dir];
         }
 
         return $out;

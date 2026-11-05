@@ -106,7 +106,7 @@ final class CriticalCssHealthCheck implements HealthCheckInterface
             if (!$this->db->createSchemaManager()->tablesExist(['messenger_messages'])) {
                 return null;
             }
-            $row = $this->db->fetchAssociative("SELECT COUNT(*) AS n, MIN(available_at) AS oldest FROM messenger_messages WHERE queue_name = 'critical_css' AND delivered_at IS NULL AND available_at <= UTC_TIMESTAMP()");
+            $row = $this->db->fetchAssociative("SELECT COUNT(*) AS n, MIN(available_at) AS oldest FROM messenger_messages WHERE queue_name = 'critical_css' AND delivered_at IS NULL AND available_at <= (now() AT TIME ZONE 'UTC')");
         } catch (\Throwable) {
             return null;
         }

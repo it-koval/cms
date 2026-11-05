@@ -10,11 +10,8 @@ use Doctrine\ORM\Query\Parser;
 use Doctrine\ORM\Query\SqlWalker;
 use Doctrine\ORM\Query\TokenType;
 
-/**
- * DQL: JSON_EXTRACT(i.translations, '$.ru.draft.title') — MySQL JSON_EXTRACT (registered by the bundle; the path is usually a parameter).
- * Wrap in JSON_UNQUOTE() to compare as text.
- */
-final class JsonExtract extends FunctionNode
+/** DQL: JSON_GET(t.published, '{"seo"}') — the value at a JsonPath as JSON (jsonb #>; registered by the bundle). JSON_TEXT gives the same value as text. */
+final class JsonGet extends FunctionNode
 {
     private Node $json;
     private Node $path;
@@ -31,6 +28,6 @@ final class JsonExtract extends FunctionNode
 
     public function getSql(SqlWalker $sqlWalker): string
     {
-        return 'JSON_EXTRACT(' . $this->json->dispatch($sqlWalker) . ', ' . $this->path->dispatch($sqlWalker) . ')';
+        return '(' . $this->json->dispatch($sqlWalker) . ' #> CAST(' . $this->path->dispatch($sqlWalker) . ' AS text[]))';
     }
 }

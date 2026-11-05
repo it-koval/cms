@@ -193,11 +193,11 @@ final class DoctorTest extends KernelTestCase
     {
         self::bootKernel();
         $db = self::getContainer()->get(Connection::class);
-        $db->executeStatement("INSERT INTO messenger_messages (body, headers, queue_name, created_at, available_at) VALUES ('{}', '{}', 'test_doctor', UTC_TIMESTAMP() - INTERVAL 1 HOUR, UTC_TIMESTAMP() + INTERVAL 1 HOUR)");
+        $db->executeStatement("INSERT INTO messenger_messages (body, headers, queue_name, created_at, available_at) VALUES ('{}', '{}', 'test_doctor', (now() AT TIME ZONE 'UTC') - INTERVAL '1 hour', (now() AT TIME ZONE 'UTC') + INTERVAL '1 hour')");
         try {
             self::assertStringNotContainsString('Воркер не запущен', $this->line($this->lines(), 'Очередь и воркер')['message'], 'it waits for its time, not for a worker');
 
-            $db->executeStatement("UPDATE messenger_messages SET available_at = UTC_TIMESTAMP() - INTERVAL 30 MINUTE WHERE queue_name = 'test_doctor'");
+            $db->executeStatement("UPDATE messenger_messages SET available_at = (now() AT TIME ZONE 'UTC') - INTERVAL '30 minutes' WHERE queue_name = 'test_doctor'");
             $line = $this->line($this->lines(), 'Очередь и воркер');
             self::assertSame(HealthResult::WARN, $line['status']);
             self::assertStringContainsString('Воркер не запущен', $line['message'], 'due half an hour ago and still here: nobody takes it');

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Itk\Cms\Tests\Core;
 
+use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\EntityManagerInterface;
 use Itk\Cms\Content\CrawlerFiles;
 use Itk\Cms\Content\PageService;
@@ -70,7 +71,7 @@ final class CrawlerFilesTest extends WebTestCase
             $home = $this->home;
             $id = (string) $home['page_id'];
             unset($home['page_id']);
-            $em->getConnection()->update('itk_page_translation', $home, ['page_id' => $id, 'locale' => $home['locale']]);
+            $em->getConnection()->update('itk_page_translation', $home, ['page_id' => $id, 'locale' => $home['locale']], ['migrated' => Types::BOOLEAN]);
             $em->createQuery('DELETE FROM Itk\Cms\Entity\Revision r WHERE r.resourceId = :id AND r.createdAt >= :t')->setParameter('id', $id)->setParameter('t', $this->started)->execute();
         }
         foreach (\array_reverse($this->ids) as $id) {
@@ -146,7 +147,7 @@ final class CrawlerFilesTest extends WebTestCase
         $pages = self::getContainer()->get(PageService::class);
         $connection = self::getContainer()->get(EntityManagerInterface::class)->getConnection();
         $row = $connection->fetchAssociative(
-            "SELECT * FROM itk_page_translation WHERE locale = ? AND JSON_UNQUOTE(JSON_EXTRACT(draft, '$.url')) = '/'",
+            "SELECT * FROM itk_page_translation WHERE locale = ? AND draft ->> 'url' = '/'",
             [self::getContainer()->getParameter('itk_cms.main_locale')],
         );
         self::assertIsArray($row, 'the installation has a home page');

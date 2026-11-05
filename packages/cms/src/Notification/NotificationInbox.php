@@ -165,7 +165,7 @@ final class NotificationInbox
             foreach ($chunk as $id) {
                 \array_push($params, $id, $user->id, $now);
             }
-            $conn->executeStatement('INSERT IGNORE INTO itk_notification_read (notification_id, user_id, read_at) VALUES ' . $values, $params);
+            $conn->executeStatement('INSERT INTO itk_notification_read (notification_id, user_id, read_at) VALUES ' . $values . ' ON CONFLICT DO NOTHING', $params);
         }
     }
 }

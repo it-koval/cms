@@ -666,7 +666,7 @@ final class McpEndpointTest extends WebTestCase
         $made = $this->mcpKey($this->mcpUser());
         $r = $this->rpc($made['plain'], ['jsonrpc' => '2.0', 'id' => 1, 'method' => 'tools/call', 'params' => ['name' => 'page_create', 'arguments' => ['title' => 'TestMcp x', 'url' => '/test-mcp-x']]]);
         self::assertSame(-32602, $r['error']['code']);
-        $count = (int) self::getContainer()->get('doctrine.dbal.default_connection')->fetchOne("SELECT COUNT(*) FROM itk_page_translation WHERE JSON_UNQUOTE(JSON_EXTRACT(draft, '\$.title')) LIKE 'TestMcp%'");
+        $count = (int) self::getContainer()->get('doctrine.dbal.default_connection')->fetchOne("SELECT COUNT(*) FROM itk_page_translation WHERE draft ->> 'title' LIKE 'TestMcp%'");
         self::assertSame(0, $count);
     }
 

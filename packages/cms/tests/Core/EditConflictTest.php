@@ -183,7 +183,7 @@ final class EditConflictTest extends WebTestCase
         $pages = self::getContainer()->get(PageService::class);
         $stale = $pages->get($page['id'])['version']; // the page is now in the identity map of this request
         // another process writes the draft: this request still holds the old copy
-        self::getContainer()->get(Connection::class)->executeStatement("UPDATE itk_page_translation SET draft = JSON_SET(draft, '\$.title', 'TestMcp Из другого процесса') WHERE page_id = ?", [$page['id']]);
+        self::getContainer()->get(Connection::class)->executeStatement("UPDATE itk_page_translation SET draft = draft || '{\"title\": \"TestMcp Из другого процесса\"}' WHERE page_id = ?", [$page['id']]);
 
         try {
             $pages->saveDraft($page['id'], null, ['title' => 'TestMcp Устаревшая копия'], $stale);
@@ -192,7 +192,7 @@ final class EditConflictTest extends WebTestCase
             self::assertSame(409, $e->status());
             self::assertSame('conflict', $e->details()['code']);
         }
-        self::assertSame('TestMcp Из другого процесса', self::getContainer()->get(Connection::class)->fetchOne("SELECT JSON_UNQUOTE(JSON_EXTRACT(draft, '\$.title')) FROM itk_page_translation WHERE page_id = ?", [$page['id']]));
+        self::assertSame('TestMcp Из другого процесса', self::getContainer()->get(Connection::class)->fetchOne("SELECT draft ->> 'title' FROM itk_page_translation WHERE page_id = ?", [$page['id']]));
     }
 
     #[Test]
@@ -272,7 +272,7 @@ final class EditConflictTest extends WebTestCase
         $item = $records->create('test_trips', ['title' => 'TestMcp Поездка', 'seats' => 3, 'state' => 'open']);
         $stale = $records->get('test_trips', $item['id'])['item']['version']; // the record is now in the identity map of this request
         // another process writes the draft: this request still holds the old copy
-        self::getContainer()->get(Connection::class)->executeStatement("UPDATE itk_collection_item SET translations = JSON_SET(translations, '\$.ru.draft.seats', 99) WHERE id = ?", [$item['id']]);
+        self::getContainer()->get(Connection::class)->executeStatement("UPDATE itk_collection_item SET translations = jsonb_set(translations, '{ru,draft,seats}', '99') WHERE id = ?", [$item['id']]);
 
         try {
             $records->update('test_trips', $item['id'], ['seats' => 5], null, baseVersion: $stale);
@@ -281,7 +281,7 @@ final class EditConflictTest extends WebTestCase
             self::assertSame(409, $e->status());
             self::assertSame('conflict', $e->details()['code']);
         }
-        self::assertSame('99', self::getContainer()->get(Connection::class)->fetchOne("SELECT JSON_EXTRACT(translations, '\$.ru.draft.seats') FROM itk_collection_item WHERE id = ?", [$item['id']]));
+        self::assertSame('99', self::getContainer()->get(Connection::class)->fetchOne("SELECT translations #> '{ru,draft,seats}' FROM itk_collection_item WHERE id = ?", [$item['id']]));
     }
 
     #[Test]

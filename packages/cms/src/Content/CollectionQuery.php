@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Itk\Cms\Content;
 
 use Doctrine\ORM\QueryBuilder;
+use Itk\Cms\Doctrine\JsonPath;
 use Itk\Cms\Entity\CollectionItem;
 use Itk\Cms\Field\FieldInterface;
 use Itk\Cms\Field\FilterKind;
@@ -17,7 +18,7 @@ use Symfony\Component\DependencyInjection\Attribute\Autowire;
 
 /**
  * The list of a collection with search, filters, sorting and pages — done by the database: the fields live inside the JSON column
- * `translations`, and JSON_UNQUOTE(JSON_EXTRACT(i.translations, '$."ru".draft."title"')) (DQL functions of the bundle) reaches them.
+ * `translations`, and JSON_TEXT(i.translations, '{"ru","draft","title"}') (DQL functions of the bundle) reaches them.
  *
  *   run($collection, ['q' => 'моск', 'filter' => ['status' => 'published', 'date' => ['from' => '2026-11-01']], 'sort' => '-date', 'page' => 2, 'perPage' => 50], 'ru')
  *   → { items, total, page, perPage, facets, metrics }
@@ -225,7 +226,7 @@ final class CollectionQuery
     /* ---------- facets and metrics ---------- */
 
     /**
-     * How many records have each value of the select, multi and toggle filters (whole collection).
+     * How many records have each value of the select, multi and toggle filters (whole collection), in the order the values first appear in the list.
      *
      * @param array<string, FilterKind> $kinds
      *
@@ -240,9 +241,9 @@ final class CollectionQuery
             }
             $expr = $this->text($locale, $key);
             $rows = $this->items->createQueryBuilder('i')
-                ->select("$expr AS v, COUNT(i.id) AS n")
+                ->select("$expr AS v, COUNT(i.id) AS n, MIN(i.position) AS HIDDEN first")
                 ->where('i.collection = :collection')->setParameter('collection', $c->key())
-                ->groupBy('v')
+                ->groupBy('v')->orderBy('first', 'ASC')
                 ->getQuery()->getArrayResult();
             foreach ($rows as $row) {
                 if (null === $row['v']) {
@@ -297,10 +298,10 @@ final class CollectionQuery
 
     /* ---------- JSON expressions ---------- */
 
-    /** JSON_UNQUOTE(JSON_EXTRACT(…)) of a field of the draft (`status` and `updatedAt` are beside the draft). */
+    /** JSON_TEXT(…) of a field of the draft (`status` and `updatedAt` are beside the draft). */
     private function text(string $locale, string $key): string
     {
-        return "JSON_UNQUOTE(JSON_EXTRACT(i.translations, '" . $this->path($locale, $key) . "'))";
+        return "JSON_TEXT(i.translations, '" . $this->path($locale, $key) . "')";
     }
 
     private function numExpr(string $locale, string $key): string
@@ -315,7 +316,7 @@ final class CollectionQuery
             throw ContentException::invalid(I18n::t('content.query_bad_field_or_language'));
         }
 
-        return \in_array($key, ['status', 'updatedAt'], true) ? "$.\"$locale\".\"$key\"" : "$.\"$locale\".draft.\"$key\"";
+        return \in_array($key, ['status', 'updatedAt'], true) ? JsonPath::of($locale, $key) : JsonPath::of($locale, 'draft', $key);
     }
 
     private function like(string $value): string
