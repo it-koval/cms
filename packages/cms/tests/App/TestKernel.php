@@ -9,6 +9,7 @@ use Doctrine\Bundle\DoctrineBundle\DoctrineBundle;
 use Doctrine\Bundle\MigrationsBundle\DoctrineMigrationsBundle;
 use Itk\Cms\CriticalCss\CssExtractor;
 use Itk\Cms\ItkCmsBundle;
+use Itk\Cms\KnowledgeBase\Embedding\Embedder;
 use Symfony\Bundle\FrameworkBundle\FrameworkBundle;
 use Symfony\Bundle\FrameworkBundle\Kernel\MicroKernelTrait;
 use Symfony\Bundle\SecurityBundle\SecurityBundle;
@@ -185,6 +186,8 @@ final class TestKernel extends BaseKernel
 
         $services->set(FakeCssExtractor::class)->public();
         $services->alias(CssExtractor::class, FakeCssExtractor::class);
+        $services->set(FakeEmbedder::class)->public();
+        $services->alias(Embedder::class, FakeEmbedder::class);
     }
 
     protected function configureRoutes(RoutingConfigurator $routes): void

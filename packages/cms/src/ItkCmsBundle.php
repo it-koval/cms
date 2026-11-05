@@ -226,6 +226,22 @@ final class ItkCmsBundle extends AbstractBundle
                         ->integerNode('max_kb')->info('Critical CSS of one viewport above this many kilobytes is not inlined: the page is served with the plain link')->defaultValue(75)->min(1)->end()
                     ->end()
                 ->end()
+                ->arrayNode('knowledge_base')
+                    ->info('A pgvector index of the live site\'s text, kept in step with every publish by the worker (transport knowledge_base) and searched by KnowledgeBase\KnowledgeSearch; needs OPENAI_API_KEY and symfony/http-client')
+                    ->addDefaultsIfNotSet()
+                    ->children()
+                        ->booleanNode('enabled')->defaultFalse()->end()
+                        ->scalarNode('model')
+                            ->info('An OpenAI embedding model; text-embedding-3-* are stored at 1536 dimensions. Changing it makes every document stale: run itk:knowledge-base:sync --now')
+                            ->defaultValue('text-embedding-3-small')
+                            ->cannotBeEmpty()
+                        ->end()
+                        ->scalarNode('base_url')->info('An OpenAI-compatible API (a proxy, Azure OpenAI)')->defaultValue('https://api.openai.com/v1')->cannotBeEmpty()->end()
+                        ->integerNode('timeout')->info('Seconds for one embedding request')->defaultValue(30)->min(5)->end()
+                        ->arrayNode('exclude_templates')->info('Page templates that are never indexed')->scalarPrototype()->end()->defaultValue([])->end()
+                        ->arrayNode('exclude_collections')->info('Collections whose items are never indexed')->scalarPrototype()->end()->defaultValue([])->end()
+                    ->end()
+                ->end()
                 ->booleanNode('blog')
                     ->info('false = a site without a blog: the templates blog, blog_category and blog_article are not registered and the "Blog articles" link is not in the rail (the same as $s->withoutBlog() in schema.php)')
                     ->defaultTrue()
@@ -355,6 +371,13 @@ final class ItkCmsBundle extends AbstractBundle
         $parameters->set('itk_cms.critical_css.chrome', null === $critical['chrome'] ? null : (string) $critical['chrome']);
         $parameters->set('itk_cms.critical_css.timeout', $critical['timeout']);
         $parameters->set('itk_cms.critical_css.max_kb', $critical['max_kb']);
+        $kb = $config['knowledge_base'];
+        $parameters->set('itk_cms.knowledge_base.enabled', $kb['enabled']);
+        $parameters->set('itk_cms.knowledge_base.model', (string) $kb['model']);
+        $parameters->set('itk_cms.knowledge_base.base_url', \rtrim((string) $kb['base_url'], '/'));
+        $parameters->set('itk_cms.knowledge_base.timeout', $kb['timeout']);
+        $parameters->set('itk_cms.knowledge_base.exclude_templates', \array_values(\array_map('strval', $kb['exclude_templates'])));
+        $parameters->set('itk_cms.knowledge_base.exclude_collections', \array_values(\array_map('strval', $kb['exclude_collections'])));
         $parameters->set('itk_cms.strict', $config['strict'] ?? (bool) $builder->getParameter('kernel.debug'));
         $parameters->set('itk_cms.admin_path', $config['admin_path']);
         $parameters->set('itk_cms.admin_path_segments', \ltrim($config['admin_path'], '/')); // for the prefix of config/routes/admin.php, which adds the slash itself

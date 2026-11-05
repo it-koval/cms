@@ -7,6 +7,8 @@ use Itk\Cms\Controller\Admin\TwoFactorLoginController;
 use Itk\Cms\Doctrine\MigrationVersionComparator;
 use Itk\Cms\Health\MessengerMonitor;
 use Itk\Cms\I18n\AdminLocale;
+use Itk\Cms\KnowledgeBase\Embedding\Embedder;
+use Itk\Cms\KnowledgeBase\Embedding\OpenAiEmbedder;
 use Itk\Cms\Logging\SecretScrubProcessor;
 use Itk\Cms\Rendering\PageCache;
 use Itk\Cms\Request\TelegramNotifier;
@@ -48,6 +50,11 @@ return static function (ContainerConfigurator $container): void {
             '../src/KnowledgeBase/Model',
             '../src/KnowledgeBase/Embedding/{Space,Vector,Purpose,Embeddings,EmbeddingFailed}.php',
         ]);
+
+    // the embedder every part of the knowledge base gets; a site may alias Embedder to its own implementation, the test site aliases it to a fake.
+    // The HTTP client is optional (symfony/http-client is only suggested), as for UpdateChecker
+    $services->alias(Embedder::class, OpenAiEmbedder::class);
+    $services->get(OpenAiEmbedder::class)->arg('$http', service('http_client')->nullOnInvalid());
 
     // the one class of the page cache that site code calls (clear() after its own import); public so that a site can also take it from a service locator
     $services->get(PageCache::class)->public();
