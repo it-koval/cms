@@ -34,7 +34,7 @@ class Request
     public string $form;
 
     /** @var array<string, mixed> everything the visitor sent (validated fields) */
-    #[ORM\Column(type: Types::JSON)]
+    #[ORM\Column(type: Types::JSON, options: ['jsonb' => true])]
     public array $data = [];
 
     #[ORM\Column(type: Types::STRING, length: 32, nullable: true)]

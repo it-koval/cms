@@ -52,11 +52,11 @@ class MediaFile
     public ?MediaFolder $folder = null;
 
     /** Focal point of an image: { x, y }, 0..1 of the width and the height (as the picture looks). Null: the centre. */
-    #[ORM\Column(type: Types::JSON, nullable: true)]
+    #[ORM\Column(type: Types::JSON, nullable: true, options: ['jsonb' => true])]
     public ?array $focal = null;
 
     /** Frames by ratio: { "16:9": { x, y, w, h }, … }, each 0..1 of the picture. Used by the ratio variants (media_url(img, 960, '16:9')). */
-    #[ORM\Column(type: Types::JSON, nullable: true)]
+    #[ORM\Column(type: Types::JSON, nullable: true, options: ['jsonb' => true])]
     public ?array $crops = null;
 
     #[ORM\Column(name: 'created_at', type: Types::DATETIME_IMMUTABLE)]

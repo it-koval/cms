@@ -35,7 +35,7 @@ class CollectionItem
     public ?string $parentId = null;
 
     /** @var array<string, array<string, mixed>> */
-    #[ORM\Column(type: Types::JSON)]
+    #[ORM\Column(type: Types::JSON, options: ['jsonb' => true])]
     public array $translations = [];
 
     #[ORM\Column(name: 'created_at', type: Types::DATETIME_IMMUTABLE)]

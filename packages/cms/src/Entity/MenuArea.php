@@ -28,7 +28,7 @@ class MenuArea
     public int $depth = 1;
 
     /** @var array<string, list<array<string, mixed>>> */
-    #[ORM\Column(type: Types::JSON)]
+    #[ORM\Column(type: Types::JSON, options: ['jsonb' => true])]
     public array $items = [];
 
     public function __construct(string $key, string $name, int $depth = 1)

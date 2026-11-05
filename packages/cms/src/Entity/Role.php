@@ -35,11 +35,11 @@ class Role
     public bool $builtin = false;
 
     /** @var array<string, list<string>> */
-    #[ORM\Column(type: Types::JSON)]
+    #[ORM\Column(type: Types::JSON, options: ['jsonb' => true])]
     public array $perms = [];
 
     /** @var list<string>|null */
-    #[ORM\Column(type: Types::JSON, nullable: true)]
+    #[ORM\Column(type: Types::JSON, nullable: true, options: ['jsonb' => true])]
     public ?array $templates = null;
 
     /** People with this role must sign in with a second factor (a one-time code); one who has none yet sets it up at the next sign-in. */

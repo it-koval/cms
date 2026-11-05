@@ -29,7 +29,7 @@ class UserTwoFactor
     public ?\DateTimeImmutable $enabledAt = null;
 
     /** @var list<string> keyed hashes of the recovery codes that are not used yet */
-    #[ORM\Column(name: 'recovery_codes', type: Types::JSON)]
+    #[ORM\Column(name: 'recovery_codes', type: Types::JSON, options: ['jsonb' => true])]
     public array $recoveryCodes = [];
 
     /** The last 30-second step a code was accepted for: a code is used once. */

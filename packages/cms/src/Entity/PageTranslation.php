@@ -36,11 +36,11 @@ class PageTranslation
     public string $locale = 'ru';
 
     /** @var array<string, mixed> */
-    #[ORM\Column(type: Types::JSON)]
+    #[ORM\Column(type: Types::JSON, options: ['jsonb' => true])]
     public array $draft = [];
 
     /** @var array<string, mixed>|null */
-    #[ORM\Column(type: Types::JSON, nullable: true)]
+    #[ORM\Column(type: Types::JSON, nullable: true, options: ['jsonb' => true])]
     public ?array $published = null;
 
     #[ORM\Column(type: Types::STRING, length: 16)]
@@ -50,11 +50,11 @@ class PageTranslation
     public ?string $publishedUrl = null;
 
     /** @var array{by: string, at: string}|null */
-    #[ORM\Column(type: Types::JSON, nullable: true)]
+    #[ORM\Column(type: Types::JSON, nullable: true, options: ['jsonb' => true])]
     public ?array $awaiting = null;
 
     /** @var array{by: string, at: string}|null */
-    #[ORM\Column(name: 'returned_note', type: Types::JSON, nullable: true)]
+    #[ORM\Column(name: 'returned_note', type: Types::JSON, nullable: true, options: ['jsonb' => true])]
     public ?array $returned = null;
 
     #[ORM\Column(name: 'updated_at', type: Types::DATETIME_IMMUTABLE)]

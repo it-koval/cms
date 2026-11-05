@@ -1,0 +1,106 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Itk\Cms\Migrations;
+
+use Doctrine\DBAL\Platforms\PostgreSQLPlatform;
+use Doctrine\DBAL\Schema\Schema;
+use Doctrine\Migrations\AbstractMigration;
+
+/** ITK CMS: the whole schema on PostgreSQL 16 and newer (the package had no release before it moved from MySQL, so there is one migration). */
+final class Version20261105000000 extends AbstractMigration
+{
+    public const MIN_SERVER_VERSION_NUM = 160000;
+
+    public function getDescription(): string
+    {
+        return 'ITK CMS: pages, collections, menus, settings, media, redirects, requests, users, roles, 2FA, API tokens, notifications, revisions, SEO rules, critical CSS';
+    }
+
+    public function up(Schema $schema): void
+    {
+        // jsonb columns and operators, advisory locks, ON CONFLICT: the bundle is written for PostgreSQL; stop here with a reason, not in the middle with a syntax error
+        $platform = $this->connection->getDatabasePlatform();
+        $this->abortIf(
+            !$platform instanceof PostgreSQLPlatform,
+            \sprintf('ITK CMS supports only PostgreSQL 16 and newer (MySQL, MariaDB, SQLite and other databases are not supported). DATABASE_URL points to a database of the type "%s".', $platform::class),
+        );
+        $version = (int) $this->connection->fetchOne('SHOW server_version_num');
+        $this->abortIf($version < self::MIN_SERVER_VERSION_NUM, \sprintf('ITK CMS supports only PostgreSQL 16 and newer, but the server is PostgreSQL %s. Update PostgreSQL or point DATABASE_URL to another server.', (string) $this->connection->fetchOne('SHOW server_version')));
+
+        $this->addSql('CREATE TABLE itk_user (id VARCHAR(36) NOT NULL, email VARCHAR(180) NOT NULL, name VARCHAR(120) NOT NULL, password_hash VARCHAR(255) NOT NULL, role_key VARCHAR(64) NOT NULL, status VARCHAR(16) NOT NULL, locale VARCHAR(8) DEFAULT NULL, last_sign_in_at TIMESTAMP(0) WITHOUT TIME ZONE DEFAULT NULL, created_at TIMESTAMP(0) WITHOUT TIME ZONE NOT NULL, PRIMARY KEY (id))');
+        $this->addSql('CREATE UNIQUE INDEX itk_user_email ON itk_user (email)');
+        $this->addSql('CREATE TABLE itk_collection_item (id VARCHAR(36) NOT NULL, collection_key VARCHAR(64) NOT NULL, position INT NOT NULL, parent_id VARCHAR(36) DEFAULT NULL, translations JSONB NOT NULL, created_at TIMESTAMP(0) WITHOUT TIME ZONE NOT NULL, PRIMARY KEY (id))');
+        $this->addSql('CREATE INDEX itk_collection_item_collection_idx ON itk_collection_item (collection_key, position)');
+        $this->addSql('CREATE INDEX itk_collection_item_parent_idx ON itk_collection_item (parent_id)');
+        $this->addSql('CREATE TABLE itk_setting (setting_key VARCHAR(100) NOT NULL, locale VARCHAR(8) NOT NULL, setting_value JSONB DEFAULT NULL, PRIMARY KEY (setting_key, locale))');
+        $this->addSql('CREATE TABLE itk_user_pref (pref_key VARCHAR(100) NOT NULL, pref_value JSONB DEFAULT NULL, updated_at TIMESTAMP(0) WITHOUT TIME ZONE NOT NULL, user_id VARCHAR(36) NOT NULL, PRIMARY KEY (user_id, pref_key))');
+        $this->addSql('CREATE INDEX IDX_A7692050A76ED395 ON itk_user_pref (user_id)');
+        $this->addSql('CREATE TABLE itk_role (role_key VARCHAR(64) NOT NULL, name VARCHAR(120) NOT NULL, description VARCHAR(500) NOT NULL, builtin BOOLEAN NOT NULL, perms JSONB NOT NULL, templates JSONB DEFAULT NULL, require_2fa BOOLEAN DEFAULT false NOT NULL, PRIMARY KEY (role_key))');
+        $this->addSql('CREATE TABLE itk_menu_area (area_key VARCHAR(64) NOT NULL, name VARCHAR(120) NOT NULL, depth SMALLINT NOT NULL, items JSONB NOT NULL, PRIMARY KEY (area_key))');
+        $this->addSql('CREATE TABLE itk_media_file (id VARCHAR(36) NOT NULL, path VARCHAR(255) NOT NULL, original_name VARCHAR(255) NOT NULL, mime VARCHAR(120) NOT NULL, file_size INT NOT NULL, width INT NOT NULL, height INT NOT NULL, alt VARCHAR(255) NOT NULL, title VARCHAR(255) NOT NULL, focal JSONB DEFAULT NULL, crops JSONB DEFAULT NULL, created_at TIMESTAMP(0) WITHOUT TIME ZONE NOT NULL, folder_id VARCHAR(36) DEFAULT NULL, PRIMARY KEY (id))');
+        $this->addSql('CREATE INDEX itk_media_file_folder_idx ON itk_media_file (folder_id)');
+        $this->addSql('CREATE TABLE itk_page_translation (id VARCHAR(36) NOT NULL, locale VARCHAR(8) NOT NULL, draft JSONB NOT NULL, published JSONB DEFAULT NULL, status VARCHAR(16) NOT NULL, published_url VARCHAR(255) DEFAULT NULL, awaiting JSONB DEFAULT NULL, returned_note JSONB DEFAULT NULL, updated_at TIMESTAMP(0) WITHOUT TIME ZONE NOT NULL, published_at TIMESTAMP(0) WITHOUT TIME ZONE DEFAULT NULL, migrated BOOLEAN NOT NULL, page_id VARCHAR(36) NOT NULL, PRIMARY KEY (id))');
+        $this->addSql('CREATE UNIQUE INDEX itk_page_translation_page_locale ON itk_page_translation (page_id, locale)');
+        $this->addSql('CREATE UNIQUE INDEX itk_page_translation_url ON itk_page_translation (locale, published_url)');
+        $this->addSql('CREATE INDEX IDX_902C0E9AC4663E4 ON itk_page_translation (page_id)');
+        $this->addSql('CREATE TABLE itk_request (id INT GENERATED BY DEFAULT AS IDENTITY NOT NULL, form_key VARCHAR(64) NOT NULL, data JSONB NOT NULL, phone VARCHAR(32) DEFAULT NULL, name VARCHAR(120) DEFAULT NULL, city VARCHAR(120) DEFAULT NULL, comment TEXT DEFAULT NULL, work VARCHAR(16) NOT NULL, delivery VARCHAR(16) NOT NULL, delivery_error TEXT DEFAULT NULL, source_url VARCHAR(512) DEFAULT NULL, locale VARCHAR(8) NOT NULL, ip_hash VARCHAR(64) DEFAULT NULL, created_at TIMESTAMP(0) WITHOUT TIME ZONE NOT NULL, PRIMARY KEY (id))');
+        $this->addSql('CREATE INDEX itk_request_created_idx ON itk_request (created_at)');
+        $this->addSql('CREATE TABLE itk_page (id VARCHAR(36) NOT NULL, position INT NOT NULL, template VARCHAR(64) NOT NULL, created_at TIMESTAMP(0) WITHOUT TIME ZONE NOT NULL, parent_id VARCHAR(36) DEFAULT NULL, PRIMARY KEY (id))');
+        $this->addSql('CREATE INDEX itk_page_parent_idx ON itk_page (parent_id)');
+        $this->addSql('CREATE TABLE itk_user_2fa (secret VARCHAR(255) NOT NULL, enabled_at TIMESTAMP(0) WITHOUT TIME ZONE DEFAULT NULL, recovery_codes JSONB NOT NULL, last_step INT DEFAULT NULL, failed_attempts SMALLINT NOT NULL, locked_until TIMESTAMP(0) WITHOUT TIME ZONE DEFAULT NULL, created_at TIMESTAMP(0) WITHOUT TIME ZONE NOT NULL, user_id VARCHAR(36) NOT NULL, PRIMARY KEY (user_id))');
+        $this->addSql('CREATE TABLE itk_seo_rule (id VARCHAR(36) NOT NULL, path VARCHAR(500) NOT NULL, match_type VARCHAR(8) NOT NULL, locale VARCHAR(8) DEFAULT NULL, title VARCHAR(255) NOT NULL, description VARCHAR(500) NOT NULL, robots VARCHAR(60) NOT NULL, canonical VARCHAR(512) NOT NULL, og_image VARCHAR(512) NOT NULL, active BOOLEAN NOT NULL, created_at TIMESTAMP(0) WITHOUT TIME ZONE NOT NULL, updated_at TIMESTAMP(0) WITHOUT TIME ZONE NOT NULL, PRIMARY KEY (id))');
+        $this->addSql('CREATE INDEX itk_seo_rule_active_idx ON itk_seo_rule (active)');
+        $this->addSql('CREATE TABLE itk_media_folder (id VARCHAR(36) NOT NULL, name VARCHAR(120) NOT NULL, position INT NOT NULL, parent_id VARCHAR(36) DEFAULT NULL, PRIMARY KEY (id))');
+        $this->addSql('CREATE INDEX itk_media_folder_parent_idx ON itk_media_folder (parent_id)');
+        $this->addSql('CREATE TABLE itk_api_token (id VARCHAR(36) NOT NULL, name VARCHAR(120) NOT NULL, token_hash VARCHAR(64) NOT NULL, hint VARCHAR(8) NOT NULL, scopes JSONB NOT NULL, expires_at TIMESTAMP(0) WITHOUT TIME ZONE DEFAULT NULL, last_used_at TIMESTAMP(0) WITHOUT TIME ZONE DEFAULT NULL, created_at TIMESTAMP(0) WITHOUT TIME ZONE NOT NULL, revoked_at TIMESTAMP(0) WITHOUT TIME ZONE DEFAULT NULL, user_id VARCHAR(36) NOT NULL, PRIMARY KEY (id))');
+        $this->addSql('CREATE INDEX itk_api_token_user_idx ON itk_api_token (user_id)');
+        $this->addSql('CREATE UNIQUE INDEX itk_api_token_hash ON itk_api_token (token_hash)');
+        $this->addSql('CREATE TABLE itk_notification_read (read_at TIMESTAMP(0) WITHOUT TIME ZONE NOT NULL, notification_id INT NOT NULL, user_id VARCHAR(36) NOT NULL, PRIMARY KEY (notification_id, user_id))');
+        $this->addSql('CREATE INDEX IDX_5384E5CBEF1A9D84 ON itk_notification_read (notification_id)');
+        $this->addSql('CREATE INDEX IDX_5384E5CBA76ED395 ON itk_notification_read (user_id)');
+        $this->addSql('CREATE TABLE itk_password_reset (id VARCHAR(36) NOT NULL, token_hash VARCHAR(64) NOT NULL, purpose VARCHAR(16) NOT NULL, expires_at TIMESTAMP(0) WITHOUT TIME ZONE NOT NULL, used_at TIMESTAMP(0) WITHOUT TIME ZONE DEFAULT NULL, created_at TIMESTAMP(0) WITHOUT TIME ZONE NOT NULL, user_id VARCHAR(36) NOT NULL, PRIMARY KEY (id))');
+        $this->addSql('CREATE INDEX itk_password_reset_user_idx ON itk_password_reset (user_id)');
+        $this->addSql('CREATE INDEX itk_password_reset_expires_idx ON itk_password_reset (expires_at)');
+        $this->addSql('CREATE UNIQUE INDEX itk_password_reset_hash ON itk_password_reset (token_hash)');
+        $this->addSql('CREATE TABLE itk_notification (id INT GENERATED BY DEFAULT AS IDENTITY NOT NULL, type VARCHAR(64) NOT NULL, title VARCHAR(255) NOT NULL, body TEXT NOT NULL, link VARCHAR(512) DEFAULT NULL, level VARCHAR(16) NOT NULL, audience VARCHAR(100) DEFAULT NULL, dedupe_key VARCHAR(120) DEFAULT NULL, payload JSONB NOT NULL, i18n JSONB DEFAULT NULL, created_at TIMESTAMP(0) WITHOUT TIME ZONE NOT NULL, PRIMARY KEY (id))');
+        $this->addSql('CREATE INDEX itk_notification_created_idx ON itk_notification (created_at)');
+        $this->addSql('CREATE INDEX itk_notification_key_idx ON itk_notification (dedupe_key)');
+        $this->addSql('CREATE TABLE itk_revision (id INT GENERATED BY DEFAULT AS IDENTITY NOT NULL, resource_kind VARCHAR(16) NOT NULL, resource_id VARCHAR(64) NOT NULL, resource_key VARCHAR(64) NOT NULL, locale VARCHAR(8) NOT NULL, action VARCHAR(16) NOT NULL, user_id VARCHAR(36) DEFAULT NULL, user_name VARCHAR(180) DEFAULT NULL, via VARCHAR(16) DEFAULT NULL, via_name VARCHAR(120) DEFAULT NULL, title VARCHAR(255) NOT NULL, snapshot JSONB NOT NULL, summary JSONB NOT NULL, created_at TIMESTAMP(0) WITHOUT TIME ZONE NOT NULL, updated_at TIMESTAMP(0) WITHOUT TIME ZONE NOT NULL, PRIMARY KEY (id))');
+        $this->addSql('CREATE INDEX itk_revision_object_idx ON itk_revision (resource_kind, resource_id, locale)');
+        $this->addSql('CREATE INDEX itk_revision_action_idx ON itk_revision (action, created_at)');
+        $this->addSql('CREATE TABLE itk_critical_css (basis VARCHAR(40) NOT NULL, inputs VARCHAR(40) NOT NULL, status VARCHAR(16) NOT NULL, styles JSONB DEFAULT NULL, error VARCHAR(500) DEFAULT NULL, generated_at TIMESTAMP(0) WITHOUT TIME ZONE NOT NULL, translation_id VARCHAR(36) NOT NULL, PRIMARY KEY (translation_id))');
+        $this->addSql('CREATE TABLE itk_redirect (id VARCHAR(36) NOT NULL, from_path VARCHAR(255) NOT NULL, to_path VARCHAR(512) NOT NULL, code SMALLINT NOT NULL, created_at TIMESTAMP(0) WITHOUT TIME ZONE NOT NULL, PRIMARY KEY (id))');
+        $this->addSql('CREATE UNIQUE INDEX itk_redirect_from ON itk_redirect (from_path)');
+        $this->addSql('ALTER TABLE itk_user_pref ADD CONSTRAINT FK_A7692050A76ED395 FOREIGN KEY (user_id) REFERENCES itk_user (id) ON DELETE CASCADE NOT DEFERRABLE');
+        $this->addSql('ALTER TABLE itk_media_file ADD CONSTRAINT FK_97A97FED162CB942 FOREIGN KEY (folder_id) REFERENCES itk_media_folder (id) ON DELETE SET NULL NOT DEFERRABLE');
+        $this->addSql('ALTER TABLE itk_page_translation ADD CONSTRAINT FK_902C0E9AC4663E4 FOREIGN KEY (page_id) REFERENCES itk_page (id) ON DELETE CASCADE NOT DEFERRABLE');
+        $this->addSql('ALTER TABLE itk_page ADD CONSTRAINT FK_5F9F5E7E727ACA70 FOREIGN KEY (parent_id) REFERENCES itk_page (id) ON DELETE RESTRICT NOT DEFERRABLE');
+        $this->addSql('ALTER TABLE itk_user_2fa ADD CONSTRAINT FK_5BB10B46A76ED395 FOREIGN KEY (user_id) REFERENCES itk_user (id) ON DELETE CASCADE NOT DEFERRABLE');
+        $this->addSql('ALTER TABLE itk_media_folder ADD CONSTRAINT FK_42B0743F727ACA70 FOREIGN KEY (parent_id) REFERENCES itk_media_folder (id) ON DELETE SET NULL NOT DEFERRABLE');
+        $this->addSql('ALTER TABLE itk_api_token ADD CONSTRAINT FK_71F0143A76ED395 FOREIGN KEY (user_id) REFERENCES itk_user (id) ON DELETE CASCADE NOT DEFERRABLE');
+        $this->addSql('ALTER TABLE itk_notification_read ADD CONSTRAINT FK_5384E5CBEF1A9D84 FOREIGN KEY (notification_id) REFERENCES itk_notification (id) ON DELETE CASCADE NOT DEFERRABLE');
+        $this->addSql('ALTER TABLE itk_notification_read ADD CONSTRAINT FK_5384E5CBA76ED395 FOREIGN KEY (user_id) REFERENCES itk_user (id) ON DELETE CASCADE NOT DEFERRABLE');
+        $this->addSql('ALTER TABLE itk_password_reset ADD CONSTRAINT FK_B65E7C4CA76ED395 FOREIGN KEY (user_id) REFERENCES itk_user (id) ON DELETE CASCADE NOT DEFERRABLE');
+        $this->addSql('ALTER TABLE itk_critical_css ADD CONSTRAINT FK_EEF0028F9CAA2B25 FOREIGN KEY (translation_id) REFERENCES itk_page_translation (id) ON DELETE CASCADE NOT DEFERRABLE');
+    }
+
+    public function down(Schema $schema): void
+    {
+        $this->addSql('ALTER TABLE itk_user_pref DROP CONSTRAINT FK_A7692050A76ED395');
+        $this->addSql('ALTER TABLE itk_media_file DROP CONSTRAINT FK_97A97FED162CB942');
+        $this->addSql('ALTER TABLE itk_page_translation DROP CONSTRAINT FK_902C0E9AC4663E4');
+        $this->addSql('ALTER TABLE itk_page DROP CONSTRAINT FK_5F9F5E7E727ACA70');
+        $this->addSql('ALTER TABLE itk_user_2fa DROP CONSTRAINT FK_5BB10B46A76ED395');
+        $this->addSql('ALTER TABLE itk_media_folder DROP CONSTRAINT FK_42B0743F727ACA70');
+        $this->addSql('ALTER TABLE itk_api_token DROP CONSTRAINT FK_71F0143A76ED395');
+        $this->addSql('ALTER TABLE itk_notification_read DROP CONSTRAINT FK_5384E5CBEF1A9D84');
+        $this->addSql('ALTER TABLE itk_notification_read DROP CONSTRAINT FK_5384E5CBA76ED395');
+        $this->addSql('ALTER TABLE itk_password_reset DROP CONSTRAINT FK_B65E7C4CA76ED395');
+        $this->addSql('ALTER TABLE itk_critical_css DROP CONSTRAINT FK_EEF0028F9CAA2B25');
+        foreach (['itk_redirect', 'itk_critical_css', 'itk_revision', 'itk_notification', 'itk_password_reset', 'itk_notification_read', 'itk_api_token', 'itk_media_folder', 'itk_seo_rule', 'itk_user_2fa', 'itk_page', 'itk_request', 'itk_page_translation', 'itk_media_file', 'itk_menu_area', 'itk_role', 'itk_user_pref', 'itk_setting', 'itk_collection_item', 'itk_user'] as $table) {
+            $this->addSql("DROP TABLE $table");
+        }
+    }
+}

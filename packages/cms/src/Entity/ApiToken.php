@@ -38,7 +38,7 @@ class ApiToken
     public string $hint = '';
 
     /** @var list<string> read | write | publish | requests (Itk\Cms\Mcp\McpScopes) */
-    #[ORM\Column(type: Types::JSON)]
+    #[ORM\Column(type: Types::JSON, options: ['jsonb' => true])]
     public array $scopes = [];
 
     #[ORM\Column(name: 'expires_at', type: Types::DATETIME_IMMUTABLE, nullable: true)]

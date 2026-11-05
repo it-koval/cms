@@ -82,11 +82,11 @@ class Revision
     public string $title = '';
 
     /** @var array<string, mixed> */
-    #[ORM\Column(type: Types::JSON)]
+    #[ORM\Column(type: Types::JSON, options: ['jsonb' => true])]
     public array $snapshot = [];
 
     /** @var list<array<string, mixed>> */
-    #[ORM\Column(type: Types::JSON)]
+    #[ORM\Column(type: Types::JSON, options: ['jsonb' => true])]
     public array $summary = [];
 
     #[ORM\Column(name: 'created_at', type: Types::DATETIME_IMMUTABLE)]

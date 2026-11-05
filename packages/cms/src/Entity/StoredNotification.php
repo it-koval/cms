@@ -45,7 +45,7 @@ class StoredNotification
     public ?string $dedupeKey = null;
 
     /** @var array<string, mixed> */
-    #[ORM\Column(type: Types::JSON)]
+    #[ORM\Column(type: Types::JSON, options: ['jsonb' => true])]
     public array $payload = [];
 
     /**
@@ -54,7 +54,7 @@ class StoredNotification
      *
      * @var array{title?: array{key: string, params: array<string, mixed>}, body?: array{key: string, params: array<string, mixed>}}|null
      */
-    #[ORM\Column(type: Types::JSON, nullable: true)]
+    #[ORM\Column(type: Types::JSON, nullable: true, options: ['jsonb' => true])]
     public ?array $i18n = null;
 
     #[ORM\Column(name: 'created_at', type: Types::DATETIME_IMMUTABLE)]

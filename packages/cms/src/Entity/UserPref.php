@@ -22,7 +22,7 @@ class UserPref
     #[ORM\Column(name: 'pref_key', type: Types::STRING, length: 100)]
     public string $key;
 
-    #[ORM\Column(name: 'pref_value', type: Types::JSON, nullable: true)]
+    #[ORM\Column(name: 'pref_value', type: Types::JSON, nullable: true, options: ['jsonb' => true])]
     public mixed $value = null;
 
     #[ORM\Column(name: 'updated_at', type: Types::DATETIME_IMMUTABLE)]

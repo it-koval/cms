@@ -41,7 +41,7 @@ class CriticalCss
     public string $status = self::FAILED;
 
     /** @var list<array{media: string|null, css: string}>|null one block per merged viewport range when ready, null when failed */
-    #[ORM\Column(type: Types::JSON, nullable: true)]
+    #[ORM\Column(type: Types::JSON, nullable: true, options: ['jsonb' => true])]
     public ?array $styles = null;
 
     /** a short reason when failed (for «Состояние сайта» and the command, never for visitors), null when ready */
