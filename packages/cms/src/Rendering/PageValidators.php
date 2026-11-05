@@ -6,6 +6,7 @@ namespace Itk\Cms\Rendering;
 
 use Doctrine\DBAL\Connection;
 use Itk\Cms\CriticalCss\Stylesheets;
+use Itk\Cms\Doctrine\JsonPath;
 use Itk\Cms\Entity\PageTranslation;
 use Itk\Cms\Support\Json;
 use Psr\Clock\ClockInterface;
@@ -60,16 +61,16 @@ final class PageValidators
             'SELECT
                 (SELECT COUNT(*) FROM itk_page_translation WHERE locale = :locale AND status = :live) AS pages,
                 (SELECT MAX(published_at) FROM itk_page_translation WHERE locale = :locale2 AND status = :live2) AS newest,
-                (SELECT COALESCE(SUM(CRC32(CONCAT(setting_key, \'|\', locale, \'|\', IFNULL(CAST(setting_value AS CHAR), \'\')))), 0) FROM itk_setting) AS settings,
-                (SELECT COALESCE(SUM(CRC32(CONCAT(p.id, \'|\', p.position, \'|\', IFNULL(p.parent_id, \'\')))), 0) FROM itk_page p INNER JOIN itk_page_translation pt ON pt.page_id = p.id AND pt.locale = :locale3 AND pt.status = :live3) AS tree,
-                (SELECT COALESCE(SUM(CRC32(CONCAT(id, \'|\', CAST(crops AS CHAR)))), 0) FROM itk_media_file WHERE crops IS NOT NULL) AS frames,
-                (SELECT COALESCE(SUM(CRC32(CONCAT(area_key, \'|\', name, \'|\', depth, \'|\', CAST(items AS CHAR)))), 0) FROM itk_menu_area) AS menus,
-                (SELECT COALESCE(SUM(CRC32(CONCAT(id, \'|\', collection_key, \'|\', position, \'|\', IFNULL(parent_id, \'\'), \'|\', COALESCE(JSON_UNQUOTE(JSON_EXTRACT(translations, :stamp)), JSON_UNQUOTE(JSON_EXTRACT(translations, :updated)), \'\')))), 0) FROM itk_collection_item WHERE JSON_UNQUOTE(JSON_EXTRACT(translations, :status)) = :itemLive) AS records,
-                (SELECT CONCAT(COUNT(*), \'|\', IFNULL(MAX(updated_at), \'\')) FROM itk_seo_rule) AS seo,
+                (SELECT COALESCE(SUM(hashtext(CONCAT(setting_key, \'|\', locale, \'|\', COALESCE(setting_value::text, \'\')))), 0) FROM itk_setting) AS settings,
+                (SELECT COALESCE(SUM(hashtext(CONCAT(p.id, \'|\', p.position, \'|\', COALESCE(p.parent_id, \'\')))), 0) FROM itk_page p INNER JOIN itk_page_translation pt ON pt.page_id = p.id AND pt.locale = :locale3 AND pt.status = :live3) AS tree,
+                (SELECT COALESCE(SUM(hashtext(CONCAT(id, \'|\', crops::text))), 0) FROM itk_media_file WHERE crops IS NOT NULL) AS frames,
+                (SELECT COALESCE(SUM(hashtext(CONCAT(area_key, \'|\', name, \'|\', depth, \'|\', items::text))), 0) FROM itk_menu_area) AS menus,
+                (SELECT COALESCE(SUM(hashtext(CONCAT(id, \'|\', collection_key, \'|\', position, \'|\', COALESCE(parent_id, \'\'), \'|\', COALESCE(translations #>> CAST(:stamp AS text[]), translations #>> CAST(:updated AS text[]), \'\')))), 0) FROM itk_collection_item WHERE translations #>> CAST(:status AS text[]) = :itemLive) AS records,
+                (SELECT CONCAT(COUNT(*), \'|\', COALESCE(MAX(updated_at)::text, \'\')) FROM itk_seo_rule) AS seo,
                 (SELECT CONCAT(basis, \'|\', status, \'|\', generated_at) FROM itk_critical_css WHERE translation_id = :tid) AS critical',
             [
                 'locale' => $locale, 'live' => PageTranslation::PUBLISHED, 'locale2' => $locale, 'live2' => PageTranslation::PUBLISHED, 'locale3' => $locale, 'live3' => PageTranslation::PUBLISHED,
-                'stamp' => '$."' . $locale . '".publishedAt', 'updated' => '$."' . $locale . '".updatedAt', 'status' => '$."' . $locale . '".status', 'itemLive' => 'published',
+                'stamp' => JsonPath::of($locale, 'publishedAt'), 'updated' => JsonPath::of($locale, 'updatedAt'), 'status' => JsonPath::of($locale, 'status'), 'itemLive' => 'published',
                 'tid' => $t->id,
             ],
         );

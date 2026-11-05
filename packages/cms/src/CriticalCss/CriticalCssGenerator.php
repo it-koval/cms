@@ -139,8 +139,8 @@ final class CriticalCssGenerator
             $row->markFailed($basis->value, $inputs, $outcome, $now);
         }
         $this->db->executeStatement(
-            'INSERT INTO itk_critical_css (translation_id, basis, inputs, status, styles, error, generated_at) VALUES (:id, :basis, :inputs, :status, :styles, :error, :at) AS new
-                ON DUPLICATE KEY UPDATE basis = new.basis, inputs = new.inputs, status = new.status, styles = new.styles, error = new.error, generated_at = new.generated_at',
+            'INSERT INTO itk_critical_css (translation_id, basis, inputs, status, styles, error, generated_at) VALUES (:id, :basis, :inputs, :status, :styles, :error, :at)
+                ON CONFLICT (translation_id) DO UPDATE SET basis = EXCLUDED.basis, inputs = EXCLUDED.inputs, status = EXCLUDED.status, styles = EXCLUDED.styles, error = EXCLUDED.error, generated_at = EXCLUDED.generated_at',
             ['id' => $t->id, 'basis' => $row->basis, 'inputs' => $row->inputs, 'status' => $row->status, 'styles' => $row->styles, 'error' => $row->error, 'at' => $row->generatedAt],
             ['styles' => Types::JSON, 'at' => Types::DATETIME_IMMUTABLE],
         );

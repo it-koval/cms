@@ -118,12 +118,12 @@ final class McpStdioTest extends KernelTestCase
         self::assertStringContainsString('revoked', (string) \stream_get_contents($err));
     }
 
-    /** The database closes the connection of the running program (a restart, wait_timeout): the same as MySQL does when somebody kills our connection. */
+    /** The database closes the connection of the running program (a restart, idle_session_timeout): the same as PostgreSQL does when somebody terminates our backend. */
     private function killDatabaseConnection(): void
     {
         $connection = self::getContainer()->get(\Doctrine\DBAL\Connection::class);
-        $id = (int) $connection->fetchOne('SELECT CONNECTION_ID()');
-        \Doctrine\DBAL\DriverManager::getConnection($connection->getParams())->executeStatement('KILL ' . $id);
+        $pid = (int) $connection->fetchOne('SELECT pg_backend_pid()');
+        \Doctrine\DBAL\DriverManager::getConnection($connection->getParams())->executeStatement('SELECT pg_terminate_backend(?)', [$pid]);
     }
 
     #[Test]
@@ -267,7 +267,7 @@ final class McpStdioTest extends KernelTestCase
         self::assertSame(2, $pauses, 'the first retry is at once, the others wait');
     }
 
-    /** The next queries of the program fail with the given error of MySQL: what a driver answers while the database goes down, which no KILL and no closed port can show. */
+    /** The next queries of the program fail with the given error of PostgreSQL: what a driver answers while the database goes down, which no pg_terminate_backend and no closed port can show. */
     private function failNextQueries(int $times, int $code, ?string $state): TestFailingDriver
     {
         $connection = self::getContainer()->get(\Doctrine\DBAL\Connection::class);
@@ -289,13 +289,13 @@ final class McpStdioTest extends KernelTestCase
     /** @return iterable<string, array{0: int, 1: ?string}> */
     public static function errorsOfADatabaseThatGoesDown(): iterable
     {
-        yield 'server shutdown in progress' => [1053, '08S01'];
-        yield 'the same when connecting: no SQLSTATE of its own' => [1053, null];
-        yield 'lost during a query' => [2013, 'HY000'];
-        yield 'any other error of the connection class' => [1159, '08S01'];
+        yield 'the server is shutting down' => [7, '57P01'];
+        yield 'the server is starting up' => [7, '57P03'];
+        yield 'the server crashed' => [7, '57P02'];
+        yield 'any other error of the connection class' => [7, '08001'];
     }
 
-    /** DBAL turns neither 1053 nor 2013 into ConnectionException: to the check of the key they are plain driver errors, and the process used to die with the exception. */
+    /** DBAL turns none of the 57P states into ConnectionException: to the check of the key they are plain driver errors, and the process used to die with the exception. */
     #[Test]
     #[DataProvider('errorsOfADatabaseThatGoesDown')]
     public function anErrorOfADatabaseThatIsGoingDownIsWaitedOutToo(int $code, ?string $state): void
@@ -417,7 +417,7 @@ final class McpStdioTest extends KernelTestCase
     }
 }
 
-/** @internal an error of the driver with the code and the SQLSTATE of MySQL */
+/** @internal an error of the driver with the code and the SQLSTATE of PostgreSQL */
 final class TestDriverError extends \Doctrine\DBAL\Driver\AbstractException
 {
 }

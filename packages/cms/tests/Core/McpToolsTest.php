@@ -90,7 +90,7 @@ final class McpToolsTest extends KernelTestCase
 
         $this->mcpClean();
 
-        self::assertSame(0, (int) $db->fetchOne("SELECT COUNT(*) FROM itk_page_translation WHERE JSON_UNQUOTE(JSON_EXTRACT(draft, '\$.title')) LIKE 'TestMcp%'"));
+        self::assertSame(0, (int) $db->fetchOne("SELECT COUNT(*) FROM itk_page_translation WHERE draft ->> 'title' LIKE 'TestMcp%'"));
         self::assertSame([], $this->mcpPageIds, 'the list is emptied: the next test starts clean');
     }
 
@@ -356,20 +356,21 @@ final class McpToolsTest extends KernelTestCase
     {
         $lock = self::getContainer()->get(\Itk\Cms\Content\EditLock::class);
         $db = self::getContainer()->get('doctrine.dbal.default_connection');
-        $name = 'itk_' . \substr(\md5('page:test-lock'), 0, 24);
+        $key = \Itk\Cms\Content\EditLock::key('page', 'test-lock');
+        // pg_locks shows a 64-bit advisory key as its two halves
+        $holders = static fn (): int => (int) $db->fetchOne('SELECT COUNT(*) FROM pg_locks WHERE locktype = \'advisory\' AND granted AND classid = ? AND objid = ? AND objsubid = 1', [($key >> 32) & 0xFFFFFFFF, $key & 0xFFFFFFFF]);
         // the same connection asks again inside its own work: it passes
         self::assertSame('inner', $lock->around('page', 'test-lock', static fn (): string => $lock->around('page', 'test-lock', static fn (): string => 'inner')));
         // after the work nobody holds it any more
-        self::assertSame(1, (int) $db->fetchOne('SELECT IS_FREE_LOCK(?)', [$name]));
+        self::assertSame(0, $holders());
         // and while the work runs, the lock is held by this connection
-        $held = $lock->around('page', 'test-lock', static fn (): int => (int) $db->fetchOne('SELECT IS_USED_LOCK(?) IS NOT NULL', [$name]));
-        self::assertSame(1, $held);
+        self::assertSame(1, $lock->around('page', 'test-lock', $holders));
         // an error in the work does not leave it locked
         try {
             $lock->around('page', 'test-lock', static function (): never { throw new \RuntimeException('x'); });
         } catch (\RuntimeException) {
         }
-        self::assertSame(1, (int) $db->fetchOne('SELECT IS_FREE_LOCK(?)', [$name]));
+        self::assertSame(0, $holders());
     }
 
     #[Test]
@@ -381,7 +382,7 @@ final class McpToolsTest extends KernelTestCase
         foreach (['url: must start with /', 'fields.caption: at most 20', 'fields.nope: unknown field', 'seo.title: at most 70', 'seo.x: unknown key', 'the template "test_flat" has no sections'] as $part) {
             self::assertStringContainsString($part, $r['text']);
         }
-        self::assertSame(0, self::getContainer()->get('doctrine.dbal.default_connection')->fetchOne("SELECT COUNT(*) FROM itk_page_translation WHERE JSON_UNQUOTE(JSON_EXTRACT(draft, '\$.title')) = 'TestMcp Bad'"));
+        self::assertSame(0, self::getContainer()->get('doctrine.dbal.default_connection')->fetchOne("SELECT COUNT(*) FROM itk_page_translation WHERE draft ->> 'title' = 'TestMcp Bad'"));
 
         $unknown = $this->mcpCall($ctx, 'page_create', ['title' => 'TestMcp T', 'url' => '/test-mcp-t', 'template' => 'nothing']);
         self::assertStringContainsString('No such template', $unknown['text']);
