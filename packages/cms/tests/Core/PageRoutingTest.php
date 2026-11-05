@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Itk\Cms\Tests\Core;
 
 use Doctrine\ORM\EntityManagerInterface;
+use Itk\Cms\Content\ContentException;
 use Itk\Cms\Content\PageService;
 use Itk\Cms\Content\RedirectService;
 use Itk\Cms\Entity\Request as RequestEntity;
@@ -112,6 +113,23 @@ final class PageRoutingTest extends WebTestCase
         $this->client->request('GET', '/test-manual');
 
         self::assertResponseRedirects('/about-us', 302);
+    }
+
+    #[Test]
+    public function aManualRedirectIgnoresTheCaseOfTheAddressAndTwoSpellingsCannotBothBeSaved(): void
+    {
+        $redirects = self::getContainer()->get(RedirectService::class);
+        $redirect = $redirects->create('/Test-Case/', '/about-us');
+        $this->redirects[] = $redirect->id;
+        self::assertSame('/test-case', $redirect->fromPath);
+
+        foreach (['/test-case', '/TEST-CASE', '/Test-Case/'] as $path) {
+            $this->client->request('GET', $path);
+            self::assertResponseRedirects('/about-us', 301, $path);
+        }
+
+        $this->expectException(ContentException::class);
+        $redirects->create('/TEST-case', '/elsewhere');
     }
 
     #[Test]

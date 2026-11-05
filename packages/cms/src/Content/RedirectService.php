@@ -27,19 +27,13 @@ final class RedirectService
 
     public function lookup(string $path): ?Redirect
     {
-        $key = Url::key($path);
-        foreach ([$path, $key] as $candidate) {
-            $hit = $this->redirects->findByFrom($candidate);
-            if (null !== $hit) {
-                return $hit;
-            }
-        }
-
-        return null;
+        return $this->redirects->findByFrom(Url::key($path));
     }
 
+    /** The address a redirect answers to is stored as Url::key(): a request matches it whatever its case, and two spellings cannot both be saved. */
     public function create(string $from, string $to, int $code = 301): Redirect
     {
+        $from = Url::key($from);
         $this->check($from, $to, $code);
         if (null !== $this->redirects->findByFrom($from)) {
             throw ContentException::conflict(I18n::t('content.redirect_exists'));
@@ -54,7 +48,7 @@ final class RedirectService
     public function update(string $id, array $patch): Redirect
     {
         $r = $this->redirects->find($id) ?? throw ContentException::notFound(I18n::t('content.redirect_not_found'));
-        $from = \array_key_exists('from', $patch) ? \trim((string) $patch['from']) : $r->fromPath;
+        $from = \array_key_exists('from', $patch) ? Url::key((string) $patch['from']) : $r->fromPath;
         $to = \array_key_exists('to', $patch) ? \trim((string) $patch['to']) : $r->toPath;
         $code = \array_key_exists('code', $patch) ? (int) $patch['code'] : $r->code;
         $this->check($from, $to, $code);
