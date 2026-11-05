@@ -541,6 +541,7 @@ final class ItkCmsBundle extends AbstractBundle
                         'Itk\\Cms\\Mail\\SendMail' => 'async',
                         'Itk\\Cms\\Security\\RequestPasswordLink' => 'async',
                         'Itk\\Cms\\CriticalCss\\Model\\GenerateCriticalCss' => 'critical_css',
+                        'Itk\\Cms\\KnowledgeBase\\Model\\SyncKnowledge' => 'knowledge_base',
                     ],
                 ] + $this->defaultTransports($builder),
             ]);
@@ -549,7 +550,7 @@ final class ItkCmsBundle extends AbstractBundle
 
     /**
      * The queue the routing above leads to. A clean project has no transports, and a router that names a missing `async` stops the container, so the bundle gives
-     * the site `async`, `critical_css` and a failure transport on its own database (doctrine://default, the table is made on first use; itk:install sets it up at once).
+     * the site `async`, `critical_css`, `knowledge_base` and a failure transport on its own database (doctrine://default, the table is made on first use; itk:install sets it up at once).
      * What the site configured wins: a transport it named `async`, and a failure_transport it chose (or switched off with null), are left alone.
      *
      * @return array<string, mixed>
@@ -575,6 +576,13 @@ final class ItkCmsBundle extends AbstractBundle
         }
         if (!isset($transports['critical_css'])) {
             $out['transports']['critical_css'] = 'doctrine://default?queue_name=critical_css';
+        }
+        if (!isset($transports['knowledge_base'])) {
+            // a 429 of the embedding API needs more patience than the default 1 s x2: 10 s, 30 s, 90 s, 270 s, 810 s, then the failure transport
+            $out['transports']['knowledge_base'] = [
+                'dsn' => 'doctrine://default?queue_name=knowledge_base',
+                'retry_strategy' => ['max_retries' => 5, 'delay' => 10000, 'multiplier' => 3],
+            ];
         }
         if (!$failureChosen) {
             $out['failure_transport'] = 'failed';

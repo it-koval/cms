@@ -131,7 +131,7 @@ final class MessengerDefaultsTest extends KernelTestCase
             self::assertSame(0, $install->execute(['--no-home' => true], ['interactive' => false]), $install->getDisplay());
 
             self::assertTrue($db->createSchemaManager()->tablesExist(['messenger_messages']), 'the table of the queue is there before the first message');
-            self::assertStringContainsString('Очередь сообщений: подготовлено транспортов — 3', $install->getDisplay());
+            self::assertStringContainsString('Очередь сообщений: подготовлено транспортов — 4', $install->getDisplay());
         } finally {
             $this->transport('failed')->setup(); // the test site\'s «failed» has auto_setup=0: leave the table as the other tests expect it
         }

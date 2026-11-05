@@ -102,6 +102,7 @@ final class TestKernel extends BaseKernel
                     'sync' => 'sync://',
                     'async' => 'in-memory://',
                     'critical_css' => 'in-memory://',
+                    'knowledge_base' => 'in-memory://',
                     'failed' => 'doctrine://default?queue_name=failed&auto_setup=0',
                 ],
             ],

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Itk\Cms\Content;
 
+use Itk\Cms\Entity\PageTranslation;
 use Itk\Cms\Repository\PageTranslationRepository;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 
@@ -34,18 +35,12 @@ final class IndexablePages
     {
         $rows = [];
         foreach ($this->translations->findAllLive() as $t) {
-            if ($t->locale !== $this->mainLocale || !$t->isLive()) {
+            if (!$this->admits($t)) {
                 continue;
             }
             $version = (array) $t->published;
             $url = (string) ($version['url'] ?? $t->publishedUrl);
-            if (!\str_starts_with($url, '/')) {
-                continue;
-            }
             $seo = $this->seo->apply((array) ($version['seo'] ?? []), $this->seo->best($url, [], $t->locale));
-            if (\str_contains(\strtolower((string) ($seo['robots'] ?? '')), 'noindex')) {
-                continue;
-            }
             $title = \trim((string) ($seo['title'] ?? ''));
             $rows[$url] = [
                 'url' => $url,
@@ -57,5 +52,29 @@ final class IndexablePages
         }
 
         return \array_values($rows);
+    }
+
+    /** Whether one page version is in that selection: the main language, live, at a path, not `noindex` by its SEO or the rule of its address. */
+    public function admits(PageTranslation $t): bool
+    {
+        if ($t->locale !== $this->mainLocale || !$t->isLive()) {
+            return false;
+        }
+        $version = (array) $t->published;
+        $url = (string) ($version['url'] ?? $t->publishedUrl);
+
+        return \str_starts_with($url, '/') && !$this->noindex((array) ($version['seo'] ?? []), $url, $t->locale);
+    }
+
+    /**
+     * Whether the SEO of a page, with the rule of its address laid over it, says `noindex`.
+     *
+     * @param array<string, mixed> $pageSeo the `seo` of the published snapshot
+     */
+    public function noindex(array $pageSeo, string $url, string $locale): bool
+    {
+        $seo = $this->seo->apply($pageSeo, $this->seo->best($url, [], $locale));
+
+        return \str_contains(\strtolower((string) ($seo['robots'] ?? '')), 'noindex');
     }
 }
