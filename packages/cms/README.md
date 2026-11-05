@@ -25,6 +25,7 @@ Symfony-бандл: страницы из секций, шаблоны стра�
   - [Строгий режим: itk_cms.strict](#строгий-режим-itk_cmsstrict)
   - [Публичные страницы: заголовки и 304](#публичные-страницы-заголовки-и-304)
   - [Кэш страниц](#кэш-страниц)
+  - [База знаний](#база-знаний)
   - [Картинки](#картинки)
   - [Заявки](#заявки)
   - [SEO для любого адреса](#seo-для-любого-адреса)
@@ -623,6 +624,56 @@ return static function (SchemaBuilder $s): void {
 **Опции** `itk_cms.critical_css`: `enabled` (`false`); `stylesheets` (публичные пути с ведущим `/`, без схемы и `..`, в порядке каскада; обязательна хотя бы одна, когда включено); `viewports` (список `{width, height, mobile}`, по умолчанию `390×844` как телефон и `1366×900`; CSS каждого окна вставляется для экранов от его ширины до ширины следующего, одинаковые блоки сливаются); `keep_selectors` и `remove_selectors` (списки селекторов, которые crittr всегда оставляет или всегда выбрасывает); `node` (`node`); `chrome` (`null`, то есть Chrome, который скачал puppeteer); `timeout` (секунды на одну страницу в одном окне, по умолчанию 60, не меньше 10); `max_kb` (предел CSS одного окна, по умолчанию 75).
 
 **Публичный API** здесь: опции `itk_cms.critical_css`, функция `itk_stylesheets()`, команда `itk:critical-css:generate`, имя транспорта `critical_css` и класс сообщения `CriticalCss\Model\GenerateCriticalCss` (чтобы направить его в свой транспорт в `messenger.yaml`). Остальное в `CriticalCss\` помечено `@internal`.
+
+### База знаний
+
+База знаний: таблица pgvector с текстом опубликованных страниц и записей, разбитым на фрагменты с эмбеддингами OpenAI. Воркер обновляет её после каждой публикации и снятия с публикации, а удаление убирает строки само, внешними ключами. Редактор ничего не делает. Сервис `KnowledgeBase\KnowledgeSearch` ищет по смыслу; на нём позже строятся инструмент MCP, поиск по сайту и чат-бот. Выключено по умолчанию.
+
+**Что уходит наружу.** Опубликованный текст сайта отправляется в API OpenAI для построения эмбеддингов. В индекс попадает только то, что и так видит любой посетитель, но решение, можно ли отдавать этот текст стороннему сервису, принимает владелец сайта. Черновики, скрытые секции, поля `raw()`, поля с `canSee()` и страницы с `noindex` никуда не уходят.
+
+**Как включить.** Нужны расширение `vector` в PostgreSQL (образ `pgvector/pgvector:pg17` содержит его; на другом сервере суперпользователь один раз выполняет `CREATE EXTENSION vector`), пакет `symfony/http-client` и ключ OpenAI.
+
+1. Установите клиент: `composer require symfony/http-client`. Положите ключ в `.env.local`: `OPENAI_API_KEY=sk-...`.
+2. Включите опцию:
+
+   ```yaml
+   # config/packages/itk_cms.yaml
+   itk_cms:
+       knowledge_base:
+           enabled: true
+   ```
+
+3. Примените миграцию: `bin/console doctrine:migrations:migrate`. Она создаёт таблицы `itk_kb_document` и `itk_kb_chunk` и выполняет `CREATE EXTENSION IF NOT EXISTS vector`.
+4. Заполните индекс: `bin/console itk:knowledge-base:sync --now`. Команда печатает, сколько текстов отправлено и сколько токенов потрачено.
+5. Запустите воркер для транспорта `knowledge_base`: `bin/console messenger:consume async critical_css knowledge_base`.
+6. Проверьте на одном вопросе: `bin/console itk:knowledge-base:search "как вернуть товар"`.
+
+В сценарий деплоя добавьте `bin/console itk:knowledge-base:sync`: команда ставит в очередь только то, что выкладка сделала устаревшим (схема, конфигурация, модель), и ничего не стоит, когда менять нечего.
+
+**Что индексируется.** Страницы, которые `Content\IndexablePages` отбирает для карты сайта и `llms.txt`: основной язык, опубликованные, без `noindex` в SEO страницы или в правиле SEO её адреса. Записи коллекций: основной язык, опубликованные, кроме коллекций из `exclude_collections`. Другие языковые версии не индексируются, пока публичный маршрут их не отдаёт. Из каждой версии берётся текст, который видит посетитель: заголовок, описание SEO, поля шаблона, видимые секции в порядке вывода. Поле отдаёт текст по своему типу: `Text` и `Textarea` как есть, `Headline` одной строкой, `Description` и `Article` абзацами (статья делится на блоки по подзаголовкам `h2`–`h4`), `Select` как «Подпись: вариант», `Image` и `Photos` своим `alt`, каждая строка `Repeater` отдельным блоком с заголовком из `itemTitle()` или первого текстового поля. `Number`, `Toggle`, `Date`, `Link`, `Relation`, `Note`, список `variant()`, поля `raw()` и поля с `canSee()` не индексируются никогда, поэтому каждый фрагмент можно показать любому.
+
+**Фрагменты.** Блоки одной секции складываются в фрагменты примерно по 1200 символов (не больше 2000). Фрагмент никогда не пересекает границу секции, поэтому у попадания точный `sectionId`. Слишком длинный блок режется по абзацам, затем по предложениям с одним предложением внахлёст. В эмбеддер уходит фрагмент с контекстом: заголовок страницы и заголовок блока перед текстом, так что короткий ответ FAQ ищется вместе со своим вопросом.
+
+**Как индекс остаётся актуальным.** Публикация и снятие с публикации ставят в очередь `knowledge_base` одно сообщение `SyncKnowledge` с идентификатором версии. Обработчик собирает до 32 сообщений и один раз обращается к эмбеддеру, поэтому массовая публикация 200 страниц делает около 7 запросов. Воркер заново читает опубликованный снимок, считает основу документа (хеш модели, заголовка, адреса и каждого фрагмента) и сравнивает с сохранённой. Совпала, значит делать нечего. Эмбеддинг строится только для текста, которого ещё нет в таблице: при правке одной секции в API уходит только она. Документ перезаписывается целиком в одной транзакции под `pg_advisory_xact_lock`, поэтому два воркера на одной странице не мешают друг другу. Снятая с публикации страница пропадает из результатов сразу: поиск присоединяет текущий статус версии, а воркер потом только убирает строки. Удалённая страница или запись уносит свои строки внешними ключами, без сообщения. Автосохранение черновика ничего не запускает.
+
+**Смена модели.** Опция `model` входит в основу каждого документа. После смены модели поиск не находит ничего, пока `itk:knowledge-base:sync --now` не перестроит индекс, а строка «База знаний» в «Состоянии сайта» показывает, сколько документов ещё в старом пространстве. Векторы разных моделей никогда не сравниваются.
+
+**Поиск из кода.** `KnowledgeSearch::search(string $query, SearchOptions $options = new SearchOptions()): SearchResult`. `SearchOptions`: `locale` (по умолчанию основной), `limit` (1–50, по умолчанию 8), `templates` и `collections` (`null` — все, `[]` — ни одного), `minScore` (порог косинусной близости). `SearchResult::$hits` — список `Hit` по убыванию `score`; `bySource()` оставляет по одному лучшему попаданию на страницу или запись. `Hit`: `score`, `text`, `heading`, `source` (`kind`, `id`, `locale`, `resourceKey`, `title`, `url`), `sectionId`, `sectionType`, `field`. Выключенная база или отказ эмбеддера дают `KnowledgeBaseUnavailable`, неизвестный шаблон или коллекция `\InvalidArgumentException`.
+
+```php
+$result = $knowledge->search($request->query->getString('q'), new SearchOptions(locale: 'ru', limit: 20));
+foreach ($result->bySource() as $hit) {
+    // $hit->source->title, $hit->source->url, $hit->text (фрагмент как сниппет)
+}
+```
+
+**Команды.** `itk:knowledge-base:sync` ставит в очередь документы, которых нет, которые устарели или осиротели. `--now` делает это в процессе и завершается с кодом 1 при неудаче хотя бы одного источника или отказе API. `--dry-run` печатает счётчики и примерную стоимость в токенах, ничего не отправляя. `--source=page:<id>[:<locale>]` или `item:<id>[:<locale>]` ограничивает одним источником. `itk:knowledge-base:search "<запрос>" [--locale=ru] [--limit=8] [--template=x] [--collection=y]` печатает попадания таблицей.
+
+**Неудачи.** Ограничение частоты (429), ошибка сервера и обрыв сети временны: сообщение повторяется через 10 секунд, затем через 30, 90, 270 и 810 (не раньше `Retry-After`, если API его назвал), после чего попадает в транспорт неудач. Неверный ключ, неизвестная модель и отсутствие `symfony/http-client` постоянны: сообщения сразу уходят в транспорт неудач, а после исправления их возвращает `messenger:failed:retry`. Строка «База знаний» в «Состоянии сайта» показывает выключенную базу, отсутствие клиента, ключа или расширения, документы другой модели, сообщения в транспорте неудач, застрявшую очередь и число проиндексированных версий. API эмбеддингов она не вызывает.
+
+**Опции** `itk_cms.knowledge_base`: `enabled` (`false`); `model` (`text-embedding-3-small`; любая модель `text-embedding-3-*`, векторы хранятся в 1536 измерениях); `base_url` (`https://api.openai.com/v1`; совместимый API или прокси); `timeout` (секунды на один запрос, по умолчанию 30, не меньше 5); `exclude_templates` и `exclude_collections` (ключи, которые не индексируются никогда).
+
+**Публичный API** здесь: опции `itk_cms.knowledge_base`, сервис `KnowledgeBase\KnowledgeSearch` и типы `KnowledgeBase\Model\{SearchOptions, SearchResult, Hit, Source, SourceKind, KnowledgeBaseUnavailable}`, граница эмбеддера `KnowledgeBase\Embedding\{Embedder, Embeddings, Vector, Purpose, Space, EmbeddingFailed}` (сайт может подменить `Embedder` своей реализацией с 1536 измерениями), класс сообщения `KnowledgeBase\Model\SyncKnowledge`, команды `itk:knowledge-base:sync` и `itk:knowledge-base:search`, имя транспорта `knowledge_base`. Остальное в `KnowledgeBase\` помечено `@internal`.
 
 ### Картинки
 Оригиналы лежат в `{upload_url}/Y/m/name.jpg`, копии — `{upload_url}/_v/w{ширина}/Y/m/name.webp`. Копию создаёт маршрут `itk_image_variant` (`Controller\Site\ImageVariantController`) при первом обращении и кладёт файл рядом с публичным путём, поэтому дальше её отдаёт веб-сервер, а не PHP (ответ PHP: `Cache-Control: public, max-age=31536000, immutable`). Нужны расширение GD с WebP и, чтобы запрос на отсутствующий файл доходил до PHP, fallback веб-сервера на `index.php` (`try_files $uri /index.php$is_args$args`).
@@ -1454,6 +1505,7 @@ composer test          # lint:sql, затем база itk_test: drop, create, m
 - `History\` — `HistoryService` (запись истории), `Snapshots` (вид версий и список изменений), `HistoryAdmin` (чтение, возврат версии, корзина для API).
 - `Content\` — `PageService`, `CollectionService`, `CollectionQuery` (список с фильтрами), `FieldAccess` (права на поля), `SettingsService`, `MenuService`, `RedirectService`, `SeoResolver`, `SeoRuleService`, `Listing`, `ChangeDetector`, `HtmlSanitizer`, `FieldValues`, `H1Rule`, `Placement`. Ошибки — `ContentException` (HTTP-код в `status()`).
 - `Rendering\{PageRenderer, PageValidators}` (ETag и 304), `Rendering\PageCache` (кэш готовых страниц; публичен его метод `clear()`, раздел «Кэш страниц»), `Controller\Site\{PageController, RequestSubmitController, ImageVariantController, SitemapController, CrawlerFilesController, HealthzController}`, `Twig\{ItkExtension, ItkRuntime, SeoRuntime}`.
+- `KnowledgeBase\` — база знаний на pgvector (раздел «База знаний»): `KnowledgeSearch` (публичный поиск по смыслу), `Indexer` (сторона воркера, единственный писатель таблиц), `SourceReader` (какие версии индексируются), `Extractor` и `Chunker` (текст из снимка и фрагменты), `QueueOnContentChange` и `SyncKnowledgeHandler` (событие, сообщение `SyncKnowledge`, пакетный обработчик), `Embedding\*` (граница эмбеддера, `OpenAiEmbedder`), `Model\*`, `Doctrine\VectorType`, `Command\{KnowledgeBaseSyncCommand, KnowledgeBaseSearchCommand}`, `Health\KnowledgeBaseHealthCheck`.
 - `CriticalCss\` — критический CSS живых страниц (раздел «Критический CSS»): `Stylesheets` (список таблиц стилей и конфигурация генератора), `CriticalCssService` (сторона запроса: основа, свежесть, заказ воркеру), `CriticalCssGenerator` (сторона воркера, единственный писатель таблицы), `NodeCssExtractor` и `node/critical-css.mjs` (граница с Node и crittr), `Model\*` (значения и сообщение `GenerateCriticalCss`), `Command\GenerateCriticalCssCommand`, `Health\CriticalCssHealthCheck`.
 - `Content\ContentReader` — публичное чтение для сайта (`itk_pages`, `itk_page`, `itk_collection`); `Schema\{Key, SchemaLint}` — формат ключа и проверка схемы; `Health\{Doctor, LivenessProbe}`, `Command\{DoctorCommand, SchemaLintCommand}`; `Security\PublicHeadersListener`.
 - `Request\` — `RequestService`, `TelegramNotifier`, сообщение и обработчик Messenger.
@@ -1467,7 +1519,7 @@ composer test          # lint:sql, затем база itk_test: drop, create, m
 
 Совместимость: публичными считаются API схемы (`Schema\SchemaBuilder`, `Field`, `Template`, `SectionType`, `Collection`, `SettingsGroup`, `FormDef`), поля `Field\*`, классы-ресурсы, `Action`/`Metric`, события, `ItkExtensionInterface`/`Registry`, `Settings`, Twig-функции, имена маршрутов и опции `itk_cms`, имена консольных команд. Остальное может меняться между минорными версиями.
 
-Что бандл **не обещает**, помечено `@internal` в докблоке класса (PHPStan и IDE предупредят при использовании): `Repository\*`, `Controller\*`, `Generator\*`, `Rendering\*` (кроме `PageCache::clear()`), `Mcp\Tool\*` и служебные сервисы (`Admin\NavBuilder`, `Admin\Theme\AdminFont`, `I18n\AdminLocaleListener`; `Content\{ChangeDescriber, ChangeDetector, DraftVersion, EditLock, FieldValues, H1Rule, Placement, SeoAddressCheck, SitemapInvalidator, CrawlerFiles, IndexablePages, TreeMove, LiveUrlIndex}`; `Health\{Doctor, LivenessProbe, MessengerMonitor, UpdateChecker}` и проверки ядра; `History\{HistoryService, Snapshots}`; `Mail\{MailComposer, MailFailureListener, MailHealthCheck, SendMailHandler}`; `Mcp\{McpServer, McpGate, McpStdio, McpToolRegistry, McpContextFactory, McpFirewallHealthCheck, ArgumentChecker, McpProtocolError}`; `Media\{MediaFolderService, GenerateImageVariantsHandler}`; `CriticalCss\*` кроме `Model\GenerateCriticalCss` (его направляют в `messenger.yaml`); слушатели `Security\*` и `Twig\{ItkExtension, ItkRuntime, SeoRuntime}`). Без метки остаются то, что сайт подключает в `security.yaml`, `messenger.yaml` и своём коде: `Entity\User`, `Security\{AdminUserProvider, UserChecker, UserManager, Viewer, PermissionVoter, Access}`, `Mcp\{ApiTokenAuthenticator, McpToolInterface, AbstractMcpTool, McpContext, McpScopes}`, `Request\SendRequestNotification`, сервисы контента (`PageService`, `CollectionService`, `SettingsService`, `MenuService` …). Сайту нужны данные для страниц — берите `ContentReader` и Twig-функции, а не репозитории.
+Что бандл **не обещает**, помечено `@internal` в докблоке класса (PHPStan и IDE предупредят при использовании): `Repository\*`, `Controller\*`, `Generator\*`, `Rendering\*` (кроме `PageCache::clear()`), `Mcp\Tool\*` и служебные сервисы (`Admin\NavBuilder`, `Admin\Theme\AdminFont`, `I18n\AdminLocaleListener`; `Content\{ChangeDescriber, ChangeDetector, DraftVersion, EditLock, FieldValues, H1Rule, Placement, SeoAddressCheck, SitemapInvalidator, CrawlerFiles, IndexablePages, TreeMove, LiveUrlIndex}`; `Health\{Doctor, LivenessProbe, MessengerMonitor, UpdateChecker}` и проверки ядра; `History\{HistoryService, Snapshots}`; `Mail\{MailComposer, MailFailureListener, MailHealthCheck, SendMailHandler}`; `Mcp\{McpServer, McpGate, McpStdio, McpToolRegistry, McpContextFactory, McpFirewallHealthCheck, ArgumentChecker, McpProtocolError}`; `Media\{MediaFolderService, GenerateImageVariantsHandler}`; `CriticalCss\*` кроме `Model\GenerateCriticalCss` (его направляют в `messenger.yaml`); `KnowledgeBase\*` кроме `KnowledgeSearch`, типов результата и `Embedding\*` (раздел «База знаний»); слушатели `Security\*` и `Twig\{ItkExtension, ItkRuntime, SeoRuntime}`). Без метки остаются то, что сайт подключает в `security.yaml`, `messenger.yaml` и своём коде: `Entity\User`, `Security\{AdminUserProvider, UserChecker, UserManager, Viewer, PermissionVoter, Access}`, `Mcp\{ApiTokenAuthenticator, McpToolInterface, AbstractMcpTool, McpContext, McpScopes}`, `Request\SendRequestNotification`, сервисы контента (`PageService`, `CollectionService`, `SettingsService`, `MenuService` …). Сайту нужны данные для страниц — берите `ContentReader` и Twig-функции, а не репозитории.
 
 ## Админка: вход, API, предпросмотр
 
