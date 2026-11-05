@@ -220,7 +220,7 @@ final class AdminApiTest extends WebTestCase
     {
         self::assertSame(['key' => 'list.test_trips', 'value' => null], $this->api('GET', 'prefs/list.test_trips'));
 
-        // MySQL keeps the keys of a JSON object in its own order, so the value is compared as a set
+        // jsonb keeps the keys of a JSON object in its own order, so the value is compared as a set
         $value = ['filter' => ['state' => 'open'], 'sort' => '-seats', 'view' => 'cards'];
         self::assertSame(['key' => 'list.test_trips', 'value' => $value], $this->api('PUT', 'prefs/list.test_trips', ['value' => $value]));
         self::assertEqualsCanonicalizing($value, $this->api('GET', 'prefs/list.test_trips')['value']);

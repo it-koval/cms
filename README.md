@@ -8,9 +8,9 @@
 
 ## Что нужно
 
-- PHP 8.3+ с расширениями `ctype`, `dom`, `gd`, `json`, `mbstring`, `pdo_mysql`, `sodium`
+- PHP 8.3+ с расширениями `ctype`, `dom`, `gd`, `json`, `mbstring`, `pdo_pgsql`, `sodium`
 - Composer
-- MySQL 8+ (другие базы не поддерживаются)
+- PostgreSQL 16+ (другие базы не поддерживаются; образ `pgvector/pgvector:pg17` подходит сразу)
 
 ## Установка
 
@@ -28,7 +28,7 @@
 2. Задайте базу и секрет в `.env.local`:
 
    ```dotenv
-   DATABASE_URL="mysql://user:password@127.0.0.1:3306/mysite?serverVersion=8.4&charset=utf8mb4"
+   DATABASE_URL="postgresql://user:password@127.0.0.1:5432/mysite?serverVersion=17&charset=utf8"
    APP_SECRET=a-long-random-string
    ```
 

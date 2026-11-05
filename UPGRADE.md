@@ -53,6 +53,38 @@
 
 Ни одна версия пока не выпущена. Сайт, который работает на копии бандла до этих изменений (`yamicustoms`), сверяется с этим списком при обновлении.
 
+**Только PostgreSQL.** Бандл работает на PostgreSQL 16 и новее; MySQL больше не поддерживается. Все прежние миграции заменены одной базовой (`Version20261105000000`), которая создаёт схему целиком и останавливается на любой другой базе. Сайту нужны расширение `pdo_pgsql` вместо `pdo_mysql` и `DATABASE_URL` вида `postgresql://user:password@127.0.0.1:5432/mysite?serverVersion=17&charset=utf8`. Берите образ `pgvector/pgvector:pg17`: это `postgres:17` с расширением `vector`, которое понадобится базе знаний бандла.
+
+Как перенести сайт с MySQL:
+
+1. Поднимите PostgreSQL и создайте пустую базу с кодировкой `UTF8`. Поставьте `pdo_pgsql`, впишите новый `DATABASE_URL`.
+2. Создайте схему миграцией бандла: `bin/console doctrine:migrations:migrate`. Таблицы `itk_*` появятся с `jsonb`-колонками, таблица `doctrine_migration_versions` будет помнить только новую миграцию.
+3. Перенесите данные [pgloader](https://pgloader.readthedocs.io/) только из таблиц `itk_*` и только данные: схему уже сделала миграция. Файл `itk.load`:
+   ```
+   LOAD DATABASE
+        FROM mysql://user:password@127.0.0.1:3306/mysite
+        INTO postgresql://user:password@127.0.0.1:5432/mysite
+        WITH data only, truncate, reset sequences
+        INCLUDING ONLY TABLE NAMES MATCHING ~/^itk_/
+        ALTER SCHEMA 'mysite' RENAME TO 'public';
+   ```
+   `pgloader itk.load`. `tinyint(1)` pgloader сам переводит в `boolean`, `JSON` кладёт в `jsonb`, `reset sequences` выставляет счётчики `id` у заявок, уведомлений и истории.
+4. Приведите адреса переадресаций к виду, в котором их теперь хранит бандл, и проверьте, что уникальные значения не слиплись: MySQL сравнивал строки без учёта регистра, PostgreSQL сравнивает точно.
+   ```sql
+   UPDATE itk_redirect SET from_path = lower(from_path);
+   SELECT lower(email), count(*) FROM itk_user GROUP BY 1 HAVING count(*) > 1;
+   SELECT locale, lower(published_url), count(*) FROM itk_page_translation GROUP BY 1, 2 HAVING count(*) > 1;
+   SELECT from_path, count(*) FROM itk_redirect GROUP BY 1 HAVING count(*) > 1;
+   ```
+   Строки, которые нашлись, были неразличимы для MySQL; оставьте одну из каждой пары. Адреса электронной почты и опубликованные адреса страниц бандл и раньше записывал строчными буквами, поэтому обычно там пусто.
+5. Очередь Messenger (`messenger_messages`) не переносится: `bin/console messenger:setup-transports` создаст её заново, недоставленные письма отправьте заново. Запустите `bin/console itk:doctor`: строка «База данных» должна назвать PostgreSQL 16 или новее.
+
+- **DQL-функции.** `JSON_EXTRACT` и `JSON_UNQUOTE` удалены. Код сайта, который писал DQL с ними, переходит на `JSON_TEXT(i.translations, :path)` (текст, `jsonb #>>`) и `JSON_GET` (JSON, `jsonb #>`) с путём в виде текстового массива: `Itk\Cms\Doctrine\JsonPath::of('ru', 'draft', 'title')` даёт `{"ru","draft","title"}`. `JSON_NUMBER` принимает тот же путь и отвечает `NULL` на всё, что не число и не числовая строка.
+- **Сырой SQL сайта.** Запросы, которые сайт писал под MySQL (`JSON_EXTRACT`, `IFNULL`, `ON DUPLICATE KEY`, обратные кавычки), на PostgreSQL не выполнятся. `composer lint:sql` бандла проверяет только `src/` бандла; скрипт `scripts/lint-sql.php` принимает пути, им можно проверить и код сайта.
+- **`itk:make:collection --from=table:`** читает таблицу PostgreSQL в текущей схеме; таблица в другой схеме указывается как `table:схема.таблица`. Колонки `boolean` становятся `Toggle`, тип-перечисление становится `Select`, `bytea` пропускается с пометкой.
+- **Переадресации.** `RedirectService::create()` и `update()` хранят адрес «откуда» как `Url::key()`: строчными буквами и без завершающей косой черты. Админка покажет адреса в таком виде.
+- **Порядок `facets`.** Значения фильтров в ответе-конверте списка коллекции идут в порядке первого появления записи в списке, а не в порядке, который случайно давал MySQL.
+
 - **Новая Twig-функция `itk_stylesheets`.** Имя занято бандлом: одноимённая функция сайта конфликтует. Макет, который хочет критический CSS, заменяет свой `<link rel="stylesheet">` на `{{ itk_stylesheets() }}` (раздел «Критический CSS» в [packages/cms/README.md](packages/cms/README.md)); без опции функция печатает тот же `<link>`.
 - **Опция `itk_cms.critical_css`.** Выключена по умолчанию; с `enabled: true` обязателен список `stylesheets`. Когда включена, воркер запускает `node` и Chrome: на сервере нужны Node 22 или новее и `npm install crittr` в корне проекта.
 - **Таблица `itk_critical_css`.** Её создаёт миграция бандла (`doctrine:migrations:migrate`); одна строка на языковую версию страницы, удаляется вместе с ней.

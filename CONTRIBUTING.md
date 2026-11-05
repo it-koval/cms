@@ -11,12 +11,12 @@
 
 ## Настройка окружения
 
-Понадобятся PHP 8.3 или новее с расширениями `ctype`, `dom`, `gd`, `json`, `mbstring`, `pdo_mysql`, `sodium` (и, желательно, `exif`), Composer, Node.js той версии, что указана в `admin/.nvmrc`, и Docker для тестовой базы данных.
+Понадобятся PHP 8.3 или новее с расширениями `ctype`, `dom`, `gd`, `json`, `mbstring`, `pdo_pgsql`, `sodium` (и, желательно, `exif`), Composer, Node.js той версии, что указана в `admin/.nvmrc`, и Docker для тестовой базы данных.
 
-Тесты выполняются на MySQL 8 и отправляют почту в Mailpit:
+Тесты выполняются на PostgreSQL 17 (образ `pgvector/pgvector:pg17`, в нём есть расширение `vector`) и отправляют почту в Mailpit:
 
 ```bash
-docker run -d --name itk-test-db -p 127.0.0.1:33950:3306 -e MYSQL_ROOT_PASSWORD=itk-test mysql:8.4
+docker run -d --name itk-test-pg -p 127.0.0.1:33960:5432 -e POSTGRES_PASSWORD=itk-test pgvector/pgvector:pg17
 docker run -d --name itk-test-mail -p 127.0.0.1:33951:1025 -p 127.0.0.1:33952:8025 axllent/mailpit
 
 cd packages/cms
@@ -31,12 +31,13 @@ PHP, из `packages/cms`:
 
 ```bash
 export ITK_TEST_MAILPIT_URL=http://127.0.0.1:33952 ITK_TEST_MAILPIT_SMTP_PORT=33951
-composer test        # пересоздаёт базу itk_test, применяет миграции, запускает itk:install, затем PHPUnit
+composer test        # composer lint:sql, затем пересоздаёт базу itk_test, применяет миграцию, запускает itk:install и PHPUnit
+composer lint:sql    # ищет конструкции MySQL в SQL бандла (src/, включая миграции); падает на первой же
 composer stan        # PHPStan, уровень 5
 composer cs          # PHP CS Fixer, только проверка; composer cs:fix применяет исправления
 ```
 
-`DATABASE_URL` по умолчанию равен `mysql://root:itk-test@127.0.0.1:33950/itk?serverVersion=8.4&charset=utf8mb4` (тесты используют базу `itk_test`; в вашем собственном значении тоже нужен `serverVersion`, иначе `doctrine:database:create` завершится ошибкой `Unknown database`). Без `ITK_TEST_MAILPIT_URL` тесты почты пропускаются. Подробнее о тестах написано в разделе «Тесты бандла» файла [packages/cms/README.md](packages/cms/README.md).
+`DATABASE_URL` по умолчанию равен `postgresql://postgres:itk-test@127.0.0.1:33960/itk?serverVersion=17&charset=utf8` (тесты используют базу `itk_test`; в вашем собственном значении тоже нужен `serverVersion`, иначе Doctrine подключится к ещё не созданной базе, чтобы узнать версию сервера, и `doctrine:database:create` завершится ошибкой). Без `ITK_TEST_MAILPIT_URL` тесты почты пропускаются. Подробнее о тестах написано в разделе «Тесты бандла» файла [packages/cms/README.md](packages/cms/README.md).
 
 Админка, из `admin`:
 

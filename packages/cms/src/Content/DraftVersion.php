@@ -16,7 +16,7 @@ use Symfony\Component\DependencyInjection\Attribute\Autowire;
  *
  * The version is a hash of the content of the draft (for a page also its place in the tree and its template, which an autosave writes too), not a counter
  * or a time: it needs no column, two changes in the same second still differ, publishing leaves it alone (the draft is the same), and a person who puts
- * everything back as it was gets the old version back. MySQL reorders the keys of JSON, hence Json::canonical().
+ * everything back as it was gets the old version back. jsonb reorders the keys of JSON, hence Json::canonical().
  *
  * The hash is keyed with the secret of the site: the version goes to everyone who may read the page or the record, and a bare hash of the whole draft would let
  * a person try values of a field hidden from them (`canSee`) against it, offline, and tell the right one.

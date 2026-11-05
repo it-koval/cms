@@ -30,7 +30,7 @@ class SeoRule
     #[ORM\Column(type: Types::STRING, length: 500)]
     public string $path;
 
-    // the column is not called "match": a reserved word of MySQL
+    // the column is not called "match": a reserved word of SQL
     #[ORM\Column(name: 'match_type', type: Types::STRING, length: 8)]
     public string $matchType = self::EXACT;
 
