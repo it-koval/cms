@@ -5,6 +5,7 @@ declare(strict_types=1);
 use Itk\Cms\Controller\Admin\AdminAppController;
 use Itk\Cms\Controller\Admin\TwoFactorLoginController;
 use Itk\Cms\Doctrine\MigrationVersionComparator;
+use Itk\Cms\Health\KnowledgeBaseHealthCheck;
 use Itk\Cms\Health\MessengerMonitor;
 use Itk\Cms\I18n\AdminLocale;
 use Itk\Cms\KnowledgeBase\Embedding\Embedder;
@@ -56,6 +57,7 @@ return static function (ContainerConfigurator $container): void {
     // The HTTP client is optional (symfony/http-client is only suggested), as for UpdateChecker
     $services->alias(Embedder::class, OpenAiEmbedder::class);
     $services->get(OpenAiEmbedder::class)->arg('$http', service('http_client')->nullOnInvalid());
+    $services->get(KnowledgeBaseHealthCheck::class)->arg('$http', service('http_client')->nullOnInvalid());
 
     // the one class of the knowledge base that site code calls (a site search, a chatbot); public so that a site can also take it from a service locator
     $services->get(KnowledgeSearch::class)->public();
