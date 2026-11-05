@@ -16,8 +16,8 @@ COPY --from=composer:2.8 /usr/bin/composer /usr/bin/composer
 # pcntl lets messenger:consume finish the job in flight on SIGTERM.
 RUN set -eux; \
     apt-get update; \
-    apt-get install -y --no-install-recommends git unzip file acl libfcgi-bin default-mysql-client; \
-    install-php-extensions intl pdo_mysql zip exif gd opcache apcu pcntl; \
+    apt-get install -y --no-install-recommends git unzip file acl libfcgi-bin postgresql-client; \
+    install-php-extensions intl pdo_pgsql zip exif gd opcache apcu pcntl; \
     rm -rf /var/lib/apt/lists/*
 
 # Match the container user to the host user (Linux). Harmless on macOS.

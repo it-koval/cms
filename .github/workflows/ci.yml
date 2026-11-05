@@ -27,14 +27,14 @@ jobs:
           - { php: '8.4', symfony: '8.1.*' }
 
     services:
-      mysql:
-        image: mysql:8.4
+      postgres:
+        image: pgvector/pgvector:pg17
         env:
-          MYSQL_ROOT_PASSWORD: itk-test
+          POSTGRES_PASSWORD: itk-test
         ports:
-          - 3306:3306
+          - 5432:5432
         options: >-
-          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -pitk-test"
+          --health-cmd="pg_isready -U postgres"
           --health-interval=5s
           --health-timeout=5s
           --health-retries=20
@@ -50,7 +50,7 @@ jobs:
           --health-retries=20
 
     env:
-      DATABASE_URL: mysql://root:itk-test@127.0.0.1:3306/itk?serverVersion=8.4&charset=utf8mb4
+      DATABASE_URL: postgresql://postgres:itk-test@127.0.0.1:5432/itk?serverVersion=17&charset=utf8
       ITK_TEST_MAILPIT_URL: http://127.0.0.1:8025
       ITK_TEST_MAILPIT_SMTP_PORT: '1025'
 
@@ -64,7 +64,7 @@ jobs:
       - uses: shivammathur/setup-php@v2
         with:
           php-version: ${{ matrix.php }}
-          extensions: ctype, dom, exif, gd, json, mbstring, pdo_mysql, sodium
+          extensions: ctype, dom, exif, gd, json, mbstring, pdo_pgsql, sodium
           coverage: none
           tools: composer:v2
 
@@ -81,6 +81,9 @@ jobs:
         run: composer install --no-progress --prefer-dist
 
       - run: composer validate --strict
+
+      - name: No MySQL constructs in the SQL of the bundle
+        run: composer lint:sql
 
       - name: composer test (database, migrations, itk:install, PHPUnit)
         run: composer test

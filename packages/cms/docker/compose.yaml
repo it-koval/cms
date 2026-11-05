@@ -1,10 +1,10 @@
 # ITK CMS Docker kit: copy this file to the site root as compose.yaml (README of the bundle, "Docker").
-# The project name is the name of the directory; ports are published on 127.0.0.1 only. Set a password for MySQL before exposing it.
+# The project name is the name of the directory; ports are published on 127.0.0.1 only. Set a password for PostgreSQL before exposing it.
 # NB: compose reads the Symfony `.env` for ${...} interpolation (it contains APP_ENV=prod), so the container environment
 # uses its own variable names here (DOCKER_APP_ENV, not APP_ENV).
 x-php-env: &php-env
   APP_ENV: ${DOCKER_APP_ENV:-dev}
-  DATABASE_URL: mysql://root:root@database:3306/${DB_NAME:-app}?serverVersion=8.4.0&charset=utf8mb4
+  DATABASE_URL: postgresql://postgres:postgres@database:5432/${DB_NAME:-app}?serverVersion=17&charset=utf8
   MAILER_DSN: smtp://mailer:1025
   MESSENGER_TRANSPORT_DSN: doctrine://default?auto_setup=0
   DEFAULT_URI: http://localhost:${HTTP_PORT:-8080}
@@ -74,19 +74,18 @@ services:
     healthcheck:
       disable: true
 
+  # pgvector/pgvector is the official postgres image plus the vector extension (the knowledge base of the bundle)
   database:
-    image: mysql:8.4
-    command: ["--character-set-server=utf8mb4", "--collation-server=utf8mb4_unicode_ci", "--max-allowed-packet=256M"]
+    image: pgvector/pgvector:pg17
     environment:
-      MYSQL_ROOT_PASSWORD: root
-      MYSQL_ROOT_HOST: "%"
-      MYSQL_DATABASE: ${DB_NAME:-app}
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: ${DB_NAME:-app}
     volumes:
-      - database_data:/var/lib/mysql
+      - database_data:/var/lib/postgresql/data
     ports:
-      - "127.0.0.1:${DB_PORT:-3307}:3306"
+      - "127.0.0.1:${DB_PORT:-5433}:5432"
     healthcheck:
-      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 --protocol=tcp -uroot -p$$MYSQL_ROOT_PASSWORD --silent"]
+      test: ["CMD-SHELL", "pg_isready -U postgres -d $${POSTGRES_DB}"]
       interval: 5s
       timeout: 5s
       retries: 30
