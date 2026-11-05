@@ -8,7 +8,7 @@
         "admin",
         "content-management",
         "doctrine",
-        "mysql",
+        "postgresql",
         "mcp"
     ],
     "type": "symfony-bundle",
@@ -25,7 +25,7 @@
         "ext-gd": "*",
         "ext-json": "*",
         "ext-mbstring": "*",
-        "ext-pdo_mysql": "*",
+        "ext-pdo_pgsql": "*",
         "ext-sodium": "*",
         "doctrine/collections": "^2.2 || ^3.1",
         "doctrine/dbal": "^4.2",
@@ -117,6 +117,7 @@
     },
     "scripts": {
         "test": [
+            "@lint:sql",
             "@test:prepare",
             "@test:run"
         ],
@@ -128,6 +129,7 @@
             "@php tests/bin/console itk:install -n --env=test"
         ],
         "test:run": "@php vendor/bin/phpunit",
+        "lint:sql": "@php scripts/lint-sql.php",
         "stan": "@php vendor/bin/phpstan analyse --memory-limit=1G",
         "cs": "@php vendor/bin/php-cs-fixer fix --config=../../.php-cs-fixer.dist.php --dry-run --diff --verbose",
         "cs:fix": "@php vendor/bin/php-cs-fixer fix --config=../../.php-cs-fixer.dist.php"

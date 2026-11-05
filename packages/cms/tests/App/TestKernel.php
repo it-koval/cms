@@ -21,7 +21,7 @@ use Symfony\Component\Routing\Loader\Configurator\RoutingConfigurator;
  * The site the bundle is tested on: the smallest application that has everything Itk\Cms needs (framework, doctrine, migrations, twig, security,
  * messenger with an in-memory async queue). Its project directory is tests/App: config/itk/schema.php, templates/ and the files the tests upload (public/, var/) are there.
  *
- * The database is DATABASE_URL (by default the MySQL of the test stand, 127.0.0.1:33950); the connection uses the database «<name>_test».
+ * The database is DATABASE_URL (by default the PostgreSQL of the test stand, 127.0.0.1:33960); the connection uses the database «<name>_test».
  *
  * The admin is at /admin. A test that checks another place for it builds the kernel itself: `$adminPath` is the option itk_cms.admin_path, `$routePrefix` is the prefix
  * of the import of config/routes/admin.php in the site's routes (`prefix: /cp`); the firewall and access_control follow (the site changes them itself, see README).
@@ -35,7 +35,7 @@ final class TestKernel extends BaseKernel
 {
     use MicroKernelTrait;
 
-    public const DEFAULT_DATABASE_URL = 'mysql://root:itk-test@127.0.0.1:33950/itk?serverVersion=8.4&charset=utf8mb4';
+    public const DEFAULT_DATABASE_URL = 'postgresql://postgres:itk-test@127.0.0.1:33960/itk?serverVersion=17&charset=utf8';
 
     /**
      * @param array<string, mixed> $framework top-level blocks of the framework config that replace the ones of the test site
