@@ -36,7 +36,7 @@ use Symfony\Component\HttpFoundation\Request;
  */
 final class Doctor
 {
-    private const REQUIRED = ['ctype', 'dom', 'gd', 'json', 'mbstring', 'pdo_mysql', 'sodium'];
+    private const REQUIRED = ['ctype', 'dom', 'gd', 'json', 'mbstring', 'pdo_pgsql', 'sodium'];
     private const OPTIONAL = ['exif' => 'ops.doctor_optional_exif'];
     /** a message in the queue for longer than this many seconds means that nobody takes it */
     private const STALE = 300;
