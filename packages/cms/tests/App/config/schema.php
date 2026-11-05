@@ -29,6 +29,13 @@ return static function (SchemaBuilder $s): void {
         Field::textarea('html', 'HTML секции')->rows(15)->raw()->help('Выводится как есть. Менять код может только администратор.'),
     );
 
+    $s->section('notes', 'Заметка с внутренним полем')->group('Тексты и картинки')->tone('white')->silhouette('text')->fields(
+        Field::textarea('summary', 'Кратко'),
+        Field::text('internal', 'Внутренняя пометка')->canSee('set:users'),
+        Field::select('mood', 'Тон', [['calm', 'Спокойный'], ['loud', 'Громкий']]),
+        Field::photos('gallery', 'Галерея'),
+    );
+
     $s->section('image', 'Картинка')->group('Тексты и картинки')->tone('white')->silhouette('picture')->fields(
         Field::image('image', 'Картинка')->required(),
         Field::select('align', 'Выравнивание', [['center', 'По центру'], ['left', 'По левому краю']]),

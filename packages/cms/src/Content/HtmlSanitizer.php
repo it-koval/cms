@@ -131,6 +131,119 @@ final class HtmlSanitizer
         return (string) \preg_replace('/\n+$/', '', $out);
     }
 
+    /** One line of plain text: toText() with every line break and run of whitespace collapsed to one space (a two-line headline reads as one sentence). */
+    public function oneLine(mixed $html): string
+    {
+        return \trim((string) \preg_replace('/\s+/u', ' ', $this->toText($html)));
+    }
+
+    /**
+     * The text of a Description or an Article as runs under their subheadings, for the knowledge base. The first run has heading null (the text before
+     * the first subheading) and is left out when it is empty.
+     *   h1 … h4                        start a new run; their text is its heading
+     *   p, li, figcaption              one paragraph each (a quote with paragraphs: one per paragraph; a list item with a nested list: its own text, then the nested items)
+     *   tr                             one paragraph, the cells joined with " | "
+     *   hr, img and the DROP tags      nothing
+     * Whitespace is collapsed inside a paragraph, a <br> is a space, an empty paragraph is left out.
+     *
+     * @return list<array{heading: ?string, paragraphs: list<string>}>
+     */
+    public function runs(mixed $html): array
+    {
+        if (null === $html || '' === $html || !\is_scalar($html)) {
+            return [];
+        }
+        /** @var list<array{heading: ?string, paragraphs: list<string>}> $runs */
+        $runs = [['heading' => null, 'paragraphs' => []]];
+        $inline = '';
+        $paragraph = static function (string $text) use (&$runs): void {
+            $text = \trim((string) \preg_replace('/\s+/u', ' ', $text));
+            if ('' !== $text) {
+                $runs[\count($runs) - 1]['paragraphs'][] = $text;
+            }
+        };
+        $flush = static function () use (&$inline, $paragraph): void {
+            $paragraph($inline);
+            $inline = '';
+        };
+        $walk = function (\DOMNode $node) use (&$walk, &$runs, &$inline, $paragraph, $flush): void {
+            foreach ($node->childNodes as $n) {
+                if (\XML_TEXT_NODE === $n->nodeType || \XML_CDATA_SECTION_NODE === $n->nodeType) {
+                    $inline .= $n->nodeValue;
+                    continue;
+                }
+                if (!$n instanceof \DOMElement) {
+                    continue;
+                }
+                $tag = \strtolower($n->nodeName);
+                if (\in_array($tag, self::DROP, true) || 'hr' === $tag || 'img' === $tag) {
+                    continue;
+                }
+                if ('br' === $tag) {
+                    $inline .= ' ';
+                    continue;
+                }
+                if (\in_array($tag, ['h1', 'h2', 'h3', 'h4'], true)) {
+                    $flush();
+                    $runs[] = ['heading' => $this->oneLine($this->innerHtml($n)), 'paragraphs' => []];
+                    continue;
+                }
+                if ('tr' === $tag) {
+                    $flush();
+                    $cells = [];
+                    foreach ($n->childNodes as $cell) {
+                        if ($cell instanceof \DOMElement && \in_array(\strtolower($cell->nodeName), ['td', 'th'], true)) {
+                            $cells[] = $this->oneLine($this->innerHtml($cell));
+                        }
+                    }
+                    $paragraph(\implode(' | ', \array_filter($cells, static fn (string $c): bool => '' !== $c)));
+                    continue;
+                }
+                if (!$this->holdsBlocks($n)) {
+                    if (\in_array($tag, ['p', 'li', 'figcaption'], true)) {
+                        $flush();
+                        $paragraph($this->toText($this->innerHtml($n)));
+                    } else {
+                        $inline .= $this->toText($this->innerHtml($n));
+                    }
+                    continue;
+                }
+                $flush();
+                $walk($n);
+                $flush();
+            }
+        };
+        $walk($this->parse((string) $html));
+        $flush();
+        if (null === $runs[0]['heading'] && [] === $runs[0]['paragraphs']) {
+            \array_shift($runs);
+        }
+
+        return $runs;
+    }
+
+    /** Whether a node contains an element that opens a paragraph or a run of runs(). */
+    private function holdsBlocks(\DOMElement $node): bool
+    {
+        foreach ($node->getElementsByTagName('*') as $child) {
+            if (\in_array(\strtolower($child->nodeName), ['p', 'li', 'figcaption', 'tr', 'h1', 'h2', 'h3', 'h4', 'blockquote', 'ul', 'ol', 'table'], true)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function innerHtml(\DOMElement $node): string
+    {
+        $html = '';
+        foreach ($node->childNodes as $child) {
+            $html .= (string) $node->ownerDocument?->saveHTML($child);
+        }
+
+        return $html;
+    }
+
     /** Length for the «n / max» budget: characters without line breaks. */
     public function textLength(mixed $html): int
     {

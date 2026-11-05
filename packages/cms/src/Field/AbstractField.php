@@ -443,6 +443,16 @@ abstract class AbstractField implements FieldInterface
         return $this->locked;
     }
 
+    /**
+     * Is the field for everybody (no canSee())? The knowledge base indexes only such fields, so that every chunk is text any viewer may read.
+     *
+     * @internal
+     */
+    public function isPublic(): bool
+    {
+        return null === $this->canSee;
+    }
+
     public function visibleTo(Viewer $viewer): bool
     {
         if (null === $this->canSee) {

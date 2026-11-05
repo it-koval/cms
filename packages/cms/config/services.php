@@ -45,6 +45,8 @@ return static function (ContainerConfigurator $container): void {
             '../src/Security/RequestPasswordLink.php',
             '../src/Mcp/{McpScopes,McpToolException,McpProtocolError,ApiTokenException,ArgumentChecker,McpContext}.php',
             '../src/CriticalCss/Model',
+            '../src/KnowledgeBase/Model',
+            '../src/KnowledgeBase/Embedding/{Space,Vector,Purpose,Embeddings,EmbeddingFailed}.php',
         ]);
 
     // the one class of the page cache that site code calls (clear() after its own import); public so that a site can also take it from a service locator

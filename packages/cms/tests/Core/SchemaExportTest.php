@@ -28,7 +28,7 @@ final class SchemaExportTest extends KernelTestCase
         }
         self::assertSame('ru', $s['mainLocale']);
         self::assertFalse($s['features']['ai']);
-        self::assertSame(['hero', 'text', 'html', 'image', 'faq'], \array_column($s['sections'], 'key'));
+        self::assertSame(['hero', 'text', 'html', 'notes', 'image', 'faq'], \array_column($s['sections'], 'key'));
         self::assertNotFalse(\json_encode($s, \JSON_THROW_ON_ERROR | \JSON_UNESCAPED_UNICODE));
     }
 
