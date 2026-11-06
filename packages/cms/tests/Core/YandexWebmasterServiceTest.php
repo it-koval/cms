@@ -6,7 +6,9 @@ namespace Itk\Cms\Tests\Core;
 
 use Itk\Cms\Content\ContentException;
 use Itk\Cms\Content\SettingsService;
+use Itk\Cms\Security\TwoFactor\SecretBox;
 use Itk\Cms\Tests\Core\Fixture\YandexWebmasterStand;
+use Itk\Cms\YandexWebmaster\Model\WebmasterConnection;
 use Itk\Cms\YandexWebmaster\Model\WebmasterSnapshot;
 use Itk\Cms\YandexWebmaster\Model\WebmasterState;
 use Itk\Cms\YandexWebmaster\WebmasterStore;
@@ -443,6 +445,46 @@ final class YandexWebmasterServiceTest extends KernelTestCase
         self::assertNull(self::getContainer()->get(WebmasterStore::class)->uin());
         self::assertNull(self::getContainer()->get(SettingsService::class)->stored(WebmasterStore::SNAPSHOT));
         self::assertSame([], $this->calls, 'the site is not removed from Webmaster');
+    }
+
+    #[Test]
+    public function aDisconnectWhileYandexAnswersARefreshIsNotUndoneByIt(): void
+    {
+        $this->yandexKnowsNothing();
+        $service = $this->webmasterService();
+        $service->connect(self::TOKEN);
+        $this->yandexVerified();
+        $store = self::getContainer()->get(WebmasterStore::class);
+        $this->onCall = function () use ($store): void {
+            $this->onCall = null;
+            $store->forget();
+        };
+
+        $service->status(true);
+
+        $after = $service->view();
+        self::assertSame([WebmasterState::NotConnected, null, null], [$after->state, $after->summary, $store->uin()]);
+    }
+
+    #[Test]
+    public function aNewTokenWhileYandexAnswersARefreshIsNotOverwrittenByTheOldOne(): void
+    {
+        $this->yandexKnowsNothing();
+        $service = $this->webmasterService();
+        $service->connect(self::TOKEN);
+        $this->yandexVerified();
+        $store = self::getContainer()->get(WebmasterStore::class);
+        $box = self::getContainer()->get(SecretBox::class);
+        $this->onCall = function () use ($store, $box): void {
+            $this->onCall = null;
+            $store->saveConnection(new WebmasterConnection($box->seal('y0_the-new-token'), new \DateTimeImmutable(), 42, self::HOST, 'https://' . self::SITE, null, false));
+        };
+
+        $service->status(true);
+
+        $connection = $store->connection();
+        self::assertSame('y0_the-new-token', null === $connection ? null : $box->open($connection->sealedToken));
+        self::assertFalse($connection->sitemapAdded, 'the old refresh wrote nothing over the new connection');
     }
 
     #[Test]

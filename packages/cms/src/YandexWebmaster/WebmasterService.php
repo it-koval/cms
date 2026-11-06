@@ -26,7 +26,8 @@ use Symfony\Component\DependencyInjection\Attribute\Autowire;
  *   connect($token) 422 ContentException when the token is empty or refused or the site has no public address, 502 when Yandex does not answer; nothing is stored then
  *   disconnect()    forgets the token, the host and the snapshot; the site stays in Webmaster
  *
- * Two requests that refresh at once both call Yandex and both save: the calls repeat harmlessly, the last write wins, so there is no lock.
+ * Two requests that refresh at once both call Yandex and both save: the calls repeat harmlessly, the last write wins, so there is no lock. A refresh writes nothing when
+ * the connection it started from is gone or has another token or host by the time Yandex has answered: a disconnect or a new token in the meantime wins.
  *
  * @internal
  */
@@ -139,6 +140,9 @@ final class WebmasterService
         try {
             $verification = $this->client->verification($token, $connection->userId, $connection->hostId);
             if (null !== $verification->uin && $verification->uin !== $connection->uin) {
+                if (!$this->isCurrent($connection)) {
+                    return;
+                }
                 $connection = $connection->withUin($verification->uin);
                 $this->store->saveConnection($connection); // the tag is on the pages before Yandex looks for it
             }
@@ -151,6 +155,9 @@ final class WebmasterService
             } else {
                 if (!$connection->sitemapAdded) {
                     $this->client->addSitemap($token, $connection->userId, $connection->hostId, ($this->origin() ?? '') . '/sitemap.xml');
+                    if (!$this->isCurrent($connection)) {
+                        return;
+                    }
                     $connection = $connection->withSitemapAdded();
                     $this->store->saveConnection($connection);
                 }
@@ -164,7 +171,16 @@ final class WebmasterService
         } catch (WebmasterUnreachableException) {
             [$errorKey, $errorCode] = ['ops.webmaster_error_unreachable', null];
         }
-        $this->store->saveSnapshot(new WebmasterSnapshot($verification, $summary, $queries, $updatedAt, $now, $errorKey, $errorCode, $tokenInvalid));
+        if ($this->isCurrent($connection)) {
+            $this->store->saveSnapshot(new WebmasterSnapshot($verification, $summary, $queries, $updatedAt, $now, $errorKey, $errorCode, $tokenInvalid));
+        }
+    }
+
+    private function isCurrent(WebmasterConnection $connection): bool
+    {
+        $stored = $this->store->connectionNow();
+
+        return null !== $stored && $stored->sealedToken === $connection->sealedToken && $stored->hostId === $connection->hostId;
     }
 
     private function isDue(WebmasterSnapshot $snapshot): bool

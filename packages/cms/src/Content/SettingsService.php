@@ -203,6 +203,14 @@ final class SettingsService implements ResetInterface
         return $this->load()[Setting::ALL][$key] ?? null;
     }
 
+    /** stored(), read from the database now: past the cache of this request and the rows Doctrine already holds, so it sees what another request has just written. */
+    public function storedNow(string $key): mixed
+    {
+        $raw = $this->em->getConnection()->fetchOne('SELECT setting_value FROM itk_setting WHERE setting_key = ? AND locale = ?', [$key, Setting::ALL]);
+
+        return \is_string($raw) ? \json_decode($raw, true) : null;
+    }
+
     /** Deletes a shared value (the row), not only its content. */
     public function remove(string $key): void
     {

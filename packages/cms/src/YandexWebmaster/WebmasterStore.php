@@ -31,6 +31,14 @@ final class WebmasterStore
         return \is_array($data) ? WebmasterConnection::fromArray($data) : null;
     }
 
+    /** connection() as the database has it at this moment: another request may have disconnected or connected a new token meanwhile. */
+    public function connectionNow(): ?WebmasterConnection
+    {
+        $data = $this->settings->storedNow(self::CONNECTION);
+
+        return \is_array($data) ? WebmasterConnection::fromArray($data) : null;
+    }
+
     public function snapshot(): WebmasterSnapshot
     {
         $data = $this->settings->stored(self::SNAPSHOT);
