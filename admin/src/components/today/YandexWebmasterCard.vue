@@ -135,8 +135,8 @@ async function disconnect() {
             </div>
             <p v-if="formError" id="ym-token-err" class="ym-err" role="alert">{{ formError }}</p>
             <p v-else id="ym-token-help" class="help">
-              <template v-if="status.tokenLink"><a :href="status.tokenLink" target="_blank" rel="noopener noreferrer">{{ t('ui.ym_get_token') }}</a> {{ t('ui.ym_token_help') }}</template>
-              <template v-else>{{ t('ui.ym_no_client') }} <a :href="HOW_TO_TOKEN" target="_blank" rel="noopener noreferrer">{{ t('ui.ym_how_to') }}</a></template>
+              <template v-if="status.tokenLink"><a :href="status.tokenLink" target="_blank" rel="noopener noreferrer">{{ t('ui.ym_get_token') }}</a>{{ t('ui.ym_token_help') }}</template>
+              <template v-else>{{ t('ui.ym_no_client') }}<a :href="HOW_TO_TOKEN" target="_blank" rel="noopener noreferrer">{{ t('ui.ym_how_to') }}</a></template>
             </p>
           </div>
         </form>
@@ -152,6 +152,7 @@ async function disconnect() {
         </div>
 
         <!-- the numbers -->
+        <p v-else-if="kind === 'ready' && !status.summary && !queries" class="ym-text"><Icon name="clock" size="s16" class="ym-ic" />{{ t('ui.ym_collecting') }}</p>
         <template v-else-if="kind === 'ready'">
           <template v-if="status.summary">
             <dl class="ym-stats">
@@ -169,7 +170,7 @@ async function disconnect() {
           </template>
           <p v-else class="ym-text"><Icon name="clock" size="s16" class="ym-ic" />{{ t('ui.ym_collecting') }}</p>
 
-          <div class="ym-block">
+          <div v-if="queries || status.summary" class="ym-block">
             <h3>{{ t('ui.ym_queries') }}<span v-if="queries" class="meta">{{ periodText(queries) }}</span></h3>
             <table v-if="queries && queries.rows.length" class="t ym-q" :aria-label="t('ui.ym_queries')">
               <thead><tr><th>{{ t('ui.ym_col_query') }}</th><th class="r">{{ t('ui.ym_col_shows') }}</th><th class="r">{{ t('ui.ym_col_clicks') }}</th></tr></thead>
@@ -195,6 +196,7 @@ async function disconnect() {
 .ym-form .field:hover{background:none}
 .ym-form .row input{flex:1;min-width:0}
 .ym-form .row .btn{flex:none}
+.ym-form .help a{display:block;width:fit-content;margin:2px 0}
 .ym-err{color:var(--red);font-size:var(--t-sm);margin:0}
 .ym-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:0}
 .ym-stats>div{background:var(--sheet-2);border:1px solid var(--hair-2);border-radius:var(--r);padding:10px 12px;min-width:0}
