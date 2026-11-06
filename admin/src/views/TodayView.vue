@@ -17,6 +17,7 @@ import { fmtDT, fmtUpdated, MIGRATED_NOTE } from '@/utils/format.js'
 import { formatDate, t } from '@/i18n/index.js'
 import { workLabel } from '@/composables/requestMeta.js'
 import ProposalItem from '@/components/today/ProposalItem.vue'
+import YandexWebmasterCard from '@/components/today/YandexWebmasterCard.vue'
 import LangTag from '@/components/ui/LangTag.vue'
 import PluginSlot from '@/components/ui/PluginSlot.vue'
 import { pluginWidgets } from '@/plugins/state.js'
@@ -207,6 +208,9 @@ async function decide(p, accept) {
             <div v-else class="empty" style="padding:26px"><p>{{ t('ui.today_ai_empty') }}</p></div>
           </div>
         </section>
+
+        <!-- Yandex Webmaster: loads and fails on its own, a role without the right gets no card -->
+        <YandexWebmasterCard />
 
         <!-- widgets of the plugins of the site: each draws its own card -->
         <section v-for="w in widgets" :key="w.name" class="t-widget" :aria-label="w.name">
