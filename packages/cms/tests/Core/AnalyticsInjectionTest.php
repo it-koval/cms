@@ -381,14 +381,27 @@ final class AnalyticsInjectionTest extends WebTestCase
     {
         $this->client();
         $this->configure(['yandexMetrikaId' => '12345678', 'googleAnalyticsId' => 'G-ABCD1234', 'yandexVerification' => self::YANDEX_CODE, 'googleVerification' => self::GOOGLE_CODE]);
-        $own = '<!DOCTYPE html><html><head><meta name="yandex-verification" content="own">'
+        $own = '<!DOCTYPE html><html><head><meta name="yandex-verification" content="' . self::YANDEX_CODE . '">'
             . '<script>(function(m,e,t,r,i,k,a){})(window,document,"script","https://mc.yandex.ru/metrika/tag.js","ym");ym(12345678, "init", {clickmap:true});</script>'
             . '<script async src="https://www.googletagmanager.com/gtag/js?id=G-ABCD1234"></script>'
-            . '<meta name="google-site-verification" content="own"></head><body><noscript><div><img src="https://mc.yandex.ru/watch/12345678" alt=""></div></noscript></body></html>';
+            . '<meta name="google-site-verification" content="' . self::GOOGLE_CODE . '"></head><body><noscript><div><img src="https://mc.yandex.ru/watch/12345678" alt=""></div></noscript></body></html>';
 
         $response = $this->filter(new Response($own, 200, ['Content-Type' => 'text/html']));
 
         self::assertSame($own, $response->getContent(), 'every one of the four is already there');
+    }
+
+    #[Test]
+    public function aLayoutTagWithTheSameNameAndAnotherCodeDoesNotHideTheOwnersCode(): void
+    {
+        $this->client();
+        $this->configure(['yandexVerification' => self::YANDEX_CODE]);
+        $own = '<!DOCTYPE html><html><head><meta name="yandex-verification" content="layout-code-55"></head><body></body></html>';
+
+        $html = (string) $this->filter(new Response($own, 200, ['Content-Type' => 'text/html']))->getContent();
+
+        self::assertStringContainsString('content="layout-code-55"', $html);
+        self::assertStringContainsString('content="' . self::YANDEX_CODE . '"', $html);
     }
 
     #[Test]

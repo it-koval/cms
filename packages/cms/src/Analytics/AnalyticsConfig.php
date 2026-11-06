@@ -27,12 +27,16 @@ final class AnalyticsConfig
         public readonly ?string $googleAnalyticsId,
         public readonly ?string $yandexVerification,
         public readonly ?string $googleVerification,
+        public readonly ?string $webmasterVerification,
         public readonly array $problems,
     ) {
     }
 
-    /** @param array<string, mixed> $settings the flat settings (SettingsService::all()) */
-    public static function fromSettings(array $settings): self
+    /**
+     * @param array<string, mixed> $settings the flat settings (SettingsService::all())
+     * @param ?string $webmasterUin the code Yandex Webmaster gave the CMS to verify the site (YandexWebmaster\WebmasterService); it goes on the page next to the owner's own code
+     */
+    public static function fromSettings(array $settings, ?string $webmasterUin = null): self
     {
         $problems = [];
         $metrika = self::match($settings, self::METRIKA_ID, '/^\d{4,12}$/', $problems);
@@ -41,13 +45,15 @@ final class AnalyticsConfig
         $google = self::match($settings, self::GOOGLE_VERIFICATION, '/^[A-Za-z0-9_\-]{8,120}$/', $problems, self::metaContent(...));
         $webvisor = \filter_var($settings[self::METRIKA_WEBVISOR] ?? false, \FILTER_VALIDATE_BOOLEAN);
 
-        return new self($metrika, null !== $metrika && $webvisor, $ga, $yandex, $google, $problems);
+        $uin = null !== $webmasterUin && 1 === \preg_match('/^[A-Za-z0-9_\-]{8,120}$/', $webmasterUin) ? $webmasterUin : null;
+
+        return new self($metrika, null !== $metrika && $webvisor, $ga, $yandex, $google, $uin, $problems);
     }
 
     /** Is there anything to put on the page? */
     public function isEmpty(): bool
     {
-        return null === $this->metrikaId && null === $this->googleAnalyticsId && null === $this->yandexVerification && null === $this->googleVerification;
+        return null === $this->metrikaId && null === $this->googleAnalyticsId && null === $this->yandexVerification && null === $this->googleVerification && null === $this->webmasterVerification;
     }
 
     /**

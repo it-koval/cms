@@ -6,7 +6,7 @@ namespace Itk\Cms\Analytics;
 
 /**
  * Puts the counters and verification tags of an AnalyticsConfig into an HTML page: the head tags before the first `</head>`, Metrika's noscript right after the opening `<body>`.
- * A counter the page already has, whether the layout writes it by hand or another listener added it, is not added twice, and neither is a verification tag.
+ * A counter the page already has, whether the layout writes it by hand or another listener added it, is not added twice, and neither is a verification tag (the same name with the same code).
  *
  * @internal
  */
@@ -33,11 +33,12 @@ final class AnalyticsInjector
     private static function head(string $html, AnalyticsConfig $config): string
     {
         $out = '';
-        if (null !== $config->yandexVerification && !self::hasMeta($html, 'yandex-verification')) {
-            $out .= '<meta name="yandex-verification" content="' . self::attr($config->yandexVerification) . '">' . "\n";
+        // two accounts may verify one site, so the code of the owner and the one of the CMS can differ and both stay
+        foreach (\array_unique(\array_filter([$config->yandexVerification, $config->webmasterVerification])) as $code) {
+            $out .= self::verification($html, 'yandex-verification', $code);
         }
-        if (null !== $config->googleVerification && !self::hasMeta($html, 'google-site-verification')) {
-            $out .= '<meta name="google-site-verification" content="' . self::attr($config->googleVerification) . '">' . "\n";
+        if (null !== $config->googleVerification) {
+            $out .= self::verification($html, 'google-site-verification', $config->googleVerification);
         }
         if (null !== $config->metrikaId && !self::hasMetrika($html, $config->metrikaId)) {
             $out .= self::metrika($config->metrikaId, $config->webvisor);
@@ -47,6 +48,11 @@ final class AnalyticsInjector
         }
 
         return $out;
+    }
+
+    private static function verification(string $html, string $name, string $code): string
+    {
+        return self::hasMeta($html, $name, $code) ? '' : '<meta name="' . $name . '" content="' . self::attr($code) . '">' . "\n";
     }
 
     private static function noscript(string $html, AnalyticsConfig $config): string
@@ -83,9 +89,28 @@ final class AnalyticsInjector
             . '</script>' . "\n";
     }
 
-    private static function hasMeta(string $html, string $name): bool
+    /** Is there a `<meta name="…" content="…">` with this very name and code? A tag with the name and another code does not count: it verifies another account. */
+    private static function hasMeta(string $html, string $name, string $content): bool
     {
-        return 1 === \preg_match('/<meta\b[^>]*\bname\s*=\s*["\']?' . \preg_quote($name, '/') . '\b/i', $html);
+        if (1 > \preg_match_all('/<meta\b[^>]*>/i', $html, $tags)) {
+            return false;
+        }
+        foreach ($tags[0] as $tag) {
+            if (\strtolower(self::attribute($tag, 'name') ?? '') === $name && self::attribute($tag, 'content') === $content) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static function attribute(string $tag, string $name): ?string
+    {
+        if (1 !== \preg_match('/(?<![\w-])' . $name . '\s*=\s*(?:"([^"]*)"|\'([^\']*)\'|([^\s>"\']+))/i', $tag, $m)) {
+            return null;
+        }
+
+        return \html_entity_decode($m[1] ?: ($m[2] ?? '') ?: ($m[3] ?? ''), \ENT_QUOTES | \ENT_HTML5, 'UTF-8');
     }
 
     /** The script of Metrika with this counter: tag.js?id=ID, or ym(ID, … written by hand, or the older watch.js with yaCounterID. */
