@@ -9,6 +9,8 @@ const LATENCY = 40 // ms: a screen that waits for the server shows its loading s
 export function installMock() {
   const mock = createMock()
   mock({ method: 'PUT', path: 'me/locale', query: {}, body: { locale: remembered() } }) // what the person chose stays in this browser, see i18n/index.js
+  const ym = new URLSearchParams(window.location.search).get('ym')
+  if (ym) mock({ method: 'POST', path: 'yandex-webmaster/connect', query: {}, body: { token: 'demo:' + ym.replace(/ /g, '+') } }) // ?ym=ready+expiring starts the «Яндекс Вебмастер» card in that state (handler.js)
   const me = mock({ method: 'GET', path: 'me', query: {} }).body
   window.ITK_ADMIN = {
     adminBase: BASE, apiBase: `${BASE}/api`, csrf: me.csrf, user: me, site: { name: 'Демо-сайт', domain: 'demo.example.test' }, mainLocale: 'ru', locale, locales: locales(), previewBase: `${BASE}/preview`,

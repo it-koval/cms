@@ -192,3 +192,30 @@ describe('robots.txt and llms.txt', () => {
     expect(get('seo-files').body.robots.custom).toBe(false)
   })
 })
+
+describe('Яндекс Вебмастер', () => {
+  const post = (path, body) => call('POST', `yandex-webmaster/${path}`, { body })
+
+  it('starts not connected and refuses a bad token without connecting', () => {
+    expect(get('yandex-webmaster').body).toMatchObject({ state: 'not_connected', canManage: true, summary: null, queries: null })
+    expect(post('connect', { token: '' }).status).toBe(422)
+    expect(post('connect', { token: 'bad' }).status).toBe(422)
+    expect(post('connect', { token: 'down' }).status).toBe(502)
+    expect(get('yandex-webmaster').body.state).toBe('not_connected')
+  })
+
+  it('connects into verifying, a refresh finishes the check, a disconnect forgets everything', () => {
+    expect(post('connect', { token: 'y0_secret' }).body).toMatchObject({ state: 'verifying', summary: null })
+    const ready = post('refresh').body
+    expect(ready.state).toBe('ready')
+    expect(ready.queries.rows.length).toBeLessThanOrEqual(10)
+    expect(JSON.stringify(ready)).not.toContain('y0_secret')
+    expect(call('DELETE', 'yandex-webmaster').body.state).toBe('not_connected')
+  })
+
+  it('reaches each state by a demo token', () => {
+    expect(post('connect', { token: 'demo:verification_failed' }).body.verification.failReason).toBe('META_TAG_NOT_FOUND')
+    expect(post('connect', { token: 'demo:ready+viewer+expiring+error' }).body).toMatchObject({ state: 'ready', canManage: false, tokenExpiresSoon: true })
+    expect(post('connect', { token: 'demo:ready+empty' }).body).toMatchObject({ state: 'ready', summary: null, queries: null })
+  })
+})

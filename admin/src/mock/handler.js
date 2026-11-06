@@ -2,7 +2,7 @@
 // fixtures.js. Everything written stays in memory, in the closure: a reload of the page starts again from the fixtures. Pure code, no DOM: install.js puts it behind `fetch`.
 //
 // What is answered: schema, me, languages, dashboard, collections (the rail), prefs, the bell, pages (list, draft, save, create, update, delete, publish, revert, unpublish, submit, return, tree)
-// and records of collections (query, get, save, create, delete, publish, revert, submit, return, order; the options matrix is one record 'main'), robots.txt / llms.txt (seo-files). Anything else is a 404 that says it is the demo.
+// and records of collections (query, get, save, create, delete, publish, revert, submit, return, order; the options matrix is one record 'main'), robots.txt / llms.txt (seo-files), Яндекс Вебмастер (yandex-webmaster). Anything else is a 404 that says it is the demo.
 import { makeDb } from './fixtures.js'
 
 const copy = (v) => (v === undefined ? undefined : JSON.parse(JSON.stringify(v)))
@@ -261,6 +261,51 @@ export function createMock(db = makeDb()) {
     return Object.keys(details).length ? fail(422, 'The text is not saved', details) : ok(seoFiles())
   }
 
+  /* ---------- Яндекс Вебмастер: GET/DELETE yandex-webmaster, POST …/connect, …/refresh. Every state can be reached by the token pasted into the form:
+     `demo:<state>` (not_connected, no_address, no_http_client, token_invalid, verifying, verification_failed, ready) with modifiers `+viewer` (no right to manage), `+expiring`, `+error`, `+empty` (Yandex has no data yet).
+     `bad` is refused by Yandex (422), `down` is a 502; any other token connects and gives `verifying`, a refresh makes it `ready`. `?ym=ready+expiring` in the address starts the page in a state. ---------- */
+  const YM_HOST = { id: 'https:demo.example.test:443', url: 'https://demo.example.test' }
+  const YM_QUERIES = [['веб-студия томск', 120, 14], ['сайт под ключ', 96, 9], ['разработка сайтов цена', 74, 6], ['itk cms', 40, 12], ['заказать лендинг', 33, null], ['сделать сайт для клиники', 21, 2], ['сайт визитка цена', 18, 1], ['seo продвижение томск', null, null]]
+  let ym = { state: 'not_connected', canManage: true, expiring: false, error: null, empty: false, at: null }
+  const ymBody = () => {
+    const connected = ['token_invalid', 'verifying', 'verification_failed', 'ready'].includes(ym.state)
+    const day = (n) => new Date(Date.now() + n * 864e5).toISOString()
+    const ready = ym.state === 'ready'
+    return {
+      state: ym.state, canManage: ym.canManage, tokenLink: 'https://oauth.yandex.ru/authorize?response_type=token&client_id=demo',
+      connectedAt: connected ? day(-170) : null, tokenExpiresAt: connected ? day(ym.expiring ? 6 : 170) : null, tokenExpiresSoon: connected && ym.expiring,
+      host: connected ? YM_HOST : null, webmasterUrl: connected ? 'https://webmaster.yandex.ru/site/https:demo.example.test:443/dashboard/' : null,
+      verification: connected && ym.state !== 'token_invalid' ? { state: ready ? 'VERIFIED' : ym.state === 'verifying' ? 'IN_PROGRESS' : 'VERIFICATION_FAILED', failReason: ym.state === 'verification_failed' ? 'META_TAG_NOT_FOUND' : null } : null,
+      summary: ready && !ym.empty ? { sqi: 1240, searchable: 120, excluded: 7, problems: { FATAL: 0, CRITICAL: 1, POSSIBLE_PROBLEM: 3, RECOMMENDATION: 5 } } : null,
+      queries: ready && !ym.empty ? { from: '2026-10-30', to: '2026-11-05', rows: YM_QUERIES.map(([text, shows, clicks]) => ({ text, shows, clicks })) } : null,
+      updatedAt: connected ? ym.at || now() : null, error: connected && ym.error ? 'Яндекс сейчас не отвечает, показаны данные последнего обновления' : null,
+    }
+  }
+  function ymConnect(token) {
+    const spec = String(token || '').trim()
+    if (!spec) return fail(422, 'Вставьте токен')
+    if (spec === 'bad') return fail(422, 'Яндекс не принял этот токен. Проверьте, что вы скопировали его целиком')
+    if (spec === 'down') return fail(502, 'Яндекс не отвечает, попробуйте через минуту')
+    const [state, ...mods] = spec.startsWith('demo:') ? spec.slice(5).split('+') : ['verifying']
+    ym = { state: state || 'verifying', canManage: !mods.includes('viewer'), expiring: mods.includes('expiring'), error: mods.includes('error') ? true : null, empty: mods.includes('empty'), at: now() }
+    return ok(ymBody())
+  }
+  function yandexWebmaster(method, tail, data) {
+    if (tail[0] === 'connect' && method === 'POST') return ymConnect(data.token)
+    if (tail[0] === 'refresh' && method === 'POST') {
+      if (ym.state === 'verifying') ym = { ...ym, state: 'ready' }
+      ym.at = now()
+      return ok(ymBody())
+    }
+    if (tail.length) return NOT_HERE()
+    if (method === 'GET') return ok(ymBody())
+    if (method === 'DELETE') {
+      ym = { state: 'not_connected', canManage: true, expiring: false, error: null, empty: false, at: null }
+      return ok(ymBody())
+    }
+    return NOT_HERE()
+  }
+
   /** The call. `path` is what comes after the api base («pages/p1/draft»), `query` is parseQuery(), `body` is the parsed JSON (or undefined). */
   return function handle({ method = 'GET', path = '', query = {}, body }) {
     const rest = String(path).split('/').filter(Boolean).map(decodeURIComponent)
@@ -276,6 +321,7 @@ export function createMock(db = makeDb()) {
       case 'collections': return collections(m, tail, query, data)
       case 'notifications': return tail.length ? ok({ ok: true, unread: 0 }) : ok({ items: [], total: 0, unread: 0 })
       case 'seo-files': return seoFilesCall(m, data)
+      case 'yandex-webmaster': return yandexWebmaster(m, tail, data)
       case 'media': return ok([])
       case 'media-folders': return ok({ folders: [], total: 0, unfiled: 0, ratios: [] })
       case 'prefs': {
