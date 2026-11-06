@@ -12,6 +12,9 @@ namespace Itk\Cms\Analytics;
  */
 final class AnalyticsInjector
 {
+    /** A JSON string that is safe inside a <script> element and an HTML attribute. */
+    private const JS = \JSON_UNESCAPED_SLASHES | \JSON_HEX_TAG | \JSON_HEX_AMP | \JSON_HEX_APOS | \JSON_HEX_QUOT;
+
     public static function inject(string $html, AnalyticsConfig $config): string
     {
         $head = self::head($html, $config);
@@ -66,8 +69,8 @@ final class AnalyticsInjector
 
     private static function metrika(string $id, bool $webvisor): string
     {
-        $js = \json_encode($id, \JSON_UNESCAPED_SLASHES | \JSON_HEX_TAG | \JSON_HEX_AMP | \JSON_HEX_APOS | \JSON_HEX_QUOT);
-        $src = \json_encode('https://mc.yandex.ru/metrika/tag.js?id=' . $id, \JSON_UNESCAPED_SLASHES | \JSON_HEX_TAG | \JSON_HEX_AMP | \JSON_HEX_APOS | \JSON_HEX_QUOT);
+        $js = \json_encode($id, self::JS);
+        $src = \json_encode('https://mc.yandex.ru/metrika/tag.js?id=' . $id, self::JS);
 
         return '<script>' . "\n"
             . '(function(m,e,t,r,i,k,a){m[i]=m[i]||function(){(m[i].a=m[i].a||[]).push(arguments)};m[i].l=1*new Date();' . "\n"
@@ -80,7 +83,7 @@ final class AnalyticsInjector
 
     private static function gtag(string $id): string
     {
-        $js = \json_encode($id, \JSON_UNESCAPED_SLASHES | \JSON_HEX_TAG | \JSON_HEX_AMP | \JSON_HEX_APOS | \JSON_HEX_QUOT);
+        $js = \json_encode($id, self::JS);
 
         return '<script async src="https://www.googletagmanager.com/gtag/js?id=' . \rawurlencode($id) . '"></script>' . "\n"
             . '<script>' . "\n"

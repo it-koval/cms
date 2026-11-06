@@ -11,7 +11,6 @@ namespace Itk\Cms\IndexNow;
  */
 enum IndexNowState
 {
-    /** the toggle «IndexNow» is off */
     case Off;
     /** the setting `domain` is empty or not an address */
     case NoAddress;

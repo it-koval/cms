@@ -9,6 +9,7 @@ use Itk\Cms\Content\SettingsService;
 use Itk\Cms\Rendering\PageCache;
 use Itk\Cms\Security\TwoFactor\SecretBox;
 use Itk\Cms\Tests\App\TestKernel;
+use Itk\Cms\Tests\Core\Fixture\TemporarySettings;
 use Itk\Cms\YandexWebmaster\Model\WebmasterConnection;
 use Itk\Cms\YandexWebmaster\Model\WebmasterSnapshot;
 use Itk\Cms\YandexWebmaster\Model\WebmasterVerification;
@@ -21,13 +22,13 @@ use Symfony\Component\HttpKernel\KernelInterface;
 /** Код Яндекс Вебмастера стоит на живых страницах рядом с кодом владельца, и ни 304, ни кэш страниц его не прячут. */
 final class YandexWebmasterPagesTest extends WebTestCase
 {
+    use TemporarySettings;
+
     private const UIN = 'f00dcafe12345678';
     private const OWNER = 'owner-code-1234';
 
     /** @var list<string> */
     private array $created = [];
-    private bool $domainWasSet = false;
-    private mixed $domainBefore = '';
     private KernelBrowser $client;
 
     protected static function createKernel(array $options = []): KernelInterface
@@ -39,10 +40,7 @@ final class YandexWebmasterPagesTest extends WebTestCase
     {
         $this->client = static::createClient();
         $this->client->catchExceptions(false);
-        $settings = self::getContainer()->get(SettingsService::class);
-        $this->domainWasSet = $settings->isSet('domain');
-        $this->domainBefore = $settings->get('domain', null, '');
-        $settings->set('domain', 'localhost'); // the page cache keeps pages only for the host the site vouches for
+        $this->setting('domain', 'localhost'); // the page cache keeps pages only for the host the site vouches for
         self::getContainer()->get(PageCache::class)->clear();
     }
 
@@ -58,11 +56,7 @@ final class YandexWebmasterPagesTest extends WebTestCase
         $settings = $c->get(SettingsService::class);
         $settings->set('yandexVerification', null);
         $c->get(WebmasterStore::class)->forget();
-        if ($this->domainWasSet) {
-            $settings->set('domain', $this->domainBefore);
-        } else {
-            $settings->remove('domain');
-        }
+        $this->restoreSettings();
         $c->get(PageCache::class)->clear();
         parent::tearDown();
     }

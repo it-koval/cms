@@ -18,6 +18,8 @@ final class AnalyticsConfig
     public const YANDEX_VERIFICATION = 'yandexVerification';
     public const GOOGLE_VERIFICATION = 'googleVerification';
 
+    private const VERIFICATION_CODE = '/^[A-Za-z0-9_\-]{8,120}$/';
+
     /**
      * @param list<string> $problems settings keys whose value is filled but not valid
      */
@@ -41,11 +43,11 @@ final class AnalyticsConfig
         $problems = [];
         $metrika = self::match($settings, self::METRIKA_ID, '/^\d{4,12}$/', $problems);
         $ga = self::match($settings, self::GA_ID, '/^G-[A-Z0-9]{4,16}$/', $problems, \strtoupper(...));
-        $yandex = self::match($settings, self::YANDEX_VERIFICATION, '/^[A-Za-z0-9_\-]{8,120}$/', $problems, self::metaContent(...));
-        $google = self::match($settings, self::GOOGLE_VERIFICATION, '/^[A-Za-z0-9_\-]{8,120}$/', $problems, self::metaContent(...));
+        $yandex = self::match($settings, self::YANDEX_VERIFICATION, self::VERIFICATION_CODE, $problems, self::metaContent(...));
+        $google = self::match($settings, self::GOOGLE_VERIFICATION, self::VERIFICATION_CODE, $problems, self::metaContent(...));
         $webvisor = \filter_var($settings[self::METRIKA_WEBVISOR] ?? false, \FILTER_VALIDATE_BOOLEAN);
 
-        $uin = null !== $webmasterUin && 1 === \preg_match('/^[A-Za-z0-9_\-]{8,120}$/', $webmasterUin) ? $webmasterUin : null;
+        $uin = null !== $webmasterUin && 1 === \preg_match(self::VERIFICATION_CODE, $webmasterUin) ? $webmasterUin : null;
 
         return new self($metrika, null !== $metrika && $webvisor, $ga, $yandex, $google, $uin, $problems);
     }

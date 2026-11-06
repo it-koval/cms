@@ -12,6 +12,7 @@ use Itk\Cms\Rendering\PageRenderer;
 use Itk\Cms\Repository\PageRepository;
 use Itk\Cms\Security\UserManager;
 use Itk\Cms\Tests\App\TestKernel;
+use Itk\Cms\Tests\Core\Fixture\TemporarySettings;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
@@ -31,15 +32,14 @@ use Symfony\Component\HttpKernel\KernelInterface;
 /** Счётчики и коды подтверждения попадают на живые страницы сайта и больше никуда: ни в предпросмотр, ни в админку, ни в API, ни в не-HTML. */
 final class AnalyticsInjectionTest extends WebTestCase
 {
+    use TemporarySettings;
+
     private const KEYS = ['yandexMetrikaId', 'yandexMetrikaWebvisor', 'googleAnalyticsId', 'yandexVerification', 'googleVerification'];
     private const YANDEX_CODE = 'ya-code_Q7z9Kp2m';
     private const GOOGLE_CODE = 'AbCdEfGh-1234_xyz';
 
     /** @var list<string> */
     private array $created = [];
-    private bool $domainTouched = false;
-    private bool $domainWasSet = false;
-    private mixed $domainBefore = '';
 
     protected static function createKernel(array $options = []): KernelInterface
     {
@@ -59,13 +59,7 @@ final class AnalyticsInjectionTest extends WebTestCase
         foreach (self::KEYS as $key) {
             $settings->set($key, null);
         }
-        if ($this->domainTouched) {
-            if ($this->domainWasSet) {
-                $settings->set('domain', $this->domainBefore);
-            } else {
-                $c->get(EntityManagerInterface::class)->createQuery("DELETE FROM Itk\\Cms\\Entity\\Setting s WHERE s.key = 'domain'")->execute();
-            }
-        }
+        $this->restoreSettings();
         $c->get(PageCache::class)->clear();
         $c->get(EntityManagerInterface::class)->createQuery('DELETE FROM Itk\\Cms\\Entity\\User u WHERE u.email LIKE :e')->setParameter('e', 'test-an-%@example.com')->execute();
         parent::tearDown();
@@ -76,11 +70,7 @@ final class AnalyticsInjectionTest extends WebTestCase
     {
         $client = static::createClient($options);
         $client->catchExceptions(false);
-        $settings = self::getContainer()->get(SettingsService::class);
-        $this->domainTouched = true;
-        $this->domainWasSet = $settings->isSet('domain');
-        $this->domainBefore = $settings->get('domain', null, '');
-        $settings->set('domain', 'localhost'); // the page cache keeps pages only for the host the site vouches for
+        $this->setting('domain', 'localhost'); // the page cache keeps pages only for the host the site vouches for
         self::getContainer()->get(PageCache::class)->clear();
 
         return $client;

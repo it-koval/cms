@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Itk\Cms\Tests\Core\Fixture;
 
-use Itk\Cms\Content\SettingsService;
 use Itk\Cms\Content\SitemapBuilder;
 use Itk\Cms\Security\TwoFactor\SecretBox;
 use Itk\Cms\Tests\App\TestKernel;
@@ -23,6 +22,8 @@ use Symfony\Component\HttpKernel\KernelInterface;
  */
 trait YandexWebmasterStand
 {
+    use TemporarySettings;
+
     public const TOKEN = 'y0_AgAAAA-secret-token-9d8f7e';
     public const SITE = 'wm.example.org';
     public const HOST = 'https:wm.example.org:443';
@@ -42,8 +43,6 @@ trait YandexWebmasterStand
     private ?MockClock $clock = null;
     /** @var ?\Closure(): void runs on every call, before the answer */
     private ?\Closure $onCall = null;
-    /** @var array<string, array{0: bool, 1: mixed}> */
-    private array $settingsBefore = [];
 
     protected static function createKernel(array $options = []): KernelInterface
     {
@@ -113,13 +112,6 @@ trait YandexWebmasterStand
         return $this->clock ??= new MockClock();
     }
 
-    private function setting(string $key, mixed $value): void
-    {
-        $settings = self::getContainer()->get(SettingsService::class);
-        $this->settingsBefore[$key] ??= [$settings->isSet($key), $settings->get($key)];
-        $settings->set($key, $value);
-    }
-
     private function siteAt(string $domain = self::SITE): void
     {
         $this->setting('domain', $domain);
@@ -127,16 +119,8 @@ trait YandexWebmasterStand
 
     private function resetWebmaster(): void
     {
-        $settings = self::getContainer()->get(SettingsService::class);
         self::getContainer()->get(WebmasterStore::class)->forget();
-        foreach ($this->settingsBefore as $key => [$wasSet, $value]) {
-            if ($wasSet) {
-                $settings->set($key, $value);
-            } else {
-                $settings->remove($key);
-            }
-        }
-        $this->settingsBefore = [];
+        $this->restoreSettings();
     }
 
     /** @return list<string> the calls made so far, without their query */

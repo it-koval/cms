@@ -33,7 +33,6 @@ final class WebmasterClient
     ) {
     }
 
-    /** Is symfony/http-client installed? */
     public function isAvailable(): bool
     {
         return null !== $this->http;
