@@ -19,6 +19,9 @@ use Symfony\Component\Routing\Attribute\Route;
  *   POST   yandex-webmaster/refresh    refreshes now → the status. «Смотреть»
  *   DELETE yandex-webmaster            forgets the token, the site and the snapshot (the site stays in Webmaster) → the status. «Править».
  *
+ * Yandex may take up to ~20 seconds to answer. A call that may ask it closes the session first, so the other calls of the admin from the same browser do not wait
+ * for the session lock meanwhile: ApiCsrfListener has already checked the token, and nothing here reads or writes the session after.
+ *
  * @internal
  */
 #[AsController]
@@ -34,9 +37,10 @@ final class YandexWebmasterController extends AbstractApiController
     }
 
     #[Route('', name: 'status', methods: ['GET'])]
-    public function status(): JsonResponse
+    public function status(Request $request): JsonResponse
     {
         $this->access->require(self::AREA, 'view');
+        self::releaseSession($request);
 
         return $this->answer($this->webmaster->status());
     }
@@ -46,14 +50,16 @@ final class YandexWebmasterController extends AbstractApiController
     {
         $this->access->require(self::AREA, 'edit');
         $token = $this->body($request)['token'] ?? '';
+        self::releaseSession($request);
 
         return $this->answer($this->webmaster->connect(\is_string($token) ? $token : ''));
     }
 
     #[Route('/refresh', name: 'refresh', methods: ['POST'])]
-    public function refresh(): JsonResponse
+    public function refresh(Request $request): JsonResponse
     {
         $this->access->require(self::AREA, 'view');
+        self::releaseSession($request);
 
         return $this->answer($this->webmaster->status(true));
     }
@@ -64,6 +70,13 @@ final class YandexWebmasterController extends AbstractApiController
         $this->access->require(self::AREA, 'edit');
 
         return $this->answer($this->webmaster->disconnect());
+    }
+
+    private static function releaseSession(Request $request): void
+    {
+        if ($request->hasSession() && $request->getSession()->isStarted()) {
+            $request->getSession()->save();
+        }
     }
 
     private function answer(WebmasterStatus $status): JsonResponse

@@ -37,6 +37,8 @@ trait YandexWebmasterStand
     /** @var array<string, array<string, mixed>> the JSON body of the last call, by «METHOD /path» */
     private array $bodies = [];
     private bool $networkDown = false;
+    /** @var ?\Closure(): void runs on every call, before the answer */
+    private ?\Closure $onCall = null;
     /** @var array<string, array{0: bool, 1: mixed}> */
     private array $settingsBefore = [];
 
@@ -53,6 +55,9 @@ trait YandexWebmasterStand
             $this->calls[] = $method . ' ' . $path . (isset($parts['query']) ? '?' . $parts['query'] : '');
             $this->authorizations[] = \preg_replace('/^Authorization: /i', '', $options['normalized_headers']['authorization'][0] ?? '');
             $this->bodies[$method . ' ' . $path] = \json_decode((string) ($options['body'] ?? ''), true) ?: [];
+            if (null !== $this->onCall) {
+                ($this->onCall)();
+            }
             if ($this->networkDown) {
                 return new MockResponse('', ['error' => 'connection refused']);
             }

@@ -9,6 +9,8 @@ use Itk\Cms\Entity\Role;
 use Itk\Cms\Entity\User;
 use Itk\Cms\Security\UserManager;
 use Itk\Cms\Tests\Core\Fixture\YandexWebmasterStand;
+use Itk\Cms\YandexWebmaster\Model\WebmasterSnapshot;
+use Itk\Cms\YandexWebmaster\WebmasterStore;
 use PHPUnit\Framework\Attributes\Test;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
@@ -179,6 +181,28 @@ final class YandexWebmasterApiTest extends WebTestCase
         $this->calls = [];
         self::assertSame('not_connected', $this->api('GET', 'yandex-webmaster')['state']);
         self::assertSame([], $this->calls);
+    }
+
+    #[Test]
+    public function yandexIsAskedWithTheSessionClosedSoTheOtherCallsOfTheAdminDoNotWait(): void
+    {
+        $this->signIn('admin');
+        $this->yandexKnowsNothing();
+        $this->yandexVerified();
+        $requests = self::getContainer()->get('request_stack');
+        $sessionOpen = [];
+        $this->onCall = static function () use ($requests, &$sessionOpen): void {
+            $sessionOpen[] = $requests->getMainRequest()?->getSession()->isStarted();
+        };
+
+        $this->api('POST', 'yandex-webmaster/connect', ['token' => self::TOKEN]);
+        $this->api('POST', 'yandex-webmaster/refresh');
+        self::getContainer()->get(WebmasterStore::class)->saveSnapshot(new WebmasterSnapshot());
+        $this->api('GET', 'yandex-webmaster');
+
+        self::assertGreaterThan(10, \count($sessionOpen), 'connect, refresh and a read of an old snapshot all asked Yandex');
+        self::assertSame([false], \array_values(\array_unique($sessionOpen, \SORT_REGULAR)));
+        self::assertSame('ready', $this->api('GET', 'yandex-webmaster')['state'], 'the person is still signed in');
     }
 
     #[Test]
