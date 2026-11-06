@@ -65,8 +65,8 @@ final class Extractor
             '' === $description ? [] : [$description],
             '' === $description ? 'title' : 'seo.description',
         );
-        if ([] === $blocks || null !== $blocks[0]->sectionId) {
-            // a page with nothing but a name is still found by its name
+        $hasNoHeadBlock = [] === $blocks || null !== $blocks[0]->sectionId;
+        if ($hasNoHeadBlock) {
             \array_unshift($blocks, new Block(null, null, 'title', $live->source->title, [$live->source->title]));
         }
         foreach ((array) ($published['sections'] ?? []) as $section) {

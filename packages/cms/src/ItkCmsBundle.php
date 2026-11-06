@@ -426,13 +426,11 @@ final class ItkCmsBundle extends AbstractBundle
 
         if ($builder->hasExtension('doctrine')) {
             $builder->prependExtensionConfig('doctrine', [
-                // the pgvector column of itk_kb_chunk, knowledge base on or off: without the mapping type the schema manager cannot read the table at all
                 'dbal' => [
                     'types' => [VectorType::NAME => VectorType::class],
                     'mapping_types' => [VectorType::NAME => VectorType::NAME],
                 ],
                 'orm' => [
-                    // JSON_TEXT / JSON_GET / JSON_NUMBER: filter and sort the list of a collection by a field inside its jsonb
                     'dql' => [
                         'string_functions' => ['JSON_TEXT' => JsonText::class, 'JSON_GET' => JsonGet::class],
                         'numeric_functions' => ['JSON_NUMBER' => JsonNumber::class],
@@ -578,7 +576,6 @@ final class ItkCmsBundle extends AbstractBundle
             $out['transports']['critical_css'] = 'doctrine://default?queue_name=critical_css';
         }
         if (!isset($transports['knowledge_base'])) {
-            // a 429 of the embedding API needs more patience than the default 1 s x2: 10 s, 30 s, 90 s, 270 s, 810 s, then the failure transport
             $out['transports']['knowledge_base'] = [
                 'dsn' => 'doctrine://default?queue_name=knowledge_base',
                 'retry_strategy' => ['max_retries' => 5, 'delay' => 10000, 'multiplier' => 3],

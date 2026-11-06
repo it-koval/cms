@@ -10,7 +10,6 @@ namespace Itk\Cms\KnowledgeBase\Embedding;
  *
  * The dimension is fixed: itk_kb_chunk.embedding is vector(DIMENSIONS) with an HNSW index (pgvector indexes `vector` up to 2000 dimensions).
  * An embedder must produce exactly DIMENSIONS (OpenAI text-embedding-3-* do, by the `dimensions` request parameter).
- * The migration repeats the number in SQL; VectorType declares the column from this constant, so doctrine:schema:validate fails if they disagree.
  */
 final readonly class Space
 {

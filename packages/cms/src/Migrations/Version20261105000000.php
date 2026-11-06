@@ -8,7 +8,6 @@ use Doctrine\DBAL\Platforms\PostgreSQLPlatform;
 use Doctrine\DBAL\Schema\Schema;
 use Doctrine\Migrations\AbstractMigration;
 
-/** ITK CMS: the whole schema on PostgreSQL 16 and newer (the package had no release before it moved from MySQL, so there is one migration). */
 final class Version20261105000000 extends AbstractMigration
 {
     public const MIN_SERVER_VERSION_NUM = 160000;
@@ -20,7 +19,6 @@ final class Version20261105000000 extends AbstractMigration
 
     public function up(Schema $schema): void
     {
-        // jsonb columns and operators, advisory locks, ON CONFLICT: the bundle is written for PostgreSQL; stop here with a reason, not in the middle with a syntax error
         $platform = $this->connection->getDatabasePlatform();
         $this->abortIf(
             !$platform instanceof PostgreSQLPlatform,

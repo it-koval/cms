@@ -10,7 +10,7 @@ declare(strict_types=1);
  *   php scripts/lint-sql.php src tests/Core
  */
 
-/** @var array<string, string> rule name => regular expression (case-insensitive, matched inside string literals) */
+/** @var array<string, string> rule name => regular expression */
 const RULES = [
     'JSON_EXTRACT()' => '/\bJSON_EXTRACT\s*\(/i',
     'JSON_UNQUOTE()' => '/\bJSON_UNQUOTE\s*\(/i',
@@ -38,9 +38,11 @@ const RULES = [
     'information_schema.COLUMNS (MySQL columns)' => '/\b(COLUMN_TYPE|COLUMN_KEY|COLUMN_COMMENT)\b/',
 ];
 
-/** Rules that need the string to look like SQL: a backtick in an info() text and 'datetime' as the type of a field are not MySQL. A lone backtick, used to quote an identifier, counts as SQL. */
-const DDL_RULES = ['backtick-quoted identifier', 'TINYINT', 'LONGTEXT', 'DATETIME column', 'AUTO_INCREMENT'];
-const SQL_CONTEXT = '/\b(?:SELECT|INSERT|UPDATE|DELETE|CREATE|ALTER|DROP|FROM|WHERE|TABLE|COLLATE|ENGINE|INDEX)\b|^([\'"])`\1$/';
+/** rules that fire only in a string that reads as SQL (SQL_CONTEXT): their words are common outside SQL */
+const SQL_ONLY_RULES = ['backtick-quoted identifier', 'TINYINT', 'LONGTEXT', 'DATETIME column', 'AUTO_INCREMENT'];
+/** a string that is only a quoted backtick: the argument of a call that quotes a MySQL identifier */
+const LONE_BACKTICK = '^([\'"])`\1$';
+const SQL_CONTEXT = '/\b(?:SELECT|INSERT|UPDATE|DELETE|CREATE|ALTER|DROP|FROM|WHERE|TABLE|COLLATE|ENGINE|INDEX)\b|' . LONE_BACKTICK . '/';
 
 $targets = \array_slice($argv, 1) ?: [\dirname(__DIR__) . '/src'];
 $hits = 0;
@@ -61,7 +63,7 @@ foreach ($targets as $target) {
             }
             $sql = 1 === \preg_match(SQL_CONTEXT, $token->text);
             foreach (RULES as $name => $pattern) {
-                if (!$sql && \in_array($name, DDL_RULES, true)) {
+                if (!$sql && \in_array($name, SQL_ONLY_RULES, true)) {
                     continue;
                 }
                 if (1 === \preg_match($pattern, $token->text, $m, \PREG_OFFSET_CAPTURE)) {

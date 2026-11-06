@@ -68,7 +68,6 @@ final class FakeEmbedder implements Embedder
         return $out;
     }
 
-    /** Between tests; not reset(), which the container would also call between requests. */
     public function forget(): void
     {
         $this->calls = [];

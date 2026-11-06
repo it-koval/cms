@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Itk\Cms\Tests\Core;
 
+use Doctrine\DBAL\Connection;
 use Itk\Cms\Content\CollectionQuery;
 use Itk\Cms\Content\ContentException;
 use Itk\Cms\Schema\Schema;
@@ -75,6 +76,17 @@ final class CollectionQueryTest extends ResourceKernelTestCase
         self::assertSame(['Эльбрус', 'Карелия', 'Байкал', 'Урал', 'Алтай', 'Камчатка', 'Сочи'], $this->titles(['sort' => 'seats']));
         self::assertSame(['Алтай', 'Байкал', 'Камчатка', 'Карелия', 'Сочи', 'Урал', 'Эльбрус'], $this->titles(['sort' => 'title']));
         self::assertSame(['Камчатка', 'Сочи', 'Алтай'], \array_slice($this->titles(['sort' => '-start']), 0, 3));
+    }
+
+    #[Test]
+    public function aNumericStringWithAnExponentSortsAsANumber(): void
+    {
+        $db = self::getContainer()->get(Connection::class);
+        foreach (['Эльбрус' => '2.5E1', 'Урал' => '1.5e+1', 'Карелия' => '1e-1'] as $title => $seats) {
+            $db->executeStatement("UPDATE itk_collection_item SET translations = jsonb_set(translations, '{ru,draft,seats}', to_jsonb(CAST(? AS text))) WHERE translations #>> '{ru,draft,title}' = ?", [$seats, $title]);
+        }
+
+        self::assertSame(['Эльбрус', 'Сочи', 'Урал', 'Камчатка', 'Алтай', 'Байкал', 'Карелия'], $this->titles(['sort' => '-seats']));
     }
 
     #[Test]

@@ -6,8 +6,6 @@ namespace Itk\Cms\Support;
 
 /**
  * Helpers for JSON-ish data (PHP arrays decoded from JSON columns).
- *
- * jsonb reorders object keys inside JSON columns and decodes `{}` to `[]`, so every comparison goes through canonical().
  */
 final class Json
 {

@@ -10,6 +10,7 @@ use Itk\Cms\Health\HealthResult;
 use Itk\Cms\Health\KnowledgeBaseHealthCheck;
 use Itk\Cms\KnowledgeBase\Embedding\EmbeddingFailed;
 use Itk\Cms\KnowledgeBase\KnowledgeBaseOptions;
+use Itk\Cms\KnowledgeBase\Model\SyncKnowledge;
 use Itk\Cms\Tests\App\FakeEmbedder;
 use Itk\Cms\Tests\App\TestKernel;
 use PHPUnit\Framework\Attributes\Test;
@@ -18,6 +19,7 @@ use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Tester\CommandTester;
 use Symfony\Component\HttpKernel\KernelInterface;
+use Symfony\Component\Messenger\Envelope;
 use Symfony\Component\Messenger\Transport\InMemory\InMemoryTransport;
 
 /**
@@ -89,7 +91,7 @@ final class KnowledgeBaseCommandsTest extends KernelTestCase
     {
         self::bootKernel();
         $id = $this->publish('/kb-cmd-sync', 'Синхронизация');
-        self::getContainer()->get('messenger.transport.knowledge_base')->reset(); // the publish queued its own message; the command finds the page Missing itself
+        self::getContainer()->get('messenger.transport.knowledge_base')->reset();
         $db = self::getContainer()->get(Connection::class);
 
         $dry = $this->execute('itk:knowledge-base:sync', ['--dry-run' => true]);
@@ -149,6 +151,28 @@ final class KnowledgeBaseCommandsTest extends KernelTestCase
         self::assertSame(HealthResult::FAIL, $stale->status);
         self::assertStringContainsString('fake:bag-of-words:1536', $stale->message);
         self::assertStringContainsString('itk:knowledge-base:sync --now', $stale->message);
+    }
+
+    #[Test]
+    public function theHealthLineCountsSyncMessagesInTheFailureTransportOnly(): void
+    {
+        self::bootKernel();
+        $c = self::getContainer();
+        $db = $c->get(Connection::class);
+        $before = (int) $db->fetchOne('SELECT COALESCE(MAX(id), 0) FROM messenger_messages');
+        try {
+            $failed = $c->get('messenger.transport.failed');
+            $failed->send(new Envelope(new \ArrayObject(['not' => 'ours'])));
+            self::assertSame(HealthResult::OK, $this->health()->status, 'a message of another class is not counted');
+
+            $failed->send(new Envelope(new SyncKnowledge('page', 'p1', 'ru')));
+            $failed->send(new Envelope(new SyncKnowledge('item', 'i1', 'ru')));
+            $warn = $this->health();
+            self::assertSame(HealthResult::WARN, $warn->status);
+            self::assertStringContainsString('2 сообщений', $warn->message);
+        } finally {
+            $db->executeStatement("DELETE FROM messenger_messages WHERE queue_name = 'failed' AND id > ?", [$before]);
+        }
     }
 
     #[Test]

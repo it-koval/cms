@@ -16,7 +16,7 @@ interface Embedder
     public function space(): Space;
 
     /**
-     * @param list<string> $texts non-empty strings, each well under the provider's input limit (the Chunker keeps chunks under 2000 characters)
+     * @param list<string> $texts non-empty strings, each well under the provider's input limit
      *
      * @throws EmbeddingFailed
      */

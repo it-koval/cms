@@ -118,7 +118,6 @@ final class McpStdioTest extends KernelTestCase
         self::assertStringContainsString('revoked', (string) \stream_get_contents($err));
     }
 
-    /** The database closes the connection of the running program (a restart, idle_session_timeout): the same as PostgreSQL does when somebody terminates our backend. */
     private function killDatabaseConnection(): void
     {
         $connection = self::getContainer()->get(\Doctrine\DBAL\Connection::class);
@@ -267,7 +266,6 @@ final class McpStdioTest extends KernelTestCase
         self::assertSame(2, $pauses, 'the first retry is at once, the others wait');
     }
 
-    /** The next queries of the program fail with the given error of PostgreSQL: what a driver answers while the database goes down, which no pg_terminate_backend and no closed port can show. */
     private function failNextQueries(int $times, int $code, ?string $state): TestFailingDriver
     {
         $connection = self::getContainer()->get(\Doctrine\DBAL\Connection::class);
@@ -295,7 +293,6 @@ final class McpStdioTest extends KernelTestCase
         yield 'any other error of the connection class' => [7, '08001'];
     }
 
-    /** DBAL turns none of the 57P states into ConnectionException: to the check of the key they are plain driver errors, and the process used to die with the exception. */
     #[Test]
     #[DataProvider('errorsOfADatabaseThatGoesDown')]
     public function anErrorOfADatabaseThatIsGoingDownIsWaitedOutToo(int $code, ?string $state): void

@@ -13,9 +13,6 @@ use Itk\Cms\KnowledgeBase\Embedding\Space;
  * (doctrine.dbal.types.vector and mapping_types.vector) whether the knowledge base is on or off: without the mapping type the schema manager
  * stops at "Unknown database type vector" on every schema:validate and migrations:diff of the site.
  *
- * The declaration ignores the column length and always says vector(Space::DIMENSIONS): the mapped and the introspected column then give the same SQL,
- * and a migration of another size fails schema:validate. PHP value: the text form '[…]', parsed by KnowledgeBase\Embedding\Vector::fromSql().
- *
  * @internal
  */
 final class VectorType extends Type

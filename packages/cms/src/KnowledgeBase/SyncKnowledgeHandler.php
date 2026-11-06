@@ -21,8 +21,7 @@ use Symfony\Component\Messenger\Handler\BatchHandlerTrait;
  *   Written | Unchanged | Removed | Superseded   ack
  *   Failed (this source only)                    nack with UnrecoverableMessageHandlingException: a bug in the data, a retry would fail the same way;
  *                                                the message lands in the failure transport and on the health line
- *   EmbeddingFailed transient                    nack every job with a RecoverableMessageHandlingException: the transport retries the batch (10 s, x3,
- *                                                five times), not before the Retry-After the API asked for
+ *   EmbeddingFailed transient                    nack every job with a RecoverableMessageHandlingException: the transport retries the batch
  *   EmbeddingFailed permanent                    nack every job unrecoverable (wrong key, no HTTP client): the failure transport keeps them for
  *                                                messenger:failed:retry after the fix
  *

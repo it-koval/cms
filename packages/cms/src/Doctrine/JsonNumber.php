@@ -30,6 +30,6 @@ final class JsonNumber extends FunctionNode
     {
         $text = '(' . $this->json->dispatch($sqlWalker) . ' #>> CAST(' . $this->path->dispatch($sqlWalker) . ' AS text[]))';
 
-        return "(CASE WHEN $text ~ '^-?[0-9]+(\\.[0-9]+)?$' THEN CAST($text AS NUMERIC) END)";
+        return "(CASE WHEN $text ~ '^-?[0-9]+(\\.[0-9]+)?([eE][+-]?[0-9]+)?$' THEN CAST($text AS NUMERIC) END)";
     }
 }

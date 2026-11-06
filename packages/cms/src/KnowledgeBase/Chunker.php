@@ -46,8 +46,7 @@ final class Chunker
             foreach (self::pieces($block) as $i => $lines) {
                 $text = \implode("\n", $lines);
                 if (null !== $open && 0 === $i && \mb_strlen(\implode("\n", $chunks[$open]['lines'])) + \mb_strlen($text) + 2 <= self::TARGET) {
-                    // a later block of the chunk keeps its own heading as a line, so the hit shows it
-                    $chunks[$open]['lines'] = [...$chunks[$open]['lines'], ...(null !== $block->heading && $block->heading !== $chunks[$open]['heading'] ? [$block->heading] : []), ...$lines];
+                    $chunks[$open]['lines'] = self::append($chunks[$open], $block->heading, $lines);
                     continue;
                 }
                 $chunks[] = ['section' => $block->sectionId, 'type' => $block->sectionType, 'field' => $block->field, 'heading' => $block->heading, 'lines' => $lines];
@@ -58,8 +57,7 @@ final class Chunker
             $short = \mb_strlen(\implode("\n", $chunks[$i]['lines']));
             $before = \mb_strlen(\implode("\n", $chunks[$i - 1]['lines']));
             if ($short < self::MIN && $chunks[$i]['section'] === $chunks[$i - 1]['section'] && $before + $short + 2 <= self::MAX) {
-                $heading = $chunks[$i]['heading'];
-                $chunks[$i - 1]['lines'] = [...$chunks[$i - 1]['lines'], ...(null !== $heading && $heading !== $chunks[$i - 1]['heading'] ? [$heading] : []), ...$chunks[$i]['lines']];
+                $chunks[$i - 1]['lines'] = self::append($chunks[$i - 1], $chunks[$i]['heading'], $chunks[$i]['lines']);
                 \array_splice($chunks, $i, 1);
             }
         }
@@ -72,6 +70,19 @@ final class Chunker
         }
 
         return $out;
+    }
+
+    /**
+     * The lines of a chunk with more lines after them, the new heading written first when it differs from the chunk's own.
+     *
+     * @param array{heading: ?string, lines: list<string>} $chunk
+     * @param list<string> $lines
+     *
+     * @return list<string>
+     */
+    private static function append(array $chunk, ?string $heading, array $lines): array
+    {
+        return [...$chunk['lines'], ...(null !== $heading && $heading !== $chunk['heading'] ? [$heading] : []), ...$lines];
     }
 
     /**

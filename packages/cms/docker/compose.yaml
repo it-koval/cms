@@ -74,7 +74,6 @@ services:
     healthcheck:
       disable: true
 
-  # pgvector/pgvector is the official postgres image plus the vector extension (the knowledge base of the bundle)
   database:
     image: pgvector/pgvector:pg17
     environment:

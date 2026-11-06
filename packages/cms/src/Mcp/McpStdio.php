@@ -17,7 +17,7 @@ use Psr\Log\LoggerInterface;
  * Messages for the person who started the program (why it stopped) go to the error stream. The key is checked again for every message, so revoking it,
  * blocking its owner or switching MCP off stops a running assistant at its next call.
  * The program may run for days: when the database closes the connection (a restart, wait_timeout) the check of the key closes it on our side too and tries again over a new one;
- * while the database is starting up or stopping it refuses connections (SQLSTATE 57P03 and 57P01, see isConnectionFailure()): both are waited out the same way (a pause between the tries, about twenty seconds in all).
+ * while the database is starting up or stopping it refuses connections: both are waited out the same way (a pause between the tries, about twenty seconds in all).
  * Only a database that does not come back stops the program (with a message, not with an exception). A key refused here is a line of the audit log (channel itk_mcp) as well as a message.
  *
  * @internal
@@ -105,10 +105,6 @@ final class McpStdio
         }
     }
 
-    /**
-     * Lost (ConnectionLost is a ConnectionException) or refused while the database is starting or stopping. DBAL recognises a connection the server closed; a server that
-     * is starting up (57P03) or shutting down (57P01, 57P02) answers with a plain driver error, so that family (class 57P) is recognised here, and the rest by its SQLSTATE (class 08).
-     */
     private static function isConnectionFailure(DriverException $e): bool
     {
         $state = (string) $e->getSQLState();

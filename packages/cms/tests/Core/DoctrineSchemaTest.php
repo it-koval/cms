@@ -8,6 +8,7 @@ use Doctrine\DBAL\Connection;
 use Doctrine\ORM\EntityManagerInterface;
 use Itk\Cms\Entity\PasswordReset;
 use Itk\Cms\Entity\User;
+use Itk\Cms\KnowledgeBase\Embedding\Space;
 use Itk\Cms\Security\UserManager;
 use PHPUnit\Framework\Attributes\Test;
 use Symfony\Bundle\FrameworkBundle\Console\Application;
@@ -31,6 +32,14 @@ final class DoctrineSchemaTest extends KernelTestCase
         $this->em->clear();
         $this->em->createQuery('DELETE FROM Itk\Cms\Entity\User u WHERE u.email LIKE :e')->setParameter('e', 'test-schema-%@example.com')->execute();
         parent::tearDown();
+    }
+
+    #[Test]
+    public function theEmbeddingColumnIsAsWideAsTheSpace(): void
+    {
+        $type = $this->em->getConnection()->fetchOne("SELECT format_type(a.atttypid, a.atttypmod) FROM pg_attribute a WHERE a.attrelid = 'itk_kb_chunk'::regclass AND a.attname = 'embedding'");
+
+        self::assertSame('vector(' . Space::DIMENSIONS . ')', $type, 'schema:validate cannot see the width: VectorType always declares Space::DIMENSIONS');
     }
 
     #[Test]

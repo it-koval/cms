@@ -87,7 +87,6 @@ final class KnowledgeBaseHealthCheck implements HealthCheckInterface
         return HealthResult::ok(I18n::t('ops.health_knowledge_base_ok', ['indexed' => $indexed, 'live' => $live, 'chunks' => $chunks]));
     }
 
-    /** SyncKnowledge messages in the database failure transport (the headers of a stored message name its class), 0 when that cannot be known. */
     private function failed(): int
     {
         try {
@@ -95,7 +94,8 @@ final class KnowledgeBaseHealthCheck implements HealthCheckInterface
                 return 0;
             }
 
-            return (int) $this->db->fetchOne("SELECT COUNT(*) FROM messenger_messages WHERE queue_name = 'failed' AND CAST(headers AS jsonb) ->> 'type' = ?", [SyncKnowledge::class]);
+            // PhpSerializer writes no headers, only the serialized envelope in body with its backslashes escaped; strpos, not LIKE, which treats a backslash as its escape
+            return (int) $this->db->fetchOne("SELECT COUNT(*) FROM messenger_messages WHERE queue_name = 'failed' AND strpos(body, ?) > 0", [\addslashes(SyncKnowledge::class)]);
         } catch (\Throwable) {
             return 0;
         }
