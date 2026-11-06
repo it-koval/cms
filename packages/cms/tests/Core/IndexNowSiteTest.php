@@ -107,6 +107,19 @@ final class IndexNowSiteTest extends KernelTestCase
     }
 
     #[Test]
+    public function aCyrillicAddressGoesOutInPunycode(): void
+    {
+        $this->setting('indexNow', true);
+        $this->setting('domain', 'https://Северный-Свет.рф');
+        $site = $this->site();
+
+        self::assertSame(IndexNowState::Ready, $site->state());
+        self::assertSame('https://xn----ctbbjbcz5a0agho5i.xn--p1ai', $site->base());
+        self::assertSame('xn----ctbbjbcz5a0agho5i.xn--p1ai', $site->host());
+        self::assertSame('https://xn----ctbbjbcz5a0agho5i.xn--p1ai/' . $site->key() . '.txt', $site->keyLocation());
+    }
+
+    #[Test]
     public function theLastSubmissionIsKeptForTheHealthLine(): void
     {
         $site = $this->site();

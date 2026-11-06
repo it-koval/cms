@@ -56,10 +56,17 @@ final class IndexNowSite
         return null === $this->http ? IndexNowState::NoHttpClient : IndexNowState::Ready;
     }
 
-    /** `https://example.com` (SitemapBuilder::base()). */
+    /** `https://example.com` (SitemapBuilder::base()); a Cyrillic host such as `сайт.рф` in punycode, the only form a URL may carry. */
     public function base(): ?string
     {
-        return $this->sitemap->base();
+        $base = $this->sitemap->base();
+        $parts = null === $base ? false : \parse_url($base);
+        $host = \is_array($parts) && isset($parts['host']) ? \idn_to_ascii(\mb_strtolower($parts['host']), \IDNA_DEFAULT, \INTL_IDNA_VARIANT_UTS46) : false;
+        if (false === $host) {
+            return null;
+        }
+
+        return ($parts['scheme'] ?? 'https') . '://' . $host . (isset($parts['port']) ? ':' . $parts['port'] : '');
     }
 
     /** `example.com`, without the port. Only after state() said there is an address. */
@@ -97,14 +104,14 @@ final class IndexNowSite
 
     private function hostOrNull(): ?string
     {
-        $base = $this->sitemap->base();
+        $base = $this->base();
         $host = null === $base ? null : \parse_url($base, \PHP_URL_HOST);
 
-        return \is_string($host) ? \strtolower($host) : null;
+        return \is_string($host) ? $host : null;
     }
 
     private function requireBase(): string
     {
-        return $this->sitemap->base() ?? throw new \LogicException('The site has no address: check state() first.');
+        return $this->base() ?? throw new \LogicException('The site has no address: check state() first.');
     }
 }
