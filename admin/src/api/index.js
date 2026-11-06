@@ -17,6 +17,7 @@ import * as health from './health.js'
 import * as theme from './theme.js'
 import * as mail from './mail.js'
 import * as mcp from './mcp.js'
+import * as webmaster from './webmaster.js'
 
-export const api = { site, pages, collections, requests, media, settings, proposals, users, prefs, actions, history, notifications, theme, health, twofactor, mail, mcp }
+export const api = { site, pages, collections, requests, media, settings, proposals, users, prefs, actions, history, notifications, theme, health, twofactor, mail, mcp, webmaster }
 export { ApiError, isConflict, whileClosing } from './http.js'
