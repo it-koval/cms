@@ -57,15 +57,16 @@ final class PingIndexNowHandler implements BatchHandlerInterface
 
             return;
         }
+        $address = $this->site->address();
         $urls = [];
         foreach ($jobs as [$message]) {
-            $urls[$this->site->base() . Url::encodePath($message->path)] = true;
+            $urls[$address->origin() . Url::encodePath($message->path)] = true;
         }
         $urls = \array_keys($urls);
         try {
             $response = $this->http->request('POST', $this->endpoint, [
                 'headers' => ['Content-Type' => 'application/json; charset=utf-8'],
-                'json' => ['host' => $this->site->host(), 'key' => $this->site->key(), 'keyLocation' => $this->site->keyLocation(), 'urlList' => $urls],
+                'json' => ['host' => $address->host, 'key' => $this->site->key(), 'keyLocation' => $this->site->keyLocation(), 'urlList' => $urls],
             ]);
             $status = $response->getStatusCode();
             $body = \mb_substr(\trim($response->getContent(false)), 0, 200);

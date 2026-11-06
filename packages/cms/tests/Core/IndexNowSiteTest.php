@@ -99,11 +99,11 @@ final class IndexNowSiteTest extends KernelTestCase
         self::assertSame($key, $this->site()->key(), 'the same on every request and server');
         self::assertNotSame($key, $this->site(new MockHttpClient(), 'secret-two')->key(), 'another secret, another key');
         self::assertSame('https://example.org/' . $key . '.txt', $one->keyLocation());
-        self::assertSame('example.org', $one->host());
+        self::assertSame('example.org', $one->address()->host);
 
         $this->setting('domain', 'https://other.example.org:8443');
         self::assertNotSame($key, $one->key(), 'another address, another key');
-        self::assertSame('other.example.org', $one->host(), 'the host has no port');
+        self::assertSame('other.example.org', $one->address()->host, 'the host has no port');
     }
 
     #[Test]
@@ -114,8 +114,8 @@ final class IndexNowSiteTest extends KernelTestCase
         $site = $this->site();
 
         self::assertSame(IndexNowState::Ready, $site->state());
-        self::assertSame('https://xn----ctbbjbcz5a0agho5i.xn--p1ai', $site->base());
-        self::assertSame('xn----ctbbjbcz5a0agho5i.xn--p1ai', $site->host());
+        self::assertSame('https://xn----ctbbjbcz5a0agho5i.xn--p1ai', $site->address()->origin());
+        self::assertSame('xn----ctbbjbcz5a0agho5i.xn--p1ai', $site->address()->host);
         self::assertSame('https://xn----ctbbjbcz5a0agho5i.xn--p1ai/' . $site->key() . '.txt', $site->keyLocation());
     }
 

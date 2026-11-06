@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Itk\Cms\YandexWebmaster;
 
 use Itk\Cms\Content\ContentException;
+use Itk\Cms\Content\SiteAddress;
 use Itk\Cms\Content\SitemapBuilder;
 use Itk\Cms\I18n\I18n;
 use Itk\Cms\Security\TwoFactor\SecretBox;
@@ -103,11 +104,11 @@ final class WebmasterService
         }
         try {
             $userId = $this->client->userId($token);
-            $hostId = $this->hostIdOf($token, $userId, $origin) ?? $this->client->addHost($token, $userId, $origin);
+            $hostId = $this->hostIdOf($token, $userId, $origin) ?? $this->client->addHost($token, $userId, $origin->origin());
         } catch (WebmasterApiException|WebmasterUnreachableException $e) {
             throw $this->refused($e);
         }
-        $connection = new WebmasterConnection($this->box->seal($token), new \DateTimeImmutable(), $userId, $hostId, self::unicode($origin), null, false);
+        $connection = new WebmasterConnection($this->box->seal($token), new \DateTimeImmutable(), $userId, $hostId, $origin->unicodeOrigin(), null, false);
         $this->store->saveConnection($connection);
         $this->store->saveSnapshot($snapshot = new WebmasterSnapshot());
         $this->refresh($connection, $snapshot, true);
@@ -154,7 +155,7 @@ final class WebmasterService
                 $summary = $queries = null;
             } else {
                 if (!$connection->sitemapAdded) {
-                    $this->client->addSitemap($token, $connection->userId, $connection->hostId, ($this->origin() ?? '') . '/sitemap.xml');
+                    $this->client->addSitemap($token, $connection->userId, $connection->hostId, ($this->origin()?->origin() ?? '') . '/sitemap.xml');
                     if (!$this->isCurrent($connection)) {
                         return;
                     }
@@ -217,45 +218,18 @@ final class WebmasterService
         return null === $this->origin() ? WebmasterState::NoAddress : null;
     }
 
-    /** `https://xn--80ak6aa92e.xn--p1ai`: the address of the site the way Webmaster names a host (scheme and host in lower case, a port only when it is not the default). Null when the site has none or it is not public. */
-    private function origin(): ?string
+    /** The address of the site, which is the way Webmaster names a host too (SiteAddress::origin()). Null when the site has none or it is not public. */
+    private function origin(): ?SiteAddress
     {
-        $base = $this->sitemap->asciiBase();
-        $host = null === $base ? null : \parse_url($base, \PHP_URL_HOST);
+        $address = $this->sitemap->address();
 
-        return \is_string($host) && SitemapBuilder::isPublicHost($host) ? self::normalize($base) : null;
+        return null !== $address && $address->isPublic() ? $address : null;
     }
 
-    private static function normalize(string $url): ?string
-    {
-        $parts = \parse_url(\strtolower(\trim($url)));
-        if (!\is_array($parts) || !isset($parts['host'])) {
-            return null;
-        }
-        $scheme = $parts['scheme'] ?? 'https';
-        $port = $parts['port'] ?? null;
-        if (('https' === $scheme && 443 === $port) || ('http' === $scheme && 80 === $port)) {
-            $port = null;
-        }
-
-        return $scheme . '://' . $parts['host'] . (null === $port ? '' : ':' . $port);
-    }
-
-    private static function unicode(string $origin): string
-    {
-        $parts = \parse_url($origin);
-        $host = \is_array($parts) && isset($parts['host']) ? \idn_to_utf8($parts['host'], \IDNA_DEFAULT, \INTL_IDNA_VARIANT_UTS46) : false;
-        if (!\is_array($parts) || false === $host) {
-            return $origin;
-        }
-
-        return ($parts['scheme'] ?? 'https') . '://' . $host . (isset($parts['port']) ? ':' . $parts['port'] : '');
-    }
-
-    private function hostIdOf(string $token, int $userId, string $origin): ?string
+    private function hostIdOf(string $token, int $userId, SiteAddress $origin): ?string
     {
         foreach ($this->client->hosts($token, $userId) as $host) {
-            if (self::normalize($host['url']) === $origin) {
+            if (SiteAddress::fromUrl($host['url'])?->origin() === $origin->origin()) {
                 return $host['id'];
             }
         }

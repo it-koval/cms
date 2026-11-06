@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Itk\Cms\IndexNow;
 
 use Itk\Cms\Content\SettingsService;
+use Itk\Cms\Content\SiteAddress;
 use Itk\Cms\Content\SitemapBuilder;
 use Psr\Cache\CacheItemPoolInterface;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
@@ -44,38 +45,32 @@ final class IndexNowSite
         if (!\filter_var($this->settings->get(self::SETTING, null, false), \FILTER_VALIDATE_BOOLEAN)) {
             return IndexNowState::Off;
         }
-        $host = $this->hostOrNull();
-        if (null === $host) {
+        $address = $this->sitemap->address();
+        if (null === $address) {
             return IndexNowState::NoAddress;
         }
-        if (!SitemapBuilder::isPublicHost($host)) {
+        if (!$address->isPublic()) {
             return IndexNowState::NotPublic;
         }
 
         return null === $this->http ? IndexNowState::NoHttpClient : IndexNowState::Ready;
     }
 
-    /** `https://example.com` (SitemapBuilder::base()); a Cyrillic host in punycode, the only form a URL may carry. */
-    public function base(): ?string
+    /** The address of the site (SitemapBuilder::address()). Only after state() said there is one. */
+    public function address(): SiteAddress
     {
-        return $this->sitemap->asciiBase();
-    }
-
-    /** `example.com`, without the port. Only after state() said there is an address. */
-    public function host(): string
-    {
-        return $this->hostOrNull() ?? throw new \LogicException('The site has no address: check state() first.');
+        return $this->sitemap->address() ?? throw new \LogicException('The site has no address: check state() first.');
     }
 
     /** 32 hex characters, the form IndexNow asks for. Only after state() said there is an address. */
     public function key(): string
     {
-        return \substr(\hash_hmac('sha256', 'itk-indexnow|' . $this->requireBase(), $this->secret), 0, 32);
+        return \substr(\hash_hmac('sha256', 'itk-indexnow|' . $this->address()->origin(), $this->secret), 0, 32);
     }
 
     public function keyLocation(): string
     {
-        return $this->requireBase() . '/' . $this->key() . '.txt';
+        return $this->address()->origin() . '/' . $this->key() . '.txt';
     }
 
     /** @param int $status the HTTP status, 0 when the request did not complete */
@@ -92,18 +87,5 @@ final class IndexNowSite
         $last = $this->cache->getItem(self::LAST)->get();
 
         return \is_array($last) ? $last : null;
-    }
-
-    private function hostOrNull(): ?string
-    {
-        $base = $this->base();
-        $host = null === $base ? null : \parse_url($base, \PHP_URL_HOST);
-
-        return \is_string($host) ? $host : null;
-    }
-
-    private function requireBase(): string
-    {
-        return $this->base() ?? throw new \LogicException('The site has no address: check state() first.');
     }
 }

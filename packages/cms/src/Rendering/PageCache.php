@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Itk\Cms\Rendering;
 
+use Itk\Cms\Content\SiteAddress;
 use Itk\Cms\Content\SitemapBuilder;
 use Itk\Cms\Entity\PageTranslation;
 use Itk\Cms\Support\Url;
@@ -117,38 +118,18 @@ final class PageCache
      */
     private function vouches(Request $request): bool
     {
-        $site = $this->site();
+        $site = $this->sitemap->address();
         $port = (int) $request->getPort();
         $explicit = $port === ($request->isSecure() ? 443 : 80) ? null : $port;
-        if (null !== $explicit && $explicit !== ($site['port'] ?? null)) {
+        if (null !== $explicit && $explicit !== $site?->port) {
             return false;
         }
         if ([] !== Request::getTrustedHosts()) {
             return true;
         }
 
-        return null !== $site && $site['host'] === self::asciiHost($request->getHost()) && $site['port'] === $explicit;
-    }
-
-    /** @return array{host: string, port: int|null}|null the host of the site address in ASCII and its port when it is not the default of the scheme; null without a site address */
-    private function site(): ?array
-    {
-        $base = $this->sitemap->base();
-        if (null === $base || 1 !== \preg_match('~^(https?)://([^/:]+)(?::(\d+))?$~i', $base, $m)) { // parse_url() would mangle the bytes of a Cyrillic host on some systems
-            return null;
-        }
-        $port = isset($m[3]) ? (int) $m[3] : null;
-
-        return ['host' => self::asciiHost($m[2]), 'port' => null !== $port && $port !== ('http' === \strtolower($m[1]) ? 80 : 443) ? $port : null];
-    }
-
-    /** A browser asks for an international name in ASCII (xn--…), the setting may hold it in letters; without ext-intl both are compared as they are. */
-    private static function asciiHost(string $host): string
-    {
-        $host = \mb_strtolower($host);
-        $ascii = \function_exists('idn_to_ascii') ? \idn_to_ascii($host, \IDNA_NONTRANSITIONAL_TO_ASCII, \INTL_IDNA_VARIANT_UTS46) : false;
-
-        return \is_string($ascii) && '' !== $ascii ? $ascii : $host;
+        // a browser asks for an international name in ASCII (xn--…), the setting may hold it in letters: both are compared as SiteAddress puts them
+        return null !== $site && $site->host === SiteAddress::fromUrl('http://' . $request->getHost())?->host && $site->port === $explicit;
     }
 
     private function startedSession(Request $request): bool
