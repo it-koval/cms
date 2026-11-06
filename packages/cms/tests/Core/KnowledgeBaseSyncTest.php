@@ -19,11 +19,11 @@ use Itk\Cms\KnowledgeBase\SyncKnowledgeHandler;
 use Itk\Cms\Repository\PageRepository;
 use Itk\Cms\Tests\App\FakeEmbedder;
 use Itk\Cms\Tests\App\TestKernel;
+use Itk\Cms\Tests\Core\Fixture\RetryVerdict;
 use PHPUnit\Framework\Attributes\Test;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\HttpKernel\KernelInterface;
 use Symfony\Component\Messenger\Envelope;
-use Symfony\Component\Messenger\Exception\RecoverableMessageHandlingException;
 use Symfony\Component\Messenger\Exception\UnrecoverableMessageHandlingException;
 use Symfony\Component\Messenger\Handler\Acknowledger;
 use Symfony\Component\Messenger\Transport\InMemory\InMemoryTransport;
@@ -301,8 +301,8 @@ final class KnowledgeBaseSyncTest extends KernelTestCase
         $this->embedder()->failNext = EmbeddingFailed::transient('rate limit', 20);
         $errors = $this->drain();
         self::assertCount(1, $errors);
-        self::assertInstanceOf(RecoverableMessageHandlingException::class, $errors[0]);
-        self::assertSame(20000, $errors[0]->getRetryDelay(), 'the Retry-After of the API, in milliseconds');
+        self::assertTrue(RetryVerdict::retried(new SyncKnowledge('page', $id, 'ru'), $errors[0], 0), 'a transient failure is retried');
+        self::assertFalse(RetryVerdict::retried(new SyncKnowledge('page', $id, 'ru'), $errors[0], 3), 'after max_retries the batch goes to the failure transport');
         self::assertSame(0, $this->rows($id)['documents']);
 
         self::getContainer()->get(PageService::class)->publish($id);

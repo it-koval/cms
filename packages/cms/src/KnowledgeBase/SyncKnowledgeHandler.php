@@ -8,7 +8,6 @@ use Itk\Cms\KnowledgeBase\Embedding\EmbeddingFailed;
 use Itk\Cms\KnowledgeBase\Model\Outcome;
 use Itk\Cms\KnowledgeBase\Model\SyncKnowledge;
 use Symfony\Component\Messenger\Attribute\AsMessageHandler;
-use Symfony\Component\Messenger\Exception\RecoverableMessageHandlingException;
 use Symfony\Component\Messenger\Exception\UnrecoverableMessageHandlingException;
 use Symfony\Component\Messenger\Handler\Acknowledger;
 use Symfony\Component\Messenger\Handler\BatchHandlerInterface;
@@ -21,7 +20,8 @@ use Symfony\Component\Messenger\Handler\BatchHandlerTrait;
  *   Written | Unchanged | Removed | Superseded   ack
  *   Failed (this source only)                    nack with UnrecoverableMessageHandlingException: a bug in the data, a retry would fail the same way;
  *                                                the message lands in the failure transport and on the health line
- *   EmbeddingFailed transient                    nack every job with a RecoverableMessageHandlingException: the transport retries the batch
+ *   EmbeddingFailed transient                    nack every job with the EmbeddingFailed itself: the retry_strategy of the transport retries the batch and, after
+ *                                                max_retries, moves it to the failure transport (a RecoverableMessageHandlingException would be retried forever)
  *   EmbeddingFailed permanent                    nack every job unrecoverable (wrong key, no HTTP client): the failure transport keeps them for
  *                                                messenger:failed:retry after the fix
  *
@@ -55,9 +55,7 @@ final class SyncKnowledgeHandler implements BatchHandlerInterface
         try {
             $report = $this->indexer->sync(\array_values($refs));
         } catch (EmbeddingFailed $e) {
-            $failure = $e->transient
-                ? new RecoverableMessageHandlingException($e->getMessage(), 0, $e, null === $e->retryAfter ? null : $e->retryAfter * 1000)
-                : new UnrecoverableMessageHandlingException($e->getMessage(), 0, $e);
+            $failure = $e->transient ? $e : new UnrecoverableMessageHandlingException($e->getMessage(), 0, $e);
             foreach ($jobs as [, $ack]) {
                 $ack->nack($failure);
             }

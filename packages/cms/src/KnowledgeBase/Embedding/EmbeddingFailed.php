@@ -6,7 +6,7 @@ namespace Itk\Cms\KnowledgeBase\Embedding;
 
 /**
  * The embedder could not answer.
- *   transient:  rate limit, server error, timeout, network; the Messenger retry tries again later, after Retry-After seconds when the provider named them
+ *   transient:  rate limit, server error, timeout, network; the retry_strategy of the transport tries again later (retryAfter is what the provider asked for, the strategy decides)
  *   permanent:  wrong key, unknown model, bad request, no HTTP client, a vector of the wrong size (a retry would fail the same way)
  * The message never contains the key.
  */
