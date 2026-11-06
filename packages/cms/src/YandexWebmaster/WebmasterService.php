@@ -11,10 +11,10 @@ use Itk\Cms\I18n\I18n;
 use Itk\Cms\Security\TwoFactor\SecretBox;
 use Itk\Cms\YandexWebmaster\Model\WebmasterApiException;
 use Itk\Cms\YandexWebmaster\Model\WebmasterConnection;
+use Itk\Cms\YandexWebmaster\Model\WebmasterFailure;
 use Itk\Cms\YandexWebmaster\Model\WebmasterSnapshot;
 use Itk\Cms\YandexWebmaster\Model\WebmasterState;
 use Itk\Cms\YandexWebmaster\Model\WebmasterStatus;
-use Itk\Cms\YandexWebmaster\Model\WebmasterUnreachableException;
 use Itk\Cms\YandexWebmaster\Model\WebmasterVerification;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 
@@ -23,7 +23,8 @@ use Symfony\Component\DependencyInjection\Attribute\Autowire;
  * pages itself (Analytics\InjectAnalyticsListener), registers sitemap.xml, and keeps the verification, the summary and the popular queries as a snapshot.
  *
  *   view()          the status from what is stored; no request to Yandex (the health line uses it)
- *   status()        the same, after a refresh when the snapshot is older than 6 hours (15 minutes after a failed one); status(true) refreshes now
+ *   status()        the same, after a refresh when the snapshot is older than 6 hours (15 minutes after a failed one)
+ *   refresh()       the same, after a refresh now; it also starts again an ownership check that failed
  *   connect($token) 422 ContentException when the token is empty or refused or the site has no public address, 502 when Yandex does not answer; nothing is stored then
  *   disconnect()    forgets the token, the host and the snapshot; the site stays in Webmaster
  *
@@ -57,33 +58,31 @@ final class WebmasterService
         $error = null === $snapshot->errorKey ? null : I18n::t($snapshot->errorKey, ['code' => (string) $snapshot->errorCode]);
 
         return new WebmasterStatus(
-            $this->stateOf($connection, $snapshot),
-            '' === $this->clientId ? null : self::AUTHORIZE . \rawurlencode($this->clientId),
-            $connection?->connectedAt,
-            $connection?->tokenExpiresAt(),
-            null !== $connection && $connection->tokenExpiresSoon($now),
-            null === $connection ? null : ['id' => $connection->hostId, 'url' => $connection->hostUrl],
-            null === $connection ? null : self::DASHBOARD . $connection->hostId . '/dashboard/',
-            $snapshot->verification,
-            $snapshot->summary,
-            $snapshot->queries,
-            $snapshot->updatedAt,
-            $error,
+            state: $this->stateOf($connection, $snapshot),
+            tokenLink: '' === $this->clientId ? null : self::AUTHORIZE . \rawurlencode($this->clientId),
+            connectedAt: $connection?->connectedAt,
+            tokenExpiresAt: $connection?->tokenExpiresAt(),
+            tokenExpiresSoon: null !== $connection && $connection->tokenExpiresSoon($now),
+            host: null === $connection ? null : ['id' => $connection->hostId, 'url' => $connection->hostUrl],
+            webmasterUrl: null === $connection ? null : self::DASHBOARD . $connection->hostId . '/dashboard/',
+            verification: $snapshot->verification,
+            summary: $snapshot->summary,
+            queries: $snapshot->queries,
+            updatedAt: $snapshot->updatedAt,
+            error: $error,
         );
     }
 
-    public function status(bool $force = false): WebmasterStatus
+    public function status(): WebmasterStatus
     {
-        $connection = $this->store->connection();
-        if (null !== $connection && null !== $this->blocked()) {
-            return $this->view();
-        }
-        if (null !== $connection) {
-            $snapshot = $this->store->snapshot();
-            if (!$snapshot->tokenInvalid && ($force || $this->isDue($snapshot))) {
-                $this->refresh($connection, $snapshot, $force);
-            }
-        }
+        $this->update(false);
+
+        return $this->view();
+    }
+
+    public function refresh(): WebmasterStatus
+    {
+        $this->update(true);
 
         return $this->view();
     }
@@ -94,24 +93,23 @@ final class WebmasterService
         if ('' === $token) {
             throw ContentException::invalid(I18n::t('ops.webmaster_token_empty'));
         }
-        $blocked = $this->blocked();
-        if (WebmasterState::NoHttpClient === $blocked) {
-            throw ContentException::invalid(I18n::t('ops.webmaster_no_client'));
-        }
         $origin = $this->origin();
-        if (null === $origin) {
-            throw ContentException::invalid(I18n::t('ops.webmaster_no_address'));
+        $blocked = $this->blocked();
+        if (null !== $blocked || null === $origin) {
+            throw ContentException::invalid(I18n::t(match ($blocked) {
+                WebmasterState::NoHttpClient => 'ops.webmaster_no_client',
+                default => 'ops.webmaster_no_address',
+            }));
         }
         try {
             $userId = $this->client->userId($token);
             $hostId = $this->hostIdOf($token, $userId, $origin) ?? $this->client->addHost($token, $userId, $origin->origin());
-        } catch (WebmasterApiException|WebmasterUnreachableException $e) {
-            throw $this->refused($e);
+        } catch (WebmasterFailure $e) {
+            throw new ContentException(I18n::t($e->messageKey(), ['code' => (string) $e->messageCode()]), $e->isTemporary() ? 502 : 422);
         }
         $connection = new WebmasterConnection($this->box->seal($token), new \DateTimeImmutable(), $userId, $hostId, $origin->unicodeOrigin(), null, false);
         $this->store->saveConnection($connection);
-        $this->store->saveSnapshot($snapshot = new WebmasterSnapshot());
-        $this->refresh($connection, $snapshot, true);
+        $this->fetch($connection, new WebmasterSnapshot(), $origin, true);
 
         return $this->view();
     }
@@ -123,7 +121,21 @@ final class WebmasterService
         return $this->view();
     }
 
-    private function refresh(WebmasterConnection $connection, WebmasterSnapshot $snapshot, bool $force): void
+    /** Asks Yandex when the site is connected and can be, the token has not been refused, and the snapshot is due or $force says so. */
+    private function update(bool $force): void
+    {
+        $connection = $this->store->connection();
+        $origin = $this->origin();
+        if (null === $connection || null === $origin || !$this->client->isAvailable()) {
+            return;
+        }
+        $snapshot = $this->store->snapshot();
+        if (!$snapshot->tokenInvalid && ($force || $this->isDue($snapshot))) {
+            $this->fetch($connection, $snapshot, $origin, $force);
+        }
+    }
+
+    private function fetch(WebmasterConnection $connection, WebmasterSnapshot $snapshot, SiteAddress $origin, bool $force): void
     {
         $now = new \DateTimeImmutable();
         $token = $this->box->open($connection->sealedToken);
@@ -155,7 +167,7 @@ final class WebmasterService
                 $summary = $queries = null;
             } else {
                 if (!$connection->sitemapAdded) {
-                    $this->client->addSitemap($token, $connection->userId, $connection->hostId, ($this->origin()?->origin() ?? '') . '/sitemap.xml');
+                    $this->client->addSitemap($token, $connection->userId, $connection->hostId, $origin->origin() . '/sitemap.xml');
                     if (!$this->isCurrent($connection)) {
                         return;
                     }
@@ -166,11 +178,9 @@ final class WebmasterService
                 $queries = $this->client->popularQueries($token, $connection->userId, $connection->hostId);
             }
             $updatedAt = $now;
-        } catch (WebmasterApiException $e) {
-            $tokenInvalid = $e->isInvalidToken();
-            [$errorKey, $errorCode] = $tokenInvalid ? [null, null] : [$e->isTemporary() ? 'ops.webmaster_error_busy' : 'ops.webmaster_error_api', $e->errorCode ?? (string) $e->status];
-        } catch (WebmasterUnreachableException) {
-            [$errorKey, $errorCode] = ['ops.webmaster_error_unreachable', null];
+        } catch (WebmasterFailure $e) {
+            $tokenInvalid = $e instanceof WebmasterApiException && $e->isInvalidToken();
+            [$errorKey, $errorCode] = $tokenInvalid ? [null, null] : [$e->messageKey(), $e->messageCode()];
         }
         if ($this->isCurrent($connection)) {
             $this->store->saveSnapshot(new WebmasterSnapshot($verification, $summary, $queries, $updatedAt, $now, $errorKey, $errorCode, $tokenInvalid));
@@ -235,20 +245,5 @@ final class WebmasterService
         }
 
         return null;
-    }
-
-    private function refused(WebmasterApiException|WebmasterUnreachableException $e): ContentException
-    {
-        if ($e instanceof WebmasterApiException) {
-            if ($e->isInvalidToken()) {
-                return ContentException::invalid(I18n::t('ops.webmaster_token_rejected'));
-            }
-
-            return $e->isTemporary()
-                ? new ContentException(I18n::t('ops.webmaster_error_busy', ['code' => $e->errorCode ?? (string) $e->status]), 502)
-                : ContentException::invalid(I18n::t('ops.webmaster_error_api', ['code' => $e->errorCode ?? (string) $e->status]));
-        }
-
-        return new ContentException(I18n::t('ops.webmaster_error_unreachable'), 502);
     }
 }

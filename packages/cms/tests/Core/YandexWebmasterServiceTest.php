@@ -228,7 +228,7 @@ final class YandexWebmasterServiceTest extends KernelTestCase
         $this->yandexVerified();
         $this->calls = [];
 
-        $status = $service->status(true);
+        $status = $service->refresh();
 
         self::assertSame(WebmasterState::Ready, $status->state);
         self::assertSame(['sqi' => 40, 'searchable' => 120, 'excluded' => 7, 'problems' => ['FATAL' => 0, 'CRITICAL' => 1, 'POSSIBLE_PROBLEM' => 3, 'RECOMMENDATION' => 5]], $status->summary);
@@ -242,7 +242,7 @@ final class YandexWebmasterServiceTest extends KernelTestCase
         self::assertNull($status->error);
 
         $this->calls = [];
-        $service->status(true);
+        $service->refresh();
         self::assertNotContains('POST ' . self::HOST_PATH . '/user-added-sitemaps', $this->calls, 'the sitemap is registered once');
     }
 
@@ -300,7 +300,7 @@ final class YandexWebmasterServiceTest extends KernelTestCase
         self::assertSame([WebmasterState::VerificationFailed, 'META_TAG_NOT_FOUND'], [$status->state, $status->verification?->failReason]);
         self::assertNotContains('POST ' . self::HOST_PATH . '/verification', $this->callsWithoutQuery(), 'a failure is shown, not retried behind the owner\'s back');
 
-        $service->status(true);
+        $service->refresh();
         self::assertContains('POST ' . self::HOST_PATH . '/verification', $this->callsWithoutQuery());
     }
 
@@ -334,7 +334,7 @@ final class YandexWebmasterServiceTest extends KernelTestCase
         $service->status();
         self::assertSame([], $this->calls);
 
-        $service->status(true);
+        $service->refresh();
         self::assertNotSame([], $this->calls);
 
         $this->makeStale('-7 hours');
@@ -352,14 +352,14 @@ final class YandexWebmasterServiceTest extends KernelTestCase
         $service->connect(self::TOKEN);
         $this->answer('GET ' . self::HOST_PATH . '/verification', 403, ['error_code' => 'INVALID_OAUTH_TOKEN']);
 
-        $status = $service->status(true);
+        $status = $service->refresh();
 
         self::assertSame(WebmasterState::TokenInvalid, $status->state);
         self::assertSame(40, $status->summary['sqi'] ?? null);
         self::assertNull($status->error);
 
         $this->calls = [];
-        $service->status(true);
+        $service->refresh();
         self::assertSame([], $this->calls, 'a token Yandex refused is not tried again until the owner pastes a new one');
 
         $this->yandexVerified();
@@ -375,7 +375,7 @@ final class YandexWebmasterServiceTest extends KernelTestCase
         $service->connect(self::TOKEN);
         $this->networkDown = true;
 
-        $status = $service->status(true);
+        $status = $service->refresh();
 
         self::assertSame(WebmasterState::Ready, $status->state);
         self::assertSame(120, $status->summary['searchable'] ?? null);
@@ -400,7 +400,7 @@ final class YandexWebmasterServiceTest extends KernelTestCase
         $service->connect(self::TOKEN);
         $this->answer('GET ' . self::HOST_PATH . '/summary', 500, ['error_code' => 'INTERNAL_ERROR']);
 
-        $status = $service->status(true);
+        $status = $service->refresh();
 
         self::assertStringContainsString('INTERNAL_ERROR', (string) $status->error);
         self::assertSame(WebmasterState::Ready, $status->state);
@@ -460,7 +460,7 @@ final class YandexWebmasterServiceTest extends KernelTestCase
             $store->forget();
         };
 
-        $service->status(true);
+        $service->refresh();
 
         $after = $service->view();
         self::assertSame([WebmasterState::NotConnected, null, null], [$after->state, $after->summary, $store->uin()]);
@@ -480,7 +480,7 @@ final class YandexWebmasterServiceTest extends KernelTestCase
             $store->saveConnection(new WebmasterConnection($box->seal('y0_the-new-token'), new \DateTimeImmutable(), 42, self::HOST, 'https://' . self::SITE, null, false));
         };
 
-        $service->status(true);
+        $service->refresh();
 
         $connection = $store->connection();
         self::assertSame('y0_the-new-token', null === $connection ? null : $box->open($connection->sealedToken));
@@ -512,7 +512,7 @@ final class YandexWebmasterServiceTest extends KernelTestCase
         self::assertNotNull($connection);
         self::getContainer()->get(SettingsService::class)->set(WebmasterStore::CONNECTION, ['token' => 'v1.broken'] + $connection->toArray());
 
-        self::assertSame(WebmasterState::TokenInvalid, $service->status(true)->state);
+        self::assertSame(WebmasterState::TokenInvalid, $service->refresh()->state);
     }
 
     /** The last refresh was this long ago. */

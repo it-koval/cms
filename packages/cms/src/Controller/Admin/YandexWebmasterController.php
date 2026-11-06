@@ -61,7 +61,7 @@ final class YandexWebmasterController extends AbstractApiController
         $this->access->require(self::AREA, 'view');
         self::releaseSession($request);
 
-        return $this->answer($this->webmaster->status(true));
+        return $this->answer($this->webmaster->refresh());
     }
 
     #[Route('', name: 'disconnect', methods: ['DELETE'])]

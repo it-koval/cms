@@ -76,7 +76,7 @@ final class YandexWebmasterHealthCheckTest extends KernelTestCase
     {
         $this->connect();
         $this->answer('GET ' . self::HOST_PATH . '/verification', 403, ['error_code' => 'INVALID_OAUTH_TOKEN']);
-        $this->webmasterService()->status(true);
+        $this->webmasterService()->refresh();
         $this->calls = [];
 
         $result = $this->check();
@@ -123,7 +123,7 @@ final class YandexWebmasterHealthCheckTest extends KernelTestCase
     {
         $this->connect();
         $this->yandexVerified();
-        $this->webmasterService()->status(true);
+        $this->webmasterService()->refresh();
         $this->calls = [];
 
         $result = $this->check();
@@ -137,7 +137,7 @@ final class YandexWebmasterHealthCheckTest extends KernelTestCase
         $this->connect();
         $this->yandexVerified();
         $this->answer('GET ' . self::HOST_PATH . '/summary', 404, ['error_code' => 'HOST_NOT_LOADED']);
-        $this->webmasterService()->status(true);
+        $this->webmasterService()->refresh();
         $this->calls = [];
 
         self::assertSame([HealthResult::OK, 'Подключён, права на сайт подтверждены'], [$this->check()->status, $this->check()->message]);

@@ -9,6 +9,20 @@ namespace Itk\Cms\YandexWebmaster\Model;
  *
  * @internal
  */
-final class WebmasterUnreachableException extends \RuntimeException
+final class WebmasterUnreachableException extends \RuntimeException implements WebmasterFailure
 {
+    public function isTemporary(): bool
+    {
+        return true;
+    }
+
+    public function messageKey(): string
+    {
+        return 'ops.webmaster_error_unreachable';
+    }
+
+    public function messageCode(): ?string
+    {
+        return null;
+    }
 }
