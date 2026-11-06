@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace Itk\Cms\Schema;
 
+use Itk\Cms\Analytics\AnalyticsConfig;
 use Itk\Cms\Field\FieldInterface;
 use Itk\Cms\I18n\I18n;
+use Itk\Cms\IndexNow\IndexNowSite;
 
 /**
  * The builder a site's config/itk/schema.php receives:
@@ -187,41 +189,20 @@ final class SchemaBuilder
             $layout = ['top' => $top, 'bottom' => $bottom];
         }
 
-        // the built-in «Сайт» group (name and domain) always exists; fields the site adds to it stay
-        $settings = $this->settings;
-        if (!isset($settings['site'])) {
-            $settings['site'] = (new SettingsGroup('site', 'site'))->titleKey('model.site_group');
-        }
-        $site = $settings['site'];
-        $existing = \array_map(static fn (FieldInterface $f): string => $f->key(), $site->fieldList());
-        $core = [];
-        if (!\in_array('siteName', $existing, true)) {
-            $core[] = Field::text('siteName', 'siteName')->texts(label: 'model.site_name')->max(40)->required();
-        }
-        if (!\in_array('domain', $existing, true)) {
-            $core[] = Field::text('domain', 'domain')->texts(label: 'model.site_domain', help: 'model.site_domain_help')->max(60)->required();
-        }
-        if ([] !== $core) {
-            $site->prepend(...$core);
-        }
-
-        // the built-in «Аналитика и вебмастера» group: counters and verification codes, put on live pages by Analytics\InjectAnalyticsListener, and the IndexNow toggle (IndexNow\QueueIndexNow); its own right `set:analytics`, which only the admin role holds
-        if (!isset($settings['analytics'])) {
-            $settings['analytics'] = (new SettingsGroup('analytics', 'analytics'))->titleKey('model.analytics_group');
-        }
-        $analytics = $settings['analytics'];
-        $have = \array_map(static fn (FieldInterface $f): string => $f->key(), $analytics->fieldList());
-        $analyticsCore = \array_values(\array_filter([
-            Field::text('yandexMetrikaId', 'yandexMetrikaId')->texts(label: 'model.analytics_metrika_id', help: 'model.analytics_metrika_id_help')->max(12),
-            Field::toggle('yandexMetrikaWebvisor', 'yandexMetrikaWebvisor')->texts(label: 'model.analytics_webvisor', help: 'model.analytics_webvisor_help'),
-            Field::text('googleAnalyticsId', 'googleAnalyticsId')->texts(label: 'model.analytics_ga_id', help: 'model.analytics_ga_id_help')->max(20),
-            Field::text('yandexVerification', 'yandexVerification')->texts(label: 'model.analytics_yandex_verification', help: 'model.analytics_yandex_verification_help')->max(120),
-            Field::text('googleVerification', 'googleVerification')->texts(label: 'model.analytics_google_verification', help: 'model.analytics_google_verification_help')->max(120),
-            Field::toggle('indexNow', 'indexNow')->texts(label: 'model.analytics_indexnow', help: 'model.analytics_indexnow_help'),
-        ], static fn (FieldInterface $f): bool => !\in_array($f->key(), $have, true)));
-        if ([] !== $analyticsCore) {
-            $analytics->prepend(...$analyticsCore);
-        }
+        // the built-in «Сайт» group (name and domain) and «Аналитика и вебмастера» (counters and verification codes, put on live pages by Analytics\InjectAnalyticsListener,
+        // and the IndexNow toggle of IndexNow\QueueIndexNow; its own right `set:analytics`, which only the admin role holds)
+        $settings = self::withCoreFields($this->settings, 'site', 'model.site_group', [
+            Field::text('siteName', 'siteName')->texts(label: 'model.site_name')->max(40)->required(),
+            Field::text('domain', 'domain')->texts(label: 'model.site_domain', help: 'model.site_domain_help')->max(60)->required(),
+        ]);
+        $settings = self::withCoreFields($settings, 'analytics', 'model.analytics_group', [
+            Field::text(AnalyticsConfig::METRIKA_ID, AnalyticsConfig::METRIKA_ID)->texts(label: 'model.analytics_metrika_id', help: 'model.analytics_metrika_id_help')->max(12),
+            Field::toggle(AnalyticsConfig::METRIKA_WEBVISOR, AnalyticsConfig::METRIKA_WEBVISOR)->texts(label: 'model.analytics_webvisor', help: 'model.analytics_webvisor_help'),
+            Field::text(AnalyticsConfig::GA_ID, AnalyticsConfig::GA_ID)->texts(label: 'model.analytics_ga_id', help: 'model.analytics_ga_id_help')->max(20),
+            Field::text(AnalyticsConfig::YANDEX_VERIFICATION, AnalyticsConfig::YANDEX_VERIFICATION)->texts(label: 'model.analytics_yandex_verification', help: 'model.analytics_yandex_verification_help')->max(120),
+            Field::text(AnalyticsConfig::GOOGLE_VERIFICATION, AnalyticsConfig::GOOGLE_VERIFICATION)->texts(label: 'model.analytics_google_verification', help: 'model.analytics_google_verification_help')->max(120),
+            Field::toggle(IndexNowSite::SETTING, IndexNowSite::SETTING)->texts(label: 'model.analytics_indexnow', help: 'model.analytics_indexnow_help'),
+        ]);
 
         return new Schema(
             mainLocale: $this->mainLocale,
@@ -236,5 +217,31 @@ final class SchemaBuilder
             forms: $this->forms,
             buildProblems: $this->problems,
         );
+    }
+
+    /**
+     * Puts the fields of a built-in group in front of the ones the site gave it, and makes the group when the site has none. Setting keys are one namespace for all groups,
+     * so a key the site declares in any group stays the site's field and the core one is left out.
+     *
+     * @param array<string, SettingsGroup> $settings
+     * @param list<FieldInterface> $core
+     *
+     * @return array<string, SettingsGroup>
+     */
+    private static function withCoreFields(array $settings, string $group, string $titleKey, array $core): array
+    {
+        $taken = [];
+        foreach ($settings as $g) {
+            foreach ($g->fieldList() as $f) {
+                $taken[$f->key()] = true;
+            }
+        }
+        $core = \array_values(\array_filter($core, static fn (FieldInterface $f): bool => !isset($taken[$f->key()])));
+        if ([] !== $core) {
+            $settings[$group] ??= (new SettingsGroup($group, $group))->titleKey($titleKey);
+            $settings[$group]->prepend(...$core);
+        }
+
+        return $settings;
     }
 }

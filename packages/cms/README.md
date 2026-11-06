@@ -766,7 +766,7 @@ foreach ($result->bySource() as $hit) {
 
 Согласие на cookie остаётся делом сайта. Ядро не ждёт согласия посетителя и не показывает баннер: счётчики загружаются сразу. Если закон или политика сайта требуют согласия, не заполняйте эти поля и подключите счётчики своим кодом после согласия. Строгий `Content-Security-Policy` сайта нужно разрешить для `mc.yandex.ru` и `googletagmanager.com`, а встроенные скрипты ядро не помечает `nonce`.
 
-Группу можно дополнить своими полями: `$s->settings('analytics')->fields(…)`. Поле сайта с ключом `yandexMetrikaId`, `yandexMetrikaWebvisor`, `googleAnalyticsId`, `yandexVerification`, `googleVerification` или `indexNow` заменяет поле ядра.
+Группу можно дополнить своими полями: `$s->settings('analytics')->fields(…)`. Поле сайта с ключом `yandexMetrikaId`, `yandexMetrikaWebvisor`, `googleAnalyticsId`, `yandexVerification`, `googleVerification` или `indexNow` заменяет поле ядра, в какой бы группе сайт его ни объявил: ключи настроек общие для всех групп, и ядро своего поля с этим ключом не добавляет.
 
 #### IndexNow: сообщить поисковикам об изменённой странице
 

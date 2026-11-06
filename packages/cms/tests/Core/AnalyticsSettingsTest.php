@@ -53,6 +53,19 @@ final class AnalyticsSettingsTest extends KernelTestCase
     }
 
     #[Test]
+    public function aCoreKeyTheSiteDeclaredInAnotherGroupStaysThereAndOnlyThere(): void
+    {
+        $b = new SchemaBuilder('ru');
+        $b->settings('counters', 'Счётчики')->fields(Field::text('yandexMetrikaId', 'Метрика'), Field::text('domain', 'Домен'));
+        $schema = $b->build();
+
+        self::assertSame([], $schema->validate());
+        self::assertSame(['yandexMetrikaId', 'domain'], $this->keysOf('counters', $schema));
+        self::assertSame(['yandexMetrikaWebvisor', 'googleAnalyticsId', 'yandexVerification', 'googleVerification', 'indexNow'], $this->keysOf('analytics', $schema));
+        self::assertSame(['siteName'], $this->keysOf('site', $schema));
+    }
+
+    #[Test]
     public function onlyTheAdminRoleHoldsTheRight(): void
     {
         $resolver = self::getContainer()->get(RoleResolver::class);
