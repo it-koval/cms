@@ -7,21 +7,24 @@ namespace Itk\Cms\YandexWebmaster;
 use Itk\Cms\Content\SettingsService;
 use Itk\Cms\YandexWebmaster\Model\WebmasterConnection;
 use Itk\Cms\YandexWebmaster\Model\WebmasterSnapshot;
+use Psr\Cache\CacheItemPoolInterface;
 
 /**
- * Where the connection to Yandex Webmaster is kept: two shared rows of the settings table, outside the schema, so the settings API, the history of settings and the exports never list them
- * (the token inside is sealed on top of that). The snapshot is a row of its own because it is replaced every few hours: it stays out of the fingerprint of the pages (Rendering\PageValidators),
- * the connection (with the code of the meta tag, which shows on every page) is in it.
+ * Where the connection to Yandex Webmaster is kept. The connection is a shared row of the settings table outside the schema, so the settings API, the history of settings and the exports
+ * never list it (the token inside is sealed on top of that); it holds the code of the meta tag, which shows on every page, so it is in the fingerprint of the pages (Rendering\PageValidators).
+ * The snapshot is replaced every few hours and shows on no page, so it lives in the cache pool: a lost entry only means the next status() asks Yandex again.
  *
  * @internal
  */
 final class WebmasterStore
 {
     public const CONNECTION = 'yandexWebmaster';
-    public const SNAPSHOT = 'yandexWebmasterSnapshot';
+    private const SNAPSHOT = 'itk_yandex_webmaster_snapshot';
 
-    public function __construct(private readonly SettingsService $settings)
-    {
+    public function __construct(
+        private readonly SettingsService $settings,
+        private readonly CacheItemPoolInterface $cache,
+    ) {
     }
 
     public function connection(): ?WebmasterConnection
@@ -41,7 +44,7 @@ final class WebmasterStore
 
     public function snapshot(): WebmasterSnapshot
     {
-        $data = $this->settings->stored(self::SNAPSHOT);
+        $data = $this->cache->getItem(self::SNAPSHOT)->get();
 
         return \is_array($data) ? WebmasterSnapshot::fromArray($data) : new WebmasterSnapshot();
     }
@@ -59,12 +62,12 @@ final class WebmasterStore
 
     public function saveSnapshot(WebmasterSnapshot $snapshot): void
     {
-        $this->settings->set(self::SNAPSHOT, $snapshot->toArray());
+        $this->cache->save($this->cache->getItem(self::SNAPSHOT)->set($snapshot->toArray()));
     }
 
     public function forget(): void
     {
         $this->settings->remove(self::CONNECTION);
-        $this->settings->remove(self::SNAPSHOT);
+        $this->cache->deleteItem(self::SNAPSHOT);
     }
 }

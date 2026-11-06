@@ -8,6 +8,7 @@ use Itk\Cms\Content\SettingsService;
 use Itk\Cms\Health\HealthResult;
 use Itk\Cms\Health\YandexWebmasterHealthCheck;
 use Itk\Cms\Tests\Core\Fixture\YandexWebmasterStand;
+use Itk\Cms\YandexWebmaster\Model\WebmasterSnapshot;
 use Itk\Cms\YandexWebmaster\WebmasterStore;
 use PHPUnit\Framework\Attributes\Test;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
@@ -164,10 +165,8 @@ final class YandexWebmasterHealthCheckTest extends KernelTestCase
 
     private function makeSnapshotStale(): void
     {
-        $settings = self::getContainer()->get(SettingsService::class);
-        $stored = $settings->stored(WebmasterStore::SNAPSHOT);
-        self::assertIsArray($stored);
-        $stored['checkedAt'] = (new \DateTimeImmutable('-2 days'))->format(\DATE_ATOM);
-        $settings->set(WebmasterStore::SNAPSHOT, $stored);
+        $store = self::getContainer()->get(WebmasterStore::class);
+        $snapshot = $store->snapshot();
+        $store->saveSnapshot(new WebmasterSnapshot($snapshot->verification, $snapshot->summary, $snapshot->queries, $snapshot->updatedAt, new \DateTimeImmutable('-2 days'), $snapshot->errorKey, $snapshot->errorCode, $snapshot->tokenInvalid));
     }
 }

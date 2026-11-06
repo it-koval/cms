@@ -443,7 +443,7 @@ final class YandexWebmasterServiceTest extends KernelTestCase
         self::assertNull($status->host);
         self::assertNull($status->summary);
         self::assertNull(self::getContainer()->get(WebmasterStore::class)->uin());
-        self::assertNull(self::getContainer()->get(SettingsService::class)->stored(WebmasterStore::SNAPSHOT));
+        self::assertEquals(new WebmasterSnapshot(), self::getContainer()->get(WebmasterStore::class)->snapshot());
         self::assertSame([], $this->calls, 'the site is not removed from Webmaster');
     }
 
@@ -495,9 +495,8 @@ final class YandexWebmasterServiceTest extends KernelTestCase
         $settings = self::getContainer()->get(SettingsService::class);
 
         self::assertStringNotContainsString(self::TOKEN, (string) \json_encode($settings->stored(WebmasterStore::CONNECTION)));
-        self::assertStringNotContainsString(self::TOKEN, (string) \json_encode($settings->stored(WebmasterStore::SNAPSHOT)));
+        self::assertStringNotContainsString(self::TOKEN, (string) \json_encode(self::getContainer()->get(WebmasterStore::class)->snapshot()->toArray()));
         self::assertArrayNotHasKey(WebmasterStore::CONNECTION, $settings->all());
-        self::assertArrayNotHasKey(WebmasterStore::SNAPSHOT, $settings->all());
         $raw = self::getContainer()->get('doctrine.orm.entity_manager')->getConnection()->fetchOne('SELECT setting_value::text FROM itk_setting WHERE setting_key = ?', [WebmasterStore::CONNECTION]);
         self::assertStringNotContainsString(self::TOKEN, (string) $raw);
     }

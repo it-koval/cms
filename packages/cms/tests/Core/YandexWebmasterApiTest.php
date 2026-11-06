@@ -255,7 +255,6 @@ final class YandexWebmasterApiTest extends WebTestCase
 
         $settings = $this->api('GET', 'settings');
         self::assertArrayNotHasKey('yandexWebmaster', $settings);
-        self::assertArrayNotHasKey('yandexWebmasterSnapshot', $settings);
 
         $merged = $this->api('PATCH', 'settings', ['yandexVerification' => 'owner-code-1234']);
         self::assertArrayNotHasKey('yandexWebmaster', $merged);

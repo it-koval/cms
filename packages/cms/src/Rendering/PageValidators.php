@@ -9,7 +9,6 @@ use Itk\Cms\CriticalCss\Stylesheets;
 use Itk\Cms\Doctrine\JsonPath;
 use Itk\Cms\Entity\PageTranslation;
 use Itk\Cms\Support\Json;
-use Itk\Cms\YandexWebmaster\WebmasterStore;
 use Psr\Clock\ClockInterface;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\HttpFoundation\Request;
@@ -17,7 +16,7 @@ use Symfony\Component\HttpFoundation\Request;
 /**
  * ETag and Last-Modified of a live page, worked out by the database without drawing the page (the 304 of PageController), and the fingerprint they are made of, which is also the key of PageCache.
  * The fingerprint is a hash of everything a page can show: the page itself (its publication date and the snapshot), the live pages of the language (menus show only live links, lists show pages),
- * the place of those pages in the tree (a list shows pages in that order), the settings (all but the snapshot of Yandex Webmaster, which is renewed every few hours and shows on no page), the menus, the live records of the collections, the frames saved for pictures (they decide the address of a picture),
+ * the place of those pages in the tree (a list shows pages in that order), the settings, the menus, the live records of the collections, the frames saved for pictures (they decide the address of a picture),
  * the SEO rules, the critical CSS of the page and the stamp of the stylesheets (both are what itk_stylesheets() prints), the query of the request,
  * the build of the container (a deploy that clears the cache changes it) and the day (UTC): a page that shows what is on right now
  * (the tours that have not started yet) is out of date by the evening, so no tag lives longer than a day. The tag is the start of the fingerprint.
@@ -62,7 +61,7 @@ final class PageValidators
             'SELECT
                 (SELECT COUNT(*) FROM itk_page_translation WHERE locale = :locale AND status = :live) AS pages,
                 (SELECT MAX(published_at) FROM itk_page_translation WHERE locale = :locale2 AND status = :live2) AS newest,
-                (SELECT COALESCE(SUM(hashtext(CONCAT(setting_key, \'|\', locale, \'|\', COALESCE(setting_value::text, \'\')))), 0) FROM itk_setting WHERE setting_key <> :webmasterSnapshot) AS settings,
+                (SELECT COALESCE(SUM(hashtext(CONCAT(setting_key, \'|\', locale, \'|\', COALESCE(setting_value::text, \'\')))), 0) FROM itk_setting) AS settings,
                 (SELECT COALESCE(SUM(hashtext(CONCAT(p.id, \'|\', p.position, \'|\', COALESCE(p.parent_id, \'\')))), 0) FROM itk_page p INNER JOIN itk_page_translation pt ON pt.page_id = p.id AND pt.locale = :locale3 AND pt.status = :live3) AS tree,
                 (SELECT COALESCE(SUM(hashtext(CONCAT(id, \'|\', crops::text))), 0) FROM itk_media_file WHERE crops IS NOT NULL) AS frames,
                 (SELECT COALESCE(SUM(hashtext(CONCAT(area_key, \'|\', name, \'|\', depth, \'|\', items::text))), 0) FROM itk_menu_area) AS menus,
@@ -72,7 +71,7 @@ final class PageValidators
             [
                 'locale' => $locale, 'live' => PageTranslation::PUBLISHED, 'locale2' => $locale, 'live2' => PageTranslation::PUBLISHED, 'locale3' => $locale, 'live3' => PageTranslation::PUBLISHED,
                 'stamp' => JsonPath::of($locale, 'publishedAt'), 'updated' => JsonPath::of($locale, 'updatedAt'), 'status' => JsonPath::of($locale, 'status'), 'itemLive' => 'published',
-                'tid' => $t->id, 'webmasterSnapshot' => WebmasterStore::SNAPSHOT,
+                'tid' => $t->id,
             ],
         );
         if (false === $row) {
