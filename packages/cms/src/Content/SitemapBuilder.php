@@ -20,6 +20,7 @@ final class SitemapBuilder
 {
     private const KEY = 'itk_sitemap_';
     private const TTL = 3600;
+    private const RESERVED_ZONE = '~(^|\.)(localhost|test|local|example|invalid|internal)$~';
 
     public function __construct(
         private readonly IndexablePages $pages,
@@ -61,6 +62,25 @@ final class SitemapBuilder
         }
 
         return \preg_match('~^https?://~i', $domain) ? $domain : 'https://' . $domain;
+    }
+
+    /** base() with a Cyrillic host such as `сайт.рф` in punycode, the only form a URL may carry; null when there is no address. */
+    public function asciiBase(): ?string
+    {
+        $base = $this->base();
+        $parts = null === $base ? false : \parse_url($base);
+        $host = \is_array($parts) && isset($parts['host']) ? \idn_to_ascii(\mb_strtolower($parts['host']), \IDNA_DEFAULT, \INTL_IDNA_VARIANT_UTS46) : false;
+        if (false === $host) {
+            return null;
+        }
+
+        return ($parts['scheme'] ?? 'https') . '://' . $host . (isset($parts['port']) ? ':' . $parts['port'] : '');
+    }
+
+    /** Can a search engine reach this host? Not localhost, an IP address or a reserved zone (.test, .local, .example …). */
+    public static function isPublicHost(string $host): bool
+    {
+        return false === \filter_var($host, \FILTER_VALIDATE_IP) && 1 !== \preg_match(self::RESERVED_ZONE, $host);
     }
 
     private function build(string $base): string

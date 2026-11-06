@@ -28,7 +28,6 @@ final class IndexNowSite
     public const SETTING = 'indexNow';
 
     private const LAST = 'itk_indexnow_last';
-    private const RESERVED_ZONE = '~(^|\.)(localhost|test|local|example|invalid|internal)$~';
 
     public function __construct(
         private readonly SettingsService $settings,
@@ -49,24 +48,17 @@ final class IndexNowSite
         if (null === $host) {
             return IndexNowState::NoAddress;
         }
-        if (false !== \filter_var($host, \FILTER_VALIDATE_IP) || 1 === \preg_match(self::RESERVED_ZONE, $host)) {
+        if (!SitemapBuilder::isPublicHost($host)) {
             return IndexNowState::NotPublic;
         }
 
         return null === $this->http ? IndexNowState::NoHttpClient : IndexNowState::Ready;
     }
 
-    /** `https://example.com` (SitemapBuilder::base()); a Cyrillic host such as `сайт.рф` in punycode, the only form a URL may carry. */
+    /** `https://example.com` (SitemapBuilder::base()); a Cyrillic host in punycode, the only form a URL may carry. */
     public function base(): ?string
     {
-        $base = $this->sitemap->base();
-        $parts = null === $base ? false : \parse_url($base);
-        $host = \is_array($parts) && isset($parts['host']) ? \idn_to_ascii(\mb_strtolower($parts['host']), \IDNA_DEFAULT, \INTL_IDNA_VARIANT_UTS46) : false;
-        if (false === $host) {
-            return null;
-        }
-
-        return ($parts['scheme'] ?? 'https') . '://' . $host . (isset($parts['port']) ? ':' . $parts['port'] : '');
+        return $this->sitemap->asciiBase();
     }
 
     /** `example.com`, without the port. Only after state() said there is an address. */
