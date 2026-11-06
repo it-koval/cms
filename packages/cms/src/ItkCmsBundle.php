@@ -249,6 +249,14 @@ final class ItkCmsBundle extends AbstractBundle
                         ->scalarNode('endpoint')->info('The IndexNow endpoint the worker posts to; a search engine shares the pings with the others')->defaultValue('https://yandex.com/indexnow')->cannotBeEmpty()->end()
                     ->end()
                 ->end()
+                ->arrayNode('yandex_webmaster')
+                    ->info('Yandex Webmaster on the screen Today: the owner pastes an OAuth token once, the CMS adds the site, checks ownership with a meta tag, registers sitemap.xml and shows how the site does in Yandex')
+                    ->addDefaultsIfNotSet()
+                    ->children()
+                        ->scalarNode('client_id')->info('The ID of the OAuth application registered at oauth.yandex.ru (scopes webmaster:hostinfo and webmaster:verify): the admin offers the owner a link that gives the token. Empty = no link, the owner brings a token himself')->defaultValue('%env(string:default::ITK_YANDEX_CLIENT_ID)%')->end()
+                        ->scalarNode('api_base')->info('The address of the Webmaster API; a site changes it only to point a demo or a test at a stand-in')->defaultValue('https://api.webmaster.yandex.net/v4')->cannotBeEmpty()->end()
+                    ->end()
+                ->end()
                 ->booleanNode('blog')
                     ->info('false = a site without a blog: the templates blog, blog_category and blog_article are not registered and the "Blog articles" link is not in the rail (the same as $s->withoutBlog() in schema.php)')
                     ->defaultTrue()
@@ -386,6 +394,8 @@ final class ItkCmsBundle extends AbstractBundle
         $parameters->set('itk_cms.knowledge_base.exclude_templates', \array_values(\array_map('strval', $kb['exclude_templates'])));
         $parameters->set('itk_cms.knowledge_base.exclude_collections', \array_values(\array_map('strval', $kb['exclude_collections'])));
         $parameters->set('itk_cms.indexnow.endpoint', (string) $config['indexnow']['endpoint']);
+        $parameters->set('itk_cms.yandex_webmaster.client_id', (string) $config['yandex_webmaster']['client_id']);
+        $parameters->set('itk_cms.yandex_webmaster.api_base', (string) $config['yandex_webmaster']['api_base']);
         $parameters->set('itk_cms.strict', $config['strict'] ?? (bool) $builder->getParameter('kernel.debug'));
         $parameters->set('itk_cms.admin_path', $config['admin_path']);
         $parameters->set('itk_cms.admin_path_segments', \ltrim($config['admin_path'], '/')); // for the prefix of config/routes/admin.php, which adds the slash itself

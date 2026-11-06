@@ -18,6 +18,7 @@ use Itk\Cms\Rendering\PageCache;
 use Itk\Cms\Request\TelegramNotifier;
 use Itk\Cms\Schema\Schema;
 use Itk\Cms\Schema\SchemaLoader;
+use Itk\Cms\YandexWebmaster\WebmasterClient;
 use Monolog\Processor\ProcessorInterface;
 use Symfony\Component\DependencyInjection\Loader\Configurator\ContainerConfigurator;
 
@@ -53,6 +54,7 @@ return static function (ContainerConfigurator $container): void {
             '../src/CriticalCss/Model',
             '../src/KnowledgeBase/Model',
             '../src/IndexNow/{Model,IndexNowState.php}',
+            '../src/YandexWebmaster/Model',
             '../src/KnowledgeBase/Embedding/{Space,Vector,Purpose,Embeddings,EmbeddingFailed}.php',
         ]);
 
@@ -61,6 +63,7 @@ return static function (ContainerConfigurator $container): void {
     $services->get(KnowledgeBaseHealthCheck::class)->arg('$http', service('http_client')->nullOnInvalid());
     $services->get(IndexNowSite::class)->arg('$http', service('http_client')->nullOnInvalid());
     $services->get(PingIndexNowHandler::class)->arg('$http', service('http_client')->nullOnInvalid());
+    $services->get(WebmasterClient::class)->arg('$http', service('http_client')->nullOnInvalid());
 
     // the one class of the knowledge base that site code calls (a site search, a chatbot); public so that a site can also take it from a service locator
     $services->get(KnowledgeSearch::class)->public();

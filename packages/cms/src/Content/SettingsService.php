@@ -197,6 +197,23 @@ final class SettingsService implements ResetInterface
         $this->loaded = null;
     }
 
+    /** A shared value that is not a field of the schema, kept by a module of its own (all() never lists it, nor does the settings API or the history). */
+    public function stored(string $key): mixed
+    {
+        return $this->load()[Setting::ALL][$key] ?? null;
+    }
+
+    /** Deletes a shared value (the row), not only its content. */
+    public function remove(string $key): void
+    {
+        $row = $this->settings->find(['key' => $key, 'locale' => Setting::ALL]);
+        if (null !== $row) {
+            $this->em->remove($row);
+            $this->em->flush();
+        }
+        $this->loaded = null;
+    }
+
     /**
      * Telegram chats for a form: the form's own chat, else the «all other forms» chat.
      *
