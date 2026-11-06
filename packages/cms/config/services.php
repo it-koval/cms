@@ -9,6 +9,7 @@ use Itk\Cms\Health\KnowledgeBaseHealthCheck;
 use Itk\Cms\Health\MessengerMonitor;
 use Itk\Cms\I18n\AdminLocale;
 use Itk\Cms\IndexNow\IndexNowSite;
+use Itk\Cms\IndexNow\PingIndexNowHandler;
 use Itk\Cms\KnowledgeBase\Embedding\Embedder;
 use Itk\Cms\KnowledgeBase\Embedding\OpenAiEmbedder;
 use Itk\Cms\KnowledgeBase\KnowledgeSearch;
@@ -59,6 +60,7 @@ return static function (ContainerConfigurator $container): void {
     $services->get(OpenAiEmbedder::class)->arg('$http', service('http_client')->nullOnInvalid());
     $services->get(KnowledgeBaseHealthCheck::class)->arg('$http', service('http_client')->nullOnInvalid());
     $services->get(IndexNowSite::class)->arg('$http', service('http_client')->nullOnInvalid());
+    $services->get(PingIndexNowHandler::class)->arg('$http', service('http_client')->nullOnInvalid());
 
     // the one class of the knowledge base that site code calls (a site search, a chatbot); public so that a site can also take it from a service locator
     $services->get(KnowledgeSearch::class)->public();
