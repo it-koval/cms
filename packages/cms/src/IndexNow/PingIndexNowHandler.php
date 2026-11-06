@@ -8,7 +8,6 @@ use Itk\Cms\IndexNow\Model\PingIndexNow;
 use Itk\Cms\Support\Url;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\Messenger\Attribute\AsMessageHandler;
-use Symfony\Component\Messenger\Exception\RecoverableMessageHandlingException;
 use Symfony\Component\Messenger\Exception\UnrecoverableMessageHandlingException;
 use Symfony\Component\Messenger\Handler\Acknowledger;
 use Symfony\Component\Messenger\Handler\BatchHandlerInterface;
@@ -21,7 +20,8 @@ use Symfony\Contracts\HttpClient\HttpClientInterface;
  * The address is the one of the moment the batch runs, and the state is checked again: a toggle turned off after queueing sends nothing.
  *
  *   200 | 202                          ack (202: the engine has not checked the key file yet)
- *   429, 5xx, no answer              nack every job with a RecoverableMessageHandlingException, after Retry-After when the engine names it
+ *   429, 5xx, no answer              nack every job with a plain exception: the retry_strategy of the transport tries again and, after max_retries, moves the jobs to the failure
+ *                                    transport (a RecoverableMessageHandlingException would be retried forever, whatever max_retries says)
  *   400 | 403 | 422 and other 4xx     nack every job unrecoverable with the status and the start of the body: a retry would be refused the same way
  *   toggle off, no address, no client  ack, nothing is sent
  *
@@ -69,10 +69,9 @@ final class PingIndexNowHandler implements BatchHandlerInterface
             ]);
             $status = $response->getStatusCode();
             $body = \mb_substr(\trim($response->getContent(false)), 0, 200);
-            $retryAfter = (int) ($response->getHeaders(false)['retry-after'][0] ?? 0);
         } catch (HttpException $e) {
             $this->site->recordSubmission(\count($urls), 0, $e->getMessage());
-            $this->settle($jobs, new RecoverableMessageHandlingException('IndexNow did not answer: ' . $e->getMessage(), 0, $e));
+            $this->settle($jobs, new \RuntimeException('IndexNow did not answer: ' . $e->getMessage(), 0, $e));
 
             return;
         }
@@ -80,7 +79,7 @@ final class PingIndexNowHandler implements BatchHandlerInterface
         $this->site->recordSubmission(\count($urls), $status, $accepted ? null : $body);
         $this->settle($jobs, match (true) {
             $accepted => null,
-            429 === $status || $status >= 500 => new RecoverableMessageHandlingException(\sprintf('IndexNow answered %d. %s', $status, $body), 0, null, $retryAfter > 0 ? $retryAfter * 1000 : null),
+            429 === $status || $status >= 500 => new \RuntimeException(\sprintf('IndexNow answered %d. %s', $status, $body)),
             default => new UnrecoverableMessageHandlingException(\sprintf('IndexNow refused the addresses with %d. %s', $status, $body)),
         });
     }

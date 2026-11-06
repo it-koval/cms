@@ -14,14 +14,21 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use Psr\Cache\CacheItemPoolInterface;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
+use Symfony\Component\DependencyInjection\ServiceLocator;
 use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\HttpClient\Response\MockResponse;
-use Symfony\Component\Messenger\Exception\RecoverableMessageHandlingException;
+use Symfony\Component\Messenger\Envelope;
+use Symfony\Component\Messenger\Event\WorkerMessageFailedEvent;
+use Symfony\Component\Messenger\EventListener\SendFailedMessageForRetryListener;
+use Symfony\Component\Messenger\Exception\HandlerFailedException;
 use Symfony\Component\Messenger\Exception\UnrecoverableMessageHandlingException;
 use Symfony\Component\Messenger\Handler\Acknowledger;
+use Symfony\Component\Messenger\Retry\MultiplierRetryStrategy;
+use Symfony\Component\Messenger\Stamp\RedeliveryStamp;
+use Symfony\Component\Messenger\Transport\InMemory\InMemoryTransport;
 use Symfony\Contracts\HttpClient\ResponseInterface;
 
-/** PingIndexNowHandler: один POST на пачку с адресами без повторов, 200 и 202 принимаются, 429, 5xx и обрыв повторяются позже, остальные 4xx нет; выключенное ничего не шлёт. */
+/** PingIndexNowHandler: один POST на пачку с адресами без повторов, 200 и 202 принимаются, 429, 5xx и обрыв повторяются, пока транспорт не исчерпает max_retries, остальные 4xx нет; выключенное ничего не шлёт. */
 final class IndexNowHandlerTest extends KernelTestCase
 {
     use IndexNowSettings;
@@ -145,6 +152,7 @@ final class IndexNowHandlerTest extends KernelTestCase
             self::assertCount(2, $outcomes, (string) $status);
             foreach ($outcomes as $e) {
                 self::assertInstanceOf(UnrecoverableMessageHandlingException::class, $e, (string) $status);
+                self::assertFalse(self::retriedAfter($e, 0), (string) $status);
                 self::assertStringContainsString((string) $status, $e->getMessage());
                 self::assertStringContainsString('The url list is wrong', $e->getMessage());
             }
@@ -153,33 +161,34 @@ final class IndexNowHandlerTest extends KernelTestCase
         self::assertSame([422, 'The url list is wrong'], [$last['status'], $last['error']]);
     }
 
-    #[Test]
-    public function tooManyRequestsAndServerErrorsAreRetriedAfterTheDelayTheEngineAsks(): void
+    /** @return iterable<string, array{\Closure(): MockResponse}> */
+    public static function transient(): iterable
     {
-        $handler = $this->handler(static fn (): MockResponse => new MockResponse('slow down', ['http_code' => 429, 'response_headers' => ['Retry-After: 30']]));
-        $outcomes = $this->drain($handler, ['/a']);
+        yield '429' => [static fn (): MockResponse => new MockResponse('slow down', ['http_code' => 429, 'response_headers' => ['Retry-After: 30']])];
+        yield '503' => [static fn (): MockResponse => new MockResponse('', ['http_code' => 503])];
+        yield 'no answer' => [static fn (): MockResponse => new MockResponse('', ['error' => 'connection refused'])];
+    }
 
-        self::assertInstanceOf(RecoverableMessageHandlingException::class, $outcomes[0]);
-        self::assertSame(30000, $outcomes[0]->getRetryDelay());
-
-        $handler = $this->handler(static fn (): MockResponse => new MockResponse('', ['http_code' => 503]));
-        $outcomes = $this->drain($handler, ['/a', '/b']);
+    /** @param \Closure(): MockResponse $answer */
+    #[Test]
+    #[DataProvider('transient')]
+    public function aTransientFailureIsRetriedUntilTheTransportGivesUp(\Closure $answer): void
+    {
+        $outcomes = $this->drain($this->handler($answer), ['/a', '/b']);
 
         self::assertCount(2, $outcomes);
         foreach ($outcomes as $e) {
-            self::assertInstanceOf(RecoverableMessageHandlingException::class, $e);
-            self::assertNull($e->getRetryDelay());
+            self::assertNotNull($e);
+            self::assertTrue(self::retriedAfter($e, 0), 'the first failure is retried');
+            self::assertFalse(self::retriedAfter($e, 3), 'after max_retries the message goes to the failure transport');
         }
     }
 
     #[Test]
-    public function aRequestThatDoesNotCompleteIsRetried(): void
+    public function aRequestThatDoesNotCompleteIsKeptForTheHealthLine(): void
     {
-        $handler = $this->handler(static fn (): MockResponse => new MockResponse('', ['error' => 'connection refused']));
+        $this->drain($this->handler(static fn (): MockResponse => new MockResponse('', ['error' => 'connection refused'])), ['/a']);
 
-        $outcomes = $this->drain($handler, ['/a']);
-
-        self::assertInstanceOf(RecoverableMessageHandlingException::class, $outcomes[0]);
         $last = $this->site->lastSubmission();
         self::assertSame(0, $last['status']);
         self::assertStringContainsString('connection refused', (string) $last['error']);
@@ -204,5 +213,19 @@ final class IndexNowHandlerTest extends KernelTestCase
         $this->drain($handler, ['/a']);
 
         self::assertSame(['https://new-name.example.org/a'], $this->requests[0]['body']['urlList']);
+    }
+
+    /** Would a worker whose transport allows three retries try the message again after this failure, when it has already been retried $retries times? */
+    private static function retriedAfter(\Throwable $failure, int $retries): bool
+    {
+        $envelope = (new Envelope(new PingIndexNow('/a')))->with(new RedeliveryStamp($retries));
+        $event = new WorkerMessageFailedEvent($envelope, 'async', new HandlerFailedException($envelope, [$failure]));
+        $listener = new SendFailedMessageForRetryListener(
+            new ServiceLocator(['async' => static fn (): InMemoryTransport => new InMemoryTransport()]),
+            new ServiceLocator(['async' => static fn (): MultiplierRetryStrategy => new MultiplierRetryStrategy(3)]),
+        );
+        $listener->onMessageFailed($event);
+
+        return $event->willRetry();
     }
 }
