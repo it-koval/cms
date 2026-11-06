@@ -4,11 +4,9 @@ declare(strict_types=1);
 
 namespace Itk\Cms\Tests\Core;
 
-use Itk\Cms\Content\SettingsService;
 use Itk\Cms\Health\HealthResult;
 use Itk\Cms\Health\YandexWebmasterHealthCheck;
 use Itk\Cms\Tests\Core\Fixture\YandexWebmasterStand;
-use Itk\Cms\YandexWebmaster\Model\WebmasterSnapshot;
 use Itk\Cms\YandexWebmaster\WebmasterStore;
 use PHPUnit\Framework\Attributes\Test;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
@@ -88,12 +86,13 @@ final class YandexWebmasterHealthCheckTest extends KernelTestCase
     public function aTokenThatEndsSoonIsAWarningWithTheDate(): void
     {
         $this->connect();
-        $this->connectedDaysAgo(170);
+        $connectedAt = self::getContainer()->get(WebmasterStore::class)->connection()?->connectedAt;
+        $this->clock()->modify('+170 days');
 
         $result = $this->check();
 
         self::assertSame(HealthResult::WARN, $result->status);
-        self::assertStringContainsString((new \DateTimeImmutable('-170 days'))->modify('+180 days')->format('d.m.Y'), $result->message);
+        self::assertStringContainsString((string) $connectedAt?->modify('+180 days')->format('d.m.Y'), $result->message);
     }
 
     #[Test]
@@ -109,7 +108,7 @@ final class YandexWebmasterHealthCheckTest extends KernelTestCase
     {
         $this->connect();
         $this->answer('GET ' . self::HOST_PATH . '/verification', 200, ['verification_uin' => self::UIN, 'verification_state' => 'VERIFICATION_FAILED', 'fail_info' => ['reason' => 'META_TAG_NOT_FOUND']]);
-        $this->makeSnapshotStale();
+        $this->clock()->modify('+2 days');
         $this->webmasterService()->status();
         $this->calls = [];
 
@@ -147,26 +146,10 @@ final class YandexWebmasterHealthCheckTest extends KernelTestCase
     public function theLineNeverCallsYandex(): void
     {
         $this->connect();
-        $this->makeSnapshotStale();
+        $this->clock()->modify('+2 days');
 
         $this->check();
 
         self::assertSame([], $this->calls);
-    }
-
-    private function connectedDaysAgo(int $days): void
-    {
-        $settings = self::getContainer()->get(SettingsService::class);
-        $stored = $settings->stored(WebmasterStore::CONNECTION);
-        self::assertIsArray($stored);
-        $stored['connectedAt'] = (new \DateTimeImmutable('-' . $days . ' days'))->format(\DATE_ATOM);
-        $settings->set(WebmasterStore::CONNECTION, $stored);
-    }
-
-    private function makeSnapshotStale(): void
-    {
-        $store = self::getContainer()->get(WebmasterStore::class);
-        $snapshot = $store->snapshot();
-        $store->saveSnapshot(new WebmasterSnapshot($snapshot->verification, $snapshot->summary, $snapshot->queries, $snapshot->updatedAt, new \DateTimeImmutable('-2 days'), $snapshot->errorKey, $snapshot->errorCode, $snapshot->tokenInvalid));
     }
 }

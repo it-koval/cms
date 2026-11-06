@@ -15,6 +15,7 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use Psr\Cache\CacheItemPoolInterface;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
+use Symfony\Component\Clock\MockClock;
 use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\HttpClient\Response\MockResponse;
 use Symfony\Component\Messenger\Exception\UnrecoverableMessageHandlingException;
@@ -52,7 +53,7 @@ final class IndexNowHandlerTest extends KernelTestCase
             return $answer();
         });
         $c = self::getContainer();
-        $this->site = new IndexNowSite($c->get(SettingsService::class), $c->get(SitemapBuilder::class), $c->get(CacheItemPoolInterface::class), 'handler-secret', $http);
+        $this->site = new IndexNowSite($c->get(SettingsService::class), $c->get(SitemapBuilder::class), $c->get(CacheItemPoolInterface::class), new MockClock(), 'handler-secret', $http);
 
         return new PingIndexNowHandler($this->site, $http, 'https://engine.example.test/indexnow');
     }

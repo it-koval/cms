@@ -292,7 +292,7 @@ final class YandexWebmasterServiceTest extends KernelTestCase
         $service = $this->webmasterService();
         $service->connect(self::TOKEN);
         $this->answer('GET ' . self::HOST_PATH . '/verification', 200, ['verification_uin' => self::UIN, 'verification_state' => 'VERIFICATION_FAILED', 'fail_info' => ['reason' => 'META_TAG_NOT_FOUND', 'message' => 'x']]);
-        $this->makeStale();
+        $this->clock()->modify('+7 hours');
         $this->calls = [];
 
         $status = $service->status();
@@ -312,7 +312,7 @@ final class YandexWebmasterServiceTest extends KernelTestCase
         $service = $this->webmasterService();
         $service->connect(self::TOKEN);
         $this->answer('POST ' . self::HOST_PATH . '/verification', 200, ['verification_uin' => self::UIN, 'verification_state' => 'IN_PROGRESS']);
-        $this->makeStale();
+        $this->clock()->modify('+7 hours');
         $this->calls = [];
 
         $status = $service->status();
@@ -337,7 +337,7 @@ final class YandexWebmasterServiceTest extends KernelTestCase
         $service->refresh();
         self::assertNotSame([], $this->calls);
 
-        $this->makeStale('-7 hours');
+        $this->clock()->modify('+7 hours');
         $this->calls = [];
         $service->status();
         self::assertNotSame([], $this->calls, 'a snapshot older than 6 hours is renewed by a plain read');
@@ -386,7 +386,7 @@ final class YandexWebmasterServiceTest extends KernelTestCase
         self::assertSame([], $this->calls, 'a failed refresh is retried after 15 minutes, not on every read');
 
         $this->networkDown = false;
-        $this->makeStale('-16 minutes');
+        $this->clock()->modify('+16 minutes');
         $recovered = $service->status();
         self::assertNull($recovered->error);
     }
@@ -421,10 +421,9 @@ final class YandexWebmasterServiceTest extends KernelTestCase
         self::assertEquals($connection->connectedAt->modify('+180 days'), $fresh->tokenExpiresAt);
         self::assertFalse($fresh->tokenExpiresSoon);
 
-        foreach (['-165 days' => false, '-167 days' => true, '-181 days' => true] as $age => $soon) {
-            $this->storeConnectedAt($age);
-            $view = $service->view();
-            self::assertSame($soon, $view->tokenExpiresSoon, $age);
+        foreach (['+165 days' => false, '+2 days' => true, '+14 days' => true] as $later => $soon) {
+            $this->clock()->modify($later);
+            self::assertSame($soon, $service->view()->tokenExpiresSoon, $later);
         }
     }
 
@@ -513,22 +512,5 @@ final class YandexWebmasterServiceTest extends KernelTestCase
         self::getContainer()->get(SettingsService::class)->set(WebmasterStore::CONNECTION, ['token' => 'v1.broken'] + $connection->toArray());
 
         self::assertSame(WebmasterState::TokenInvalid, $service->refresh()->state);
-    }
-
-    /** The last refresh was this long ago. */
-    private function makeStale(string $age = '-7 hours'): void
-    {
-        $store = self::getContainer()->get(WebmasterStore::class);
-        $snapshot = $store->snapshot();
-        $store->saveSnapshot(new WebmasterSnapshot($snapshot->verification, $snapshot->summary, $snapshot->queries, $snapshot->updatedAt, new \DateTimeImmutable($age), $snapshot->errorKey, $snapshot->errorCode, $snapshot->tokenInvalid));
-    }
-
-    private function storeConnectedAt(string $age): void
-    {
-        $settings = self::getContainer()->get(SettingsService::class);
-        $stored = $settings->stored(WebmasterStore::CONNECTION);
-        self::assertIsArray($stored);
-        $stored['connectedAt'] = (new \DateTimeImmutable($age))->format(\DATE_ATOM);
-        $settings->set(WebmasterStore::CONNECTION, $stored);
     }
 }

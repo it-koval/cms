@@ -12,6 +12,7 @@ use Itk\Cms\YandexWebmaster\WebmasterClient;
 use Itk\Cms\YandexWebmaster\WebmasterService;
 use Itk\Cms\YandexWebmaster\WebmasterStore;
 use PHPUnit\Framework\Assert;
+use Symfony\Component\Clock\MockClock;
 use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\HttpClient\Response\MockResponse;
 use Symfony\Component\HttpKernel\KernelInterface;
@@ -37,6 +38,8 @@ trait YandexWebmasterStand
     /** @var array<string, array<string, mixed>> the JSON body of the last call, by «METHOD /path» */
     private array $bodies = [];
     private bool $networkDown = false;
+    /** The time of the services webmasterService() makes: a test moves it forward instead of rewriting what is stored. */
+    private ?MockClock $clock = null;
     /** @var ?\Closure(): void runs on every call, before the answer */
     private ?\Closure $onCall = null;
     /** @var array<string, array{0: bool, 1: mixed}> */
@@ -102,7 +105,12 @@ trait YandexWebmasterStand
     {
         $c = self::getContainer();
 
-        return new WebmasterService(new WebmasterClient($http ?? $this->mock(), 'https://api.webmaster.test/v4'), $c->get(WebmasterStore::class), $c->get(SitemapBuilder::class), $c->get(SecretBox::class), 'client-id-1');
+        return new WebmasterService(new WebmasterClient($http ?? $this->mock(), 'https://api.webmaster.test/v4'), $c->get(WebmasterStore::class), $c->get(SitemapBuilder::class), $c->get(SecretBox::class), $this->clock(), 'client-id-1');
+    }
+
+    private function clock(): MockClock
+    {
+        return $this->clock ??= new MockClock();
     }
 
     private function setting(string $key, mixed $value): void

@@ -16,6 +16,7 @@ use Itk\Cms\YandexWebmaster\Model\WebmasterSnapshot;
 use Itk\Cms\YandexWebmaster\Model\WebmasterState;
 use Itk\Cms\YandexWebmaster\Model\WebmasterStatus;
 use Itk\Cms\YandexWebmaster\Model\WebmasterVerification;
+use Psr\Clock\ClockInterface;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 
 /**
@@ -45,6 +46,7 @@ final class WebmasterService
         private readonly WebmasterStore $store,
         private readonly SitemapBuilder $sitemap,
         private readonly SecretBox $box,
+        private readonly ClockInterface $clock,
         #[Autowire(param: 'itk_cms.yandex_webmaster.client_id')]
         private readonly string $clientId,
     ) {
@@ -54,7 +56,6 @@ final class WebmasterService
     {
         $connection = $this->store->connection();
         $snapshot = $this->store->snapshot();
-        $now = new \DateTimeImmutable();
         $error = null === $snapshot->errorKey ? null : I18n::t($snapshot->errorKey, ['code' => (string) $snapshot->errorCode]);
 
         return new WebmasterStatus(
@@ -62,7 +63,7 @@ final class WebmasterService
             tokenLink: '' === $this->clientId ? null : self::AUTHORIZE . \rawurlencode($this->clientId),
             connectedAt: $connection?->connectedAt,
             tokenExpiresAt: $connection?->tokenExpiresAt(),
-            tokenExpiresSoon: null !== $connection && $connection->tokenExpiresSoon($now),
+            tokenExpiresSoon: null !== $connection && $connection->tokenExpiresSoon($this->clock->now()),
             host: null === $connection ? null : ['id' => $connection->hostId, 'url' => $connection->hostUrl],
             webmasterUrl: null === $connection ? null : self::DASHBOARD . $connection->hostId . '/dashboard/',
             verification: $snapshot->verification,
@@ -107,7 +108,7 @@ final class WebmasterService
         } catch (WebmasterFailure $e) {
             throw new ContentException(I18n::t($e->messageKey(), ['code' => (string) $e->messageCode()]), $e->isTemporary() ? 502 : 422);
         }
-        $connection = new WebmasterConnection($this->box->seal($token), new \DateTimeImmutable(), $userId, $hostId, $origin->unicodeOrigin(), null, false);
+        $connection = new WebmasterConnection($this->box->seal($token), $this->clock->now(), $userId, $hostId, $origin->unicodeOrigin(), null, false);
         $this->store->saveConnection($connection);
         $this->fetch($connection, new WebmasterSnapshot(), $origin, true);
 
@@ -137,7 +138,7 @@ final class WebmasterService
 
     private function fetch(WebmasterConnection $connection, WebmasterSnapshot $snapshot, SiteAddress $origin, bool $force): void
     {
-        $now = new \DateTimeImmutable();
+        $now = $this->clock->now();
         $token = $this->box->open($connection->sealedToken);
         if (null === $token) { // APP_SECRET changed: the token cannot be read any more, the owner pastes it again
             $this->store->saveSnapshot(new WebmasterSnapshot($snapshot->verification, $snapshot->summary, $snapshot->queries, $snapshot->updatedAt, $now, null, null, true));
@@ -196,7 +197,7 @@ final class WebmasterService
 
     private function isDue(WebmasterSnapshot $snapshot): bool
     {
-        return null === $snapshot->checkedAt || $snapshot->checkedAt->modify('+' . (null === $snapshot->errorKey ? self::STALE : self::RETRY)) <= new \DateTimeImmutable();
+        return null === $snapshot->checkedAt || $snapshot->checkedAt->modify('+' . (null === $snapshot->errorKey ? self::STALE : self::RETRY)) <= $this->clock->now();
     }
 
     private function stateOf(?WebmasterConnection $connection, WebmasterSnapshot $snapshot): WebmasterState

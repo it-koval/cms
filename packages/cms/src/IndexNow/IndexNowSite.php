@@ -8,6 +8,7 @@ use Itk\Cms\Content\SettingsService;
 use Itk\Cms\Content\SiteAddress;
 use Itk\Cms\Content\SitemapBuilder;
 use Psr\Cache\CacheItemPoolInterface;
+use Psr\Clock\ClockInterface;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Contracts\HttpClient\HttpClientInterface;
 
@@ -34,6 +35,7 @@ final class IndexNowSite
         private readonly SettingsService $settings,
         private readonly SitemapBuilder $sitemap,
         private readonly CacheItemPoolInterface $cache,
+        private readonly ClockInterface $clock,
         #[Autowire(param: 'kernel.secret')]
         private readonly string $secret,
         private readonly ?HttpClientInterface $http,
@@ -77,7 +79,7 @@ final class IndexNowSite
     public function recordSubmission(int $count, int $status, ?string $error = null): void
     {
         $item = $this->cache->getItem(self::LAST);
-        $item->set(['at' => (new \DateTimeImmutable())->format(\DATE_ATOM), 'count' => $count, 'status' => $status, 'error' => $error]);
+        $item->set(['at' => $this->clock->now()->format(\DATE_ATOM), 'count' => $count, 'status' => $status, 'error' => $error]);
         $this->cache->save($item);
     }
 

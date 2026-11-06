@@ -13,6 +13,7 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use Psr\Cache\CacheItemPoolInterface;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
+use Symfony\Component\Clock\MockClock;
 use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Contracts\HttpClient\HttpClientInterface;
 
@@ -21,9 +22,12 @@ final class IndexNowSiteTest extends KernelTestCase
 {
     use IndexNowSettings;
 
+    private MockClock $clock;
+
     protected function setUp(): void
     {
         self::bootKernel();
+        $this->clock = new MockClock('2026-11-06 10:00:00');
     }
 
     protected function tearDown(): void
@@ -36,7 +40,7 @@ final class IndexNowSiteTest extends KernelTestCase
     {
         $c = self::getContainer();
 
-        return new IndexNowSite($c->get(SettingsService::class), $c->get(SitemapBuilder::class), $c->get(CacheItemPoolInterface::class), $secret, $http);
+        return new IndexNowSite($c->get(SettingsService::class), $c->get(SitemapBuilder::class), $c->get(CacheItemPoolInterface::class), $this->clock, $secret, $http);
     }
 
     /** @return iterable<string, array{string, IndexNowState}> */
@@ -128,6 +132,6 @@ final class IndexNowSiteTest extends KernelTestCase
         $last = $site->lastSubmission();
 
         self::assertSame([3, 202, null], [$last['count'], $last['status'], $last['error']]);
-        self::assertEqualsWithDelta(\time(), (new \DateTimeImmutable($last['at']))->getTimestamp(), 5);
+        self::assertEquals($this->clock->now(), new \DateTimeImmutable($last['at']));
     }
 }
