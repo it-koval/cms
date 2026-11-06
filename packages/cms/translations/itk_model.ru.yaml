@@ -60,6 +60,8 @@
 'model.analytics_yandex_verification_help': 'Код из метатега yandex-verification в Яндекс Вебмастере. Можно вставить метатег целиком.'
 'model.analytics_google_verification': 'Google Search Console: код подтверждения'
 'model.analytics_google_verification_help': 'Код из метатега google-site-verification в Search Console. Можно вставить метатег целиком.'
+'model.analytics_indexnow': 'IndexNow: сообщать поисковикам'
+'model.analytics_indexnow_help': 'При публикации, изменении адреса или снятии страницы CMS сообщает Яндексу и Bing её адрес по протоколу IndexNow. Google IndexNow не поддерживает. Ключ создаётся сам, копировать ничего не нужно.'
 'model.area_pages': 'Страницы'
 'model.area_pages_hint': 'Править — создавать и менять страницы. Публиковать — выкладывать на сайт. Можно ограничить шаблонами.'
 'model.area_requests': 'Заявки'

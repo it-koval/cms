@@ -242,6 +242,13 @@ final class ItkCmsBundle extends AbstractBundle
                         ->arrayNode('exclude_collections')->info('Collections whose items are never indexed')->scalarPrototype()->end()->defaultValue([])->end()
                     ->end()
                 ->end()
+                ->arrayNode('indexnow')
+                    ->info('IndexNow: the pings that tell search engines about published, moved and unpublished pages (the toggle is in the settings group analytics)')
+                    ->addDefaultsIfNotSet()
+                    ->children()
+                        ->scalarNode('endpoint')->info('The IndexNow endpoint the worker posts to; a search engine shares the pings with the others')->defaultValue('https://yandex.com/indexnow')->cannotBeEmpty()->end()
+                    ->end()
+                ->end()
                 ->booleanNode('blog')
                     ->info('false = a site without a blog: the templates blog, blog_category and blog_article are not registered and the "Blog articles" link is not in the rail (the same as $s->withoutBlog() in schema.php)')
                     ->defaultTrue()
@@ -378,6 +385,7 @@ final class ItkCmsBundle extends AbstractBundle
         $parameters->set('itk_cms.knowledge_base.timeout', $kb['timeout']);
         $parameters->set('itk_cms.knowledge_base.exclude_templates', \array_values(\array_map('strval', $kb['exclude_templates'])));
         $parameters->set('itk_cms.knowledge_base.exclude_collections', \array_values(\array_map('strval', $kb['exclude_collections'])));
+        $parameters->set('itk_cms.indexnow.endpoint', (string) $config['indexnow']['endpoint']);
         $parameters->set('itk_cms.strict', $config['strict'] ?? (bool) $builder->getParameter('kernel.debug'));
         $parameters->set('itk_cms.admin_path', $config['admin_path']);
         $parameters->set('itk_cms.admin_path_segments', \ltrim($config['admin_path'], '/')); // for the prefix of config/routes/admin.php, which adds the slash itself
@@ -538,6 +546,7 @@ final class ItkCmsBundle extends AbstractBundle
                         'Itk\\Cms\\Media\\GenerateImageVariants' => 'async',
                         'Itk\\Cms\\Mail\\SendMail' => 'async',
                         'Itk\\Cms\\Security\\RequestPasswordLink' => 'async',
+                        'Itk\\Cms\\IndexNow\\Model\\PingIndexNow' => 'async',
                         'Itk\\Cms\\CriticalCss\\Model\\GenerateCriticalCss' => 'critical_css',
                         'Itk\\Cms\\KnowledgeBase\\Model\\SyncKnowledge' => 'knowledge_base',
                     ],

@@ -60,6 +60,8 @@
 'model.analytics_yandex_verification_help': 'The code from the yandex-verification meta tag in Yandex Webmaster. You can paste the whole meta tag.'
 'model.analytics_google_verification': 'Google Search Console: verification code'
 'model.analytics_google_verification_help': 'The code from the google-site-verification meta tag in Search Console. You can paste the whole meta tag.'
+'model.analytics_indexnow': 'IndexNow: tell search engines'
+'model.analytics_indexnow_help': 'When a page is published, changes its address or is unpublished, the CMS tells Yandex and Bing its address through the IndexNow protocol. Google does not support IndexNow. The key is made automatically, there is nothing to copy.'
 'model.area_pages': 'Pages'
 'model.area_pages_hint': 'Edit — create and change pages. Publish — put them on the site. Can be limited to templates.'
 'model.area_requests': 'Requests'

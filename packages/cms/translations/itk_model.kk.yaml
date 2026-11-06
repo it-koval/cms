@@ -60,6 +60,8 @@
 'model.analytics_yandex_verification_help': 'Яндекс Вебмастердегі yandex-verification метатегінің коды. Метатегті түгел қоюға болады.'
 'model.analytics_google_verification': 'Google Search Console: растау коды'
 'model.analytics_google_verification_help': 'Search Console-дағы google-site-verification метатегінің коды. Метатегті түгел қоюға болады.'
+'model.analytics_indexnow': 'IndexNow: іздеу жүйелеріне хабарлау'
+'model.analytics_indexnow_help': 'Бет жарияланғанда, мекенжайы өзгергенде немесе жарияланымнан алынғанда CMS оның мекенжайын IndexNow протоколы арқылы Яндекс пен Bing-ке хабарлайды. Google IndexNow-ды қолдамайды. Кілт автоматты түрде жасалады, көшіретін ештеңе жоқ.'
 'model.area_pages': 'Беттер'
 'model.area_pages_hint': 'Өңдеу — беттерді жасау және өзгерту. Жариялау — сайтқа шығару. Үлгілермен шектеуге болады.'
 'model.area_requests': 'Өтінімдер'

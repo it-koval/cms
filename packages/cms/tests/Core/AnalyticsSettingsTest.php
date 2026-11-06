@@ -16,7 +16,7 @@ use Symfony\Component\HttpKernel\KernelInterface;
 /** Встроенная группа настроек «Аналитика и вебмастера»: поля ядра, поля сайта с теми же ключами остаются, право `set:analytics` только у администратора. */
 final class AnalyticsSettingsTest extends KernelTestCase
 {
-    private const KEYS = ['yandexMetrikaId', 'yandexMetrikaWebvisor', 'googleAnalyticsId', 'yandexVerification', 'googleVerification'];
+    private const KEYS = ['yandexMetrikaId', 'yandexMetrikaWebvisor', 'googleAnalyticsId', 'yandexVerification', 'googleVerification', 'indexNow'];
 
     protected static function createKernel(array $options = []): KernelInterface
     {
@@ -30,7 +30,7 @@ final class AnalyticsSettingsTest extends KernelTestCase
     }
 
     #[Test]
-    public function everySiteHasTheGroupWithTheFiveFields(): void
+    public function everySiteHasTheGroupWithTheSixFields(): void
     {
         $schema = (new SchemaBuilder('ru'))->build();
 
@@ -46,7 +46,7 @@ final class AnalyticsSettingsTest extends KernelTestCase
         $b->settings('analytics', 'Счётчики сайта')->fields(Field::text('googleAnalyticsId', 'Свой GA')->max(30), Field::text('hotjar', 'Hotjar'));
         $schema = $b->build();
 
-        self::assertSame(['yandexMetrikaId', 'yandexMetrikaWebvisor', 'yandexVerification', 'googleVerification', 'googleAnalyticsId', 'hotjar'], $this->keysOf('analytics', $schema));
+        self::assertSame(['yandexMetrikaId', 'yandexMetrikaWebvisor', 'yandexVerification', 'googleVerification', 'indexNow', 'googleAnalyticsId', 'hotjar'], $this->keysOf('analytics', $schema));
         self::assertSame('Счётчики сайта', $schema->settingsGroups()['analytics']->groupTitle(), 'the site keeps its own title');
         $own = $schema->settingsField('googleAnalyticsId');
         self::assertSame(30, $own?->maxLength());
