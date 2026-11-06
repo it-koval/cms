@@ -205,6 +205,23 @@ final class SchemaBuilder
             $site->prepend(...$core);
         }
 
+        // the built-in «Аналитика и вебмастера» group: counters and verification codes, put on live pages by Analytics\InjectAnalyticsListener; its own right `set:analytics`, which only the admin role holds
+        if (!isset($settings['analytics'])) {
+            $settings['analytics'] = (new SettingsGroup('analytics', 'analytics'))->titleKey('model.analytics_group');
+        }
+        $analytics = $settings['analytics'];
+        $have = \array_map(static fn (FieldInterface $f): string => $f->key(), $analytics->fieldList());
+        $analyticsCore = \array_values(\array_filter([
+            Field::text('yandexMetrikaId', 'yandexMetrikaId')->texts(label: 'model.analytics_metrika_id', help: 'model.analytics_metrika_id_help')->max(12),
+            Field::toggle('yandexMetrikaWebvisor', 'yandexMetrikaWebvisor')->texts(label: 'model.analytics_webvisor', help: 'model.analytics_webvisor_help'),
+            Field::text('googleAnalyticsId', 'googleAnalyticsId')->texts(label: 'model.analytics_ga_id', help: 'model.analytics_ga_id_help')->max(20),
+            Field::text('yandexVerification', 'yandexVerification')->texts(label: 'model.analytics_yandex_verification', help: 'model.analytics_yandex_verification_help')->max(120),
+            Field::text('googleVerification', 'googleVerification')->texts(label: 'model.analytics_google_verification', help: 'model.analytics_google_verification_help')->max(120),
+        ], static fn (FieldInterface $f): bool => !\in_array($f->key(), $have, true)));
+        if ([] !== $analyticsCore) {
+            $analytics->prepend(...$analyticsCore);
+        }
+
         return new Schema(
             mainLocale: $this->mainLocale,
             headlineMarks: $this->headlineMarks,

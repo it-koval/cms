@@ -73,7 +73,7 @@ final class SchemaExportTest extends KernelTestCase
         self::assertSame(['header', 'footer'], \array_column($s['menuAreas'], 'key'));
         self::assertSame(['header'], $s['layout']['top']);
         self::assertSame(['footer'], $s['layout']['bottom']);
-        self::assertSame(['site', 'header', 'contacts'], \array_column($s['settings']['groups'], 'key'));
+        self::assertSame(['site', 'header', 'contacts', 'analytics'], \array_column($s['settings']['groups'], 'key'));
     }
 
     #[Test]
