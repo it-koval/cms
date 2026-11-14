@@ -1,0 +1,23 @@
+# Run from admin/: docker compose run --rm node npm ci
+# Linux dependencies live in a volume, separate from any macOS node_modules.
+name: itk-cms-admin
+services:
+  node:
+    image: node:24.22.2-bookworm-slim
+    working_dir: /workspace/admin
+    init: true
+    environment:
+      ITK_SITE_URL: ${ITK_SITE_URL:-http://host.docker.internal:8080}
+      VITE_ITK_ADMIN_PATH: ${VITE_ITK_ADMIN_PATH:-/admin}
+      VITE_MOCK:
+    volumes:
+      - ..:/workspace
+      - node_modules:/workspace/admin/node_modules
+    ports:
+      - "127.0.0.1:5174:5174"
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    command: ["npm", "run", "dev", "--", "--host", "0.0.0.0"]
+
+volumes:
+  node_modules:

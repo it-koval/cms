@@ -1,0 +1,21 @@
+{% extends ['email/layout.html.twig', '@ItkCms/email/layout.html.twig'] %}
+{% block preheader %}{{ form }}{% endblock %}
+{% block content %}
+<h1 style="margin:0 0 4px;font-size:20px;line-height:1.25;">{{ itk_t('http.mail_request_title', {id: id}) }}</h1>
+<p style="margin:0 0 16px;color:#586873;">{{ form }} · {{ created }}</p>
+<table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;margin:0 0 20px;">
+{% for row in rows %}
+    <tr>
+        <td style="padding:8px 12px 8px 0;border-top:1px solid #E6EAED;color:#586873;vertical-align:top;width:35%;">{{ row.label }}</td>
+        <td style="padding:8px 0;border-top:1px solid #E6EAED;vertical-align:top;white-space:pre-wrap;">{{ row.value }}</td>
+    </tr>
+{% endfor %}
+{% if source %}
+    <tr>
+        <td style="padding:8px 12px 8px 0;border-top:1px solid #E6EAED;color:#586873;vertical-align:top;">{{ itk_t('http.mail_request_page') }}</td>
+        <td style="padding:8px 0;border-top:1px solid #E6EAED;vertical-align:top;word-break:break-all;">{{ source }}</td>
+    </tr>
+{% endif %}
+</table>
+<p style="margin:0;"><a href="{{ url }}" style="display:inline-block;padding:12px 20px;border-radius:8px;background:#0B5D80;color:#FFFFFF;font-weight:600;text-decoration:none;">{{ itk_t('http.mail_request_open') }}</a></p>
+{% endblock %}

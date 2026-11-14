@@ -1,0 +1,13 @@
+# The words around a page in the preview of the editor: preview.js shows them, PreviewController hands them over in the language of the person; a site may override any key with its own translations/itk_preview.ru.yaml
+'preview.unavailable': 'Предпросмотр недоступен'
+'preview.edit': 'Изменить'
+'preview.view': 'Смотреть'
+'preview.edit_section': 'Изменить секцию «{label}»'
+'preview.view_section': 'Смотреть секцию «{label}»'
+'preview.section_actions': 'Действия с секцией «{label}»'
+'preview.move_up': 'Выше'
+'preview.move_down': 'Ниже'
+'preview.duplicate': 'Дублировать'
+'preview.hide': 'Скрыть'
+'preview.delete': 'Удалить'
+'preview.unpublished': 'Есть неопубликованные изменения'

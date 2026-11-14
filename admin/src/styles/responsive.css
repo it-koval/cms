@@ -1,0 +1,287 @@
+/* Phone and tablet. Loaded last. Nothing here touches a window of 1200 px and wider (desktop stays as it was).
+   Breakpoints: phone < 768 px, tablet 768-1199 px ("compact" = both: the left rail becomes a drawer). `utils/viewport.js` mirrors them for the places that need JS.
+   Touch size: every control is at least 44 px high on a phone, and on a tablet when the main pointer is a finger. A control is never hover-only here.
+   Rules that belong to one screen live in that screen's component, inside the same breakpoints. */
+
+/* the top bar exists only below 1200 px */
+.appbar,.rail-x,.ts-pre{display:none}
+.rail-dlg{display:contents}
+body.nav-lock,body.ov-lock{overflow:hidden}
+.pop-scrim{display:none}
+
+/* ================= compact: the shell ================= */
+@media (max-width:1199px){
+  html,body{height:auto;min-height:100%}
+  .app{display:block;min-height:100vh;min-height:100dvh}
+  .appbar{display:flex;align-items:center;gap:6px;position:sticky;top:0;z-index:100;height:calc(52px + env(safe-area-inset-top));padding:env(safe-area-inset-top) max(8px,env(safe-area-inset-right)) 0 max(8px,env(safe-area-inset-left));background:var(--cy);color:var(--brand-ink)}
+  .appbar-b{width:44px;height:44px;flex:none;display:grid;place-items:center;border:0;border-radius:var(--r);background:none;color:inherit}
+  .appbar-b:hover,.appbar-b[aria-expanded=true]{background:color-mix(in srgb,var(--brand-ink) 14%,transparent)}
+  .appbar :focus-visible{outline-color:var(--brand-ink)}
+  .appbar-t{flex:1;min-width:0;font-size:var(--t-md);font-weight:650;letter-spacing:-.005em;line-height:1.2;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .appbar .bell-wrap{flex:none;margin-right:4px}
+  .appbar .bell{width:44px;height:44px}
+  .appbar .bell-n{top:2px;right:0}
+
+  /* the rail as an off-canvas drawer */
+  .rail{position:fixed;left:0;top:0;bottom:0;z-index:170;width:min(320px,calc(100vw - 48px));height:100vh;height:100dvh;
+    padding:calc(18px + env(safe-area-inset-top)) 12px calc(14px + env(safe-area-inset-bottom)) max(12px,env(safe-area-inset-left));
+    transform:translateX(-104%);visibility:hidden;transition:transform 240ms var(--ease),visibility 0s linear 240ms;overscroll-behavior:contain}
+  .app.nav-open .rail{transform:none;visibility:visible;transition-delay:0s;box-shadow:var(--sh-3)}
+  .rail-scrim{position:fixed;inset:0;z-index:165;background:rgba(10,24,32,.5);animation:fin var(--dur) var(--ease)}
+  .rail-x{display:grid;place-items:center;position:absolute;top:calc(8px + env(safe-area-inset-top));right:8px;width:44px;height:44px;border:0;border-radius:var(--r);background:none;color:var(--rail-ink);z-index:1}
+  .rail-x:hover{background:color-mix(in srgb,var(--brand-ink) 14%,transparent);color:var(--brand-ink)}
+  .rail .site-id .nm,.rail .site-id .dm{padding-right:44px}
+  .rail .site-id .open{min-height:44px;padding:0 12px}
+  .nav a,.nav .sub a{height:44px}
+  .nav .sub a{font-size:var(--t-base)}
+  .userline .who{min-height:44px}
+  .userline .out{min-height:44px;padding:0 10px}
+  .main{min-height:calc(100vh - 52px - env(safe-area-inset-top));min-height:calc(100dvh - 52px - env(safe-area-inset-top))}
+  .page{padding:22px max(24px,env(safe-area-inset-right)) calc(96px + env(safe-area-inset-bottom)) max(24px,env(safe-area-inset-left))}
+  .page-h .actions{margin-left:0}
+
+  /* floating bars: centred in the window, no rail beside them */
+  .savebar.savebar,.savebar.set-bar,.savebar.rl-bar{left:50%;bottom:calc(14px + env(safe-area-inset-bottom));white-space:normal;width:max-content;max-width:calc(100vw - 24px)}
+  body:has(.savebar) #toasts,body:has(.savebar) .toasts{bottom:calc(86px + env(safe-area-inset-bottom))}
+  .toasts{bottom:calc(16px + env(safe-area-inset-bottom))}
+}
+
+/* ================= touch size: a phone, or a tablet held by hand ================= */
+@media (max-width:767px),(max-width:1199px) and (pointer:coarse){
+  /* the editor and the overlays keep to the visible part of the screen: the on-screen keyboard never pushes a header away or covers the buttons (see utils/viewport.js) */
+  .ed-root{position:fixed;left:0;right:0;top:var(--vvt,0px);height:var(--vvh,100dvh)}
+  .drawer{top:var(--vvt,0px);bottom:auto;height:var(--vvh,100dvh)}
+  .modal{top:calc(var(--vvt,0px) + var(--vvh,100dvh)/2);max-height:calc(var(--vvh,100dvh) - 48px)}
+  /* iOS paints the value of a date field in the accent colour: on a pale theme it can hardly be read */
+  input[type=date]{-webkit-text-fill-color:var(--ink)}
+  input[type=date]::-webkit-date-and-time-value{color:var(--ink)}
+  .btn{height:44px;padding:0 16px}
+  .btn.sm{height:44px;padding:0 14px}
+  .btn.icon,.btn.icon.sm{width:44px;padding:0}
+  .ibtn,.tb-b{min-width:44px;min-height:44px}
+  .ibtn{width:44px;height:44px}
+  .tb-b{height:44px}
+  .seg2 button{height:44px;min-width:44px}
+  .seg2.txt button{padding:0 14px}
+  .seg button{height:44px}
+  .tabs button{padding:12px 14px;min-height:44px}
+  .pop button.mi{height:48px;padding:0 12px;font-size:var(--t-base)}
+  .chip{height:26px}
+  .sw{min-height:44px}
+  .sw .tr{width:44px;height:26px;border-radius:13px}
+  .sw .tr::after{width:20px;height:20px}
+  .sw input:checked+.tr::after{transform:translateX(18px)}
+  .revert{min-height:44px;padding:0 4px}
+  table.t td .btn.sm,table.t td .btn.icon{height:44px}
+  input[type=checkbox],input[type=radio]{width:20px;height:20px}
+  .lib-tabs button{height:44px;padding:0 16px;border-radius:22px}
+  .toast button{min-height:44px;padding:0 12px}
+  /* the small round «remove» of a photo: the tap area is 44 px, the drawn button stays small */
+  .photo-strip .ps button::after{content:'';position:absolute;left:50%;top:50%;width:44px;height:44px;transform:translate(-50%,-50%)}
+}
+
+/* ================= phone ================= */
+@media (max-width:767px){
+  /* ---- fields: iOS zooms into any field smaller than 16 px, so every field is 16 px (and the text ones 44 px high) ---- */
+  input[type=text],input[type=search],input[type=url],input[type=tel],input[type=number],input[type=date],input[type=email],input[type=password],input[type=time],input[type=datetime-local],select,textarea{height:44px}
+  input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=color]):not([type=file]):not([type=hidden]):not([type=button]):not([type=submit]):not([type=reset]):not([type=image]),select,textarea{font-size:16px}
+  textarea{height:auto;min-height:88px}
+  .rt-ed .ProseMirror,.rt.article .rt-ed .ProseMirror{font-size:16px} /* the text fields made with TipTap are contenteditable: the rules above do not reach them */
+  input[type=color],input[type=range]{height:44px}
+  .search .ic{left:12px}
+  .search input{padding-left:38px}
+  input[type=date]{width:100%;min-width:0}
+  .field{margin:0 -4px;padding:10px 4px 12px}
+  .g2{grid-template-columns:1fr}
+  .frow{grid-template-columns:1fr}
+  /* a text field with its own button on one row (e.g. a test e-mail): the button drops below when the row is tight */
+  .main .field .row:has(>input:first-child+.btn){flex-wrap:wrap}
+  .main .field .row>input:first-child:has(+.btn){flex:1 1 100%;min-width:0}
+
+  /* ---- the page of a screen ---- */
+  .page{padding:16px max(16px,env(safe-area-inset-right)) calc(96px + env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left))}
+  .page-h{gap:12px;margin-bottom:16px}
+  .page-h>div:first-child{flex:1 1 100%;min-width:0}
+  .page-h h1{font-size:var(--t-lg)}
+  .page-h .actions{width:100%;gap:8px}
+  .page-h .actions .btn{flex:1 1 auto}
+  .page-h .actions .btn.icon{flex:none}
+  .page-h .actions .btn.primary{order:-1} /* the main action is always the first one */
+  .toolbar{padding:12px}
+  .toolbar .search{flex:1 1 100%;max-width:none}
+  .toolbar select{width:100%;min-width:0}
+  .toolbar .fs-btn{flex:1 1 auto}
+  .set-sec{padding:16px 16px 8px}
+  .set-jump button{min-height:44px}
+  .sheet{border-radius:var(--r-lg)}
+  /* links and name-buttons that stand alone in a row or a card */
+  .main .back.back,.main .cl-back.cl-back,.main .tp-cnt.tp-cnt,.main .tr-ttl a,.main .ft a,.md-used a,.us-name.us-name,.rl-open.rl-open{display:inline-flex;align-items:center;min-height:44px}
+  .main .tr-ttl a{min-width:44px}
+  .main .tp-h.tp-h{flex-wrap:wrap;row-gap:0}
+
+  /* ---- modals: a sheet from the bottom edge; drawers: the whole screen ---- */
+  .modal{left:0;right:0;top:auto;bottom:var(--vvb,0px);transform:none;width:100%!important;max-width:none;max-height:calc(var(--vvh,100dvh) - 24px - env(safe-area-inset-top));border-radius:16px 16px 0 0;animation:sheet var(--dur) var(--ease)}
+  .modal header{padding:6px 6px 6px 16px;min-height:56px}
+  .modal .body{padding:16px;overscroll-behavior:contain}
+  .modal footer{padding:12px 16px calc(12px + env(safe-area-inset-bottom));border-radius:0;flex-wrap:wrap}
+  .modal footer .btn{flex:1 1 auto}
+  .modal.modal-full{top:var(--vvt,0px);bottom:auto;max-height:none;height:var(--vvh,100dvh);border-radius:0;padding-top:env(safe-area-inset-top)}
+  .modal.modal-full header{min-height:56px}
+  .drawer{width:100%!important;max-width:none;animation:sheet var(--dur) var(--ease)}
+  .drawer header{padding:calc(6px + env(safe-area-inset-top)) 6px 6px 16px;min-height:calc(56px + env(safe-area-inset-top))}
+  .drawer .body{padding:16px;overscroll-behavior:contain}
+  .drawer footer{padding:12px 16px calc(12px + env(safe-area-inset-bottom));flex-wrap:wrap}
+  .drawer footer .btn{flex:1 1 auto}
+  dl.kv{grid-template-columns:1fr;gap:2px 0}
+  dl.kv dd{margin-bottom:10px}
+  /* menus and popovers: a sheet from the bottom edge; a real dimmed layer (.pop-scrim) lies behind it, so a tap on the dimming only closes the sheet and never reaches the page (or the preview iframe) below */
+  .pop-scrim{display:block;position:fixed;inset:0;z-index:199;background:rgba(10,24,32,.42);animation:fin var(--dur) var(--ease);touch-action:none}
+  .pop{left:0!important;right:0;top:auto!important;bottom:var(--vvb,0px);width:100%!important;max-width:none;min-width:0;max-height:calc(var(--vvh,100dvh)*.75);overflow-y:auto;border-radius:16px 16px 0 0;border:0;padding:8px 8px calc(8px + env(safe-area-inset-bottom));box-shadow:var(--sh-3);animation:sheet var(--dur) var(--ease);overscroll-behavior:contain}
+  .pop.pg-pop{width:100%!important;max-height:calc(var(--vvh,100dvh)*.75)}
+
+  /* ---- toasts and the floating bars use the full width ---- */
+  .toasts,#toasts{left:12px;right:12px;transform:none;width:auto;max-width:none;align-items:stretch}
+  .toast{width:100%;gap:10px}
+  .toast span{flex:1;min-width:0}
+  .savebar.savebar,.savebar.set-bar,.savebar.rl-bar{left:12px;right:12px;transform:none;width:auto;max-width:none;flex-wrap:wrap;gap:8px 10px;padding:10px 10px 10px 14px}
+  .savebar>span:first-child,.savebar>.pmark+*{flex:1 1 100%}
+  .savebar .btn{height:44px;flex:1 1 auto}
+
+  /* ---- a table that is a list of records becomes a list of cards (class t-stack). The cells say what each row shows:
+     ts-top (the small line above), ts-main (the name), ts-sub (small facts; data-label puts its name before it), ts-st (the status chips), ts-act (the «⋯» menu), ts-ck (the tick) ---- */
+  table.t-stack,table.t-stack tbody{display:block;width:100%}
+  table.t-stack thead{display:none}
+  table.t-stack tr{display:flex;flex-wrap:wrap;align-items:center;gap:2px 14px;position:relative;padding:12px 14px;border-bottom:1px solid var(--hair-2)}
+  table.t-stack tr:last-child{border-bottom:0}
+  table.t-stack tr:has(.ts-act){padding-right:58px}
+  table.t-stack tr:has(.ts-ck){padding-left:56px}
+  table.t-stack tbody tr:hover{background:none}
+  table.t-stack td{display:block;padding:0;border:0;min-width:0;max-width:100%;white-space:normal;overflow-wrap:anywhere}
+  table.t-stack td.ts-empty{display:none}
+  table.t-stack td.ts-top{order:0;font-size:var(--t-sm);color:var(--ink-2)}
+  table.t-stack td.ts-main{order:1;flex:1 1 100%;font-weight:600;font-size:var(--t-base);color:var(--ink)}
+  table.t-stack td.ts-sub{order:2;font-size:var(--t-sm);color:var(--ink-2)}
+  table.t-stack td.ts-line{order:2;flex:1 1 100%;font-size:var(--t-sm);color:var(--ink-2)}
+  table.t-stack td.ts-st{order:3;flex:1 1 100%;margin-top:4px}
+  table.t-stack td.ts-act{position:absolute;top:4px;right:4px;order:9;width:auto;padding:0}
+  table.t-stack td.ts-acts{order:9;flex:1 1 100%;display:flex;justify-content:flex-end;gap:2px;margin:2px -6px -6px 0}
+  table.t-stack td.ts-ck{position:absolute;top:2px;left:4px;order:9;width:auto;padding:0}
+  table.t-stack .ts-pre{display:inline}
+  table.t-stack td[data-label]::before{content:attr(data-label) ": ";color:var(--ink-3);font-weight:450}
+  /* tables that stay tables scroll sideways inside their own box, never the page */
+  .tw,.cl-tw,.mx-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
+  table.t:not(.t-stack) th,table.t:not(.t-stack) td{padding:10px 12px}
+
+  /* ---- lists of the home screen, and one-column layouts ---- */
+  .today{grid-template-columns:minmax(0,1fr);gap:20px}
+  .row-i{padding:12px;min-height:44px}
+  .row-i .when{white-space:normal}
+  .prod-form{grid-template-columns:minmax(0,1fr)}
+  .media{grid-template-columns:minmax(0,1fr)}
+  .login{grid-template-columns:minmax(0,1fr)}
+  .login .side{display:none}
+  .login .panel{padding:24px 16px}
+
+  /* ---- settings panels (their own styles are scoped, so a class is doubled to outweigh them) ---- */
+  .seo-intro.seo-intro,.rl-intro.rl-intro,.us-intro.us-intro,.rd-intro.rd-intro{padding:16px 16px 10px}
+  .rl-head.rl-head{padding:14px 16px 4px}
+  .rl-2fa.rl-2fa,.rl-users.rl-users{padding-left:16px;padding-right:16px}
+  .rl-err.rl-err{margin:14px 16px 0}
+  .rl-form.rl-form{grid-template-columns:minmax(0,1fr)}
+  .rl-top.rl-top{flex-wrap:wrap}
+  .rl-name.rl-name{white-space:normal}
+  .rl-n.rl-n{width:auto;text-align:left}
+  .rl-desc.rl-desc{max-width:none}
+  .tp-dl.tp-dl{grid-template-columns:minmax(0,1fr);gap:0}
+  .tp-dl.tp-dl dd{margin:0 0 8px}
+  .mcp-tools.mcp-tools dl{grid-template-columns:minmax(0,1fr);gap:0}
+  .mcp-tools.mcp-tools dd{margin:0 0 8px}
+  .mcp-url.mcp-url{flex-wrap:wrap}
+  .ud-act.ud-act{flex-wrap:wrap}
+  .ud-kv.ud-kv{grid-template-columns:minmax(0,1fr)}
+  .seo-check-r.seo-check-r{flex-wrap:wrap}
+  .seo-check-r.seo-check-r input,.seo-check-r.seo-check-r select{flex:1 1 100%}
+  .seo-check-r.seo-check-r .btn{flex:1 1 100%}
+  .ml-bar.ml-bar,.th-bar.th-bar{gap:8px}
+  #th-brand,#th-accent,#th-radius{height:44px}
+}
+
+@keyframes sheet{from{transform:translateY(24px);opacity:0}}
+
+/* ================= the page editor ================= */
+.ed-sub,.sb-scrim{display:none}
+/* tablet: the sidebar lies over the page (with a dimmed backdrop) instead of squeezing the preview into a narrow strip */
+@media (min-width:768px) and (max-width:1199px){
+  /* a table of records that does not fit the card: its cells may wrap, what still does not fit scrolls inside the card (the page itself never scrolls sideways) */
+  .sheet:has(>table.t-stack){overflow-x:auto}
+  table.t-stack td.nw,table.t-stack th{white-space:normal}
+  table.t-stack .rq-st{flex-wrap:wrap}
+  .ed-top{flex-wrap:wrap;gap:4px 8px;padding:6px 12px}
+  .ed-l{flex:1 1 50%}
+  .ed-r{margin-left:auto}
+  #editor:not([data-sb=off]) .stage{padding-left:36px}
+  .sidebar{width:min(var(--sb-w,400px),88vw);box-shadow:var(--sh-3)}
+  .sb-scrim{display:block;position:absolute;inset:0;z-index:35;background:rgba(10,24,32,.4);animation:fin var(--dur) var(--ease)}
+  #editor[data-full] .sidebar{width:100%}
+  .sb-open{display:none}
+  .ed-hint-row .ed-hint{padding-left:0!important}
+}
+@media (min-width:768px) and (max-width:1199px) and (pointer:coarse){
+  .ibtn{width:44px;height:44px}
+  .tb-back,.pg-sw{min-height:44px}
+}
+@media (max-width:767px){
+  .ed-top{flex-wrap:wrap;gap:0 4px;padding:env(safe-area-inset-top) max(8px,env(safe-area-inset-right)) 0 max(8px,env(safe-area-inset-left));min-height:0}
+  .ed-l{flex:1 1 0;min-width:0;gap:2px;min-height:56px}
+  .tb-back{width:44px;height:44px;padding:0;justify-content:center;flex:none}
+  .tb-back span{display:none}
+  .pg-sw{flex:0 1 auto;min-width:0;max-width:none;height:48px;padding:0 6px 0 4px}
+  .ed-r{gap:6px;min-height:56px}
+  .ed-r .btn.primary{padding:0 12px;position:relative}
+  /* the number of changes sits on the corner of the button: it takes no width from the page name */
+  .ed-r .btn.primary .cnt{position:absolute;top:-6px;right:-6px}
+  .ed-sub{display:flex;align-items:center;gap:8px;order:3;flex:1 0 100%;padding:0 0 8px}
+  .ed-pane{flex:1;display:flex;min-width:0}
+  .ed-pane button{flex:1 1 auto;width:auto;height:44px;min-width:0;padding:0 8px;display:inline-flex;align-items:center;justify-content:center;gap:5px;font-size:var(--t-sm);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .ed-sub .hist{flex:none}
+  .ed-top .lang-sel,.ed-top .lg{flex:none}
+
+  /* the sidebar and the page can't be side by side: one of them is on screen, the segmented switch changes */
+  #editor[data-pane=form] .sidebar{width:100%;border-right:0;animation:none}
+  #editor[data-pane=form] .stage-col{visibility:hidden}
+  #editor[data-pane=preview] .sidebar{display:none}
+  .sb-h{padding:8px 8px 10px 12px}
+  .sb-body,.sidebar[data-mode=form] .sb-body{padding-left:16px;padding-right:16px;padding-bottom:calc(90px + env(safe-area-inset-bottom))}
+  .ol-mv .btn.icon.sm{width:44px;height:44px}
+  .ol-row{padding:6px}
+  .ol-go{cursor:pointer}
+  .lib-tabs button{flex:none}
+  .lib-i{grid-template-columns:96px minmax(0,1fr)}
+  .rep-h{min-height:56px}
+  .rep-h .grip{width:32px;height:44px}
+  .rep-h .tx.tx{min-height:44px}
+  /* a repeater with title templates or a «Дублировать» button: the buttons take their own line */
+  .rep:is(.tpl,.dup)>.rep-i>.rep-h{flex-wrap:wrap}
+  .rep:is(.tpl,.dup)>.rep-i>.rep-h .tx.tx{flex:1 1 0}
+  .rep:is(.tpl,.dup)>.rep-i>.rep-h .acts{flex:0 0 100%;justify-content:flex-end}
+  .photo-strip .ps button{width:28px;height:28px;right:-8px;top:-8px}
+  .imgf .ph{width:80px;height:80px}
+  /* the text formatting bar: one row that scrolls, every button 44 px */
+  .rt-tb{flex-wrap:nowrap;overflow-x:auto;overscroll-behavior-x:contain;scrollbar-width:none;padding:2px}
+  .rt-tb::-webkit-scrollbar{display:none}
+  .rt-tb .rt-b.rt-b{height:44px;min-width:44px;flex:none}
+
+  /* the page: the whole width, no phone frame around it (the window is the phone) */
+  .stage,.stage.has-frame{padding:6px 0 0}
+  .stage.has-frame .ed-note{margin:0 12px 8px}
+  .ed-hint-row{width:100%!important;padding:0 12px;margin:0 auto 8px;gap:8px}
+  .ed-hint-row .ed-hint{display:none}
+  .add-end{height:44px;flex:1;margin-left:0}
+  #endAdd span{white-space:nowrap}
+  .pv-wrap,#editor[data-dev=phone] .pv-wrap{width:100%!important}
+  .pv-iframe,#editor[data-dev=phone] .pv-iframe{border-radius:0;box-shadow:none;border-top:1px solid var(--hair)}
+  .fp-bar{flex-wrap:wrap;padding:calc(8px + env(safe-area-inset-top)) 12px 8px}
+  .fp-st{padding:0}
+  .fp-dev.fp-dev,.fp-bar .muted{display:none}
+  .fp-bar b{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+}

@@ -1,0 +1,19 @@
+# Used by docker/Dockerfile (a file named <Dockerfile>.dockerignore wins over a .dockerignore in the context).
+# Nothing here is needed to build the image, and none of it may end up inside it.
+.git
+.idea
+.DS_Store
+vendor
+node_modules
+var
+public/uploads
+public/bundles
+.env.local
+.env.*.local
+.env.local.php
+config/secrets/*/*.decrypt.private.php
+compose.override.yaml
+.phpunit.cache
+.phpstan.cache
+.php-cs-fixer.cache
+tests/App/var

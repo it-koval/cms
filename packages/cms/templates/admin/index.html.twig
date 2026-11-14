@@ -1,0 +1,51 @@
+{# The shell of the admin SPA (/admin). The built files come from /bundles/itkcms/admin/ (run `npm run build` in it-koval-cms/admin, then `bin/console assets:install`). #}
+<!doctype html>
+<html lang="{{ itk_locale() }}">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="robots" content="noindex, nofollow">
+    <meta name="theme-color" content="{{ theme_brand }}">
+    <title>{{ site_name != '' ? site_name ~ ' — ' ~ itk_t('http.admin_default_name') : itk_t('http.admin_title') }}</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Crect width='20' height='20' rx='4' fill='{{ theme_brand|url_encode }}'/%3E%3Crect x='4' y='4' width='12' height='3.2' rx='.8' fill='%23fff'/%3E%3Crect x='4' y='8.6' width='12' height='3.2' rx='.8' fill='%23fff' opacity='.6'/%3E%3Crect x='4' y='13.2' width='12' height='3' rx='.8' fill='%23fff' opacity='.3'/%3E%3C/svg%3E">
+{% if assets %}
+    <script>window.ITK_ADMIN = {{ config|raw }};</script>
+    <script>window.ITK = window.ITK || { plugins: [], registerPlugin: function (plugin) { this.plugins.push(plugin); } };</script>
+{% for file in assets.css %}
+    <link rel="stylesheet" href="{{ file }}">
+{% endfor %}
+{% for file in extra.css %}
+    <link rel="stylesheet" href="{{ file }}">
+{% endfor %}
+{% for file in assets.preload %}
+    <link rel="modulepreload" href="{{ file }}">
+{% endfor %}
+{% else %}
+    <style>
+        body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #F2F4F5; color: #14181C; font: 400 15px/1.5 system-ui, sans-serif; }
+        main { max-width: 30rem; margin: 24px; padding: 28px; background: #fff; border: 1px solid #D9DEE2; border-radius: 12px; }
+        h1 { margin: 0 0 8px; font-size: 1.25rem; }
+        code { padding: 1px 6px; background: #F2F4F5; border-radius: 4px; font-size: .9em; }
+    </style>
+{% endif %}
+    <style id="itk-theme">{{ theme_css|raw }}</style>
+</head>
+<body>
+{% if assets %}
+    <div id="app"></div>
+    <noscript>{{ itk_t('http.admin_noscript') }}</noscript>
+    <script type="module" src="{{ assets.js }}"></script>
+{# not run from here: the admin loads its language first, and a plugin reads ITK.vue on its first line. admin/src/start.js starts these once ITK is ready #}
+    <template id="itk-plugins">
+{% for file in extra.js %}
+    <script type="module" src="{{ file }}"></script>
+{% endfor %}
+    </template>
+{% else %}
+    <main>
+        <h1>{{ itk_t('http.admin_not_built') }}</h1>
+        <p>{{ itk_t('http.admin_not_built_hint', {build: '<code>npm run build</code>', dir: '<code>admin</code>', install: '<code>bin/console assets:install</code>'})|raw }}</p>
+    </main>
+{% endif %}
+</body>
+</html>

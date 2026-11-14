@@ -1,0 +1,446 @@
+// The server of the mock mode (VITE_MOCK=1): `createMock()` answers { status, body } to { method, path, query, body } for the calls the screens make to /admin/api, from the data of
+// fixtures.js. Everything written stays in memory, in the closure: a reload of the page starts again from the fixtures. Pure code, no DOM: install.js puts it behind `fetch`.
+//
+// What is answered: schema, me, languages, dashboard, collections (the rail), prefs, the bell, pages (list, draft, save, create, update, delete, publish, revert, unpublish, submit, return, tree)
+// and records of collections (query, get, save, create, delete, publish, revert, submit, return, order; the options matrix is one record 'main'), robots.txt / llms.txt (seo-files), Яндекс Вебмастер (yandex-webmaster), requests (with the delivery of each messenger) and the notification settings. Anything else is a 404 that says it is the demo.
+import { makeDb } from './fixtures.js'
+
+const copy = (v) => (v === undefined ? undefined : JSON.parse(JSON.stringify(v)))
+const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b)
+const ok = (body) => ({ status: 200, body })
+const none = () => ({ status: 204, body: null })
+const fail = (status, error, details = null) => ({ status, body: details ? { error, details } : { error } })
+const UI_LOCALES = ['en', 'ru', 'kk']
+const UI_DEFAULT = 'en'
+const NOT_HERE = () => fail(404, 'Этого в демо-режиме нет: он показывает только страницы и коллекции')
+const NO_PAGE = () => fail(404, 'Такой страницы нет')
+const NO_RECORD = () => fail(404, 'Такой записи нет')
+
+/** `a=1&filter[status]=draft&filter[date][from]=x&tags[]=a&tags[]=b` -> { a: '1', filter: { status: 'draft', date: { from: 'x' } }, tags: ['a', 'b'] }, the way PHP reads it. */
+export function parseQuery(params) {
+  const out = {}
+  params.forEach((value, key) => {
+    const parts = [...key.matchAll(/([^[\]]+)|\[(\])/g)].map((m) => (m[2] ? '' : m[1]))
+    let at = out
+    parts.forEach((part, i) => {
+      const last = i === parts.length - 1
+      if (part === '') {
+        if (!Array.isArray(at)) return
+        at.push(value)
+        return
+      }
+      if (last) at[part] = value
+      else {
+        if (at[part] === undefined) at[part] = parts[i + 1] === '' ? [] : {}
+        at = at[part]
+      }
+    })
+  })
+  return out
+}
+
+const SEO_FILES_MAX = 64 * 1024
+const SEO_FILES_DEFAULT = {
+  robots: 'User-agent: *\nDisallow: /admin/\nDisallow: /request/\nDisallow: /mcp\n\nSitemap: https://example.com/sitemap.xml\n',
+  llms: '# Example\n\n> A demo site of ITK CMS.\n\n## Pages\n\n- [Home](https://example.com/): The main page\n',
+}
+
+const PAGE_KEYS = ['title', 'url', 'seo', 'sections', 'fields', 'parentId', 'template']
+const PAGE_EDIT = ['title', 'url', 'seo', 'fields', 'parentId', 'template']
+const RECORD_META = ['id', 'status', 'updatedAt', 'version', 'awaiting', 'returned', 'published']
+const LOCALE = 'ru'
+
+export function createMock(db = makeDb()) {
+  const now = () => new Date().toISOString()
+  const bump = (rec) => { rec.version = `v${++db.seq}`; rec.updatedAt = now() }
+  const by = () => ({ by: db.user.name, at: now() })
+
+  /* ---------- pages ---------- */
+  const pageDiff = (p) => (p.published ? PAGE_KEYS.filter((k) => !eq(p[k], p.published[k])) : [])
+  const pageSummary = (p) => ({
+    status: p.published ? 'published' : 'draft', changed: pageDiff(p).length > 0, changes: pageDiff(p).length, published: !!p.published, title: p.title, url: p.url,
+    updatedAt: p.updatedAt, migrated: !!p.migrated, sectionsCount: p.sections.length, awaiting: p.awaiting,
+  })
+  const flatPage = (p) => {
+    const { published, pos, ...draft } = p
+    return { ...copy(draft), locale: LOCALE, translated: true, ...pageSummary(p), locales: { [LOCALE]: pageSummary(p) } }
+  }
+  const snapshot = (p) => (p.published ? { ...copy(p.published), id: p.id, locale: LOCALE, translated: true, status: 'published', version: p.version, updatedAt: p.updatedAt } : null)
+  const findPage = (id) => db.pages.find((p) => p.id === id)
+  const inOrder = () => [...db.pages].sort((a, b) => (a.pos ?? 0) - (b.pos ?? 0))
+  db.pages.forEach((p, i) => { if (p.pos === undefined) p.pos = i * 10 })
+  const withKids = (id) => [id, ...db.pages.filter((p) => p.parentId === id).flatMap((p) => withKids(p.id))]
+
+  function pages(method, rest, query, body) {
+    const [id, action, extra] = rest
+    if (!id) {
+      if (method === 'GET') {
+        return ok(inOrder().filter((p) => (!query.template || p.template === query.template) && (query.parentId === undefined || (p.parentId || '') === query.parentId)).map(flatPage))
+      }
+      if (method === 'POST') {
+        const made = {
+          id: body.id || `p${++db.seq}`, parentId: body.parentId ?? null, template: body.template || 'default', title: body.title || 'Без названия', url: body.url || '/', seo: { title: '', description: '' },
+          fields: copy(body.fields) || {}, sections: copy(body.sections) || [], updatedAt: now(), version: `v${++db.seq}`, migrated: false, awaiting: null, returned: null, published: null, pos: db.pages.length * 10 + 5,
+        }
+        db.pages.push(made)
+        return { status: 201, body: flatPage(made) }
+      }
+      return NOT_HERE()
+    }
+    if (id === 'tree' && method === 'PUT') {
+      ;(Array.isArray(body) ? body : []).forEach((n) => {
+        const p = findPage(n.id)
+        if (!p) return
+        p.parentId = n.parentId ?? null
+        p.pos = Number(n.position) || 0
+        bump(p)
+      })
+      return ok({ ok: true, moved: Array.isArray(body) ? body.length : 0 })
+    }
+    const p = findPage(id)
+    if (!p) return NO_PAGE()
+    if (((action === 'draft' && method === 'PUT') || (action === 'publish' && method === 'POST')) && body.baseVersion && body.baseVersion !== p.version) {
+      return fail(409, 'Страницу изменили, пока она была открыта', { code: 'conflict', current: { version: p.version, ...by(), via: 'admin', viaName: '' } })
+    }
+    if (!action) {
+      if (method === 'DELETE') {
+        const gone = new Set(withKids(id))
+        db.pages = db.pages.filter((x) => !gone.has(x.id))
+        return none()
+      }
+      if (method === 'PATCH') {
+        PAGE_EDIT.forEach((k) => { if (body[k] !== undefined) p[k] = copy(body[k]) })
+        bump(p)
+        return ok(flatPage(p))
+      }
+      return NOT_HERE()
+    }
+    if (action === 'draft') {
+      if (method === 'GET') return ok({ page: flatPage(p), published: snapshot(p), changes: [], locale: LOCALE, translated: true, locales: { [LOCALE]: pageSummary(p) }, shell: { id: p.id, parentId: p.parentId, template: p.template } })
+      if (method === 'PUT') {
+        PAGE_KEYS.forEach((k) => { if (body[k] !== undefined) p[k] = copy(body[k]) })
+        bump(p)
+        return ok(flatPage(p))
+      }
+    }
+    if (method === 'POST' && extra === undefined) {
+      if (action === 'publish') { p.published = copy(Object.fromEntries(PAGE_KEYS.map((k) => [k, p[k]]))); p.awaiting = null; p.returned = null; p.updatedAt = now(); return ok(flatPage(p)) }
+      if (action === 'revert') { if (p.published) PAGE_KEYS.forEach((k) => { p[k] = copy(p.published[k]) }); bump(p); return ok(flatPage(p)) }
+      if (action === 'unpublish') { p.published = null; bump(p); return ok(flatPage(p)) }
+      if (action === 'submit') { p.awaiting = by(); bump(p); return ok(flatPage(p)) }
+      if (action === 'return') { p.awaiting = null; bump(p); return ok(flatPage(p)) }
+    }
+    return NOT_HERE()
+  }
+
+  /* ---------- collections ---------- */
+  const cfgOf = (key) => db.schema.collections.find((c) => c.key === key)
+  const dataKeys = (r) => Object.keys(r).filter((k) => !RECORD_META.includes(k))
+  const recDiff = (r) => (r.published ? dataKeys(r).filter((k) => !eq(r[k], r.published[k])) : [])
+  const recSummary = (cfg, r) => ({
+    status: r.published ? 'published' : 'draft', changed: recDiff(r).length > 0, changes: recDiff(r).length, title: r[cfg.titleField] ?? '', updatedAt: r.updatedAt, awaiting: r.awaiting,
+  })
+  const flatRecord = (cfg, r) => {
+    const { published, ...rest } = r
+    const s = recSummary(cfg, r)
+    return { ...copy(rest), locale: LOCALE, translated: true, ...s, locales: { [LOCALE]: s } }
+  }
+  const publishedRecord = (r) => (r.published ? { ...copy(r.published), id: r.id, locale: LOCALE, translated: true, status: 'published', version: r.version, updatedAt: r.updatedAt } : null)
+  const asRows = (cfg, filtered) => filtered.map((r) => flatRecord(cfg, r))
+
+  function compareBy(sort) {
+    const keys = String(sort || '').split(',').filter(Boolean).map((k) => (k.startsWith('-') ? [k.slice(1), -1] : [k, 1]))
+    return (a, b) => {
+      for (const [k, dir] of keys) {
+        const x = a[k] ?? ''
+        const y = b[k] ?? ''
+        const c = typeof x === 'number' && typeof y === 'number' ? x - y : String(x).localeCompare(String(y), 'ru')
+        if (c !== 0) return c * dir
+      }
+      return 0
+    }
+  }
+
+  function collections(method, rest, query, body) {
+    const [key, id, action] = rest
+    if (!key) return method === 'GET' ? ok(railList()) : NOT_HERE()
+    const cfg = cfgOf(key)
+    const store = db.collections[key]
+    if (!cfg || !store) return fail(404, 'Такой коллекции нет')
+    const recs = store.records
+    const find = (rid) => recs.find((r) => r.id === rid)
+    if (!id) {
+      if (method === 'GET') {
+        const q = String(query.q || '').trim().toLowerCase()
+        const status = (query.filter && query.filter.status) || query.status || ''
+        let rows = recs.filter((r) => {
+          if (q && !(cfg.searchKeys || [cfg.titleField]).some((k) => String(r[k] ?? '').toLowerCase().includes(q))) return false
+          if (status === 'published') return !!r.published
+          if (status === 'draft') return !r.published || recDiff(r).length > 0
+          if (status === 'missing') return false
+          return true
+        })
+        if (!query.envelope) return ok(asRows(cfg, rows))
+        rows = asRows(cfg, rows).sort(compareBy(query.sort || cfg.defaultSort))
+        const perPage = Math.max(1, Number(query.perPage) || cfg.perPage || 25)
+        const page = Math.max(1, Number(query.page) || 1)
+        return ok({ items: rows.slice((page - 1) * perPage, page * perPage), total: rows.length, page, perPage, facets: {}, metrics: [] })
+      }
+      if (method === 'POST') {
+        const made = { id: `n${++db.seq}`, status: 'draft', updatedAt: now(), version: `v${++db.seq}`, awaiting: null, returned: null, published: null, ...copy(body) }
+        recs.unshift(made)
+        return { status: 201, body: flatRecord(cfg, made) }
+      }
+      return NOT_HERE()
+    }
+    if (id === 'order' && method === 'PUT') return ok({ ok: true })
+    const r = find(id)
+    if (!r) return NO_RECORD()
+    if (((!action && method === 'PUT') || (action === 'publish' && method === 'POST')) && body.baseVersion && body.baseVersion !== r.version) {
+      return fail(409, 'Запись изменили, пока она была открыта', { code: 'conflict', current: { version: r.version, ...by(), via: 'admin', viaName: '' } })
+    }
+    if (!action) {
+      if (method === 'GET') return ok({ item: flatRecord(cfg, r), published: publishedRecord(r), changes: [], locale: LOCALE, translated: true, locales: { [LOCALE]: recSummary(cfg, r) } })
+      if (method === 'PUT') {
+        Object.entries(body).forEach(([k, v]) => { if (k !== 'baseVersion' && !RECORD_META.includes(k)) r[k] = copy(v) })
+        bump(r)
+        return ok(flatRecord(cfg, r))
+      }
+      if (method === 'DELETE') { store.records = recs.filter((x) => x.id !== id); return none() }
+      return NOT_HERE()
+    }
+    if (method === 'POST') {
+      if (action === 'publish') { r.published = copy(Object.fromEntries(dataKeys(r).map((k) => [k, r[k]]))); r.awaiting = null; r.returned = null; r.updatedAt = now(); return ok(flatRecord(cfg, r)) }
+      if (action === 'revert') { if (r.published) dataKeys(r).forEach((k) => { r[k] = copy(r.published[k]) }); bump(r); return ok(flatRecord(cfg, r)) }
+      if (action === 'submit') { r.awaiting = by(); bump(r); return ok(flatRecord(cfg, r)) }
+      if (action === 'return') { r.awaiting = null; bump(r); return ok(flatRecord(cfg, r)) }
+    }
+    return NOT_HERE()
+  }
+
+  const railList = () => db.schema.collections.map((cfg) => {
+    const rs = db.collections[cfg.key].records
+    const open = rs.filter((r) => !r.published || recDiff(r).length > 0).length
+    return { key: cfg.key, title: cfg.title, count: rs.length, unpublished: open, locales: { [LOCALE]: { count: rs.length, unpublished: open } } }
+  })
+
+  /* ---------- «Сегодня» ---------- */
+  function dashboard() {
+    const unpublished = [
+      ...db.pages.filter((p) => !p.published || pageDiff(p).length).map((p) => ({
+        kind: 'page', id: p.id, locale: LOCALE, template: p.template, title: p.title, pageKind: 'Страница', to: `/pages/${p.id}`, changes: pageDiff(p).length, draft: !p.published, updatedAt: p.updatedAt, migrated: !!p.migrated, awaiting: p.awaiting,
+      })),
+      ...db.schema.collections.flatMap((cfg) => db.collections[cfg.key].records.filter((r) => !r.published || recDiff(r).length).map((r) => ({
+        kind: 'item', collection: cfg.key, id: r.id, locale: LOCALE, title: String(r[cfg.titleField] || cfg.title), pageKind: cfg.title, to: `/collections/${cfg.key}/${r.id}`, changes: recDiff(r).length, draft: !r.published, updatedAt: r.updatedAt, migrated: false, awaiting: r.awaiting,
+      }))),
+    ]
+    const recent = db.pages.filter((p) => p.published).slice(0, 4).map((p) => ({ label: p.title, to: `/pages/${p.id}`, at: p.updatedAt, locale: LOCALE }))
+    return { newRequests: [], failedCount: 0, unpublished, awaiting: [], proposals: [], recent, languages: { main: LOCALE, list: [{ code: LOCALE, name: 'Русский' }] } }
+  }
+
+  /** «Мой профиль → Язык интерфейса»: PUT me/locale { locale }, as the server answers it. The choice itself outlives a reload in localStorage (i18n/index.js), this memory does not. */
+  function setUiLocale(method, { locale }) {
+    if (method !== 'PUT') return NOT_HERE()
+    if (locale !== null && !UI_LOCALES.includes(locale)) return fail(422, 'Такого языка в панели нет', { locale: 'Выберите язык из списка' })
+    db.user.locale = locale || UI_DEFAULT
+    db.user.localePreference = locale
+    return ok({ ok: true, locale: db.user.locale, localePreference: locale })
+  }
+
+  /* ---------- robots.txt and llms.txt: { robots|llms: { text, default, custom, file } }; an own text is kept, the standard one (or '' / null) clears it ---------- */
+  const seoOwn = { robots: null, llms: null }
+  const seoFiles = () => Object.fromEntries(Object.keys(SEO_FILES_DEFAULT).map((k) => [k, {
+    text: seoOwn[k] ?? SEO_FILES_DEFAULT[k], default: SEO_FILES_DEFAULT[k], custom: seoOwn[k] !== null, file: false,
+  }]))
+  function seoFilesCall(method, body) {
+    if (method === 'GET') return ok(seoFiles())
+    if (method !== 'PUT') return NOT_HERE()
+    const details = {}
+    Object.keys(SEO_FILES_DEFAULT).forEach((k) => {
+      if (!(k in body)) return
+      const v = body[k]
+      if (typeof v === 'string' && v.length > SEO_FILES_MAX) details[k] = 'The text is too long: 64 KB at most'
+      else seoOwn[k] = v === null || v === '' || v === SEO_FILES_DEFAULT[k] ? null : String(v)
+    })
+    return Object.keys(details).length ? fail(422, 'The text is not saved', details) : ok(seoFiles())
+  }
+
+  /* ---------- Яндекс Вебмастер: GET/DELETE yandex-webmaster, POST …/connect, …/refresh. Every state can be reached by the token pasted into the form:
+     `demo:<state>` (not_connected, no_address, no_http_client, token_invalid, verifying, verification_failed, ready) with modifiers `+viewer` (no right to manage), `+expiring`, `+error`, `+empty` (Yandex has no data yet).
+     `bad` is refused by Yandex (422), `down` is a 502; any other token connects and gives `verifying`, a refresh makes it `ready`. `?ym=ready+expiring` in the address starts the page in a state. ---------- */
+  const YM_HOST = { id: 'https:demo.example.test:443', url: 'https://demo.example.test' }
+  const YM_QUERIES = [['веб-студия томск', 120, 14], ['сайт под ключ', 96, 9], ['разработка сайтов цена', 74, 6], ['itk cms', 40, 12], ['заказать лендинг', 33, null], ['сделать сайт для клиники', 21, 2], ['сайт визитка цена', 18, 1], ['seo продвижение томск', null, null]]
+  let ym = { state: 'not_connected', canManage: true, expiring: false, error: null, empty: false, at: null }
+  const ymBody = () => {
+    const connected = ['token_invalid', 'verifying', 'verification_failed', 'ready'].includes(ym.state)
+    const day = (n) => new Date(Date.now() + n * 864e5).toISOString()
+    const ready = ym.state === 'ready'
+    return {
+      state: ym.state, canManage: ym.canManage, tokenLink: 'https://oauth.yandex.ru/authorize?response_type=token&client_id=demo',
+      connectedAt: connected ? day(-170) : null, tokenExpiresAt: connected ? day(ym.expiring ? 6 : 170) : null, tokenExpiresSoon: connected && ym.expiring,
+      host: connected ? YM_HOST : null, webmasterUrl: connected ? 'https://webmaster.yandex.ru/site/https:demo.example.test:443/dashboard/' : null,
+      verification: connected && ym.state !== 'token_invalid' ? { state: ready ? 'VERIFIED' : ym.state === 'verifying' ? 'IN_PROGRESS' : 'VERIFICATION_FAILED', failReason: ym.state === 'verification_failed' ? 'META_TAG_NOT_FOUND' : null } : null,
+      summary: ready && !ym.empty ? { sqi: 1240, searchable: 120, excluded: 7, problems: { FATAL: 0, CRITICAL: 1, POSSIBLE_PROBLEM: 3, RECOMMENDATION: 5 } } : null,
+      queries: ready && !ym.empty ? { from: '2026-10-30', to: '2026-11-05', rows: YM_QUERIES.map(([text, shows, clicks]) => ({ text, shows, clicks })) } : null,
+      updatedAt: connected ? ym.at || now() : null, error: connected && ym.error ? 'Яндекс сейчас не отвечает, показаны данные последнего обновления' : null,
+    }
+  }
+  function ymConnect(token) {
+    const spec = String(token || '').trim()
+    if (!spec) return fail(422, 'Вставьте токен')
+    if (spec === 'bad') return fail(422, 'Яндекс не принял этот токен. Проверьте, что вы скопировали его целиком')
+    if (spec === 'down') return fail(502, 'Яндекс не отвечает, попробуйте через минуту')
+    const [state, ...mods] = spec.startsWith('demo:') ? spec.slice(5).split('+') : ['verifying']
+    ym = { state: state || 'verifying', canManage: !mods.includes('viewer'), expiring: mods.includes('expiring'), error: mods.includes('error') ? true : null, empty: mods.includes('empty'), at: now() }
+    return ok(ymBody())
+  }
+  function yandexWebmaster(method, tail, data) {
+    if (tail[0] === 'connect' && method === 'POST') return ymConnect(data.token)
+    if (tail[0] === 'refresh' && method === 'POST') {
+      if (ym.state === 'verifying') ym = { ...ym, state: 'ready' }
+      ym.at = now()
+      return ok(ymBody())
+    }
+    if (tail.length) return NOT_HERE()
+    if (method === 'GET') return ok(ymBody())
+    if (method === 'DELETE') {
+      ym = { state: 'not_connected', canManage: true, expiring: false, error: null, empty: false, at: null }
+      return ok(ymBody())
+    }
+    return NOT_HERE()
+  }
+
+  /* ---------- requests: the delivery state of every messenger (`channels`) and the aggregate the server derives from it ---------- */
+  const CHANNEL_TITLES = { telegram: 'Telegram', max: 'MAX' }
+  const present = (r) => {
+    const failedOnes = r.channels.filter((c) => c.state === 'failed')
+    const delivery = failedOnes.length ? 'failed' : r.channels.some((c) => c.state === 'sent') ? 'sent' : 'pending'
+    return { ...copy(r), delivery, deliveryError: failedOnes.map((c) => `${CHANNEL_TITLES[c.channel]}: ${c.error}`).join('\n') || null, st: delivery === 'failed' ? 'failed' : 'delivered' }
+  }
+  const requestCounts = () => ({ total: db.requests.length, new: db.requests.filter((r) => r.work === 'new').length, failed: db.requests.filter((r) => present(r).st === 'failed').length })
+  function requestsCall(method, tail, query, data) {
+    if (!tail.length) {
+      if (method !== 'GET') return NOT_HERE()
+      const q = String(query.q ?? '').trim().toLowerCase()
+      const digits = q.replace(/\D/g, '')
+      const matches = (r) => {
+        if (!q) return true
+        if (digits) return String(r.phone ?? '').replace(/\D/g, '').includes(digits)
+        return [r.name, r.city, r.form].some((value) => String(value ?? '').toLowerCase().includes(q))
+      }
+      const rows = db.requests.map(present).filter((r) => (!query.status || (query.status === 'failed' ? r.st === 'failed' : r.work === query.status))
+        && (!query.form || r.form === query.form) && matches(r))
+      return ok(rows)
+    }
+    if (tail[0] === 'counts') return ok(requestCounts())
+    const r = db.requests.find((x) => String(x.id) === tail[0])
+    if (!r) return fail(404, 'Такой заявки нет')
+    if (!tail[1] && method === 'GET') return ok(present(r))
+    if (!tail[1] && method === 'PATCH') {
+      if (data.work) r.work = data.work
+      if (typeof data.comment === 'string') r.comment = data.comment
+      return ok(present(r))
+    }
+    if (tail[1] === 'resend' && method === 'POST') {
+      const wanted = data.channel ? [data.channel] : r.channels.filter((c) => c.state === 'failed').map((c) => c.channel)
+      r.channels.filter((c) => wanted.includes(c.channel)).forEach((c) => {
+        c.state = 'sent'
+        c.error = null
+        r.log.push(['ok', `${CHANNEL_TITLES[c.channel]}: sent again`, now()])
+      })
+      const p = present(r)
+      return ok({ ok: true, delivery: p.delivery, error: p.deliveryError, ...p })
+    }
+    return NOT_HERE()
+  }
+
+  /* ---------- settings: only the notification keys (the demo schema has no settings groups); the yes / no answers of the server are never taken from a PATCH ---------- */
+  const SETTINGS_READ_ONLY = ['tgFallback', 'tgReady', 'maxFallback', 'mailReady', 'maxReady']
+  function botsMetadata() {
+    return Object.fromEntries(['telegram', 'max'].map((key) => {
+      const bot = db.bots[key]
+      const source = bot.token ? 'admin' : (bot.serverToken ? 'server' : null)
+      return [key, { tokenSet: !!source, source, ready: !!source }]
+    }))
+  }
+  function botsCall(method, data) {
+    if (method === 'GET') return ok(botsMetadata())
+    if (method !== 'PUT') return NOT_HERE()
+    const errors = {}
+    for (const key of ['telegram', 'max']) {
+      if (!(key in data)) continue
+      const value = data[key]
+      if (!value || typeof value !== 'object' || Array.isArray(value)
+        || ('token' in value && typeof value.token !== 'string')
+        || ('clear' in value && typeof value.clear !== 'boolean')) {
+        errors[key] = 'Invalid token settings'
+        continue
+      }
+      const token = value.token ?? ''
+      const valid = key === 'telegram'
+        ? /^\d{5,20}:[A-Za-z0-9_-]{30,}$/.exec(token)?.[0] === token
+        : [...token].length <= 512 && !/\s/u.test(token) && ![...token].some((char) => char.codePointAt(0) < 32 || char.codePointAt(0) === 127)
+      if (token !== '' && !valid) errors[key] = 'Invalid token settings'
+    }
+    if (Object.keys(errors).length) return fail(422, 'Check the bot token settings', errors)
+    for (const key of ['telegram', 'max']) {
+      const value = data[key]
+      if (!value) continue
+      if (value.clear) db.bots[key].token = ''
+      else if (value.token) db.bots[key].token = value.token
+    }
+    const metadata = botsMetadata()
+    db.settings.tgReady = metadata.telegram.ready
+    db.settings.maxReady = metadata.max.ready
+    return ok(metadata)
+  }
+  function settingsCall(method, tail, data) {
+    if (tail.length === 1 && tail[0] === 'bots') return botsCall(method, data)
+    if (!tail.length) {
+      if (method === 'GET') return ok(copy(db.settings))
+      if (method !== 'PATCH') return NOT_HERE()
+      Object.entries(data).filter(([k]) => !SETTINGS_READ_ONLY.includes(k)).forEach(([k, v]) => { db.settings[k] = copy(v) })
+      return ok(copy(db.settings))
+    }
+    const [what] = tail
+    if (method !== 'POST' || !['telegram-test', 'max-test'].includes(what)) return NOT_HERE()
+    const chat = String(data.chatId || '').trim()
+    const ids = chat.split(',').map((x) => x.trim()).filter(Boolean)
+    if (!ids.length) return fail(422, 'No chat to send to')
+    if (what === 'telegram-test' && db.settings.tgReady === false) return fail(502, 'Telegram is not connected')
+    if (what === 'max-test' && !db.settings.maxReady) return fail(502, 'MAX is not connected')
+    if (ids.includes('0')) return fail(502, 'The messenger refused the message: chat not found')
+    return ok({ ok: true, chat: String(data.chat ?? data.form ?? 'other'), sent: ids.length })
+  }
+
+  /** The call. `path` is what comes after the api base («pages/p1/draft»), `query` is parseQuery(), `body` is the parsed JSON (or undefined). */
+  return function handle({ method = 'GET', path = '', query = {}, body }) {
+    const rest = String(path).split('/').filter(Boolean).map(decodeURIComponent)
+    const [head, ...tail] = rest
+    const m = method.toUpperCase()
+    const data = body && typeof body === 'object' ? body : {}
+    switch (head) {
+      case 'schema': return ok(copy(db.schema))
+      case 'me': return tail[0] === 'locale' ? setUiLocale(m, data) : ok({ ...copy(db.user), csrf: 'mock' })
+      case 'languages': return ok({ main: LOCALE, list: [{ code: LOCALE, name: 'Русский' }] })
+      case 'dashboard': return ok(dashboard())
+      case 'pages': return pages(m, tail, query, data)
+      case 'collections': return collections(m, tail, query, data)
+      case 'requests': return requestsCall(m, tail, query, data)
+      case 'settings': return settingsCall(m, tail, data)
+      case 'notifications': return tail.length ? ok({ ok: true, unread: 0 }) : ok({ items: [], total: 0, unread: 0 })
+      case 'seo-files': return seoFilesCall(m, data)
+      case 'yandex-webmaster': return yandexWebmaster(m, tail, data)
+      case 'media': return ok([])
+      case 'media-folders': return ok({ folders: [], total: 0, unfiled: 0, ratios: [] })
+      case 'prefs': {
+        const k = tail.join('/')
+        if (m === 'GET') return ok({ value: k in db.prefs ? copy(db.prefs[k]) : null })
+        if (m === 'PUT') { db.prefs[k] = copy(data.value); return ok({ value: db.prefs[k] }) }
+        if (m === 'DELETE') { delete db.prefs[k]; return none() }
+        return NOT_HERE()
+      }
+      default: return NOT_HERE()
+    }
+  }
+}

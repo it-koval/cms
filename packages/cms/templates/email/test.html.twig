@@ -1,0 +1,7 @@
+{% extends ['email/layout.html.twig', '@ItkCms/email/layout.html.twig'] %}
+{% block preheader %}{{ itk_t('http.mail_test_preheader') }}{% endblock %}
+{% block content %}
+<h1 style="margin:0 0 12px;font-size:20px;line-height:1.25;">{{ itk_t('http.mail_test_title') }}</h1>
+<p style="margin:0 0 12px;">{{ site_name != '' ? itk_t('http.mail_test_body_site', {site: site_name}) : itk_t('http.mail_test_body') }}</p>
+<p style="margin:0;color:#586873;font-size:14px;">{{ itk_t('http.mail_test_nothing') }}</p>
+{% endblock %}

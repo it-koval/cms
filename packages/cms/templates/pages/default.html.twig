@@ -1,0 +1,6 @@
+{# Default page: the sections one after another. A site layout (templates/layout.html.twig) must define {% block content %}. #}
+{% extends ['layout.html.twig', '@ItkCms/layout.html.twig'] %}
+
+{% block content %}
+    {{ render_sections(page) }}
+{% endblock %}

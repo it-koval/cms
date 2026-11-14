@@ -1,0 +1,48 @@
+{
+  "name": "itk-cms-admin",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "ITK CMS — админка (Vue 3 + Vite): тонкий клиент к /admin/api",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/it-koval/cms.git",
+    "directory": "admin"
+  },
+  "engines": {
+    "node": "^24.22.2"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "dev:mock": "vite --mode mock",
+    "check:i18n": "node scripts/check-i18n.mjs --strict"
+  },
+  "dependencies": {
+    "@fontsource-variable/golos-text": "5.2.8",
+    "@tiptap/core": "3.33.1",
+    "@tiptap/extension-image": "3.33.1",
+    "@tiptap/extension-link": "3.33.1",
+    "@tiptap/extension-table": "3.33.1",
+    "@tiptap/pm": "3.33.1",
+    "@tiptap/starter-kit": "3.33.1",
+    "@tiptap/vue-3": "3.33.1",
+    "qrcode-generator": "1.4.4",
+    "vue": "3.5.44",
+    "vue-router": "4.6.4"
+  },
+  "devDependencies": {
+    "@eslint/js": "9.39.5",
+    "@vitejs/plugin-vue": "5.2.4",
+    "eslint": "9.39.5",
+    "eslint-plugin-vue": "10.12.0",
+    "globals": "17.13.0",
+    "jsdom": "31.0.0",
+    "vite": "6.4.5",
+    "vitest": "5.1.0"
+  }
+}

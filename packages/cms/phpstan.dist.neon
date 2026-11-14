@@ -1,0 +1,12 @@
+# Static analysis of the bundle: composer stan. Level 5; the types in docblocks are hints, not facts (treatPhpDocTypesAsCertain),
+# because the data of the site comes out of JSON columns and the docblocks describe what the code expects to find there.
+# The baseline covers AbstractMcpTool::annotations(), which returns [] for tools that do not declare their own annotations.
+includes:
+    - phpstan-baseline.neon
+
+parameters:
+    level: 5
+    treatPhpDocTypesAsCertain: false
+    paths:
+        - src
+    tmpDir: .phpstan.cache

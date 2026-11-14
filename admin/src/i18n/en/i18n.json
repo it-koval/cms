@@ -1,0 +1,6 @@
+{
+  "i18n.language_label": "Interface language",
+  "i18n.language_default": "Site default",
+  "i18n.language_help": "The admin panel reloads in the chosen language. The content of the site does not change.",
+  "i18n.language_failed": "Could not change the language"
+}

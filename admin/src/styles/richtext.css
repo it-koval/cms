@@ -1,0 +1,55 @@
+/* RichText (TipTap): looks like a text input; gradient words show as ink on the soft brand wash (DESIGN.md «Headline field») */
+.rt{display:flex;flex-direction:column;gap:6px}
+.rt-ed{position:relative;display:block;width:100%;min-height:36px;border:1px solid var(--ctl);border-radius:var(--r);background:#fff;transition:border-color var(--dur),box-shadow var(--dur),background var(--dur);cursor:text}
+.rt-ed:hover{border-color:var(--ink-3)}
+.rt-ed:focus-within{border-color:var(--cy);box-shadow:0 0 0 3px var(--cy-100)}
+.rt-ed .ProseMirror{outline:none;padding:6px 10px;line-height:1.45;white-space:pre-wrap;overflow-wrap:anywhere;min-height:34px}
+.rt.rich .rt-ed .ProseMirror{min-height:var(--rt-min,132px);max-height:420px;overflow-y:auto;padding:8px 12px}
+.rt-ed .ProseMirror p{margin:0}
+.rt-ed .ProseMirror p+p,.rt-ed .ProseMirror ul,.rt-ed .ProseMirror ol,.rt-ed .ProseMirror p+ul,.rt-ed .ProseMirror p+ol{margin-top:.55em}
+.rt-ed .ProseMirror ul,.rt-ed .ProseMirror ol{margin-bottom:0;padding-left:1.35em}
+.rt-ed .ProseMirror li p{margin:0}
+.rt-ed .ProseMirror a{color:var(--brand-text);text-decoration:underline;text-underline-offset:.2em;cursor:pointer}
+.rt-ed .ProseMirror strong{font-weight:650}
+.rt-ed .grad{background:linear-gradient(90deg,rgba(1,205,193,.18),rgba(173,255,0,.32));border-radius:3px;color:inherit;-webkit-text-fill-color:currentColor;-webkit-box-decoration-break:clone;box-decoration-break:clone}
+.rt-ed ::selection{background:color-mix(in srgb,var(--cy) 16%,transparent)}
+.rt-ed .grad::selection{background:color-mix(in srgb,var(--cy) 24%,transparent)}
+.rt-ph{position:absolute;left:10px;top:6px;color:var(--ink-3);pointer-events:none;line-height:1.45}
+.rt.rich .rt-ph{left:12px;top:8px}
+.field.is-error .rt-ed{border-color:var(--red);background:#FFFAFA}
+.field.is-error .rt-ed:focus-within{box-shadow:0 0 0 3px var(--red-50)}
+.field.is-changed .rt-ed{border-color:var(--mag)}
+.field.is-changed .rt-ed:focus-within{box-shadow:0 0 0 3px var(--mag-100)}
+.field.is-error.is-changed .rt-ed{border-color:var(--red)}
+.field.is-error.is-changed .rt-ed:focus-within{box-shadow:0 0 0 3px var(--red-50)}
+.rt-tb{display:flex;gap:4px;flex-wrap:wrap;align-items:center}
+.rt-tb .rt-b{display:inline-flex;align-items:center;gap:6px;height:28px;min-width:28px;padding:0 8px;border:1px solid var(--hair);border-radius:var(--r);background:#fff;color:var(--ink);font-size:var(--t-sm);font-weight:550;box-shadow:var(--sh-1);justify-content:center;transition:background var(--dur),border-color var(--dur),color var(--dur)}
+.rt-tb .rt-b:hover{background:var(--sheet-2);border-color:var(--ctl)}
+.rt-tb .rt-b[aria-pressed=true]{background:var(--cy-50);border-color:var(--cy);color:var(--cy-dd)}
+.rt-tb .rt-b[disabled]{opacity:.45;cursor:default}
+.rt-tb .rt-sep{width:1px;height:18px;background:var(--hair);margin:0 4px}
+.rt-sw{width:14px;height:14px;border-radius:4px;flex:none;background:linear-gradient(135deg,#01CDC1,#ADFF00);box-shadow:inset 0 0 0 1px rgba(20,24,28,.2)}
+.rt-link{display:flex;gap:6px;align-items:center;padding:8px;border:1px solid var(--hair);border-radius:var(--r);background:var(--sheet-2)}
+.rt-link input{flex:1;min-width:0;height:30px}
+
+/* article mode: headings, quote, divider, photos */
+.rt.article .rt-ed .ProseMirror{max-height:560px;font-size:var(--t-base);line-height:1.6}
+.rt.article .rt-ed .ProseMirror>*+*{margin-top:.7em}
+.rt-ed .ProseMirror h2{margin:1em 0 0;font-size:1.35em;line-height:1.25;font-weight:700;letter-spacing:-.01em}
+.rt-ed .ProseMirror h3{margin:.9em 0 0;font-size:1.12em;line-height:1.3;font-weight:650}
+.rt-ed .ProseMirror h2:first-child,.rt-ed .ProseMirror h3:first-child{margin-top:0}
+.rt-ed .ProseMirror blockquote{margin-left:0;padding:2px 0 2px 14px;border-left:3px solid var(--cy);color:var(--ink-2)}
+.rt-ed .ProseMirror blockquote p{margin:0}
+.rt-ed .ProseMirror hr{border:0;border-top:1px solid var(--hair);margin:1.2em 0}
+.rt-ed .ProseMirror img{display:block;max-width:100%;max-height:340px;height:auto;border-radius:var(--r);cursor:pointer}
+.rt-ed .ProseMirror img.ProseMirror-selectednode{outline:2px solid var(--cy);outline-offset:2px}
+.rt-ed .ProseMirror hr.ProseMirror-selectednode{border-top-color:var(--cy)}
+.rt-tb .rt-b.rt-h{font-weight:650}
+
+/* article mode: a simple table (header cells = <th>) */
+.rt-tb .rt-tl{font-size:var(--t-sm);color:var(--ink-2);font-weight:550;margin-right:2px}
+.rt-ed .ProseMirror table{border-collapse:collapse;width:100%;table-layout:fixed;margin:.2em 0}
+.rt-ed .ProseMirror th,.rt-ed .ProseMirror td{position:relative;min-width:60px;padding:6px 8px;border:1px solid var(--ctl);vertical-align:top;text-align:left;overflow-wrap:anywhere}
+.rt-ed .ProseMirror th{background:var(--sheet-2);font-weight:650}
+.rt-ed .ProseMirror th p,.rt-ed .ProseMirror td p{margin:0}
+.rt-ed .ProseMirror .selectedCell::after{content:"";position:absolute;inset:0;background:var(--cy-50);opacity:.7;pointer-events:none}

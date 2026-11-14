@@ -1,0 +1,23 @@
+{#
+    The frame of every letter of the core. A site changes it for all letters by putting its own file with this name into its templates/email/ (a site's templates/email/<letter>.html.twig changes one letter; keep {% extends %} of the letters as they are).
+    Blocks: preheader (the grey line some mail apps show next to the subject), content. Variables: site_name, subject.
+    Plain styles, no pictures, no scripts: it must look the same in any mail app.
+#}
+<!doctype html>
+<html lang="{{ itk_locale() }}">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ subject }}</title>
+</head>
+<body style="margin:0;padding:0;background:#F2F4F5;color:#14181C;font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;font-size:16px;line-height:1.5;">
+<div style="display:none;max-height:0;overflow:hidden;opacity:0;">{% block preheader %}{{ subject }}{% endblock %}</div>
+<div style="max-width:560px;margin:0 auto;padding:24px 16px;">
+    <div style="margin:0 0 12px;color:#586873;font-size:13px;font-weight:600;">{{ site_name != '' ? site_name : itk_t('http.mail_default_site') }}</div>
+    <div style="background:#FFFFFF;border:1px solid #D9DEE2;border-radius:10px;padding:24px;">
+        {% block content %}{% endblock %}
+    </div>
+    <div style="margin:14px 0 0;color:#586873;font-size:12px;">{{ itk_t('http.mail_footer') }}</div>
+</div>
+</body>
+</html>

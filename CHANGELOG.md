@@ -1,0 +1,104 @@
+English | [Русский](CHANGELOG.ru.md)
+
+# Changelog
+
+All notable changes to ITK CMS are recorded in this file. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html). [UPGRADE.md](UPGRADE.md) defines the public API.
+
+## [0.1.0] - 2026-11-15
+
+The first public release.
+
+### Requirements
+
+- PHP 8.3 or newer and Symfony 7.4, or PHP 8.4 or newer and Symfony 8.
+- PostgreSQL 16 or newer with the pgvector extension 0.8 or newer. MySQL is not supported.
+- Node only to build the admin panel from source or to generate critical CSS.
+
+### Pages and sections
+
+- Pages built from sections, with page templates, placement rules for the page tree, and a single H1 rule.
+- Drafts with autosave, preview in the site templates, publishing, and unpublishing.
+- Optimistic locking of drafts: if someone else saved the draft first, the server returns 409 and the admin panel lets the editor choose a version.
+- ETag and 304 responses for published pages, and security headers on public routes.
+
+### Collections
+
+- Collections described in the schema or in resource classes, with fields, filters, sorting, search, and metrics.
+- List views: table, cards, calendar, kanban board, and a drag-and-drop tree.
+- Actions on rows, selections, the list, and the record form, with confirmation and input dialogs.
+- Repeater fields with item titles, summaries, and duplication. Half-width fields and form sections.
+- `itk_pages`, `itk_page`, and `itk_collection` Twig functions and `Content\ContentReader` for reading content in templates.
+
+### Menus and settings
+
+- Menus with areas and nesting depth defined in the schema.
+- Settings groups from the schema, built-in site and analytics groups, and settings defined in code.
+- Admin panel appearance: brand and accent colors and corner radius.
+
+### Media
+
+- A media library with folders, crops, and focus points.
+- WebP and AVIF copies made on upload, and resized copies served on request.
+
+### SEO
+
+- SEO rules for any URL, redirects, and `sitemap.xml`.
+- `/robots.txt` and `/llms.txt` served by the bundle and edited in **Settings → SEO**. A file in `public/` takes precedence.
+- schema.org JSON-LD on live pages: `WebSite`, `Organization` or `LocalBusiness`, `BreadcrumbList`, and `BlogPosting`. Company fields in the site settings. The `Event\SchemaOrgGraph` event adds custom types.
+- An AI search line on the site status screen and in `itk:doctor`. It warns when `robots.txt` blocks AI crawlers.
+
+### Analytics and webmaster tools
+
+- Yandex Metrika (with Webvisor), Google Analytics 4, and Yandex and Google verification meta tags, inserted into live pages from the settings. A counter already present in the layout is not added twice.
+- Yandex Webmaster: connect once with an OAuth token. The bundle adds and verifies the site, submits `sitemap.xml`, and shows indexing data in the admin panel.
+- IndexNow: when enabled, the queue worker reports published, moved, and removed pages to Yandex and Bing.
+
+### Requests
+
+- Form requests with a honeypot field and rate limiting, statuses, a board view, and resending.
+- Notifications by e-mail, Telegram, and MAX. Telegram and MAX are optional, and each has its own delivery status.
+- Telegram and MAX bot tokens can be set in **Settings → Bots**. They are stored encrypted and take effect without a restart.
+
+### Users and access
+
+- Users and roles with permissions per section, per action, and per page template.
+- Two-step sign-in, password recovery by e-mail, and sign-in throttling.
+- `itk:user:password` and `itk:user:reset-2fa` commands.
+
+### History and trash
+
+- Change history for pages, records, settings, and menus, with a diff and restore.
+- A trash for deleted pages and records.
+- In-app notifications.
+
+### Performance
+
+- A page cache for live pages. Publishing and other content changes show up immediately. The `itk_cache()` Twig function, the `X-ITK-Cache` header, and the `itk:cache:clear` command control it.
+- Optional critical CSS: after publishing, the worker extracts the above-the-fold rules with `crittr`, and `{{ itk_stylesheets() }}` inlines them. Requires Node 22 or newer.
+
+### AI
+
+- A knowledge base on pgvector: a semantic search index of the published site text, kept up to date by the queue worker. Embeddings come from OpenAI. Off by default.
+- An MCP server for AI assistants over HTTP (`/mcp`) and stdio (`itk:mcp`), with API tokens, scopes, and tool annotations. Sites can add their own tools.
+
+### Operations
+
+- A site status screen in the admin panel and the `itk:doctor` command. They check PHP, the database and pgvector, `APP_SECRET`, uploads, the queue, Telegram and MAX, analytics, IndexNow, Yandex Webmaster, AI search, critical CSS, and the knowledge base.
+- `GET /healthz` for uptime checks.
+- `itk:install` creates roles, default settings, the queue tables, the home page, and the first administrator. It is safe to run again.
+
+### Admin panel
+
+- A Vue 3 admin panel shipped prebuilt with the bundle.
+- The interface in English, Russian, and Kazakh. Each user picks a language in **My profile**. The default comes from `itk_cms.admin_locale`.
+- A configurable admin URL (`itk_cms.admin_path`).
+- A plugin contract (`window.ITK`) for custom fields, screens, actions, widgets, and editor buttons, with TypeScript declarations.
+
+### Developer tools
+
+- `itk:make:*` generators for templates, sections, collections (also from a description or a database table), fields, settings, and admin plugins.
+- `itk:schema:lint` and a strict template mode (`itk_cms.strict`).
+- A Docker kit in `docker/`: PHP-FPM, nginx, a queue worker, PostgreSQL 17 with pgvector, and Mailpit, with development and production stages.
+- Rules for an AI agent that builds a site on the bundle (`SITE-AGENTS.md`).
+
+[0.1.0]: https://github.com/it-koval/cms/releases/tag/v0.1.0

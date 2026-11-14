@@ -1,0 +1,10 @@
+{%- set d = section.data -%}
+<section class="faq"{{ itk_section_attrs(section) }}>
+    {%- if d.headline|default('') %}
+    <h2>{{ itk_field(section, 'headline') }}</h2>
+    {%- endif %}
+    {%- for item in d.items|default([]) %}
+    <h3>{{ itk_field(section, 'items.' ~ loop.index0 ~ '.question') }}</h3>
+    <div>{{ itk_field(section, 'items.' ~ loop.index0 ~ '.answer') }}</div>
+    {%- endfor %}
+</section>

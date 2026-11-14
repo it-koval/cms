@@ -1,0 +1,25 @@
+/* ITK CMS design tokens (DESIGN.md). Ported from the prototype :root. Colors, type scale, shadows, radii, motion. */
+:root{
+  --ground:#F2F4F5; --sheet:#FFFFFF; --sheet-2:#F7F9FA;
+  --ink:#14181C; --ink-2:#3F4D57; --ink-3:#586873;
+  --hair:#D9DEE2; --hair-2:#E7EBED; --ctl:#8A97A0;
+  --cy:#0B5D80; --cy-d:#084A66; --cy-dd:#063A51; --cy-50:#E8F3F8; --cy-100:#CFE6F0; --cy-200:#9CCAE0;
+  --rail-ink:#D2E8F2; --rail-ink-2:#A9CFE1;
+  /* The look comes from the theme (Itk\Cms\Admin\Theme\AdminTheme): the shell inlines the same names with the colours of the site, these are the built-in ones.
+     --brand / --accent are the colours; --*-ink the text on them; --*-text the colour as text on a light surface (darkened until it reads, 4.5:1); --brand-50..950 the palette. --cy*, --mag* are the short names the styles use. */
+  --brand:#0B5D80; --brand-ink:#fff; --brand-text:#0B5D80; --brand-text-d:#084A66; --rail-shade:rgba(0,0,0,.2); --rail-shade-2:rgba(0,0,0,.3);
+  --accent:#C8217A; --accent-ink:#fff; --accent-text:#C8217A; --accent-text-d:#A3185F;
+  --mag:#C8217A; --mag-d:#A3185F; --mag-50:#FCEEF6; --mag-100:#F6D2E5;
+  --red:#C62828; --red-50:#FDECEC; --green:#1B7545; --green-50:#E6F4EC; --amber:#8A5600; --amber-50:#FFF2D4;
+  --sh-1:0 1px 2px rgba(20,24,28,.07),0 0 0 .5px rgba(20,24,28,.03);
+  --sh-2:0 8px 24px -6px rgba(20,24,28,.16),0 2px 6px rgba(20,24,28,.07);
+  --sh-3:0 22px 56px -10px rgba(20,24,28,.28),0 4px 14px rgba(20,24,28,.09);
+  --r:6px; --r-lg:10px;
+  --ease:cubic-bezier(.2,.7,.2,1); --dur:170ms;
+  --t-xs:.75rem; --t-sm:.8125rem; --t-base:.9375rem; --t-md:1.125rem; --t-lg:1.35rem; --t-xl:1.62rem;
+  --rail-w:236px;
+  color-scheme:light;
+  font-size:16px;
+}
+
+:root{ --font-chrome:"Golos Text Variable","Golos Text",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; --font-site:"Manrope","Golos Text Variable","Golos Text",system-ui,sans-serif; }

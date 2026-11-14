@@ -1,0 +1,43 @@
+name: Split package
+
+# Packagist reads composer.json from the root of a repository, so packages/cms goes to its own repository,
+# it-koval/cms-bundle: the branch main on every push and each tag v* as a release. Nobody edits that repository by hand.
+# CMS_BUNDLE_TOKEN is a token that may write to the contents of it-koval/cms-bundle.
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: split
+  cancel-in-progress: false
+
+jobs:
+  split:
+    if: github.repository == 'it-koval/cms'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          # the token of this repository must not stay in the git settings: it would be sent to cms-bundle instead of CMS_BUNDLE_TOKEN
+          persist-credentials: false
+
+      - name: Push packages/cms to it-koval/cms-bundle
+        env:
+          TOKEN: ${{ secrets.CMS_BUNDLE_TOKEN }}
+        run: |
+          split=$(git subtree split --prefix=packages/cms HEAD)
+          remote="https://x-access-token:${TOKEN}@github.com/it-koval/cms-bundle.git"
+          if [ "$GITHUB_REF_TYPE" = tag ]; then
+            git push "$remote" "${split}:refs/tags/${GITHUB_REF_NAME}"
+          else
+            git push "$remote" "${split}:refs/heads/main"
+          fi

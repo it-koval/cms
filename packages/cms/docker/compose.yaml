@@ -1,0 +1,104 @@
+# ITK CMS Docker kit: copy this file to the site root as compose.yaml (README of the bundle, "Docker").
+# The project name is the name of the directory; ports are published on 127.0.0.1 only. Set a password for PostgreSQL before exposing it.
+# NB: compose reads the Symfony `.env` for ${...} interpolation (it contains APP_ENV=prod), so the container environment
+# uses its own variable names here (DOCKER_APP_ENV, not APP_ENV).
+x-php-env: &php-env
+  APP_ENV: ${DOCKER_APP_ENV:-dev}
+  DATABASE_URL: postgresql://postgres:postgres@database:5432/${DB_NAME:-app}?serverVersion=17&charset=utf8
+  MAILER_DSN: smtp://mailer:1025
+  MESSENGER_TRANSPORT_DSN: doctrine://default?auto_setup=0
+  DEFAULT_URI: http://localhost:${HTTP_PORT:-8080}
+  # the first administrator is created by itk:install at php start when both are set;
+  # otherwise: docker compose exec php bin/console itk:install --email=you@example.com
+  ADMIN_EMAIL: ${ADMIN_EMAIL:-}
+  ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+  SITE_NAME: ${SITE_NAME:-}
+  SITE_DOMAIN: ${SITE_DOMAIN:-}
+  # Symfony Flex must not add its own Docker files to the site (it would duplicate `database` in compose.yaml)
+  SYMFONY_DOCKER: "0"
+
+# php and worker are built from one image: Node and Chromium (CRITICAL_CSS=1) must be where the site health check
+# (php-fpm, inside the web request) and the generator (worker) run.
+x-php-build: &php-build
+  context: .
+  dockerfile: docker/Dockerfile
+  target: php_dev
+  args:
+    PHP_VERSION: ${PHP_VERSION:-8.4}
+    CRITICAL_CSS: ${CRITICAL_CSS:-0}
+    UID: ${UID:-1000}
+    GID: ${GID:-1000}
+
+services:
+  php:
+    build: *php-build
+    environment: *php-env
+    volumes:
+      - ./:/app
+      # To develop the bundle itself, mount a local checkout of it-koval/cms: uncomment the three lines marked "bundle",
+      # set the path, and add a Composer path repository with the url /itk/packages/cms.
+      # - /path/to/cms:/itk                   # bundle
+    depends_on:
+      database:
+        condition: service_healthy
+
+  nginx:
+    image: nginx:1.27-alpine
+    ports:
+      - "127.0.0.1:${HTTP_PORT:-8080}:80"
+    volumes:
+      - ./:/app:ro
+      # - /path/to/cms:/itk:ro                # bundle
+      - ./docker/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      php:
+        condition: service_healthy
+
+  # Consumes the queues: mail, Telegram and MAX (async), critical CSS (critical_css) and the knowledge base (knowledge_base);
+  # the bundle registers both of the last transports itself.
+  worker:
+    build: *php-build
+    environment:
+      <<: *php-env
+      SKIP_ENTRYPOINT: "1"
+    volumes:
+      - ./:/app
+      # - /path/to/cms:/itk                   # bundle
+    command: ["sh", "-c", "until [ -f vendor/autoload_runtime.php ]; do sleep 5; done; exec php bin/console messenger:consume async critical_css knowledge_base --time-limit=3600 --memory-limit=256M -vv"]
+    restart: unless-stopped
+    # tini reaps the Chrome children; the grace period lets one critical CSS page or one mail finish before SIGKILL
+    init: true
+    stop_grace_period: 2m
+    depends_on:
+      php:
+        condition: service_healthy
+    healthcheck:
+      disable: true
+
+  database:
+    image: pgvector/pgvector:pg17
+    environment:
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: ${DB_NAME:-app}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:${DB_PORT:-5433}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+
+  # Catches every email of the site: http://localhost:8025
+  mailer:
+    image: axllent/mailpit:v1.27
+    ports:
+      - "127.0.0.1:${MAILPIT_PORT:-8025}:8025"
+    environment:
+      MP_SMTP_AUTH_ACCEPT_ANY: 1
+      MP_SMTP_AUTH_ALLOW_INSECURE: 1
+
+volumes:
+  postgres_data:
