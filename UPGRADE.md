@@ -24,7 +24,7 @@ ITK CMS follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html):
 - A minor release (0.2.0) adds features. From 1.0.0 on, it does not break the public API.
 - A major release (2.0.0) may break the public API.
 
-Before 1.0.0 a minor release may break the public API. Each such change is listed in [CHANGELOG.md](CHANGELOG.md) and in the version notes below. A patch release never breaks it. To get fixes without surprises, pin the minor version in the site: `"itk/cms": "~0.1.0"`.
+Before 1.0.0 a minor release may break the public API. Each such change is listed in [CHANGELOG.md](CHANGELOG.md) and in the version notes below. A patch release never breaks it. To get fixes without surprises, pin the minor version in the site: `"itk/cms": "~0.2.0"`.
 
 Database changes come as bundle migrations. The bundle does not change the site's own tables.
 
@@ -57,4 +57,14 @@ The database schema (the `itk_*` tables) is not part of the public API. Read and
 
 ## Version notes
 
-This section lists the manual steps a release needs, newest first. 0.1.0 is the first release and has none.
+This section lists the manual steps a release needs, newest first.
+
+### 0.2.0
+
+- `Content\SettingsService::routesError()` is removed. If the site calls it, delete the call. `SettingsService::save()` now accepts empty chats for the other forms while Telegram or MAX is connected. If the site relies on that being refused, check it in the site code.
+- The constructor of `SettingsService` no longer takes `max` and `telegram`. The container wires it, so this matters only for code that creates the service by hand.
+- A custom health screen or monitor that reads `checks[].status` of the admin `health` API must accept the new value `off`. It ranks like `ok`.
+
+### 0.1.0
+
+The first release. It has no manual steps.

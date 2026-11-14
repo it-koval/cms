@@ -11,6 +11,7 @@ import { can } from '@/stores/app.js'
 import { useToast } from '@/components/ui/useToast.js'
 import { useConfirm } from '@/components/ui/useConfirm.js'
 import { fmtDT } from '@/utils/format.js'
+import { checkChip } from '@/components/settings/healthChecks.js'
 import { formatNumber, t } from '@/i18n/index.js'
 
 const toast = useToast()
@@ -41,7 +42,6 @@ const STATUS = {
   fail: { chip: 'fail', icon: 'alert', alert: 'err-a', title: t('settings.health_fail_title'), text: t('settings.health_fail_text') },
 }
 const status = computed(() => STATUS[data.value?.status] || STATUS.ok)
-const CHECK = { ok: ['pub', t('settings.health_check_ok')], warn: ['warn', t('settings.health_check_warn')], fail: ['fail', t('settings.health_check_fail')] }
 
 const failed = computed(() => data.value?.messenger.failed)
 const waitingTotal = computed(() => (data.value?.messenger.queues || []).reduce((n, q) => n + (q.waiting || 0), 0))
@@ -248,7 +248,7 @@ async function checkUpdates() {
         <header class="hl-h"><h2 id="hl-checks">{{ t('settings.health_checks_title') }}</h2></header>
         <ul v-if="data.checks.length" class="hl-checks">
           <li v-for="c in data.checks" :key="c.name">
-            <span :class="['chip', CHECK[c.status]?.[0]]">{{ CHECK[c.status]?.[1] || c.status }}</span>
+            <span :class="['chip', checkChip(c.status, t)[0]]">{{ checkChip(c.status, t)[1] }}</span>
             <b>{{ c.name }}</b>
             <span class="muted">{{ c.message }}</span>
           </li>

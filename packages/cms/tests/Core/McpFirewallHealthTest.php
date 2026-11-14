@@ -74,7 +74,7 @@ final class McpFirewallHealthTest extends KernelTestCase
     {
         self::getContainer()->get(McpSettings::class)->setEnabled(false);
         $r = $this->check(null)->check();
-        self::assertSame(HealthResult::OK, $r->status);
+        self::assertSame(HealthResult::OFF, $r->status);
         self::assertStringContainsString('Выключены', $r->message);
     }
 }

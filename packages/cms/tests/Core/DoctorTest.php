@@ -7,10 +7,12 @@ namespace Itk\Cms\Tests\Core;
 use Doctrine\DBAL\Connection;
 use Itk\Cms\Command\DoctorCommand;
 use Itk\Cms\Content\PageService;
+use Itk\Cms\Extension\Registry;
 use Itk\Cms\Health\Doctor;
 use Itk\Cms\Health\HealthResult;
 use Itk\Cms\Repository\PageRepository;
 use Itk\Cms\Tests\App\TestKernel;
+use Itk\Cms\Tests\Core\Fixture\OffHealthCheck;
 use PHPUnit\Framework\Attributes\Test;
 use Symfony\Bundle\FrameworkBundle\Console\Application;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
@@ -108,6 +110,22 @@ final class DoctorTest extends KernelTestCase
         $this->publishHome();
         $tester->execute(['--ci' => true]);
         self::assertSame(0, $tester->getStatusCode(), $tester->getDisplay());
+    }
+
+    #[Test]
+    public function aModuleThatIsOffIsPrintedWithItsOwnMarkAndNeverFailsCi(): void
+    {
+        self::bootKernel();
+        self::getContainer()->get(Registry::class)->healthChecks(OffHealthCheck::class);
+        $this->publishHome();
+        $tester = new CommandTester((new Application(self::$kernel))->find('itk:doctor'));
+
+        $tester->execute(['--ci' => true]);
+
+        self::assertSame(0, $tester->getStatusCode(), $tester->getDisplay());
+        self::assertMatchesRegularExpression('/ выкл\s+Test выключенный модуль: Не подключён/u', $tester->getDisplay());
+        self::assertMatchesRegularExpression('/выключено \d+/u', $tester->getDisplay());
+        self::assertSame(HealthResult::OFF, $this->line($this->lines(), 'Test выключенный модуль')['status']);
     }
 
     #[Test]

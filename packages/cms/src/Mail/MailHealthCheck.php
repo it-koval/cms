@@ -34,7 +34,7 @@ final class MailHealthCheck implements HealthCheckInterface
         if (null === $route) {
             return $this->settings->hasMailRecipients()
                 ? HealthResult::warn(I18n::t('http.mail_health_recipients_only'))
-                : HealthResult::ok(I18n::t('http.mail_health_off'));
+                : HealthResult::off(I18n::t('http.mail_health_off'));
         }
         $last = $this->status->get();
         $env = MailRoute::ENV === $route->source;

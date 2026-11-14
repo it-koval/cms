@@ -7,7 +7,6 @@
 'content.query_bad_field_or_language': 'Неверное поле или язык'
 'content.query_bad_filter_value': 'Неверное значение фильтра'
 'content.settings_required': 'Заполните обязательные поля'
-'content.settings_chat_for_rest': 'Укажите чат для остальных форм — туда придут заявки'
 'content.settings_chat_id_hint': 'ID чата — число вроде -1001234567890 или имя канала вроде @my_channel'
 'content.settings_chat_ids_check': 'Проверьте ID чатов'
 'content.settings_max_chat_id_hint': 'ID чата в MAX должен быть целым числом, например -72345678901234'

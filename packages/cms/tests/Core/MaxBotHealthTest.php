@@ -96,7 +96,7 @@ final class MaxBotHealthTest extends KernelTestCase
     {
         [$check] = $this->check(server: false);
 
-        self::assertSame('ok', $check->check()->status);
+        self::assertSame('off', $check->check()->status);
         self::assertSame(I18n::t('ops.health_max_off'), $check->check()->message);
     }
 
@@ -105,7 +105,7 @@ final class MaxBotHealthTest extends KernelTestCase
     {
         [$check] = $this->check(admin: true, on: false);
 
-        self::assertSame('ok', $check->check()->status);
+        self::assertSame('off', $check->check()->status);
         self::assertSame(I18n::t('ops.health_max_off_settings') . '. ' . I18n::t('ops.health_max_admin'), $check->check()->message);
     }
 
@@ -123,7 +123,7 @@ final class MaxBotHealthTest extends KernelTestCase
     {
         [$check] = $this->check(enabled: false);
 
-        self::assertSame('ok', $check->check()->status);
+        self::assertSame('off', $check->check()->status);
         self::assertSame(I18n::t('ops.health_max_off_config') . '. ' . I18n::t('ops.health_max_server'), $check->check()->message);
     }
 

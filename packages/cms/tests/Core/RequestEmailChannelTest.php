@@ -274,7 +274,7 @@ final class RequestEmailChannelTest extends KernelTestCase
     {
         $line = static fn (): array => \array_values(\array_filter(self::getContainer()->get(HealthService::class)->report()['checks'], static fn (array $c): bool => 'Почта' === $c['name']))[0];
 
-        self::assertSame('ok', $line()['status']);
+        self::assertSame('off', $line()['status']);
         self::assertStringContainsString('не настроена', $line()['message']);
         $this->routes(['*' => 'test-req-a@example.com']);
         self::assertSame('warn', $line()['status']);

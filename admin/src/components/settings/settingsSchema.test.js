@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { loadSchema } from '@/schema/registry.js'
-import { itemOfKey, maxChatIdsError, NAV, resolveTab, settingsAreas, settingsErrors } from './settingsSchema.js'
+import { itemOfKey, maxChatIdsError, NAV, needsFallbackChat, resolveTab, settingsAreas, settingsErrors } from './settingsSchema.js'
 
 describe('resolveTab', () => {
   it('opens an item by its key, and none for an empty or unknown key', () => {
@@ -39,11 +39,18 @@ describe('MAX chat ids', () => {
 describe('settingsErrors of the MAX table', () => {
   beforeEach(() => loadSchema({ forms: [{ key: 'callback', title: 'A' }, { key: 'order', title: 'B' }] }))
 
-  it('wants a chat for the other forms when MAX is connected and neither the server nor every form has one', () => {
-    expect(settingsErrors({ maxOn: true, maxReady: true, maxRoutes: {} }).maxRoutes).toBeTruthy()
-    expect(settingsErrors({ maxOn: true, maxReady: true, maxFallback: true, maxRoutes: {} }).maxRoutes).toBeUndefined()
-    expect(settingsErrors({ maxOn: true, maxReady: true, maxRoutes: { callback: '1', order: '2' } }).maxRoutes).toBeUndefined()
-    expect(settingsErrors({ maxOn: true, maxReady: true, maxRoutes: { '*': '-5' } }).maxRoutes).toBeUndefined()
+  it('never blocks saving when the chat for the other forms is empty: the table only warns', () => {
+    expect(settingsErrors({ maxOn: true, maxReady: true, maxRoutes: {} }).maxRoutes).toBeUndefined()
+    expect(settingsErrors({ maxOn: true, maxReady: true, maxRoutes: { '*': '' } }, { maxRoutes: { '*': '' } }).maxRoutes).toBeUndefined()
+    expect(settingsErrors({ tgOn: true, tgRoutes: {} }, { tgRoutes: {} }).tgRoutes).toBeUndefined()
+  })
+
+  it('tells the table when forms are left without any chat', () => {
+    const forms = [{ key: 'callback' }, { key: 'order' }]
+    expect(needsFallbackChat({}, forms, false)).toBe(true)
+    expect(needsFallbackChat({}, forms, true)).toBe(false)
+    expect(needsFallbackChat({ callback: '1', order: '2' }, forms, false)).toBe(false)
+    expect(needsFallbackChat({ '*': '-5' }, forms, false)).toBe(false)
   })
 
   it('asks nothing when MAX is off or not connected', () => {
@@ -57,16 +64,14 @@ describe('settingsErrors of the MAX table', () => {
   })
 
   it('validates routes only for the channel being saved', () => {
-    const settings = { tgOn: true, tgRoutes: {}, maxOn: true, maxReady: true, maxRoutes: {} }
+    const settings = { tgOn: true, tgRoutes: { '*': 'bad' }, maxOn: true, maxReady: true, maxRoutes: { '*': 'abc' } }
     expect(settingsErrors(settings, { phone: '123' })).toEqual({})
-    expect(Object.keys(settingsErrors(settings, { tgOn: true }))).toEqual(['tgRoutes'])
-    expect(Object.keys(settingsErrors(settings, { maxRoutes: {} }))).toEqual(['maxRoutes'])
+    expect(Object.keys(settingsErrors(settings, { tgRoutes: settings.tgRoutes }))).toEqual(['tgRoutes'])
+    expect(Object.keys(settingsErrors(settings, { maxRoutes: settings.maxRoutes }))).toEqual(['maxRoutes'])
   })
 
-  it('keeps Telegram compatible with older servers and validates changed IDs even when disconnected or off', () => {
+  it('validates changed Telegram IDs even when disconnected or off', () => {
     const legacy = { tgOn: true, tgRoutes: {} }
-    expect(settingsErrors(legacy, { tgOn: true }).tgRoutes).toBeTruthy()
-    expect(settingsErrors({ ...legacy, tgReady: false }, { tgOn: true }).tgRoutes).toBeUndefined()
     const malformed = { ...legacy, tgReady: false, tgRoutes: { '*': 'bad' } }
     for (const tgOn of [true, false]) expect(settingsErrors({ ...malformed, tgOn }, { tgRoutes: malformed.tgRoutes }).tgRoutes).toBeTruthy()
   })

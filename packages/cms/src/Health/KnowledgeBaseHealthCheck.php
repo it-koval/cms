@@ -51,7 +51,7 @@ final class KnowledgeBaseHealthCheck implements HealthCheckInterface
     public function check(): HealthResult
     {
         if (!$this->options->enabled) {
-            return HealthResult::ok(I18n::t('ops.health_knowledge_base_off'));
+            return HealthResult::off(I18n::t('ops.health_knowledge_base_off'));
         }
         if ($this->embedder instanceof OpenAiEmbedder) {
             if (null === $this->http) {

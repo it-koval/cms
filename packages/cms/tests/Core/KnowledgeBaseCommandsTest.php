@@ -206,7 +206,7 @@ final class KnowledgeBaseCommandsTest extends KernelTestCase
         self::assertSame(Command::INVALID, $this->execute('itk:knowledge-base:sync')->getStatusCode());
         self::assertSame(Command::FAILURE, $this->execute('itk:knowledge-base:search', ['query' => 'x'])->getStatusCode());
         $health = $this->health();
-        self::assertSame(HealthResult::OK, $health->status);
+        self::assertSame(HealthResult::OFF, $health->status);
         self::assertStringContainsString('Выключена', $health->message);
     }
 }

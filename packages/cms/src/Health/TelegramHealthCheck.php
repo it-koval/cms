@@ -35,13 +35,13 @@ final class TelegramHealthCheck implements HealthCheckInterface
             return HealthResult::warn($this->withSource($problem));
         }
         if (!$this->telegram->isConnected()) {
-            return HealthResult::ok(I18n::t('ops.health_telegram_off'));
+            return HealthResult::off(I18n::t('ops.health_telegram_off'));
         }
         if (!$this->settings->isTelegramOn()) {
-            return HealthResult::ok($this->withSource(I18n::t('ops.health_telegram_off_settings')));
+            return HealthResult::off($this->withSource(I18n::t('ops.health_telegram_off_settings')));
         }
         if (!$this->telegram->isActive()) { // what is left is the bundle option itk_cms.telegram.enabled
-            return HealthResult::ok($this->withSource(I18n::t('ops.health_telegram_off_config')));
+            return HealthResult::off($this->withSource(I18n::t('ops.health_telegram_off_config')));
         }
         $without = [];
         foreach ($this->schema->forms() as $key => $form) {

@@ -16,7 +16,7 @@ use Symfony\Component\HttpKernel\Kernel;
 
 /**
  * Everything «Разработчику → Состояние сайта» shows (GET /admin/api/health):
- *   { status 'ok'|'warn'|'fail', generatedAt,
+ *   { status 'ok'|'warn'|'fail' (a check may also be 'off': not connected, it does not count), generatedAt,
  *     messenger { queues [{name, waiting (null when the transport does not work), error?}], failed { available, total, items [{id, type, label, error, errorClass, retries, failedAt, queue}], error? } },
  *     requests { failed (number), items [{id, dt, form, error}] },
  *     schedules { available, items [{schedule, trigger, next}] },
@@ -24,7 +24,7 @@ use Symfony\Component\HttpKernel\Kernel;
  *     versions { php, symfony, itk, itkReference },
  *     updates { enabled, current, latest, hasUpdate, checkedAt, message },
  *     checks [{name, status, message}] }
- * `status` is the worst of the checks, the disks, and «warn» when something sits in the failed queue or a request was not delivered.
+ * `status` is the worst of the checks (a check that is `off` ranks like `ok`), the disks, and «warn» when something sits in the failed queue or a request was not delivered.
  */
 final class HealthService
 {

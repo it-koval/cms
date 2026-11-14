@@ -31,9 +31,10 @@ const valueOf = (k) => props.routes[k] || ''
 const effective = (k) => valueOf(k) || (k === FALLBACK_ROUTE ? '' : valueOf(FALLBACK_ROUTE))
 const errorOf = (r) => {
   if (!props.on) return changed(r.key) ? props.validate(valueOf(r.key)) : ''
-  if (r.main && props.ready && needsFallbackChat(props.routes, props.forms, props.serverChat)) return t('settings.notif_chat_required')
   return props.validate(valueOf(r.key))
 }
+// the chat for the other forms may stay empty: the requests of forms without a chat then reach no messenger, so the row warns but saving is not blocked
+const warningOf = (r) => (r.main && props.on && props.ready && !errorOf(r) && needsFallbackChat(props.routes, props.forms, props.serverChat) ? t('settings.notif_chat_missing') : '')
 const changed = (k) => (props.saved[k] || '') !== valueOf(k)
 const canTest = (r) => props.on && props.ready && !!effective(r.key) && !props.validate(effective(r.key))
 
@@ -72,6 +73,7 @@ async function test(r) {
           autocomplete="off" :aria-invalid="errorOf(r) ? 'true' : undefined" :aria-describedby="errorOf(r) ? id + '-error-' + r.key : undefined" @input="setRoute(r.key, $event.target.value.trim())"
         >
         <div v-if="errorOf(r)" :id="id + '-error-' + r.key" class="err" role="alert"><Icon name="alert" size="s16" /><span>{{ errorOf(r) }}</span></div>
+        <div v-else-if="warningOf(r)" class="tn-warn" role="status"><Icon name="warn" size="s16" /><span>{{ warningOf(r) }}</span></div>
       </div>
       <div class="tn-btn" role="cell">
         <button type="button" :class="['btn', 'sm', { loading: testing[r.key] }]" :disabled="!canTest(r)" @click="test(r)"><Icon name="send" size="s14" />{{ t('settings.notif_test') }}</button>
@@ -93,6 +95,7 @@ async function test(r) {
 .set-sec .tn-in input[aria-invalid=true]{border-color:var(--red);background:#FFFAFA}
 .set-sec .tn-row.chg .tn-in input:not([aria-invalid=true]){border-color:var(--mag)}
 .set-sec .tn-row.chg .tn-in input:not([aria-invalid=true]):focus{box-shadow:0 0 0 3px var(--mag-100)}
+.set-sec .tn-warn{display:flex;gap:6px;align-items:flex-start;font-size:var(--t-sm);line-height:1.4;color:var(--amber)}
 .set-sec .tn-btn{padding-top:1px}
 .set-sec .tn-btn .btn{width:100%}
 /* phone: a form's name, its field and the check button one under another (the head row of the columns goes away) */

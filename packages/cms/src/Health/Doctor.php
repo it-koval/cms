@@ -25,7 +25,7 @@ use Symfony\Component\DependencyInjection\Attribute\AutowireLocator;
 use Symfony\Component\HttpFoundation\Request;
 
 /**
- * The checks of itk:doctor, one pass over what a deploy can get wrong. A line is { group, name, status: ok|warn|fail, message }.
+ * The checks of itk:doctor, one pass over what a deploy can get wrong. A line is { group, name, status: ok|off|warn|fail, message }.
  *   Окружение          PHP extensions, WebP and AVIF, APP_SECRET, the folder of uploads, the database
  *   Сайт               the address for links in letters, migrations, the published home page, the firewalls of the admin and of /mcp, the queue and its worker, the built admin
  *   Состояние сайта    what HealthService::report() says (the screen «Состояние сайта» of the admin)

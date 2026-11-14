@@ -35,7 +35,7 @@ final class YandexWebmasterHealthCheck implements HealthCheckInterface
     {
         $status = $this->webmaster->view();
         if (null === $status->connectedAt) {
-            return HealthResult::ok(I18n::t('ops.health_webmaster_none'));
+            return HealthResult::off(I18n::t('ops.health_webmaster_none'));
         }
         if (WebmasterState::NoAddress === $status->state) {
             return HealthResult::warn(I18n::t('ops.health_webmaster_no_address'));

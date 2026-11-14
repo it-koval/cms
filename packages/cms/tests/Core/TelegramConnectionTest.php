@@ -177,7 +177,7 @@ final class TelegramConnectionTest extends TestCase
         $notifier = new TelegramNotifier($schema, $site, new NullLogger(), $connection, new EventDispatcher(), false);
 
         $health = (new TelegramHealthCheck($notifier, $site, $schema))->check();
-        self::assertSame('ok', $health->status);
+        self::assertSame('off', $health->status);
         self::assertStringContainsString(I18n::t('ops.health_telegram_off_config'), $health->message);
         self::assertStringContainsString(I18n::t('ops.health_telegram_admin'), $health->message);
     }
@@ -193,7 +193,7 @@ final class TelegramConnectionTest extends TestCase
         self::assertSame(I18n::t('http.telegram_problem_token'), $notifier->problem());
         self::assertNull($notifier->problem(false));
         $health = (new TelegramHealthCheck($notifier, $site, $schema))->check();
-        self::assertSame('ok', $health->status);
+        self::assertSame('off', $health->status);
         self::assertSame(I18n::t('ops.health_telegram_off'), $health->message);
     }
 

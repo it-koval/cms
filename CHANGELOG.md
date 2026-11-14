@@ -4,6 +4,25 @@ English | [Русский](CHANGELOG.ru.md)
 
 All notable changes to ITK CMS are recorded in this file. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html). [UPGRADE.md](UPGRADE.md) defines the public API.
 
+## [0.2.0] - 2026-11-15
+
+### Added
+
+- **Send to a messenger** for a request that never went there. A request that arrived before MAX or Telegram was connected now has a **Send to MAX** (or **Send to Telegram**) button in the request drawer. The request JSON has a new `sendable` field with the messengers that can take it now (not yet tried, connected, switched on and with a chat for the form). A failed messenger keeps **Send again**.
+
+### Changed
+
+- **Site status** shows a module that is not connected or switched off (Yandex Webmaster, Telegram, MAX, mail, IndexNow, analytics, critical CSS, knowledge base, MCP firewall) as a yellow **Not connected** instead of a green **Working**. The new `HealthResult::off()` status does not change the overall status or the exit code of `itk:doctor --ci`. The status `off` can now appear in `checks[].status` of the admin `health` API and in the lines of `itk:doctor`.
+- The permission matrix of a role shows **Publish** as the first column.
+
+### Fixed
+
+- **Settings → Notifications** no longer refuses to save when the chat for the other forms is empty while Telegram or MAX is connected. The table now shows a yellow note that requests from forms without a chat will not reach the messenger. `SettingsService::save()` accepts such routes too.
+
+### Removed
+
+- `Content\SettingsService::routesError()`, which checked that a connected messenger had a chat for the other forms. The constructor of `SettingsService` no longer takes the `max` and `telegram` arguments. See the 0.2.0 notes in [UPGRADE.md](UPGRADE.md).
+
 ## [0.1.0] - 2026-11-15
 
 The first public release.
@@ -101,4 +120,5 @@ The first public release.
 - A Docker kit in `docker/`: PHP-FPM, nginx, a queue worker, PostgreSQL 17 with pgvector, and Mailpit, with development and production stages.
 - Rules for an AI agent that builds a site on the bundle (`SITE-AGENTS.md`).
 
+[0.2.0]: https://github.com/it-koval/cms/releases/tag/v0.2.0
 [0.1.0]: https://github.com/it-koval/cms/releases/tag/v0.1.0

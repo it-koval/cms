@@ -32,7 +32,7 @@ final class McpFirewallHealthCheck implements HealthCheckInterface
     public function check(): HealthResult
     {
         if (!$this->settings->isEnabled()) {
-            return HealthResult::ok(I18n::t('ops.mcp_firewall_off'));
+            return HealthResult::off(I18n::t('ops.mcp_firewall_off'));
         }
         $firewall = $this->security->getFirewallConfig(Request::create(McpGate::PATH, 'POST'));
         if (null === $firewall || !$firewall->isSecurityEnabled() || !\in_array(ApiTokenAuthenticator::class, $firewall->getAuthenticators(), true)) {

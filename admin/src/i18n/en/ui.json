@@ -194,6 +194,7 @@
   "ui.rd_failed_text": "The request is saved here, nothing is lost. Check the chat and send it again.",
   "ui.rd_resend": "Send again",
   "ui.rd_resend_channel": "Send again: {channel}",
+  "ui.rd_send_channel": "Send to {channel}",
   "ui.rd_note": "Note for the team",
   "ui.rd_note_placeholder": "For example: called back, agreed on Friday",
   "ui.rd_note_none": "No notes",

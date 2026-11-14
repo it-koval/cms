@@ -35,11 +35,11 @@ final class IndexNowHealthCheckTest extends KernelTestCase
     }
 
     #[Test]
-    public function offIsOkAndSaysSo(): void
+    public function offIsNotConnectedAndSaysSo(): void
     {
         $result = $this->check(['indexNow' => false, 'domain' => 'health.example.org']);
 
-        self::assertSame([HealthResult::OK, 'Выключено'], [$result->status, $result->message]);
+        self::assertSame([HealthResult::OFF, 'Выключено'], [$result->status, $result->message]);
     }
 
     #[Test]
@@ -56,7 +56,7 @@ final class IndexNowHealthCheckTest extends KernelTestCase
     {
         $result = $this->check(['indexNow' => true, 'domain' => 'localhost:8000']);
 
-        self::assertSame(HealthResult::OK, $result->status);
+        self::assertSame(HealthResult::OFF, $result->status);
         self::assertStringContainsString('не публичный', $result->message);
     }
 

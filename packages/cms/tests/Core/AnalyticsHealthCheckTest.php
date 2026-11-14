@@ -40,13 +40,13 @@ final class AnalyticsHealthCheckTest extends WebTestCase
     }
 
     #[Test]
-    public function nothingSetIsOkAndSaysSo(): void
+    public function nothingSetIsOffAndSaysSo(): void
     {
         $result = $this->check([]);
 
-        self::assertSame(HealthResult::OK, $result->status);
+        self::assertSame(HealthResult::OFF, $result->status);
         self::assertSame('Не подключена', $result->message);
-        self::assertSame(HealthResult::OK, $this->check(['yandexMetrikaId' => '', 'yandexMetrikaWebvisor' => true])->status, 'a toggle without a counter is nothing');
+        self::assertSame(HealthResult::OFF, $this->check(['yandexMetrikaId' => '', 'yandexMetrikaWebvisor' => true])->status, 'a toggle without a counter is nothing');
     }
 
     #[Test]

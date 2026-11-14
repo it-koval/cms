@@ -6,7 +6,7 @@ English | [Русский](README.ru.md)
 
 A site describes its structure in PHP (the `config/itk/schema.php` file or resource classes) and renders it with its own Twig templates. The bundle knows nothing about a specific site. The built admin panel ships inside the package, so the site does not need Node.
 
-Version 0.1.0, MIT license. Source code: [github.com/it-koval/cms](https://github.com/it-koval/cms).
+Version 0.2.0, MIT license. Source code: [github.com/it-koval/cms](https://github.com/it-koval/cms).
 
 ## Contents
 
@@ -309,7 +309,7 @@ Core templates: `home`, `default`, `blog`, `blog_category`, `blog_article`. A si
 
 **The H1 heading.** The first visible section of the `SectionType::FIRST_SCREEN` group gets the `is_h1` variable in its template. The H1 of that section is the field from `->h1('field')` or the first `headline` field. A group is the literal string passed to `group()`, and the admin panel shows it as written. Use `SectionType::FIRST_SCREEN` for the first-screen group. The admin panel shows this group and the default group in the interface language. A page template with `->h1('field')` owns the H1 itself. Only that field gets the **Page heading (H1)** label. If the H1 field has the `headline` type, the page title equals its first line as plain text.
 
-**Content in one language.** In version 0.1.0, site content is kept in one language, `main_locale`. The admin language is set separately (see [Admin language](#admin-language)).
+**Content in one language.** For now, site content is kept in one language, `main_locale`. The admin language is set separately (see [Admin language](#admin-language)).
 
 ### Collections
 
@@ -975,7 +975,7 @@ A form is described in the schema: `$s->form('call', 'Call request')->fields(...
 
 The site sends the form to `POST /request/{form}`. The hidden `itk_hp` field (a trap for bots) must be empty. The response is `{"success": true}` or `{"success": false, "message": "…", "errors": {...}}`. The limit is 10 requests in 15 minutes from one address (`framework.rate_limiter.itk_request_form`, the site can override it).
 
-The request is saved and appears in the **Requests** section (the `requests` area). Then the `request.new` notification goes to the channels: the admin bell, Telegram, MAX and e-mail. A request has its own status for each messenger (`channels`). The overall `delivery` status is `failed` if the request did not reach at least one messenger, otherwise `sent` if it reached at least one. A messenger that is not connected leaves the status at `pending`, which is not a failure. To retry undelivered requests, use the button in the admin panel or `php bin/console itk:requests:resend`.
+The request is saved and appears in the **Requests** section (the `requests` area). Then the `request.new` notification goes to the channels: the admin bell, Telegram, MAX and e-mail. A request has its own status for each messenger (`channels`). The overall `delivery` status is `failed` if the request did not reach at least one messenger, otherwise `sent` if it reached at least one. A messenger that is not connected leaves the status at `pending`, which is not a failure. To retry undelivered requests, use the button in the admin panel or `php bin/console itk:requests:resend`. The request JSON also has `sendable`: the messengers that never got the request and can take it now (connected, on, with a chat for the form). The request drawer shows **Send to MAX** or **Send to Telegram** for each of them and calls `POST requests/{id}/resend {channel}`.
 
 The **Requests** screen has a **Board** view with the columns **New**, **In progress** and **Closed**.
 
@@ -1355,10 +1355,10 @@ final class ToursCountTool extends AbstractMcpTool
 - **Schedule.** Symfony Scheduler tasks (`#[AsSchedule]`) and the time of the next run, if there are any.
 - **Disk.** Free space for `upload_dir` and `var/`. Less than 2 GB gives a warning, less than 512 MB gives an error.
 - **Versions.** PHP, Symfony and `itk/cms`. The update check works when the `update_source` option is set. It accepts a URL that returns `{"version": "…"}`, GitHub `releases/latest`, or Packagist metadata, for example `https://repo.packagist.org/p2/itk/cms.json`. The response is cached for 12 hours.
-- **Core checks.** Database, PHP, `APP_SECRET`, upload folder, mail, Telegram, MAX, MCP firewall, analytics, Yandex Webmaster, IndexNow, AI search (AI bots closed in `robots.txt`), critical CSS, knowledge base. Each check shows `ok`, warning or error.
+- **Core checks.** Database, PHP, `APP_SECRET`, upload folder, mail, Telegram, MAX, MCP firewall, analytics, Yandex Webmaster, IndexNow, AI search (AI bots closed in `robots.txt`), critical CSS, knowledge base. Each check shows `ok`, **Not connected**, warning or error. **Not connected** (`off`) is a yellow chip for a module that is switched off or not set up, for example Yandex Webmaster, Telegram or IndexNow. It is not a problem: the overall status of the screen and the exit code of `itk:doctor --ci` do not change.
 - **API** (the `dev` area): `GET health`, `POST health/messenger/{id}/retry|delete`, `POST health/requests/{id}/resend {channel?}`, `POST health/updates/refresh`, `POST health/page-cache/clear`.
 
-**Custom checks.** A class implements `Itk\Cms\Health\HealthCheckInterface`: `name()` and `check(): HealthResult` (`HealthResult::ok|warn|fail('text')`). In a folder that the site container scans, the class is picked up automatically (the `itk.health_check` tag). From a package, list it in `Registry::healthChecks()`. A check must be fast. An exception shows as an error line and does not break the screen.
+**Custom checks.** A class implements `Itk\Cms\Health\HealthCheckInterface`: `name()` and `check(): HealthResult` (`HealthResult::ok|off|warn|fail('text')`). Return `off` when the module is switched off or not connected: it ranks like `ok` and does not turn the report into a warning. In a folder that the site container scans, the class is picked up automatically (the `itk.health_check` tag). From a package, list it in `Registry::healthChecks()`. A check must be fast. An exception shows as an error line and does not break the screen.
 
 ### itk:doctor
 
@@ -1371,7 +1371,7 @@ final class ToursCountTool extends AbstractMcpTool
 | Site status | Everything the **Site status** screen shows |
 | Schema | The same as `itk:schema:lint` |
 
-Each line is `ok`, `warning` or `ERROR`. With `--ci`, the command exits with code 1 if there is at least one error.
+Each line is `ok`, `off`, `warning` or `ERROR`. `off` marks a module that is not connected and is only counted in the total. With `--ci`, the command exits with code 1 if there is at least one error.
 
 ### /healthz
 

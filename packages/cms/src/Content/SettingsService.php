@@ -10,8 +10,6 @@ use Itk\Cms\Entity\Setting;
 use Itk\Cms\History\HistoryService;
 use Itk\Cms\I18n\I18n;
 use Itk\Cms\Repository\SettingRepository;
-use Itk\Cms\Request\Max\MaxSender;
-use Itk\Cms\Request\TelegramConnection;
 use Itk\Cms\Schema\Schema;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Contracts\Service\ResetInterface;
@@ -43,8 +41,6 @@ final class SettingsService implements ResetInterface
         private readonly string $fallbackChatIds = '',
         #[Autowire(param: 'itk_cms.max.chat_ids')]
         private readonly string $maxFallbackChatIds = '',
-        private readonly ?MaxSender $max = null,
-        private readonly ?TelegramConnection $telegram = null,
     ) {
     }
 
@@ -156,30 +152,6 @@ final class SettingsService implements ResetInterface
         }
         if ([] !== $errors) {
             throw ContentException::invalid(I18n::t('content.settings_required'), $errors);
-        }
-        if ((isset($write[Setting::ALL]['tgOn']) || isset($write[Setting::ALL]['tgRoutes'])) && null !== $this->telegram?->transport()) {
-            $shared = $this->load()[Setting::ALL] ?? [];
-            $error = self::routesError(
-                (bool) ($write[Setting::ALL]['tgOn'] ?? $shared['tgOn'] ?? true),
-                (array) ($write[Setting::ALL]['tgRoutes'] ?? $shared['tgRoutes'] ?? []),
-                $this->hasFallbackChat(),
-                \array_keys($this->schema->forms()),
-            );
-            if ('' !== $error) {
-                throw ContentException::invalid($error, ['tgRoutes' => $error]);
-            }
-        }
-        if (isset($write[Setting::ALL]['maxOn']) || isset($write[Setting::ALL]['maxRoutes'])) {
-            $shared = $this->load()[Setting::ALL] ?? [];
-            $error = $this->isMaxConnected() ? self::routesError(
-                (bool) ($write[Setting::ALL]['maxOn'] ?? $shared['maxOn'] ?? true),
-                (array) ($write[Setting::ALL]['maxRoutes'] ?? $shared['maxRoutes'] ?? []),
-                $this->hasMaxFallbackChat(),
-                \array_keys($this->schema->forms()),
-            ) : ''; // a site without a MAX bot has nothing to route: its settings must not ask for a chat
-            if ('' !== $error) {
-                throw ContentException::invalid($error, ['maxRoutes' => $error]);
-            }
         }
         $before = $this->all($locale);
         $after = $before;
@@ -334,35 +306,10 @@ final class SettingsService implements ResetInterface
         return [] !== $this->maxFallbackChatIds();
     }
 
-    private function isMaxConnected(): bool
-    {
-        return $this->max?->isConnected() ?? false;
-    }
-
     /** Is there a chat outside the settings? The admin gets only this yes / no (`tgFallback`), never the ids. */
     public function hasFallbackChat(): bool
     {
         return [] !== $this->fallbackChatIds();
-    }
-
-    /**
-     * «Остальные формы» needs a chat when Telegram is on, unless the server has fallback chats of its own
-     * or every form of the site already has its own chat (the admin checks the same rule).
-     *
-     * @param array<string, mixed> $routes
-     * @param list<string> $formKeys the forms of the site schema
-     *
-     * @return string the reason in plain words, in the language of the person, '' when it is fine
-     */
-    public static function routesError(bool $telegramOn, array $routes, bool $hasFallback, array $formKeys = []): string
-    {
-        $chat = static fn (string $key): bool => [] !== self::splitIds((string) ($routes[$key] ?? ''));
-        $allRouted = [] !== $formKeys && [] === \array_filter($formKeys, static fn (string $k): bool => !$chat($k));
-        if ($telegramOn && !$hasFallback && !$allRouted && !$chat('*')) {
-            return I18n::t('content.settings_chat_for_rest');
-        }
-
-        return '';
     }
 
     public function isTelegramOn(): bool

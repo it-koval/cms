@@ -21,6 +21,8 @@ export const ACTIONS = [
   { key: 'delete', label: t('core.perm_delete') },
 ]
 const ORDER = ACTIONS.map((a) => a.key)
+// The columns of the role matrix: «Публиковать» first (the right an owner looks for first), then the rest in their usual order.
+export const MATRIX_COLUMNS = ['publish', 'view', 'edit', 'delete'].map((key) => ACTIONS.find((a) => a.key === key))
 const ALL = ['view', 'edit', 'publish', 'delete']
 
 export const GROUPS = [

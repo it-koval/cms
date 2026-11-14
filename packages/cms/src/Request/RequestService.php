@@ -174,6 +174,8 @@ final class RequestService
     /**
      * Sends the request again, right now (the admin shows the result): to the messenger asked for, else to every messenger that failed,
      * else (none failed) to every messenger that is on.
+     * A messenger asked for by name is sent «again» only after a failure. One that never got the request (the «Отправить в MAX» button)
+     * gets a first send, with no «delivered again» line, and is skipped if a worker delivered it after the drawer was opened.
      *
      * @param string|null $channel Request::CHANNEL_TELEGRAM or Request::CHANNEL_MAX
      */
@@ -184,7 +186,8 @@ final class RequestService
             throw ContentException::invalid(I18n::t('http.request_bad_channel'));
         }
         foreach (null !== $channel ? [$channel] : $this->channelsToResend($r) as $one) {
-            $this->deliverer->deliver((int) $r->id, $one, true);
+            $again = null === $channel || Request::DELIVERY_FAILED === $r->channelState($one);
+            $this->deliverer->deliver((int) $r->id, $one, $again);
         }
 
         return $r;
@@ -247,6 +250,25 @@ final class RequestService
     }
 
     /**
+     * The messengers that never got this request (no state, so pending) and can take it now: the admin offers «Отправить в …» for them. Failed ones keep «Отправить ещё раз».
+     *
+     * @return list<string>
+     */
+    public function sendable(Request $r): array
+    {
+        $states = $r->channelStates();
+        $out = [];
+        foreach (Request::CHANNELS as $key => $name) {
+            $notifier = Request::CHANNEL_MAX === $key ? $this->max : $this->telegram;
+            if (!isset($states[$key]) && $notifier->reaches($r->form)) {
+                $out[] = $key;
+            }
+        }
+
+        return $out;
+    }
+
+    /**
      * A request as the admin's «Заявки» screen reads it.
      *
      * @return array<string, mixed>
@@ -290,6 +312,7 @@ final class RequestService
             'delivery' => $r->delivery,
             'deliveryError' => $r->deliveryError,
             'channels' => $this->channels($r),
+            'sendable' => $this->sendable($r),
             'work' => Request::WORK_IN_WORK === $r->work ? 'progress' : $r->work,
             'comment' => (string) $r->comment,
             'sourceUrl' => $r->sourceUrl,

@@ -630,11 +630,11 @@ final class MaxChannelTest extends WebTestCase
 
         $this->setting('maxRoutes', []);
         $this->fake(false);
-        self::assertSame(['ok', 'MAX не подключён'], [$check->check()->status, $check->check()->message], 'a calm line even without a chat');
+        self::assertSame(['off', 'MAX не подключён'], [$check->check()->status, $check->check()->message], 'a calm line even without a chat');
 
         $this->fake();
         $this->setting('maxOn', false);
-        self::assertSame('ok', $check->check()->status);
+        self::assertSame('off', $check->check()->status);
         self::assertStringContainsString('выключена в «Настройки → Уведомления»', $check->check()->message);
 
         $this->setting('maxOn', true);
@@ -653,7 +653,7 @@ final class MaxChannelTest extends WebTestCase
 
         $result = self::getContainer()->get(MaxHealthCheck::class)->check();
 
-        self::assertSame('ok', $result->status);
+        self::assertSame('off', $result->status);
         self::assertStringContainsString('itk_cms.max.enabled', $result->message);
         self::assertFalse($this->max()->isActive());
     }
@@ -691,6 +691,45 @@ final class MaxChannelTest extends WebTestCase
         self::assertSame([['channel' => 'telegram', 'state' => 'failed', 'error' => 'bad chat'], ['channel' => 'max', 'state' => 'sent', 'error' => null]], $shown['channels']);
         self::assertSame(['failed', 'failed', 'Telegram: bad chat'], [$shown['delivery'], $shown['st'], $shown['deliveryError']]);
         self::assertSame([['fail', 'Telegram: bad chat'], ['ok', 'Доставлено в MAX']], \array_map(static fn (array $l): array => [$l[0], $l[1]], $shown['log']));
+    }
+
+    #[Test]
+    public function aRequestNeverSentToMaxCanBeSentThereOnceMaxCanTakeIt(): void
+    {
+        $this->adminClient();
+        $fake = $this->maxReady();
+        $em = self::getContainer()->get(EntityManagerInterface::class);
+        $service = self::getContainer()->get(RequestService::class);
+        $r = $this->request();
+        $r->delivery = RequestEntity::DELIVERY_SENT; // an old request: only Telegram had it, `channels` is empty
+        $em->flush();
+
+        self::assertSame(['max'], $service->present($r)['sendable']);
+
+        $this->setting('maxOn', false);
+        self::assertSame([], $service->present($r)['sendable'], 'MAX is off');
+
+        $this->setting('maxOn', true);
+        $this->setting('maxRoutes', ['other' => self::CHAT]);
+        self::assertSame([], $service->present($r)['sendable'], 'no chat for this form');
+
+        $this->setting('maxRoutes', ['*' => self::CHAT]);
+        $r->markChannel('max', 'failed', 'no access');
+        self::assertSame([], $service->present($r)['sendable'], 'a failed MAX has «send again» instead');
+        $r->markChannel('max', 'pending');
+        $em->flush();
+
+        $item = $this->api('POST', 'requests/' . $r->id . '/resend', ['channel' => 'max']);
+
+        self::assertCount(1, $fake->sent);
+        self::assertStringNotContainsString('доставляется повторно', $fake->sent[0]['text'], 'a first send does not say an earlier delivery failed');
+        self::assertSame('sent', $item['delivery']);
+        self::assertSame([], $item['sendable']);
+        self::assertContains(['channel' => 'max', 'state' => 'sent', 'error' => null], $item['channels']);
+
+        $this->api('POST', 'requests/' . $r->id . '/resend', ['channel' => 'max']); // a stale drawer still shows «Отправить в MAX»
+
+        self::assertCount(1, $fake->sent, 'a messenger that already has the request is not sent it twice');
     }
 
     #[Test]
@@ -816,6 +855,10 @@ final class MaxChannelTest extends WebTestCase
 
         $this->api('PATCH', 'settings', ['maxRoutes' => ['*' => '']]);
         $this->api('PATCH', 'settings', ['maxOn' => true], 200); // MAX is not connected here: no chat is asked for
+        $this->fake();
+        $this->api('PATCH', 'settings', ['maxRoutes' => ['*' => self::CHAT], 'maxOn' => true]);
+        $cleared = $this->api('PATCH', 'settings', ['maxRoutes' => ['*' => '']], 200); // a connected MAX lets the owner clear the chat too
+        self::assertSame([], \array_filter($cleared['maxRoutes']));
 
         $em = self::getContainer()->get(EntityManagerInterface::class);
         $em->createQuery('DELETE FROM Itk\Cms\Entity\User u WHERE u.email LIKE :e')->setParameter('e', 'test-max-%@example.com')->execute();
@@ -829,7 +872,7 @@ final class MaxChannelTest extends WebTestCase
     }
 
     #[Test]
-    public function aConnectedMaxNeedsAChatForTheOtherForms(): void
+    public function aConnectedMaxSavesWithoutAChatForTheOtherForms(): void
     {
         $this->adminClient();
         $this->fake();
@@ -837,9 +880,8 @@ final class MaxChannelTest extends WebTestCase
         $this->saved['maxOn'] = [false, null];
 
         self::assertTrue($this->api('GET', 'settings')['maxReady']);
-        $error = $this->api('PATCH', 'settings', ['maxOn' => true, 'maxRoutes' => []], 422);
-        self::assertStringStartsWith('Укажите чат для остальных форм', (string) ($error['error'] ?? $error['message'] ?? ''));
-        $this->api('PATCH', 'settings', ['maxOn' => true, 'maxRoutes' => ['*' => ' , , ']], 422);
+        $this->api('PATCH', 'settings', ['maxOn' => true, 'maxRoutes' => []]); // the health screen warns about forms without a chat; saving is not refused
+        self::assertSame([], self::getContainer()->get(SettingsService::class)->maxChatIdsFor('call'));
         $this->api('PATCH', 'settings', ['maxOn' => false, 'maxRoutes' => []]);
         $this->api('PATCH', 'settings', ['maxOn' => true, 'maxRoutes' => ['*' => self::CHAT, 'call' => '']]);
         self::assertSame([self::CHAT], self::getContainer()->get(SettingsService::class)->maxChatIdsFor('call'));

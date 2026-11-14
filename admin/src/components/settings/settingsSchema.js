@@ -108,16 +108,14 @@ export function settingsErrors(s, patch = null) {
     else if (f.t === 'repeater' && Array.isArray(v) && v.some((row) => (f.sub || []).some((sf) => sf.req && !String(row[sf.k] ?? '').trim()))) e[f.k] = t('settings.err_fill_all', { label: f.label })
   }))
   const channels = [
-    { routes: 'tgRoutes', toggle: 'tgOn', ready: s.tgReady !== false, fallback: s.tgFallback, validate: chatIdError, requiredError: 'settings.err_chat_required', formatError: 'settings.err_chat_ids' },
-    { routes: 'maxRoutes', toggle: 'maxOn', ready: !!s.maxReady, fallback: s.maxFallback, validate: maxChatIdsError, requiredError: 'settings.err_max_chat_required', formatError: 'settings.err_max_chat_ids' },
+    { routes: 'tgRoutes', toggle: 'tgOn', validate: chatIdError, formatError: 'settings.err_chat_ids' },
+    { routes: 'maxRoutes', toggle: 'maxOn', validate: maxChatIdsError, formatError: 'settings.err_max_chat_ids' },
   ]
+  // only a malformed id stops saving; an empty chat for the other forms is allowed (the table warns, the health screen says which forms get no messages)
   for (const channel of channels) {
     const routes = s[channel.routes] || {}
-    const on = s[channel.toggle] !== false
-    const checkFormat = patch ? channel.routes in patch : on
-    const checkRequired = on && channel.ready && (!patch || channel.routes in patch || channel.toggle in patch)
+    const checkFormat = patch ? channel.routes in patch : s[channel.toggle] !== false
     if (checkFormat && Object.values(routes).some((value) => channel.validate(value))) e[channel.routes] = t(channel.formatError)
-    else if (checkRequired && needsFallbackChat(routes, schema.forms, channel.fallback)) e[channel.routes] = t(channel.requiredError)
   }
   const mails = s.mailRoutes || {}
   if ((!patch || 'mailRoutes' in patch) && Object.values(mails).some((v) => emailsError(v))) e.mailRoutes = t('settings.err_mails')

@@ -11,6 +11,7 @@ use Itk\Cms\Extension\Registry;
 use Itk\Cms\Notification\Notification;
 use Itk\Cms\Security\UserManager;
 use Itk\Cms\Tests\Core\Fixture\BrokenHealthCheck;
+use Itk\Cms\Tests\Core\Fixture\OffHealthCheck;
 use Itk\Cms\Tests\Core\Fixture\WarnHealthCheck;
 use PHPUnit\Framework\Attributes\Test;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
@@ -124,6 +125,18 @@ final class HealthApiTest extends WebTestCase
         self::assertStringNotContainsString('AAH-secret_token', $checks['Test сломанная проверка']['message']);
         self::assertSame('Такой проверки нет в коде сайта', $checks['App\\Nothing\\Missing']['message']);
         self::assertSame('fail', $r['status'], 'the worst check decides');
+    }
+
+    #[Test]
+    public function aCheckThatIsOffIsShownAsOffAndDoesNotChangeTheOverallStatus(): void
+    {
+        $before = $this->api('GET', 'health')['status'];
+        self::getContainer()->get(Registry::class)->healthChecks(OffHealthCheck::class);
+
+        $r = $this->api('GET', 'health');
+
+        self::assertSame(['off', 'Не подключён'], [\array_column($r['checks'], 'status', 'name')['Test выключенный модуль'], \array_column($r['checks'], 'message', 'name')['Test выключенный модуль']]);
+        self::assertSame($before, $r['status'], 'an off module is not a problem');
     }
 
     #[Test]

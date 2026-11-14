@@ -7,7 +7,6 @@
 'content.query_bad_field_or_language': 'Өріс немесе тіл дұрыс емес'
 'content.query_bad_filter_value': 'Сүзгі мәні дұрыс емес'
 'content.settings_required': 'Міндетті өрістерді толтырыңыз'
-'content.settings_chat_for_rest': 'Қалған пішіндер үшін чатты көрсетіңіз: өтінімдер сонда келеді'
 'content.settings_chat_id_hint': 'Чат ID — -1001234567890 сияқты сан немесе @my_channel сияқты арна атауы'
 'content.settings_chat_ids_check': 'Чат ID-ларын тексеріңіз'
 'content.settings_max_chat_id_hint': 'MAX чатының ID-ы бүтін сан болуы керек, мысалы -72345678901234'

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { resendOutcome } from './requestMeta.js'
+import { resendOutcome, sendableOf } from './requestMeta.js'
 
 const both = {
   delivery: 'failed',
@@ -25,5 +25,17 @@ describe('resendOutcome', () => {
     expect(resendOutcome(both)).toEqual({ state: 'failed', error: 'MAX: refused' })
     expect(resendOutcome({ delivery: 'sent' }).state).toBe('sent')
     expect(resendOutcome({ delivery: 'pending' }).state).toBe('pending')
+  })
+})
+
+describe('sendableOf', () => {
+  it('lists the messengers the server says can take the request', () => {
+    expect(sendableOf({ sendable: ['max'] })).toEqual(['max'])
+    expect(sendableOf({ sendable: ['telegram', 'max'], channels: [] })).toEqual(['telegram', 'max'])
+  })
+
+  it('is empty for a server that does not send it', () => {
+    expect(sendableOf({})).toEqual([])
+    expect(sendableOf({ sendable: null })).toEqual([])
   })
 })

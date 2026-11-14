@@ -45,7 +45,7 @@ final class YandexWebmasterHealthCheckTest extends KernelTestCase
     {
         $result = $this->check();
 
-        self::assertSame([HealthResult::OK, 'Не подключён'], [$result->status, $result->message]);
+        self::assertSame([HealthResult::OFF, 'Не подключён'], [$result->status, $result->message]);
         self::assertSame('Яндекс Вебмастер', (new YandexWebmasterHealthCheck($this->webmasterService()))->name());
     }
 
@@ -54,7 +54,7 @@ final class YandexWebmasterHealthCheckTest extends KernelTestCase
     {
         $this->siteAt('localhost:8000');
 
-        self::assertSame([HealthResult::OK, 'Не подключён'], [$this->check()->status, $this->check()->message]);
+        self::assertSame([HealthResult::OFF, 'Не подключён'], [$this->check()->status, $this->check()->message]);
     }
 
     #[Test]

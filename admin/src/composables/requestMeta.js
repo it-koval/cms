@@ -16,6 +16,8 @@ export const CHANNEL_NAMES = { telegram: 'Telegram', max: 'MAX' }
 export const channelName = (c) => CHANNEL_NAMES[c] || c
 /** The delivery state of every channel of a request: [{ channel, state: 'pending'|'sent'|'failed', error }] ([] for a server that does not send `channels`). */
 export const channelsOf = (r) => (Array.isArray(r.channels) ? r.channels : [])
+/** The messengers a request was never sent to and can be sent to now (the server decides: `sendable`). [] for a server that does not send it. */
+export const sendableOf = (r) => (Array.isArray(r.sendable) ? r.sendable : [])
 /** The chip status of a channel state: sent -> delivered. */
 export const chipOf = (state) => (state === 'sent' ? 'delivered' : state === 'failed' ? 'failed' : 'pending')
 

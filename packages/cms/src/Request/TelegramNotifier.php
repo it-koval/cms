@@ -67,6 +67,20 @@ final class TelegramNotifier implements ChannelNotifier
         return $this->enabled && $this->settings->isTelegramOn() && $this->isConnected();
     }
 
+    /** Can a request of this form be sent to Telegram right now: Telegram is active and has a chat for the form (its own or the fallback)? */
+    public function reaches(string $form): bool
+    {
+        return $this->isActive() && [] !== $this->chatsFor($form);
+    }
+
+    /** @return list<string> */
+    private function chatsFor(string $form): array
+    {
+        $chats = $this->settings->chatIdsFor($form);
+
+        return [] !== $chats ? $chats : $this->settings->fallbackChatIds();
+    }
+
     /** Delivers the request and sets its delivery state. Returns true when it needs no retry. */
     public function notify(Request $r, bool $resend = false): bool
     {
@@ -76,10 +90,7 @@ final class TelegramNotifier implements ChannelNotifier
     public function attempt(Request $r, bool $resend = false): ChannelOutcome
     {
         $chatter = $this->enabled && $this->settings->isTelegramOn() ? $this->connection->transport() : null;
-        $chats = null === $chatter ? [] : $this->settings->chatIdsFor($r->form);
-        if (null !== $chatter && [] === $chats) {
-            $chats = $this->settings->fallbackChatIds();
-        }
+        $chats = null === $chatter ? [] : $this->chatsFor($r->form);
         if (null === $chatter || [] === $chats) { // off, not connected, or no chat to send to (the health screen says which): not a failure
             return ChannelOutcome::pending();
         }

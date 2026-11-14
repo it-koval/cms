@@ -53,7 +53,7 @@ final class CriticalCssHealthCheck implements HealthCheckInterface
     public function check(): HealthResult
     {
         if (!$this->stylesheets->enabled) {
-            return HealthResult::ok(I18n::t('ops.health_critical_css_off'));
+            return HealthResult::off(I18n::t('ops.health_critical_css_off'));
         }
         $missing = $this->stylesheets->missing();
         if ([] !== $missing) {

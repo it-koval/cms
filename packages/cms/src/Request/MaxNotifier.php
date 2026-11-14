@@ -59,6 +59,23 @@ final class MaxNotifier implements ChannelNotifier
         return $this->enabled && $this->settings->isMaxOn() && $this->isConnected();
     }
 
+    /** Can a request of this form be sent to MAX right now: MAX is active and has a chat for the form (its own or the fallback)? */
+    public function reaches(string $form): bool
+    {
+        return [] !== $this->chatsFor($form);
+    }
+
+    /** @return list<string> */
+    private function chatsFor(string $form): array
+    {
+        if (!$this->isActive()) {
+            return [];
+        }
+        $chats = $this->settings->maxChatIdsFor($form);
+
+        return [] !== $chats ? $chats : $this->settings->maxFallbackChatIds();
+    }
+
     /** Delivers the request to MAX and sets its MAX delivery state. Returns true when it needs no retry. */
     public function notify(Request $r, bool $resend = false): bool
     {
@@ -67,12 +84,8 @@ final class MaxNotifier implements ChannelNotifier
 
     public function attempt(Request $r, bool $resend = false): ChannelOutcome
     {
-        $active = $this->isActive();
-        $chats = $active ? $this->settings->maxChatIdsFor($r->form) : [];
-        if ($active && [] === $chats) {
-            $chats = $this->settings->maxFallbackChatIds();
-        }
-        if (!$active || [] === $chats) { // off, not connected, or no chat to send to (the health screen says which): not a failure
+        $chats = $this->chatsFor($r->form);
+        if ([] === $chats) { // off, not connected, or no chat to send to (the health screen says which): not a failure
             return ChannelOutcome::pending();
         }
 

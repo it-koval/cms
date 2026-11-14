@@ -32,11 +32,11 @@ final class IndexNowHealthCheck implements HealthCheckInterface
     {
         switch ($this->site->state()) {
             case IndexNowState::Off:
-                return HealthResult::ok(I18n::t('ops.health_indexnow_off'));
+                return HealthResult::off(I18n::t('ops.health_indexnow_off'));
             case IndexNowState::NoAddress:
                 return HealthResult::warn(I18n::t('ops.health_indexnow_no_address'));
             case IndexNowState::NotPublic:
-                return HealthResult::ok(I18n::t('ops.health_indexnow_not_public'));
+                return HealthResult::off(I18n::t('ops.health_indexnow_not_public'));
             case IndexNowState::NoHttpClient:
                 return HealthResult::warn(I18n::t('ops.health_indexnow_no_client'));
         }

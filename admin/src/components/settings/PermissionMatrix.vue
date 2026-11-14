@@ -1,5 +1,5 @@
 <script setup>
-// The permission matrix of a role: one row per area of the site (generated: utils/permissions.js permissionAreas), columns Смотреть / Править / Публиковать / Удалять.
+// The permission matrix of a role: one row per area of the site (generated: utils/permissions.js permissionAreas), columns Публиковать / Смотреть / Править / Удалять (MATRIX_COLUMNS).
 // Dependencies: «Править» needs «Смотреть», «Публиковать» and «Удалять» need «Править» (ticking pulls the needed boxes in, clearing one takes the dependent ones away).
 // Pages have a second line: «Какие страницы» = every template or only some (a role of authors who write only blog articles).
 // readonly = a built-in role: ticks are shown as marks, nothing can be changed.
@@ -7,7 +7,7 @@
 // a right the role already holds (`keep` = its saved rights) can still be cleared and ticked again.
 import { computed } from 'vue'
 import Icon from '@/components/ui/Icon.vue'
-import { ACTIONS, GROUPS, toggleAction } from '@/utils/permissions.js'
+import { ACTIONS, GROUPS, MATRIX_COLUMNS, toggleAction } from '@/utils/permissions.js'
 import { templatesFor } from '@/schema/templates.js'
 import { app } from '@/stores/app.js'
 import { t } from '@/i18n/index.js'
@@ -27,7 +27,7 @@ const options = computed(() => templatesFor().map((tpl) => ({ key: tpl.key, name
 const nameOf = (k) => (options.value.find((o) => o.key === k) || {}).name || k
 const groups = computed(() => GROUPS.map((g) => ({ ...g, areas: props.areas.filter((a) => a.group === g.key) })).filter((g) => g.areas.length))
 const has = (area, action) => (props.perms[area.key] || []).includes(action)
-const columns = ACTIONS
+const columns = MATRIX_COLUMNS
 const limit = computed(() => (app.user ? app.user.perms || {} : null))
 const locked = (area, action) => !!limit.value && !(limit.value[area.key] || []).includes(action) && !(props.keep[area.key] || []).includes(action)
 

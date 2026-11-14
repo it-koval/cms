@@ -68,7 +68,7 @@ final class CriticalCssHealthCheckTest extends KernelTestCase
 
         $result = $this->check('/no/such/node');
 
-        self::assertSame(HealthResult::OK, $result->status);
+        self::assertSame(HealthResult::OFF, $result->status);
         self::assertStringContainsString('Выключен', $result->message);
     }
 

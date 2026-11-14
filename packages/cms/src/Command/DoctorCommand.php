@@ -32,18 +32,19 @@ final class DoctorCommand extends Command
     {
         $io = new SymfonyStyle($input, $output);
         $group = null;
-        $marks = [HealthResult::OK => '<info>ok</info>   ', HealthResult::WARN => '<comment>' . I18n::t('ops.doctor_mark_warn') . '</comment>', HealthResult::FAIL => '<error> ' . I18n::t('ops.doctor_mark_fail') . ' </error>'];
-        $count = [HealthResult::OK => 0, HealthResult::WARN => 0, HealthResult::FAIL => 0];
+        $marks = [HealthResult::OK => '<info>ok</info>   ', HealthResult::OFF => '<fg=gray>' . I18n::t('ops.doctor_mark_off') . '</>', HealthResult::WARN => '<comment>' . I18n::t('ops.doctor_mark_warn') . '</comment>', HealthResult::FAIL => '<error> ' . I18n::t('ops.doctor_mark_fail') . ' </error>'];
+        $count = [HealthResult::OK => 0, HealthResult::OFF => 0, HealthResult::WARN => 0, HealthResult::FAIL => 0];
         foreach ($this->doctor->run() as $line) {
             if ($group !== $line['group']) {
                 $group = $line['group'];
                 $io->section($group);
             }
-            ++$count[$line['status']];
-            $io->writeln(\sprintf(' %s %s: %s', $marks[$line['status']], $line['name'], $line['message']));
+            $status = \array_key_exists($line['status'], $marks) ? $line['status'] : HealthResult::OK; // an unknown status must not stop the report
+            ++$count[$status];
+            $io->writeln(\sprintf(' %s %s: %s', $marks[$status], $line['name'], $line['message']));
         }
         $io->newLine();
-        $io->writeln(I18n::t('ops.doctor_total', ['errors' => $count[HealthResult::FAIL], 'warnings' => $count[HealthResult::WARN], 'ok' => $count[HealthResult::OK]]));
+        $io->writeln(I18n::t('ops.doctor_total', ['errors' => $count[HealthResult::FAIL], 'warnings' => $count[HealthResult::WARN], 'ok' => $count[HealthResult::OK], 'off' => $count[HealthResult::OFF]]));
 
         return $input->getOption('ci') && $count[HealthResult::FAIL] > 0 ? Command::FAILURE : Command::SUCCESS;
     }

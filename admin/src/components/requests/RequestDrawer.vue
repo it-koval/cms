@@ -19,7 +19,7 @@ import { useToast } from '@/components/ui/useToast.js'
 import { fmtDT, fmtTime } from '@/utils/format.js'
 import { isMulti } from '@/utils/locales.js'
 import LangTag from '@/components/ui/LangTag.vue'
-import { WORK_STATUSES, channelName, channelsOf, chipOf, commentOf, deliveryFailed, resendOutcome, workLabel, workOf } from '@/composables/requestMeta.js'
+import { WORK_STATUSES, channelName, channelsOf, chipOf, commentOf, deliveryFailed, resendOutcome, sendableOf, workLabel, workOf } from '@/composables/requestMeta.js'
 import { t } from '@/i18n/index.js'
 
 const props = defineProps({ requestId: { type: Number, default: null } })
@@ -39,6 +39,7 @@ const open = computed(() => props.requestId != null)
 const work = computed(() => (req.value ? workOf(req.value) : 'new'))
 const failed = computed(() => !!req.value && deliveryFailed(req.value))
 const channels = computed(() => (req.value ? channelsOf(req.value) : []))
+const sendable = computed(() => (req.value ? sendableOf(req.value) : []))
 const form = computed(() => req.value && byKey(schema.forms, req.value.form))
 
 async function load(id) {
@@ -168,6 +169,9 @@ onBeforeRouteUpdate((to, from) => to.params.id === from.params.id || mayLeave())
             </div>
           </li>
         </ul>
+        <div v-if="sendable.length && canEdit" class="rd-send">
+          <button v-for="c in sendable" :key="c" type="button" :class="['btn', 'sm', { loading: sending === c }]" :disabled="busy || !!sending" @click="resend(c)"><Icon name="send" size="s14" />{{ t('ui.rd_send_channel', { channel: channelName(c) }) }}</button>
+        </div>
         <ul class="log">
           <li v-for="(l, i) in req.log" :key="i" :class="{ f: l[0] === 'fail' }"><span class="d" /><span>{{ l[1] }}<small class="num">{{ fmtTime(l[2]) }}</small></span></li>
         </ul>
@@ -197,6 +201,7 @@ onBeforeRouteUpdate((to, from) => to.params.id === from.params.id || mayLeave())
 .rd-h{font-weight:620;display:flex;align-items:center;gap:10px}
 .rd-hint{font-size:var(--t-sm);line-height:1.4}
 .rd-resend{align-self:flex-start}
+.rd-send{display:flex;flex-wrap:wrap;gap:8px}
 .rd-ch{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
 .rd-ch-h{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .rd-ch-b{margin-left:auto}

@@ -41,7 +41,7 @@ final class AnalyticsHealthCheck implements HealthCheckInterface
             return HealthResult::warn(I18n::t('ops.health_analytics_bad', ['fields' => \implode(', ', \array_map(static fn (string $key): string => I18n::t(self::LABELS[$key]), $config->problems))]));
         }
         if ($config->isEmpty()) {
-            return HealthResult::ok(I18n::t('ops.health_analytics_none'));
+            return HealthResult::off(I18n::t('ops.health_analytics_none'));
         }
         $parts = [];
         if (null !== $config->metrikaId) {

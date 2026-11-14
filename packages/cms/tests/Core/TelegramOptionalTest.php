@@ -226,7 +226,7 @@ final class TelegramOptionalTest extends WebTestCase
         $health = (array) \json_decode((string) $client->getResponse()->getContent(), true);
         $lines = \array_column($health['checks'], 'message', 'name');
         self::assertSame('Telegram не подключён', $lines['Telegram'] ?? null);
-        self::assertSame('ok', \array_column($health['checks'], 'status', 'name')['Telegram'] ?? null, 'a calm line, not a warning');
+        self::assertSame('off', \array_column($health['checks'], 'status', 'name')['Telegram'] ?? null, 'yellow «not connected», not a warning');
     }
 
     #[Test]
@@ -242,13 +242,13 @@ final class TelegramOptionalTest extends WebTestCase
     }
 
     #[Test]
-    public function aConnectedTelegramStillRequiresAFallbackRoute(): void
+    public function aConnectedTelegramSavesAnEmptyChatForTheOtherForms(): void
     {
         self::bootKernel(['framework' => self::NOTIFIER_TELEGRAM]);
-        $this->setting('tgRoutes', []);
+        $this->setting('tgRoutes', ['*' => '-1001234567890']);
         $this->setting('tgOn', true);
-        $this->expectException(ContentException::class);
-        self::getContainer()->get(SettingsService::class)->update(['tgOn' => true, 'tgRoutes' => []]);
+        $saved = self::getContainer()->get(SettingsService::class)->update(['tgOn' => true, 'tgRoutes' => ['*' => '']]);
+        self::assertSame([], \array_filter($saved['tgRoutes']), 'the owner may clear the chat: the health screen warns about forms that get no message');
     }
 
     #[Test]
@@ -342,7 +342,7 @@ final class TelegramOptionalTest extends WebTestCase
 
         $check = new TelegramHealthCheck($telegram, self::getContainer()->get(SettingsService::class), self::getContainer()->get(Schema::class));
         $this->setting('tgRoutes', []);
-        self::assertSame(['ok', 'Telegram не подключён'], [$check->check()->status, $check->check()->message], 'a calm line even without a chat');
+        self::assertSame(['off', 'Telegram не подключён'], [$check->check()->status, $check->check()->message], 'a calm line even without a chat');
     }
 
     #[Test]
@@ -442,7 +442,7 @@ final class TelegramOptionalTest extends WebTestCase
         self::assertSame(['ok', 'Telegram подключён, токен с сервера'], [$check->check()->status, $check->check()->message]);
 
         $this->setting('tgOn', false);
-        self::assertSame('ok', $check->check()->status);
+        self::assertSame('off', $check->check()->status);
     }
 
     #[Test]
@@ -462,7 +462,7 @@ final class TelegramOptionalTest extends WebTestCase
         );
         $check = new TelegramHealthCheck($telegram, self::getContainer()->get(SettingsService::class), self::getContainer()->get(Schema::class));
 
-        self::assertSame('ok', $check->check()->status, 'no chat is needed when nothing is sent');
+        self::assertSame('off', $check->check()->status, 'no chat is needed when nothing is sent');
         self::assertStringContainsString('itk_cms.telegram.enabled', $check->check()->message);
     }
 }
