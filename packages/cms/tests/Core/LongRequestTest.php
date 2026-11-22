@@ -8,7 +8,6 @@ use Doctrine\DBAL\Connection;
 use Doctrine\ORM\EntityManagerInterface;
 use Itk\Cms\Entity\Request;
 use Itk\Cms\Mail\MailComposer;
-use Itk\Cms\Request\RequestService;
 use Itk\Cms\Security\UserManager;
 use Itk\Cms\Tests\App\TestKernel;
 use Itk\Cms\Tests\Core\Fixture\LongText;
@@ -217,6 +216,25 @@ final class LongRequestTest extends WebTestCase
     }
 
     #[Test]
+    public function thePatternAcceptsAValidValueThatIsLongerThanTheStackOfTheJit(): void
+    {
+        $text = \str_repeat('ж', 6000);
+
+        self::assertSame(200, $this->post('long_open', ['safe' => $text])['status']);
+        self::assertSame($text, $this->stored('long_open')['safe']);
+        self::assertSame(422, $this->post('long_open', ['safe' => \str_repeat('ж', 5999) . '>'])['status']);
+    }
+
+    #[Test]
+    public function theLargestPossibleLimitIsNotAnOverflow(): void
+    {
+        $text = LongText::order(8000);
+
+        self::assertSame(200, $this->post('long_open', ['items' => $text])['status']);
+        self::assertSame($text, $this->stored('long_open')['items']);
+    }
+
+    #[Test]
     public function theHoneypotStillPretendsSuccessAndSavesNothing(): void
     {
         $out = $this->post('long_order', self::order(['items' => \str_repeat('б', 100000), 'itk_hp' => 'robot']));
@@ -238,6 +256,20 @@ final class LongRequestTest extends WebTestCase
         return $sent;
     }
 
+    private function signIn(): void
+    {
+        $admin = self::getContainer()->get(UserManager::class)->create('test-long-admin@example.com', 'Тест', 'admin', 'password-for-test');
+        $this->client->loginUser($admin, 'itk_admin');
+    }
+
+    private function read(string $path): array
+    {
+        $this->client->request('GET', '/admin/api/' . $path);
+        self::assertResponseIsSuccessful();
+
+        return \json_decode((string) $this->client->getResponse()->getContent(), true);
+    }
+
     private function last(): Request
     {
         return self::getContainer()->get(EntityManagerInterface::class)->getRepository(Request::class)->findOneBy(['form' => 'long_card'], ['id' => 'DESC']);
@@ -248,12 +280,8 @@ final class LongRequestTest extends WebTestCase
     {
         $sent = $this->longCard();
         $id = $this->last()->id;
-        $admin = self::getContainer()->get(UserManager::class)->create('test-long-admin@example.com', 'Тест', 'admin', 'password-for-test');
-        $this->client->loginUser($admin, 'itk_admin');
-        $this->client->request('GET', '/admin/api/requests/' . $id);
-
-        self::assertResponseIsSuccessful();
-        $card = \json_decode((string) $this->client->getResponse()->getContent(), true);
+        $this->signIn();
+        $card = $this->read('requests/' . $id);
         self::assertSame($sent['items'], $card['data']['items']);
         self::assertSame($sent['message'], $card['note']);
         self::assertSame($sent['name'], $card['name']);
@@ -267,8 +295,41 @@ final class LongRequestTest extends WebTestCase
         $r = new Request('long_card');
         $r->name = 'Исправленное имя';
         $r->data = ['name' => 'Другое имя'];
+        $em = self::getContainer()->get(EntityManagerInterface::class);
+        $em->persist($r);
+        $em->flush();
+        $this->signIn();
 
-        self::assertSame('Исправленное имя', self::getContainer()->get(RequestService::class)->present($r)['name']);
+        self::assertSame('Исправленное имя', $this->read('requests/' . $r->id)['name']);
+    }
+
+    #[Test]
+    public function theCardStaysWholeAfterTheStatusIsChanged(): void
+    {
+        $sent = $this->longCard();
+        $id = $this->last()->id;
+        $this->signIn();
+        $this->client->request('GET', '/admin');
+        \preg_match('/"csrf":"([a-f0-9]+)"/', (string) $this->client->getResponse()->getContent(), $m);
+        $this->client->jsonRequest('PATCH', '/admin/api/requests/' . $id, ['work' => 'progress'], ['HTTP_X_CSRF_TOKEN' => $m[1]]);
+
+        self::assertResponseIsSuccessful();
+        self::assertSame($sent['name'], \json_decode((string) $this->client->getResponse()->getContent(), true)['name']);
+    }
+
+    #[Test]
+    public function theListAndTheDashboardKeepTheShortColumns(): void
+    {
+        $this->longCard();
+        $id = $this->last()->id;
+        $this->signIn();
+
+        foreach ([$this->read('requests'), $this->read('dashboard')['newRequests']] as $rows) {
+            $row = \array_values(\array_filter($rows, static fn (array $r): bool => $r['id'] === $id))[0];
+            self::assertSame(32, \mb_strlen($row['phone']));
+            self::assertSame(120, \mb_strlen($row['name']));
+            self::assertSame(120, \mb_strlen($row['city']));
+        }
     }
 
     #[Test]

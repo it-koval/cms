@@ -32,5 +32,12 @@ return static function (SchemaBuilder $s) use ($site): void {
     $s->form('long_text', 'Длинный текст')->fields(Field::textarea('items', 'Состав')->max(20000))->telegram('{items}');
     $s->form('long_bold', 'Текст и выделение')->fields(Field::textarea('head', 'Начало'), Field::textarea('items', 'Состав'))->telegram("{head}\n<b>{items}</b>");
     $s->form('long_marked', 'Длинное выделение')->fields(Field::textarea('items', 'Состав'))->telegram("<b>Заказ</b>\n<a href=\"{url}\"><i>{items}</i></a>");
+    $s->form('long_title', 'Заголовок и длинный список')->fields(Field::textarea('items', 'Состав'))->telegram("Заказ №{id}\n<i>{items}</i>");
+    $s->form('long_quoted', 'Знак больше в атрибуте')->fields(Field::textarea('items', 'Состав'))->telegram('<a href="https://example.com/?x>y">{items}</a>');
+    $s->form('long_shut', 'Короткий закрывающий тег')->fields(Field::textarea('items', 'Состав'))->telegram("<i>{items}</>\nКонец");
+    $s->form('long_open', 'Без практического предела')->fields(
+        Field::textarea('items', 'Состав')->max(\PHP_INT_MAX),
+        Field::textarea('safe', 'Без скобок')->max(6000)->pattern('/^([^<>]|\n)*$/', 'Без скобок'),
+    );
     $s->form('long_plain', 'Без шаблона')->fields(Field::textarea('items', 'Состав')->max(20000));
 };

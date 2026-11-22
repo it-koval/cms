@@ -52,8 +52,8 @@ final class LongRequestDeliveryTest extends WebTestCase
         $c = self::getContainer();
         $config = (new MaxApiConfig('test-token-of-max'))->setHttpClient($api)->setRetryAttempts([]);
         $sender = new MaxApiSender(static fn (): MaxApiClient => new MaxApiClient($config), static fn (): MaxApiConfig => $config, new NullLogger());
-        $this->telegram = new TelegramNotifier($c->get(Schema::class), $c->get(SettingsService::class), new NullLogger(), static fn (): TransportInterface => $api, $c->get('event_dispatcher'), true);
-        $this->max = new MaxNotifier($c->get(Schema::class), $c->get(SettingsService::class), new NullLogger(), $sender, $c->get('event_dispatcher'), true);
+        $this->telegram = new TelegramNotifier($c->get(Schema::class), $c->get(SettingsService::class), new NullLogger(), static fn (): TransportInterface => $api, $c->get('event_dispatcher'), true, $api->sleep(...));
+        $this->max = new MaxNotifier($c->get(Schema::class), $c->get(SettingsService::class), new NullLogger(), $sender, $c->get('event_dispatcher'), true, $api->sleep(...));
     }
 
     protected function tearDown(): void
@@ -167,6 +167,117 @@ final class LongRequestDeliveryTest extends WebTestCase
         self::assertSame([$this->telegram->buildText($r)], $this->sent('telegram', $r));
     }
 
+    public static function whatTelegramTrimsOrDrops(): iterable
+    {
+        $full = \str_repeat('ж', 4096);
+        yield 'a line break at the end' => [$full . "\n"];
+        yield 'a line break at the start' => ["\n" . $full];
+        yield 'two spaces at the end' => [$full . '  '];
+        yield 'a line separator' => [\str_repeat('ж', 2000) . "\u{2028}" . \str_repeat('ж', 2096)];
+        yield 'combining rings' => [\str_repeat("а\u{30A}", 30) . \str_repeat('ж', 4066)];
+    }
+
+    #[Test]
+    #[DataProvider('whatTelegramTrimsOrDrops')]
+    public function whatTelegramTrimsOrDropsDoesNotSplitAText(string $text): void
+    {
+        $r = self::request(['items' => $text]);
+
+        self::assertSame([$this->telegram->buildText($r)], $this->sent('telegram', $r));
+    }
+
+    public static function charactersThatArePrinted(): iterable
+    {
+        foreach (['private use' => "\u{E000}", 'a glyph of Symbol' => "\u{F0B7}", 'the last plane' => "\u{10FFFD}", 'newer than PCRE' => "\u{50000}"] as $name => $char) {
+            foreach (['telegram', 'max'] as $channel) {
+                yield $channel . ' ' . $name . ', a run' => [$channel, 'A' . \str_repeat($char, 9000) . 'Z'];
+                yield $channel . ' ' . $name . ', the last line' => [$channel, LongText::order('max' === $channel ? 3999 : 4095) . "\n" . $char . $char];
+            }
+        }
+    }
+
+    #[Test]
+    #[DataProvider('charactersThatArePrinted')]
+    public function aPartOfPrivateOrUnknownCharactersIsNotDropped(string $channel, string $text): void
+    {
+        self::assertSame($text, \implode('', $this->sent($channel, self::request(['items' => $text]))));
+    }
+
+    public static function runsTelegramTakesForNothing(): iterable
+    {
+        yield 'Braille blank' => ["\u{2800}"];
+        yield 'object replacement' => ["\u{FFFC}"];
+        yield 'zero width space' => ["\u{200B}"];
+        yield 'deleted ring' => ["\u{30A}"];
+        yield 'tag character' => ["\u{E0020}"];
+    }
+
+    #[Test]
+    #[DataProvider('runsTelegramTakesForNothing')]
+    public function aRunTelegramTakesForNothingDoesNotHoldBackTheTotal(string $char): void
+    {
+        $parts = $this->sent('telegram', self::request(['items' => "Начало\n" . \str_repeat($char, 9000) . "\n" . LongText::TOTAL]));
+
+        self::assertStringContainsString('Начало', $parts[0]);
+        self::assertStringEndsWith(LongText::TOTAL, $parts[\count($parts) - 1]);
+    }
+
+    #[Test]
+    public function telegramGetsNoMessageOverItsLimitInBytes(): void
+    {
+        $text = \str_repeat('"', 4000) . \str_repeat("\r", 9000) . "\n" . LongText::order(300);
+        $r = self::request(['items' => $text]);
+
+        self::assertSame($this->telegram->buildText($r), \implode('', $this->sent('telegram', $r)));
+    }
+
+    #[Test]
+    public function aLastPartOfASingleZeroIsStillAMessage(): void
+    {
+        $parts = $this->sent('telegram', self::request(['items' => \str_repeat('7', 4096) . '0']));
+
+        self::assertSame(\str_repeat('7', 4096) . '0', \rtrim(\implode('', $parts)));
+    }
+
+    #[Test]
+    #[DataProvider('channels')]
+    public function aTitleIsNotAMessageOfItsOwnWhenTheElementUnderItIsCutAnyway(string $channel): void
+    {
+        $parts = $this->sent($channel, self::request(['items' => LongText::order(6000)], 'long_title'));
+
+        self::assertCount(2, $parts);
+        self::assertGreaterThan(2000, \mb_strlen($parts[0]));
+        self::assertStringEndsWith(LongText::TOTAL . '</i>', $parts[1]);
+    }
+
+    public static function unusualTags(): iterable
+    {
+        foreach (['telegram', 'max'] as $channel) {
+            yield $channel . ' > inside an attribute' => [$channel, 'long_quoted'];
+        }
+        yield 'telegram short end tag' => ['telegram', 'long_shut'];
+    }
+
+    #[Test]
+    #[DataProvider('unusualTags')]
+    public function anUnusualTagOfATemplateIsNotBroken(string $channel, string $form): void
+    {
+        $r = self::request(['items' => LongText::order(9000)], $form);
+        $parts = $this->sent($channel, $r);
+
+        self::assertSame(MessengerApi::plain($this->notifier($channel)->buildText($r)), \implode('', \array_map(MessengerApi::plain(...), $parts)));
+    }
+
+    #[Test]
+    public function moreMessagesThanAGroupTakesInAMinuteStillArrive(): void
+    {
+        $text = LongText::order(90000);
+        $parts = $this->sent('telegram', self::request(['items' => $text]));
+
+        self::assertGreaterThan(20, \count($parts));
+        self::assertSame($text, \implode('', $parts));
+    }
+
     public static function longLines(): iterable
     {
         foreach (['Cyrillic' => 'ж', 'emoji' => '😀', 'ampersand' => '&', 'mixed' => "я😀&<\"'é"] as $name => $unit) {
@@ -249,7 +360,7 @@ final class LongRequestDeliveryTest extends WebTestCase
     #[DataProvider('channels')]
     public function anyMixOfCharactersIsDeliveredWhole(string $channel): void
     {
-        $units = ['я', 'a', '😀', 'é', '&', '<', '>', '"', "'", '&amp;', '&#39;', '</b>', ' ', "\n", "\r\n", "\t"];
+        $units = ['я', 'a', "\u{E000}", "e\u{30A}", "\u{2028}", '😀', 'é', '&', '<', '>', '"', "'", '&amp;', '&#39;', '</b>', ' ', "\n", "\r\n", "\t"];
         \mt_srand(20261122);
         for ($case = 0; $case < 80; ++$case) {
             $text = '';
