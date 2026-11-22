@@ -41,6 +41,7 @@ final class TelegramNotifier implements ChannelNotifier
         private readonly EventDispatcherInterface $events,
         #[Autowire(param: 'itk_cms.telegram.enabled')]
         private readonly bool $enabled,
+        private readonly ?\Closure $sleep = null,
     ) {
         $this->connection = $chatter instanceof TelegramConnection ? $chatter : new TelegramConnection($chatter, $logger);
     }
@@ -88,6 +89,7 @@ final class TelegramNotifier implements ChannelNotifier
         $errors = [];
         foreach ($chats as $chat) {
             foreach ($parts->texts as $i => $text) {
+                $parts->pauseBefore($i, $this->sleep);
                 try {
                     $chatter->send((new ChatMessage($text))->options(
                         (new TelegramOptions())->chatId($chat)->parseMode(TelegramOptions::PARSE_MODE_HTML)->disableWebPagePreview(true),

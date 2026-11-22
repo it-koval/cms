@@ -34,6 +34,7 @@ final class MaxNotifier implements ChannelNotifier
         private readonly EventDispatcherInterface $events,
         #[Autowire(param: 'itk_cms.max.enabled')]
         private readonly bool $enabled,
+        private readonly ?\Closure $sleep = null,
     ) {
     }
 
@@ -80,6 +81,7 @@ final class MaxNotifier implements ChannelNotifier
         $errors = [];
         foreach ($chats as $chat) {
             foreach ($parts->texts as $i => $text) {
+                $parts->pauseBefore($i, $this->sleep);
                 try {
                     $this->sender->send($chat, $text);
                 } catch (\Throwable $e) {
