@@ -20,6 +20,7 @@ use Symfony\Component\Messenger\MessageBusInterface;
 /** Requests (заявки): accepting them from the site forms, the staff's work on them, delivery to the messengers (Telegram, MAX). */
 final class RequestService
 {
+    /** A field without max() keeps this many characters and one more, the rest is dropped. */
     public const MAX_LENGTH = 1000;
 
     public function __construct(
@@ -281,9 +282,9 @@ final class RequestService
             'locale' => $r->locale,
             'form' => $r->form,
             'place' => $form?->formTitle() ?? $r->form,
-            'phone' => (string) $r->phone,
-            'name' => (string) $r->name,
-            'city' => (string) $r->city,
+            'phone' => self::whole($r->phone, $r->data['phone'] ?? null),
+            'name' => self::whole($r->name, $r->data['name'] ?? null),
+            'city' => self::whole($r->city, $r->data['city'] ?? null),
             'note' => $note,
             'data' => $r->data,
             'st' => Request::DELIVERY_FAILED === $r->delivery ? 'failed' : 'delivered',
@@ -295,6 +296,12 @@ final class RequestService
             'sourceUrl' => $r->sourceUrl,
             'log' => $log,
         ];
+    }
+
+    /** A column holds the start of a long value (phone 32, name and city 120 characters), `data` holds all of it. */
+    private static function whole(?string $column, mixed $sent): string
+    {
+        return null !== $column && \is_string($sent) && \str_starts_with($sent, $column) ? $sent : (string) $column;
     }
 
     private function work(string $w): string
@@ -311,6 +318,8 @@ final class RequestService
             return null;
         }
 
-        return \mb_substr(\trim(\strip_tags((string) $raw)), 0, self::MAX_LENGTH + 1);
+        $limit = $f->maxLength() ?? self::MAX_LENGTH;
+
+        return \mb_substr(\trim(\strip_tags((string) $raw)), 0, $limit + 1); // one character over max() is enough for submit() to refuse the value
     }
 }
