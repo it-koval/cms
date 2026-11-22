@@ -1296,6 +1296,20 @@ final class McpToolsTest extends KernelTestCase
         self::assertStringContainsString('"edit"', $denied['text']);
     }
 
+    #[Test]
+    public function requestGetMarksTheCutOfALongField(): void
+    {
+        $req = $this->mcpRequest();
+        $req->data = ['items' => \str_repeat('ж', 6000), 'comment' => \str_repeat('я', 6000)];
+        self::getContainer()->get(EntityManagerInterface::class)->flush();
+        [$all] = $this->as('admin', [McpScopes::READ, McpScopes::REQUESTS]);
+
+        $one = $this->mcpCall($all, 'request_get', ['id' => $req->id])['data'];
+
+        self::assertSame(self::untrusted(\str_repeat('ж', 499) . '…'), $one['data']['items']);
+        self::assertSame(self::untrusted(\str_repeat('я', 1999) . '…'), $one['message']);
+    }
+
     private static function untrusted(string $text): string
     {
         return '<untrusted-data>' . $text . '</untrusted-data>';
