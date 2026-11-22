@@ -25,6 +25,12 @@ final class PlainTextTest extends TestCase
         }
     }
 
+    /** The cleaning before PlainText. mb_substr() writes a broken byte as "?". */
+    private static function cleanedBefore(string $text): string
+    {
+        return \mb_substr(\trim(\strip_tags($text)), 0, \PHP_INT_MAX);
+    }
+
     #[Test]
     public function noResultHoldsWhatStripTagsWouldTakeForATag(): void
     {
@@ -41,7 +47,7 @@ final class PlainTextTest extends TestCase
         foreach (self::mixes() as $text) {
             $text = \str_replace('<', '', $text);
 
-            self::assertSame(\trim(\strip_tags($text)), PlainText::from($text), \bin2hex($text));
+            self::assertSame(self::cleanedBefore($text), PlainText::from($text), \bin2hex($text));
         }
     }
 
@@ -51,7 +57,7 @@ final class PlainTextTest extends TestCase
     {
         $bare = static fn (string $s): string => (string) \preg_replace('~[ \t\n\x0B\f\r<>]~', '', $s);
         foreach (self::mixes() as $text) {
-            $kept = $bare(\trim(\strip_tags($text)));
+            $kept = $bare(self::cleanedBefore($text));
             $now = $bare(PlainText::from($text));
             $at = 0;
             $length = \strlen($now);
