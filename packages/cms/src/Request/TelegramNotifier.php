@@ -41,6 +41,7 @@ final class TelegramNotifier implements ChannelNotifier
         private readonly EventDispatcherInterface $events,
         #[Autowire(param: 'itk_cms.telegram.enabled')]
         private readonly bool $enabled,
+        private readonly ?\Closure $sleep = null,
     ) {
         $this->connection = $chatter instanceof TelegramConnection ? $chatter : new TelegramConnection($chatter, $logger);
     }
@@ -95,17 +96,21 @@ final class TelegramNotifier implements ChannelNotifier
             return ChannelOutcome::pending();
         }
 
-        $text = $this->buildText($r, $resend);
+        $parts = MessageParts::telegram($this->buildText($r, $resend));
         $errors = [];
         foreach ($chats as $chat) {
-            try {
-                $chatter->send((new ChatMessage($text))->options(
-                    (new TelegramOptions())->chatId($chat)->parseMode(TelegramOptions::PARSE_MODE_HTML)->disableWebPagePreview(true),
-                ));
-            } catch (\Throwable $e) {
-                $error = $this->connection->scrubError($e->getMessage());
-                $errors[] = $chat . ': ' . $error;
-                $this->logger->error('Telegram delivery failed for request #{id}, chat {chat}: {error}', ['id' => $r->id, 'chat' => $chat, 'error' => $error]);
+            foreach ($parts->texts as $i => $text) {
+                $parts->pauseBefore($i, $this->sleep);
+                try {
+                    $chatter->send((new ChatMessage($text))->options(
+                        (new TelegramOptions())->chatId($chat)->parseMode(TelegramOptions::PARSE_MODE_HTML)->disableWebPagePreview(true),
+                    ));
+                } catch (\Throwable $e) {
+                    $error = $parts->failure($i, $this->connection->scrubError($e->getMessage()));
+                    $errors[] = $chat . ': ' . $error;
+                    $this->logger->error('Telegram delivery failed for request #{id}, chat {chat}: {error}', ['id' => $r->id, 'chat' => $chat, 'error' => $error]);
+                    break; // the rest would arrive out of order; a retry starts from the first
+                }
             }
         }
 

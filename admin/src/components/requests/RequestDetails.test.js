@@ -27,6 +27,19 @@ describe('the public form values in a request drawer', () => {
     expect(html).not.toContain('Private staff note')
   })
 
+  it('shows a long phone value whole and dials only its first 32 characters, as much as the database column keeps', async () => {
+    for (const [phone, dialled] of [
+      ['+7 900 000-00-22, добавочный номер склада 123456', '+79000000022'],
+      ['+7 (900) 000-00-23 (WhatsApp), звонить после 18:00', '+79000000023'],
+      ['+7 900 000-00-24 😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀 55', '+79000000024'],
+    ]) {
+      const html = await render({ id: 9, phone, data: { phone } }, [field('phone', 'Contact number')])
+      expect(html).toContain(`href="tel:${dialled}"`)
+      expect(html).toContain(`>${phone}</dd>`)
+      expect(html.slice(0, html.indexOf('</a>'))).not.toContain(Array.from(phone).slice(32).join('')) // the button stays as short as it was
+    }
+  })
+
   it('uses custom field labels, escapes literal markup, and omits undeclared keys', async () => {
     const html = await render({ id: 3, place: 'Custom form', note: 'hello', data: { message: 'hello', email: 'a@example.com', instruction: '<b>tag</b>\nsecond line', empty: '   ', hidden: 'not for this form' } },
       [field('message', 'Customer question'), field('email', 'Reply to'), field('instruction', 'Site instructions'), field('empty', 'Empty optional field')])

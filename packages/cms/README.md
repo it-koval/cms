@@ -6,7 +6,7 @@ English | [Русский](README.ru.md)
 
 A site describes its structure in PHP (the `config/itk/schema.php` file or resource classes) and renders it with its own Twig templates. The bundle knows nothing about a specific site. The built admin panel ships inside the package, so the site does not need Node.
 
-Version 0.2.0, MIT license. Source code: [github.com/it-koval/cms](https://github.com/it-koval/cms).
+Version 0.2.1, MIT license. Source code: [github.com/it-koval/cms](https://github.com/it-koval/cms).
 
 ## Contents
 
@@ -987,6 +987,10 @@ A form is described in the schema: `$s->form('call', 'Call request')->fields(...
 The site sends the form to `POST /request/{form}`. The hidden `itk_hp` field (a trap for bots) must be empty. The response is `{"success": true}` or `{"success": false, "message": "…", "errors": {...}}`. The limit is 10 requests in 15 minutes from one address (`framework.rate_limiter.itk_request_form`, the site can override it).
 
 The request is saved and appears in the **Requests** section (the `requests` area). Then the `request.new` notification goes to the channels: the admin bell, Telegram, MAX and e-mail. A request has its own status for each messenger (`channels`). The overall `delivery` status is `failed` if the request did not reach at least one messenger, otherwise `sent` if it reached at least one. A messenger that is not connected leaves the status at `pending`, which is not a failure. To retry undelivered requests, use the button in the admin panel or `php bin/console itk:requests:resend`. The request JSON also has `sendable`: the messengers that never got the request and can take it now (connected, on, with a chat for the form). The request drawer shows **Send to MAX** or **Send to Telegram** for each of them and calls `POST requests/{id}/resend {channel}`.
+
+**Long fields.** The length of a value is counted in characters after trimming and removing tags. A line break from a browser form counts as two (`\r\n`). A value longer than the `max()` of its field is refused with an error for that field, and no request is created. A field without `max()` keeps the first 1001 characters without an error, so set `max()` on every field that can be long. Removing tags also removes the text after a `<` that has no space behind it, up to the next `>` or to the end of the value. The request card and the e-mail show the whole value. The bell shows one short line. The MCP tool `request_get` shows up to 500 characters of each value under `data` and 2000 of `message`, and marks a cut with `…`.
+
+A text too long for one message (4096 characters in Telegram after reading the HTML, 4000 characters of HTML in MAX) is sent as several messages in order, cut at line breaks. The worker waits 1 second between them, and 3.1 seconds in Telegram when there are more than 20 (a group takes 20 a minute). The pause is counted within one request: several long requests in a row can still exceed that limit, then send the undelivered ones again a minute later. **Send again** in the admin panel waits the same way. With more than 20 messages the page can time out while the delivery goes on, so open the request again before you press the button a second time. If one of them is refused, the following ones are not sent to that chat, the request is marked as not delivered, and the error names the part. A retry sends every message from the first to every chat of that messenger, so a chat may show some of them twice.
 
 The **Requests** screen has a **Board** view with the columns **New**, **In progress** and **Closed**.
 

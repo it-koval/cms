@@ -71,7 +71,7 @@ final class RequestsController extends AbstractApiController
     {
         $this->access->require('requests', 'view');
 
-        return $this->json($this->requests->present($this->requests->find($id)));
+        return $this->json($this->requests->card($this->requests->find($id)));
     }
 
     #[Route('/{id}', name: 'update', requirements: ['id' => '\d+'], methods: ['PATCH'])]
@@ -82,7 +82,7 @@ final class RequestsController extends AbstractApiController
         $work = isset($body['work']) ? (string) $body['work'] : null;
         $comment = \array_key_exists('comment', $body) ? (string) $body['comment'] : null;
 
-        return $this->json($this->requests->present($this->requests->update($id, $work, $comment)));
+        return $this->json($this->requests->card($this->requests->update($id, $work, $comment)));
     }
 
     #[Route('/{id}/resend', name: 'resend', requirements: ['id' => '\d+'], methods: ['POST'])]
@@ -90,6 +90,6 @@ final class RequestsController extends AbstractApiController
     {
         $this->access->require('requests', 'edit');
 
-        return $this->json($this->requests->present($this->requests->resend($id, $this->deliveryChannel($request))));
+        return $this->json($this->requests->card($this->requests->resend($id, $this->deliveryChannel($request))));
     }
 }

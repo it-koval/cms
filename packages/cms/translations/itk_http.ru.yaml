@@ -124,6 +124,7 @@
 'http.request_intake_off': 'Приём заявок сейчас отключён'
 'http.request_field_required': 'Поле «{label}» нужно заполнить'
 'http.request_field_too_long': 'Поле «{label}» длиннее {count} знака|Поле «{label}» длиннее {count} знаков|Поле «{label}» длиннее {count} знаков'
+'http.request_part_failed': 'часть {part} из {parts} не ушла: {reason}'
 'http.request_not_found': 'Заявка не найдена'
 'http.request_bad_status': 'Неизвестный статус'
 'http.request_note_too_long': 'Заметка не длиннее 500 знаков'
