@@ -371,6 +371,6 @@ final class RequestService
         $limit = $f->maxLength() ?? self::MAX_LENGTH;
 
         // one character over max() is enough for submit() to refuse the value; min(): max(PHP_INT_MAX) must not overflow
-        return \mb_substr(\trim(PlainText::from((string) $raw)), 0, \min($limit, \PHP_INT_MAX - 1) + 1);
+        return PlainText::from((string) $raw, \min($limit, \PHP_INT_MAX - 1) + 1);
     }
 }
