@@ -19,6 +19,8 @@ use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
  * A messenger that already has the request is not sent it again by a queue retry (only «Отправить снова» does that).
  * Two workers of the same messenger (a retry and «Отправить снова» at once) can still both send before either records; the request then reaches the chat twice.
  * A queue retry that failed after another worker recorded the delivery leaves it delivered.
+ * A long request is several messages (MessageParts) and is delivered only when all went out. A retry sends all of them from the first:
+ * the chat may then see the first ones twice, but never a list without its end.
  */
 final class RequestDeliverer
 {

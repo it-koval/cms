@@ -15,7 +15,7 @@ interface MaxSender
 
     /**
      * @param int|string $chatId the id of a chat of the bot (an integer, a group has a negative one)
-     * @param string $html the text in the HTML of MAX; longer than the limit of MAX it is cut
+     * @param string $html the text in the HTML of MAX; longer than the limit of MAX it is cut (MaxNotifier sends a long request as several texts)
      *
      * @throws MaxDeliveryException when MAX is not connected or did not take the message; the message of the exception never carries the token
      */

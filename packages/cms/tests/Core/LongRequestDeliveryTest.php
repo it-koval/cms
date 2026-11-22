@@ -213,6 +213,20 @@ final class LongRequestDeliveryTest extends WebTestCase
     }
 
     #[Test]
+    public function markupThatNoMessageCanCarryGoesAsTextInAFewMessages(): void
+    {
+        $url = 'https://example.com/' . \str_repeat('a', 5000);
+        $r = self::request(['items' => LongText::order(300)], 'long_marked', $url);
+
+        $parts = $this->sent(Request::CHANNEL_MAX, $r);
+
+        self::assertLessThanOrEqual(3, \count($parts), 'not one message per character');
+        $all = \implode('', \array_map(MessengerApi::plain(...), $parts));
+        self::assertStringContainsString($url, $all, 'the address is not lost');
+        self::assertStringContainsString(LongText::TOTAL, $all);
+    }
+
+    #[Test]
     #[DataProvider('channels')]
     public function aFormWithoutATemplateIsDeliveredWholeToo(string $channel): void
     {

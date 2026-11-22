@@ -89,14 +89,18 @@ final class MaxNotifier implements ChannelNotifier
             return ChannelOutcome::pending();
         }
 
-        $text = $this->buildText($r, $resend);
+        $parts = MessageParts::max($this->buildText($r, $resend));
         $errors = [];
         foreach ($chats as $chat) {
-            try {
-                $this->sender->send($chat, $text);
-            } catch (\Throwable $e) {
-                $errors[] = $chat . ': ' . $e->getMessage();
-                $this->logger->error('MAX delivery failed for request #{id}, chat {chat}: {error}', ['id' => $r->id, 'chat' => $chat, 'error' => $e->getMessage()]);
+            foreach ($parts->texts as $i => $text) {
+                try {
+                    $this->sender->send($chat, $text);
+                } catch (\Throwable $e) {
+                    $error = $parts->failure($i, $e->getMessage());
+                    $errors[] = $chat . ': ' . $error;
+                    $this->logger->error('MAX delivery failed for request #{id}, chat {chat}: {error}', ['id' => $r->id, 'chat' => $chat, 'error' => $error]);
+                    break; // the rest would arrive out of order; a retry starts from the first
+                }
             }
         }
 

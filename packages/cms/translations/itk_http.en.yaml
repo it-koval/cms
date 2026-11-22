@@ -124,6 +124,7 @@
 'http.request_intake_off': 'Accepting requests is turned off right now'
 'http.request_field_required': 'The “{label}” field is required'
 'http.request_field_too_long': 'The field “{label}” is longer than {count} character|The field “{label}” is longer than {count} characters'
+'http.request_part_failed': 'part {part} of {parts} was not sent: {reason}'
 'http.request_not_found': 'Request not found'
 'http.request_bad_status': 'Unknown status'
 'http.request_note_too_long': 'A note is at most 500 characters'
