@@ -29,8 +29,11 @@ final class MessageParts
     private const BURST = 20;
     private const SLOW_PAUSE = 3.1;
 
-    /** @param non-empty-list<string> $texts */
-    private function __construct(public readonly array $texts)
+    /**
+     * @param non-empty-list<string> $texts
+     * @param int $burst how many messages the messenger takes before they must go slower
+     */
+    private function __construct(public readonly array $texts, private readonly int $burst = self::BURST)
     {
     }
 
@@ -52,7 +55,10 @@ final class MessageParts
             return new self([$html]);
         }
 
-        return new self((new MessageSplitter(MaxApiSender::TEXT_LIMIT, 4 * MaxApiSender::TEXT_LIMIT, static fn (string $piece): int => \mb_strlen($piece)))->split($html));
+        return new self(
+            (new MessageSplitter(MaxApiSender::TEXT_LIMIT, 4 * MaxApiSender::TEXT_LIMIT, static fn (string $piece): int => \mb_strlen($piece)))->split($html),
+            \PHP_INT_MAX, // MAX has no limit a minute
+        );
     }
 
     /**
@@ -65,8 +71,16 @@ final class MessageParts
         if (0 === $index) {
             return;
         }
-        $seconds = \count($this->texts) > self::BURST ? self::SLOW_PAUSE : self::PAUSE;
-        null !== $sleep ? $sleep($seconds) : \usleep((int) ($seconds * 1_000_000));
+        $seconds = \count($this->texts) > $this->burst ? self::SLOW_PAUSE : self::PAUSE;
+        if (null !== $sleep) {
+            $sleep($seconds);
+
+            return;
+        }
+        $until = \hrtime(true) + $seconds * 1_000_000_000;
+        while (($left = $until - \hrtime(true)) > 0) { // a signal (messenger:consume --keepalive) ends usleep() early
+            \usleep((int) \ceil($left / 1000));
+        }
     }
 
     /** The reason of a refused message, with its number when the text needed several. */

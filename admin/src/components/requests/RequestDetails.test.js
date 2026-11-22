@@ -36,6 +36,7 @@ describe('the public form values in a request drawer', () => {
       const html = await render({ id: 9, phone, data: { phone } }, [field('phone', 'Contact number')])
       expect(html).toContain(`href="tel:${dialled}"`)
       expect(html).toContain(`>${phone}</dd>`)
+      expect(html.slice(0, html.indexOf('</a>'))).not.toContain(Array.from(phone).slice(32).join('')) // the button stays as short as it was
     }
   })
 
