@@ -97,6 +97,7 @@ final class AiSearchHealthCheckTest extends KernelTestCase
         $file = self::getContainer()->getParameter('kernel.project_dir') . '/public/robots.txt';
         $this->setting('robotsTxt', '');
         $this->assertFileDoesNotExist($file);
+        @\mkdir(\dirname($file), 0777, true); // public/ of the test app is not in git: a fresh checkout has none
         \file_put_contents($file, "User-agent: PerplexityBot\nDisallow: /\n");
 
         try {

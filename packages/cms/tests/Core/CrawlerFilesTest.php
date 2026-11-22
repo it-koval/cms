@@ -248,6 +248,7 @@ final class CrawlerFilesTest extends WebTestCase
         $file = self::getContainer()->getParameter('kernel.project_dir') . '/public/robots.txt';
         self::assertFileDoesNotExist($file);
         $this->tmpFiles[] = $file;
+        @\mkdir(\dirname($file), 0777, true); // public/ of the test app is not in git: a fresh checkout has none
         \file_put_contents($file, "User-agent: *\nDisallow: /from-file/\n");
 
         self::assertTrue($this->api('GET', 'seo-files')['robots']['file']);
