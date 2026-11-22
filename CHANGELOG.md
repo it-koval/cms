@@ -4,6 +4,12 @@ English | [Русский](CHANGELOG.ru.md)
 
 All notable changes to ITK CMS are recorded in this file. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html). [UPGRADE.md](UPGRADE.md) defines the public API.
 
+## [0.1.2] - 2026-11-22
+
+### Fixed
+
+- A form value no longer loses the text after a `<`. Before, `<500`, `<XS` or `2<3` cut the value up to the next `>` or to its end, so an order could lose the rest of its list and the total. HTML tags are still removed: a lowercase element name with `name="value"` attributes. Any other `<` stays as text with a space after it (`<500` is saved as `< 500`). The space counts towards `max()`, and `pattern()` now sees the text that used to be dropped.
+
 ## [0.1.1] - 2026-11-22
 
 ### Fixed
@@ -111,5 +117,6 @@ The first public release.
 - A Docker kit in `docker/`: PHP-FPM, nginx, a queue worker, PostgreSQL 17 with pgvector, and Mailpit, with development and production stages.
 - Rules for an AI agent that builds a site on the bundle (`SITE-AGENTS.md`).
 
+[0.1.2]: https://github.com/it-koval/cms/releases/tag/v0.1.2
 [0.1.1]: https://github.com/it-koval/cms/releases/tag/v0.1.1
 [0.1.0]: https://github.com/it-koval/cms/releases/tag/v0.1.0
