@@ -68,7 +68,7 @@ final class RequestService
                     $errors[$f->key()] = I18n::t('http.request_field_too_long', ['label' => $f->label(), 'count' => $f->maxLength()]);
                     continue;
                 }
-                if (null !== $f->regex() && !\preg_match($f->regex(), $value)) {
+                if (null !== $f->regex() && !self::matches($f->regex(), $value)) {
                     $errors[$f->key()] = $f->regexMessage();
                     continue;
                 }
@@ -304,9 +304,9 @@ final class RequestService
             'locale' => $r->locale,
             'form' => $r->form,
             'place' => $form?->formTitle() ?? $r->form,
-            'phone' => self::whole($r->phone, $r->data['phone'] ?? null),
-            'name' => self::whole($r->name, $r->data['name'] ?? null),
-            'city' => self::whole($r->city, $r->data['city'] ?? null),
+            'phone' => (string) $r->phone,
+            'name' => (string) $r->name,
+            'city' => (string) $r->city,
             'note' => $note,
             'data' => $r->data,
             'st' => Request::DELIVERY_FAILED === $r->delivery ? 'failed' : 'delivered',
@@ -321,10 +321,37 @@ final class RequestService
         ];
     }
 
+    /**
+     * One request as its card reads it: present() with the phone, the name and the city whole.
+     * A list keeps the short columns: one long value would push its other columns off the screen.
+     *
+     * @return array<string, mixed>
+     */
+    public function card(Request $r): array
+    {
+        return \array_replace($this->present($r), [
+            'phone' => self::whole($r->phone, $r->data['phone'] ?? null),
+            'name' => self::whole($r->name, $r->data['name'] ?? null),
+            'city' => self::whole($r->city, $r->data['city'] ?? null),
+        ]);
+    }
+
     /** A column holds the start of a long value (phone 32, name and city 120 characters), `data` holds all of it. */
     private static function whole(?string $column, mixed $sent): string
     {
         return null !== $column && \is_string($sent) && \str_starts_with($sent, $column) ? $sent : (string) $column;
+    }
+
+    /** A long value can exhaust the small stack of the PCRE JIT, and a valid value would be refused: then the interpreter checks it. */
+    private static function matches(string $regex, string $value): bool
+    {
+        $found = \preg_match($regex, $value);
+        if (false === $found && \PREG_JIT_STACKLIMIT_ERROR === \preg_last_error()) {
+            $regex = \ltrim($regex);
+            $found = \preg_match($regex[0] . '(*NO_JIT)' . \substr($regex, 1), $value);
+        }
+
+        return 1 === $found;
     }
 
     private function work(string $w): string
@@ -343,6 +370,7 @@ final class RequestService
 
         $limit = $f->maxLength() ?? self::MAX_LENGTH;
 
-        return \mb_substr(\trim(\strip_tags((string) $raw)), 0, $limit + 1); // one character over max() is enough for submit() to refuse the value
+        // one character over max() is enough for submit() to refuse the value; min(): max(PHP_INT_MAX) must not overflow
+        return \mb_substr(\trim(\strip_tags((string) $raw)), 0, \min($limit, \PHP_INT_MAX - 1) + 1);
     }
 }

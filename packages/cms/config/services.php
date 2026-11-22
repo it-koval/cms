@@ -49,7 +49,7 @@ return static function (ContainerConfigurator $container): void {
             '../src/Schema/{Field,Key,Template,SectionType,Collection,MenuAreaDef,SettingsGroup,FormDef,Schema,SchemaBuilder,CoreSchema}.php',
             '../src/Security/Permission.php',
             '../src/Content/ContentException.php',
-            '../src/Request/{SendRequestNotification,RequestNotDeliveredException,RequestText,MessageParts}.php',
+            '../src/Request/{SendRequestNotification,RequestNotDeliveredException,RequestText,MessageParts,MessageSplitter}.php',
             '../src/Request/Max/MaxDeliveryException.php',
             '../src/Media/GenerateImageVariants.php',
             '../src/Notification/Notification.php',
