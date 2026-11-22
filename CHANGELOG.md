@@ -8,9 +8,9 @@ All notable changes to ITK CMS are recorded in this file. The format follows [Ke
 
 ### Fixed
 
-- A form field with `max()` above 1000 no longer loses the text after 1001 characters. A value within `max()` is saved whole. A longer one gets the usual "field is too long" error, and no request is created. A field without `max()` still keeps the first 1001 characters without an error.
-- A request too long for one Telegram or MAX message is sent as several messages in order. Before, Telegram refused it and MAX cut it at 4000 characters. A request counts as delivered when every message has gone out. A retry starts from the first message, so a chat may show some messages twice.
-- The request card shows a name, city or phone whole when it is longer than its database column (120, 120 and 32 characters).
+- A form field with `max()` above 1000 no longer loses the text after 1001 characters. A value within `max()` is saved whole (as before, after trimming and removing tags), and `pattern()` checks all of it. A longer one gets the usual "field is too long" error, and no request is created. A field without `max()` still keeps the first 1001 characters without an error.
+- A request too long for one Telegram or MAX message is sent as several messages in order, a second or more apart because of the rate limits of the messengers. Before, Telegram refused it and MAX cut it at 4000 characters. A request counts as delivered when every message has gone out. A retry starts from the first message, so a chat may show some messages twice.
+- The request card shows a name, city or phone whole when it is longer than its database column (120, 120 and 32 characters). The list keeps the short values.
 
 Restart the queue workers after the update: a running worker keeps the old code.
 
