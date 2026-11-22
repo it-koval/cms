@@ -11,6 +11,7 @@ use Itk\Cms\Entity\Request;
 use Itk\Cms\I18n\AdminLocale;
 use Itk\Cms\Request\Max\MaxApiSender;
 use Itk\Cms\Request\MaxNotifier;
+use Itk\Cms\Request\MessageParts;
 use Itk\Cms\Request\RequestDeliverer;
 use Itk\Cms\Request\TelegramNotifier;
 use Itk\Cms\Schema\Schema;
@@ -20,6 +21,7 @@ use Itk\Cms\Tests\Core\Fixture\MessengerApi;
 use MaxMessenger\Bot\MaxApiClient;
 use MaxMessenger\Bot\MaxApiConfig;
 use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\RequiresPhpExtension;
 use PHPUnit\Framework\Attributes\Test;
 use Psr\Log\NullLogger;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
@@ -276,6 +278,36 @@ final class LongRequestDeliveryTest extends WebTestCase
 
         self::assertGreaterThan(20, \count($parts));
         self::assertSame($text, \implode('', $parts));
+    }
+
+    #[Test]
+    public function maxIsNotSlowedDownToThePaceOfATelegramGroup(): void
+    {
+        $parts = $this->sent('max', self::request(['items' => LongText::order(90000)]));
+
+        self::assertGreaterThan(20, \count($parts));
+        self::assertEqualsWithDelta(\count($parts) - 1, $this->api->waited(), 0.01, 'a second between two messages');
+    }
+
+    #[Test]
+    #[RequiresPhpExtension('pcntl')]
+    public function aSignalDoesNotShortenThePauseBetweenMessages(): void
+    {
+        $parts = MessageParts::telegram(LongText::order(90000)); // over 20 messages: 3.1 seconds
+        $async = \pcntl_async_signals(true);
+        $handler = \pcntl_signal_get_handler(\SIGALRM);
+        \pcntl_signal(\SIGALRM, static function (): void {}); // what messenger:consume --keepalive does every few seconds
+        $start = \hrtime(true);
+        try {
+            \pcntl_alarm(1);
+            $parts->pauseBefore(1);
+        } finally {
+            \pcntl_alarm(0);
+            \pcntl_signal(\SIGALRM, $handler);
+            \pcntl_async_signals($async);
+        }
+
+        self::assertGreaterThanOrEqual(3.09, (\hrtime(true) - $start) / 1e9);
     }
 
     public static function longLines(): iterable

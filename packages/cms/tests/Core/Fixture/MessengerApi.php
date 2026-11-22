@@ -45,6 +45,12 @@ final class MessengerApi implements TransportInterface, HttpClientInterface
         $this->now += $seconds;
     }
 
+    /** How many seconds the notifiers waited. */
+    public function waited(): float
+    {
+        return $this->now;
+    }
+
     /** @return list<string> */
     public function texts(string $channel, ?string $chat = null): array
     {
