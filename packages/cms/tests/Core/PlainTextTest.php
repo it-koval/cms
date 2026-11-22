@@ -8,7 +8,7 @@ use Itk\Cms\Request\PlainText;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 
-/** The two promises of PlainText on any input: no start of a tag, and nothing lost but tags. */
+/** The promises of PlainText on any input: no start of a tag, nothing lost outside tags, and a bounded cost. */
 final class PlainTextTest extends TestCase
 {
     /** @return iterable<string> */
@@ -31,7 +31,7 @@ final class PlainTextTest extends TestCase
         foreach (self::mixes() as $text) {
             $plain = PlainText::from($text);
 
-            self::assertSame($plain, \strip_tags($plain), \bin2hex($text));
+            self::assertSame($plain . ' ', \strip_tags($plain . ' '), \bin2hex($text)); // a space: a "<" may be the last character
         }
     }
 
@@ -41,16 +41,17 @@ final class PlainTextTest extends TestCase
         foreach (self::mixes() as $text) {
             $text = \str_replace('<', '', $text);
 
-            self::assertSame(\strip_tags($text), PlainText::from($text), \bin2hex($text));
+            self::assertSame(\trim(\strip_tags($text)), PlainText::from($text), \bin2hex($text));
         }
     }
 
+    /** Outside tags: a ">" inside a quoted value belongs to the tag, also where strip_tags() ended a false tag there and kept what follows. */
     #[Test]
-    public function whatStripTagsKeptIsNeverLost(): void
+    public function whatStripTagsKeptOutsideTagsIsNeverLost(): void
     {
         $bare = static fn (string $s): string => (string) \preg_replace('~[ \t\n\x0B\f\r<>]~', '', $s);
         foreach (self::mixes() as $text) {
-            $kept = $bare(\strip_tags($text));
+            $kept = $bare(\trim(\strip_tags($text)));
             $now = $bare(PlainText::from($text));
             $at = 0;
             $length = \strlen($now);
@@ -69,11 +70,38 @@ final class PlainTextTest extends TestCase
     {
         foreach (['<b a="', "<b a='", '<b ', '<p a=1', '<', '< ', '<b a="x" ', '<div a="<b a=\'">', '<b>'] as $unit) {
             $text = \str_repeat($unit, \intdiv(2_000_000, \strlen($unit)));
-            $start = \hrtime(true);
-            $plain = PlainText::from($text);
+            foreach ([$text, $text . '>'] as $value) { // the last ">" switches off a shortcut of PCRE
+                $start = \hrtime(true);
+                $plain = PlainText::from($value, 1001);
 
-            self::assertLessThan(2.0, (\hrtime(true) - $start) / 1e9, $unit);
-            self::assertDoesNotMatchRegularExpression('~<[^ \t\n\x0B\f\r]~', $plain, $unit);
+                self::assertLessThan(2.0, (\hrtime(true) - $start) / 1e9, $unit);
+                self::assertDoesNotMatchRegularExpression('~<[^ \t\n\x0B\f\r]~', $plain, $unit);
+            }
+        }
+    }
+
+    #[Test]
+    public function aHugeValueIsCutBeforeItGrowsBySpaces(): void
+    {
+        $text = \str_repeat('<', 16_000_000);
+        \memory_reset_peak_usage();
+        $before = \memory_get_usage();
+
+        $plain = PlainText::from($text, 1001);
+
+        self::assertSame(1001, \mb_strlen($plain));
+        self::assertLessThan(20_000_000, \memory_get_peak_usage() - $before, 'the value is never held twice as long');
+    }
+
+    #[Test]
+    public function everyElementOfHtmlIsRemoved(): void
+    {
+        $elements = 'a abbr address area article aside audio b base bdi bdo blockquote body br button canvas caption cite code col colgroup data datalist dd del details '
+            . 'dfn dialog div dl dt em embed fieldset figcaption figure footer form h1 h2 h3 h4 h5 h6 head header hgroup hr html i iframe img input ins kbd label legend '
+            . 'li link main map mark math menu meta meter nav noscript object ol optgroup option output p picture pre progress q rp rt ruby s samp script search section '
+            . 'select slot small source span strong style sub summary sup svg table tbody td template textarea tfoot th thead time title tr track u ul var video wbr';
+        foreach (\explode(' ', $elements) as $element) {
+            self::assertSame('Шлем', PlainText::from("<$element class=\"x\">Шлем</$element>"), $element);
         }
     }
 }
