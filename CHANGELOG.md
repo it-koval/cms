@@ -4,6 +4,12 @@ English | [Русский](CHANGELOG.ru.md)
 
 All notable changes to ITK CMS are recorded in this file. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html). [UPGRADE.md](UPGRADE.md) defines the public API.
 
+## [0.2.2] - 2026-11-22
+
+### Fixed
+
+- A form value no longer loses the text after a `<`. Before, `<500`, `<XS` or `2<3` cut the value up to the next `>` or to its end, so an order could lose the rest of its list and the total. HTML tags are still removed: a lowercase element name with `name="value"` attributes. Any other `<` stays as text with a space after it (`<500` is saved as `< 500`). The space counts towards `max()`, and `pattern()` now sees the text that used to be dropped.
+
 ## [0.2.1] - 2026-11-22
 
 ### Fixed
@@ -32,6 +38,22 @@ Restart the queue workers after the update: a running worker keeps the old code.
 ### Removed
 
 - `Content\SettingsService::routesError()`, which checked that a connected messenger had a chat for the other forms. The constructor of `SettingsService` no longer takes the `max` and `telegram` arguments. See the 0.2.0 notes in [UPGRADE.md](UPGRADE.md).
+
+## [0.1.2] - 2026-11-22
+
+### Fixed
+
+- A form value no longer loses the text after a `<`. Before, `<500`, `<XS` or `2<3` cut the value up to the next `>` or to its end, so an order could lose the rest of its list and the total. HTML tags are still removed: a lowercase element name with `name="value"` attributes. Any other `<` stays as text with a space after it (`<500` is saved as `< 500`). The space counts towards `max()`, and `pattern()` now sees the text that used to be dropped.
+
+## [0.1.1] - 2026-11-22
+
+### Fixed
+
+- A form field with `max()` above 1000 no longer loses the text after 1001 characters. A value within `max()` is saved whole (as before, after trimming and removing tags), and `pattern()` checks all of it. A longer one gets the usual "field is too long" error, and no request is created. A field without `max()` still keeps the first 1001 characters without an error.
+- A request too long for one Telegram or MAX message is sent as several messages in order, a second or more apart because of the rate limits of the messengers. Before, Telegram refused it and MAX cut it at 4000 characters. A request counts as delivered when every message has gone out. A retry starts from the first message, so a chat may show some messages twice.
+- The request card shows a name, city or phone whole when it is longer than its database column (120, 120 and 32 characters). The list keeps the short values.
+
+Restart the queue workers after the update: a running worker keeps the old code.
 
 ## [0.1.0] - 2026-11-15
 
@@ -130,6 +152,9 @@ The first public release.
 - A Docker kit in `docker/`: PHP-FPM, nginx, a queue worker, PostgreSQL 17 with pgvector, and Mailpit, with development and production stages.
 - Rules for an AI agent that builds a site on the bundle (`SITE-AGENTS.md`).
 
+[0.2.2]: https://github.com/it-koval/cms/releases/tag/v0.2.2
 [0.2.1]: https://github.com/it-koval/cms/releases/tag/v0.2.1
 [0.2.0]: https://github.com/it-koval/cms/releases/tag/v0.2.0
+[0.1.2]: https://github.com/it-koval/cms/releases/tag/v0.1.2
+[0.1.1]: https://github.com/it-koval/cms/releases/tag/v0.1.1
 [0.1.0]: https://github.com/it-koval/cms/releases/tag/v0.1.0
