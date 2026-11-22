@@ -127,9 +127,11 @@ jobs:
       - run: npm run build
 
       # the built admin is committed: it must be what the sources build to. -N makes files that the build added show up in the diff
+      # the checkout belongs to the runner user, not to root of the container: without safe.directory git refuses to read it
       - name: The built admin matches the sources
         working-directory: .
         run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
           git add --intent-to-add packages/cms/public/admin
           git diff --exit-code packages/cms/public/admin
 

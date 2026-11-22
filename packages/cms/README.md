@@ -183,9 +183,20 @@ security:
 - `(/|$)` at the end of the pattern keeps other paths such as `/administrator` out of the rule.
 - `login_throttling` limits password guessing. `enable_csrf` on logout stops another page from signing the administrator out.
 - If the admin panel is not at `/admin`, change `^/admin` in the firewall `pattern` and in both `access_control` lines. The bundle does not change this file. **Without these rules the admin sign-in does not open, and collection actions (`POST {admin}/api/resources/{collection}/actions/{action}`) run without a sign-in check.** Example: with `itk_cms.admin_path: /cp` write `^/cp`; when the routes are imported with `prefix: /cp` write `^/cp/admin`.
-- In production, `APP_SECRET` must be unique and non-empty. The admin CSRF token, the encryption of secrets (two-step sign-in secrets, bot tokens, SMTP password, Yandex Webmaster token), the IndexNow key and the URL hashes in requests depend on it. Flex puts an empty `APP_SECRET=` line in `.env` and a working development value in `.env.dev`. With an empty secret, `/admin` returns 500 with the text `APP_SECRET is empty`, and `itk:install` prints a warning.
+- In production, `APP_SECRET` must be unique and non-empty. The admin CSRF token, the encryption of secrets (two-step sign-in secrets, bot tokens, SMTP password, Yandex Webmaster token), the IndexNow key and the URL hashes in requests depend on it. Flex puts an empty `APP_SECRET=` line in `.env` and a working development value in `.env.dev`. With an empty secret, `/admin` returns 500 with the text `APP_SECRET is empty`, and `itk:install` prints a warning. To keep it in the Symfony vault, see [Secrets in production](#secrets-in-production-symfony-vault).
 - Behind a proxy or CDN, set `framework.trusted_proxies`. Otherwise all visitors appear to come from one address for the form and sign-in limits.
 - In production, set `framework.trusted_hosts` or the `itk_cms.public_url` option. Links in e-mails and the page cache depend on them.
+
+#### Secrets in production (Symfony vault)
+
+The bundle reads its settings through `%env()%`, so a value can come from the [Symfony secrets vault](https://symfony.com/doc/current/configuration/secrets.html) as well as from the environment. The bundle needs nothing extra for this. The site decides which variables go into the vault and how the decryption key reaches the server.
+
+- A site usually keeps `APP_SECRET`, `DATABASE_URL` and `MAILER_DSN` in the vault, and also `TELEGRAM_DSN` if Telegram is set up on the server. A bot token entered in **Settings → Notifications** wins over `TELEGRAM_DSN`, and then the variable is not needed. Bot tokens, the SMTP password and the Yandex Webmaster token entered in the admin panel are kept in the database, sealed with `APP_SECRET`. They do not go into the vault.
+- Create the keys of an environment with `php bin/console secrets:generate-keys --env=prod` and add values with `php bin/console secrets:set DATABASE_URL --env=prod`. Commit `config/secrets/prod/` without the private key `prod.decrypt.private.php`. Flex ignores only the `prod` key. For another environment, such as `stage`, add `*.decrypt.private.php` to `.gitignore`. The Docker kit keeps the private key out of the image.
+- On the server, pass the private key in the `SYMFONY_DECRYPTION_SECRET` variable. Get its value with `php -r 'echo base64_encode(require "config/secrets/prod/prod.decrypt.private.php");'`.
+- A real environment variable and a non-empty line in `.env` or `.env.*.local` win over the vault. An empty line, such as the `APP_SECRET=` that Flex puts in `.env`, does not, and Symfony then reads the vault.
+- If the vault has no `APP_SECRET`, Symfony derives it from the decryption key. The site works, but `APP_SECRET` then changes together with the key. After `secrets:generate-keys --rotate` the bot tokens, the SMTP password, the Webmaster token and the two-step sign-in secrets can no longer be read. To keep `APP_SECRET` apart from the key, store it in the vault before the first launch with `php bin/console secrets:set APP_SECRET --random=32 --env=prod`. Switching from the derived value to a stored one later changes `APP_SECRET` in the same way.
+- `php bin/console secrets:list --env=prod` lists the names in the vault. **Site status** and `itk:doctor` warn when `APP_SECRET` is empty.
 
 #### Messenger queue
 
@@ -1647,7 +1658,7 @@ docker build -f docker/Dockerfile --target php_prod --build-arg CRITICAL_CSS=1 -
 ```
 
 - The `php_prod` stage installs dependencies without dev packages (`composer install --no-dev`, plus `npm ci --omit=dev` with `CRITICAL_CSS=1`) and turns on `php.ini-production`.
-- Pass `APP_SECRET`, `DATABASE_URL` and `MAILER_DSN` through the container environment. The `.env` from git goes into the image, so keep only default values in it.
+- Pass `APP_SECRET`, `DATABASE_URL` and `MAILER_DSN` through the container environment, or keep them in the Symfony vault and pass only `SYMFONY_DECRYPTION_SECRET` (see [Secrets in production](#secrets-in-production-symfony-vault)). The `.env` from git goes into the image, so keep only default values in it.
 - The image has no admin files (`public/bundles`). The entrypoint puts them in place at start. Give nginx a shared volume, or run `assets:install public` in your own build stage.
 - Migrations and `itk:install` run on each `php` start. With several replicas, set `AUTO_MIGRATE=0` and run the migrations as a separate job.
 - The worker starts from the same image with `SKIP_ENTRYPOINT=1` and the worker command.
