@@ -11,7 +11,9 @@ const fields = computed(() => props.form?.fields || [])
 const fieldByKey = (key) => fields.value.find((field) => field.k === key)
 const visible = (key) => fieldByKey(key)?.detail !== false
 const label = (key, fallback) => fieldByKey(key)?.label || t(fallback)
-const tel = computed(() => visible('phone') ? String(props.request.phone || '').replace(/[^\d+]/g, '') : '')
+// The Call button reads only the first 32 characters, like the phone column: the digits of a remark after the number are not dialled.
+const callee = computed(() => visible('phone') ? Array.from(String(props.request.phone || '')).slice(0, 32).join('') : '')
+const tel = computed(() => callee.value.replace(/[^\d+]/g, ''))
 
 function hasValue(value) {
   return value != null && typeof value !== 'object' && String(value).trim() !== ''
@@ -46,7 +48,7 @@ const details = computed(() => {
 </script>
 
 <template>
-  <a v-if="tel" class="btn primary rd-call" :href="'tel:' + tel"><Icon name="phone" /><span>{{ t('ui.rd_call', { phone: request.phone }) }}</span></a>
+  <a v-if="tel" class="btn primary rd-call" :href="'tel:' + tel"><Icon name="phone" /><span>{{ t('ui.rd_call', { phone: callee }) }}</span></a>
   <dl class="kv rd-details">
     <dt>{{ t('ui.rd_number') }}</dt><dd class="num">{{ t('ui.rq_number', { id: request.id }) }}</dd>
     <template v-if="request.name && visible('name')"><dt>{{ label('name', 'ui.rd_name') }}</dt><dd>{{ request.name }}</dd></template>
