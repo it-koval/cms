@@ -191,7 +191,7 @@ security:
 
 The bundle reads its settings through `%env()%`, so a value can come from the [Symfony secrets vault](https://symfony.com/doc/current/configuration/secrets.html) as well as from the environment. The bundle needs nothing extra for this. The site decides which variables go into the vault and how the decryption key reaches the server.
 
-- A site usually keeps `APP_SECRET`, `DATABASE_URL` and `MAILER_DSN` in the vault, and also `TELEGRAM_DSN` if Telegram is set up on the server. A bot token entered in **Settings → Notifications** wins over `TELEGRAM_DSN`, and then the variable is not needed. Bot tokens, the SMTP password and the Yandex Webmaster token entered in the admin panel are kept in the database, sealed with `APP_SECRET`. They do not go into the vault.
+- A site usually keeps `APP_SECRET`, `DATABASE_URL` and `MAILER_DSN` in the vault, and also `TELEGRAM_DSN` if Telegram is set up on the server. A bot token entered in **Settings → Bots** wins over `TELEGRAM_DSN`, and then the variable is not needed. Bot tokens, the SMTP password and the Yandex Webmaster token entered in the admin panel are kept in the database, sealed with `APP_SECRET`. They do not go into the vault.
 - Create the keys of an environment with `php bin/console secrets:generate-keys --env=prod` and add values with `php bin/console secrets:set DATABASE_URL --env=prod`. Commit `config/secrets/prod/` without the private key `prod.decrypt.private.php`. Flex ignores only the `prod` key. For another environment, such as `stage`, add `*.decrypt.private.php` to `.gitignore`. The Docker kit keeps the private key out of the image.
 - On the server, pass the private key in the `SYMFONY_DECRYPTION_SECRET` variable. Get its value with `php -r 'echo base64_encode(require "config/secrets/prod/prod.decrypt.private.php");'`.
 - A real environment variable and a non-empty line in `.env` or `.env.*.local` win over the vault. An empty line, such as the `APP_SECRET=` that Flex puts in `.env`, does not, and Symfony then reads the vault.
@@ -428,7 +428,7 @@ A ratio that is in neither `images.ratios` nor the file's crops does not break t
 
 ### Public data reading
 
-`itk_pages`, `itk_page` and `itk_collection` read only published content, and read it the same way for everyone. A guest and a signed-in administrator see the same thing. Each call makes one query. Site code reads the same data with `Itk\Cms\Content\ContentReader`.
+`itk_pages`, `itk_page` and `itk_collection` read only published content, and read it the same way for everyone. A guest and a signed-in administrator see the same thing. `itk_pages` and `itk_collection` each make one database query per call. All `itk_page` lookups share one query per language per visitor request. Site code reads the same data with `Itk\Cms\Content\ContentReader`.
 
 ```twig
 {% for c in itk_pages({template: 'blog_category'}) %}<a href="{{ c.url }}">{{ c.title }}</a>{% endfor %}
@@ -440,11 +440,11 @@ A ratio that is in neither `images.ratios` nor the file's crops does not break t
 - `itk_pages` returns rows `{id, parentId, template, locale, title, url, seo, fields, position, publishedAt}`. Parameters: `template` (a key or a list), `parent` (a page id, direct children only; an empty value is an error), `limit`, `sort`. `sort` accepts `position` (the default), `createdAt`, `publishedAt`, `title`, `url` and `fields.<key>`. A `-` sign means descending order. Write several keys as a list or comma-separated. A numeric field sorts as a number. Rows have no sections. `listing()` returns those.
 - `itk_page(id)` returns the same kind of row, or `null`. All pages of the language are read in one query per visitor request, so a loop with `itk_page(a.parentId)` does not run a query for each article.
 - `itk_collection(key)` returns records in order. Parameters: `where` (`{field: value}`; a list means any of the values, `true` and `false` for a toggle, `{from, to}` for a number or a date such as `2026-11-30`), `sort` (`position`, `createdAt` or a field), `limit`, `offset`. A record comes as `{id, ...fields}`.
-- An invalid parameter, field or template throws `\InvalidArgumentException` with a list of what is allowed.
+- In PHP, `ContentReader` throws `\InvalidArgumentException` for an invalid parameter, field or template. In Twig, invalid `itk_pages` or `itk_collection(key, options)` calls throw `\LogicException` in strict mode. In soft mode they return `[]` and log a warning. Pass `{}` as options to check a collection key without filters.
 
 ### Strict mode
 
-The `itk_cms.strict` option (equal to `kernel.debug` by default) makes template errors loud. An exception is then thrown for an unknown key in `itk_field` (with a hint listing the allowed keys), an unknown key inside a repeater, a section type that is not in the schema, a section without a template, and an invalid call of `itk_pages` or `itk_collection`. With `strict: false`, the page renders, and one warning per error per request goes to the log. A path into a value without subfields (`image.src`) is not an error. The admin preview never throws: a section without a template shows as a grey frame.
+The `itk_cms.strict` option (equal to `kernel.debug` by default) makes template errors loud. An exception is then thrown for an unknown key in `itk_field` (with a hint listing the allowed keys), an unknown key inside a repeater, a section type that is not in the schema, a section without a template, and an invalid call of `itk_pages` or `itk_collection(key, options)`. With `strict: false`, the page renders, and one warning per error per request goes to the log. A path into a value without subfields (`image.src`) is not an error. In the admin preview, field and section checks are softened, and a section without a template shows as a grey frame. Invalid content-reading calls still follow `strict`.
 
 ### Safe URLs
 
@@ -750,7 +750,7 @@ A permission is a pair of an area and an action. Actions: `view` (**View**), `ed
 | `set:<group>` | A settings group, including `set:site` and `set:analytics` |
 | `set:menus`, `set:redirects`, `set:seo` | Menus, redirects, SEO rules, `robots.txt` and `llms.txt` |
 | `set:notifications`, `set:mail`, `set:bots` | Notification recipients, mail server, bot tokens |
-| `set:theme`, `set:languages`, `set:users`, `set:mcp` | Admin appearance, languages, users and roles, AI assistants |
+| `set:theme`, `set:languages`, `set:users`, `set:mcp` | Admin appearance, content languages (management screen planned for 0.3.0; currently only the main language), users and roles, AI assistants |
 | `templates` | Viewing templates |
 | `dev` | The **For developers** section: **Site status** |
 | `action:<collection>:<action>` | Running an action with `permission()` |
@@ -805,7 +805,7 @@ Every saved edit of a page, a record, a settings group and a menu is written to 
 
 A page and a collection record return a `version` field, a hash of the draft. The admin autosave sends it as `baseVersion`. If the draft changed in the meantime (another person, an assistant through MCP, a move in the tree), the server writes nothing and returns `409` with `details.code: "conflict"` and `details.current` (`version`, `by`, `at`, `via`, `viaName`). The editor stops autosave and asks: **Show the new version** or **Keep my edits**.
 
-A request without `baseVersion` is not checked: MCP tools, the console, site code, `PATCH` and publication work by the "last write wins" rule. MCP tools that change a page or a record run one at a time per object under a PostgreSQL advisory lock.
+Publication also checks `baseVersion` and returns `409` for a stale draft. A request without `baseVersion` is not checked: MCP tools, the console, site code and `PATCH` use "last write wins"; publication does too if the version is omitted. MCP tools that change a page or a record run one at a time per object under a PostgreSQL advisory lock.
 
 A collection record response always carries the service keys `id`, `locale`, `translated`, `status`, `updatedAt`, `awaiting`, `returned`, `changed`, `changes` and `version`. Do not give collection fields these names. `itk:schema:lint` and `itk:doctor` report the `version` key as an error.
 
@@ -939,7 +939,7 @@ final class ProductMarkup
 
 ### Analytics and verification codes
 
-The owner enters counter IDs and verification codes in **Settings** → **Analytics and webmaster tools** (the `set:analytics` area, by default only the administrator has it). The core puts them on the pages.
+The owner enters counter IDs and verification codes in **Settings** → **General** → **Analytics and webmaster tools** (the `set:analytics` area, by default only the administrator has it). The core puts them on the pages.
 
 | Field | Format |
 |---|---|
@@ -988,7 +988,7 @@ The site sends the form to `POST /request/{form}`. The hidden `itk_hp` field (a 
 
 The request is saved and appears in the **Requests** section (the `requests` area). Then the `request.new` notification goes to the channels: the admin bell, Telegram, MAX and e-mail. A request has its own status for each messenger (`channels`). The overall `delivery` status is `failed` if the request did not reach at least one messenger, otherwise `sent` if it reached at least one. A messenger that is not connected leaves the status at `pending`, which is not a failure. To retry undelivered requests, use the button in the admin panel or `php bin/console itk:requests:resend`. The request JSON also has `sendable`: the messengers that never got the request and can take it now (connected, on, with a chat for the form). The request drawer shows **Send to MAX** or **Send to Telegram** for each of them and calls `POST requests/{id}/resend {channel}`.
 
-**Long fields.** The length of a value is counted in characters after trimming and removing tags. A line break from a browser form counts as two (`\r\n`). A value longer than the `max()` of its field is refused with an error for that field, and no request is created. A field without `max()` keeps the first 1001 characters without an error, so set `max()` on every field that can be long. Only an HTML tag is removed: a lowercase element name with `name="value"` attributes. Any other `<` is text and gets a space after it (`<500` is saved as `< 500`), so a value never holds the start of a tag. The space counts towards `max()`. The request card and the e-mail show the whole value. The bell shows one short line. The MCP tool `request_get` shows up to 500 characters of each value under `data` and 2000 of `message`, and marks a cut with `…`.
+**Long fields.** The length of a value is counted in characters after trimming and removing tags. A line break from a browser form counts as two (`\r\n`). A value longer than the `max()` of its field is refused with an error for that field, and no request is created. A field without `max()` keeps the first 1001 characters without an error, so set `max()` on every field that can be long. Only an HTML tag is removed: a lowercase element name with attributes such as `name="value"`, `name='value'` or `name=value`. Any other `<` is text and gets a space after it (`<500` is saved as `< 500`), so a value never holds the start of a tag. The space counts towards `max()`. The request card and the e-mail show the whole value. The bell shows one short line. The MCP tool `request_get` shows up to 500 characters of each value under `data` and 2000 of `message`, and marks a cut with `…`.
 
 A text too long for one message (4096 characters in Telegram after reading the HTML, 4000 characters of HTML in MAX) is sent as several messages in order, cut at line breaks. The worker waits 1 second between them, and 3.1 seconds in Telegram when there are more than 20 (a group takes 20 a minute). The pause is counted within one request: several long requests in a row can still exceed that limit, then send the undelivered ones again a minute later. **Send again** in the admin panel waits the same way. With more than 20 messages the page can time out while the delivery goes on, so open the request again before you press the button a second time. If one of them is refused, the following ones are not sent to that chat, the request is marked as not delivered, and the error names the part. A retry sends every message from the first to every chat of that messenger, so a chat may show some of them twice.
 
@@ -1031,14 +1031,14 @@ MAX (max.ru) works alongside Telegram and independently of it.
 
 The **MAX** switch (`maxOn`) and the `itk_cms.max.enabled: false` option work the same way as for Telegram. The **Test** button sends a test message. A MAX failure does not change the Telegram status, and the other way round.
 
-Recipients are stored in the `tgOn`, `tgRoutes`, `maxOn`, `maxRoutes` and `mailRoutes` settings (the `set:notifications` area). `GET settings` returns them together with the flags `tgFallback`, `maxFallback` (a chat is set in the configuration), `maxReady` and `mailReady`. `POST settings/telegram-test` and `POST settings/max-test {form?, chatId?}` send a test message.
+Recipients are stored in the `tgOn`, `tgRoutes`, `maxOn`, `maxRoutes` and `mailRoutes` settings (the `set:notifications` area). `GET settings` returns them together with the flags `tgFallback`, `maxFallback` (a chat is set in the configuration), `tgReady`, `maxReady` and `mailReady`. `POST settings/telegram-test` and `POST settings/max-test {form?, chatId?}` send a test message.
 
 ### Bots
 
 In **Settings** → **Bots** (the `set:bots` area, by default only the administrator has it) you set the Telegram and MAX tokens without editing files or restarting. A token from the admin panel wins over the server token. Without either, the messenger is not connected.
 
 - The tokens are stored encrypted with a key from `APP_SECRET` in the `telegramBot` and `maxBot` settings. Do not declare schema fields with these keys. The tokens never appear in `GET settings`, history, the export or MCP. After `APP_SECRET` changes, the token from the admin panel counts as unset.
-- `GET {admin}/api/settings/bots` returns, for `telegram` and `max`, the fields `tokenSet`, `source` (`admin`, `server` or `null`), `ready` and `problem`.
+- `GET {admin}/api/settings/bots` returns, for `telegram` and `max`, the fields `tokenSet`, `source` (`admin`, `server` or `null`) and `ready`; `problem` appears only when a problem is found.
 - `PUT {admin}/api/settings/bots {telegram?: {token?, clear?}, max?: {token?, clear?}}`. An empty `token` keeps the old one, and `clear: true` removes the admin token. A Telegram token must match `^\d{5,20}:[A-Za-z0-9_-]{30,}$`. A MAX token has no spaces and is up to 512 characters. The token is never returned.
 
 `@BotFather` issues the Telegram token. The MAX partner platform business.max.ru or dev.max.ru issues the MAX token.
@@ -1501,10 +1501,10 @@ final class ToursExtension implements ItkExtensionInterface
 }
 ```
 
-- `Registry` is called once per request. Classes come from the container if they are there, otherwise they are created without arguments.
+- Each extension registers on first use of `Registry`, once per registry instance. Classes come from the container if they are there, otherwise they are created without arguments.
 - `twigPaths()` adds folders to Twig, including for the console and `lint:twig`.
 - `NavItem` is an admin menu item that is not a collection. `to` is a route of the admin client. The default group is **Plugins** (`order` 800).
-- `adminAssets()` loads scripts as `<script type="module">` and styles after the main admin code. It accepts `/…` and `http(s)://…` URLs. A plugin calls `window.ITK.registerPlugin({ fields, panels, actions, previews })` and gets `window.ITK.vue`, `http`, `toast`, `confirm`, `i18n`, `ui` (including `SortableTree` and `KanbanBoard`). Details are in [admin/src/README.md](https://github.com/it-koval/cms/blob/main/admin/src/README.md).
+- `adminAssets()` adds CSS after the main admin stylesheet in `<head>`; its module scripts start after the interface language and `window.ITK` are ready, before the main admin app mounts. It accepts `/…` and `http(s)://…` URLs. A plugin calls `window.ITK.registerPlugin({ fields, panels, actions, previews })` and gets `window.ITK.vue`, `http`, `toast`, `confirm`, `i18n`, `ui` (including `SortableTree` and `KanbanBoard`). Details are in [admin/src/README.md](https://github.com/it-koval/cms/blob/main/admin/src/README.md).
 
 ### Code generators
 
@@ -1685,7 +1685,7 @@ Agents read instructions from the project root, so reference the file in the sit
 
 ## Public API and compatibility
 
-[UPGRADE.md](https://github.com/it-koval/cms/blob/main/UPGRADE.md) lists the public API and the upgrade rules between versions. Classes marked `@internal` in the docblock can change in any version, and PHPStan and IDEs warn when you use them. A site reads pages and collections through `ContentReader` and the Twig functions, not through repositories.
+[UPGRADE.md](https://github.com/it-koval/cms/blob/main/UPGRADE.md) lists the public API and the upgrade rules between versions. Classes marked `@internal` in their docblock are not public and may change in any minor release. PHPStan and IDEs warn when you use them. A site reads pages and collections through `ContentReader` and the Twig functions, not through repositories.
 
 ## Developing and testing the bundle
 

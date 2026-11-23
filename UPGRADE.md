@@ -51,7 +51,7 @@ These parts of the bundle are the public API and follow the rules above:
 - the admin plugin contract `window.ITK`, versioned by `ITK.version`;
 - the shape of the JSON API under the admin URL, as far as the built admin panel and documented clients rely on it.
 
-Everything marked `@internal` in a class docblock is not public and may change in any minor release. This includes `Repository\*`, `Controller\*`, `Generator\*`, `Rendering\*` (except `PageCache::clear()`), `Mcp\Tool\*`, the `Security\*` listeners, and `Twig\{ItkExtension, ItkRuntime, SeoRuntime}`. To read pages and collections in templates, use `Content\ContentReader` and the Twig functions, not the repositories.
+Classes marked `@internal` in their docblock are not public and may change in any minor release. This includes `Repository\*`, `Controller\*`, `Generator\*`, `Rendering\*` (except `PageCache::clear()`), `Mcp\Tool\*`, the `Security\*` listeners, and `Twig\{ItkExtension, ItkRuntime, SeoRuntime}`. To read pages and collections in templates, use `Content\ContentReader` and the Twig functions, not the repositories.
 
 The database schema (the `itk_*` tables) is not part of the public API. Read and write through the services. Only bundle migrations change these tables.
 

@@ -22,7 +22,7 @@ If you are not sure whether a feature is general, ask the person who gave you th
 
 - Do not edit files in `vendor/itk/cms`. The next `composer update` erases the edit.
 - Do not copy core classes, templates, or JavaScript into the site to change the copy. The copy stops receiving core fixes.
-- Do not use internal core classes. Classes marked `@internal` in their docblock, and everything the README calls internal, can change in any release. If you cannot do without such a class, the core is missing an extension point. Propose it as a pull request.
+- Do not use internal core classes. Classes marked `@internal` in their docblock are not public and may change in any minor release. The same applies to everything the README calls internal. If you cannot do without such a class, the core is missing an extension point. Propose it as a pull request.
 - Do not change the core tables (`itk_*`) in site migrations. Only bundle migrations change the core schema.
 
 ## Prepare a core pull request

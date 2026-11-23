@@ -4,7 +4,7 @@ English | [Русский](SECURITY.ru.md)
 
 ## Supported versions
 
-Security fixes go to the `main` branch and to the latest release. Before 1.0.0 only the latest minor version (currently 0.1.x) receives fixes.
+Security fixes go to the `main` branch and to the latest release. Before 1.0.0 only the latest minor line receives fixes.
 
 ## Report a vulnerability
 
