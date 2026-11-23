@@ -10,6 +10,7 @@ use Itk\Cms\Entity\CollectionItem;
 use Itk\Cms\Entity\Revision;
 use Itk\Cms\Entity\User;
 use Itk\Cms\History\HistoryService;
+use Itk\Cms\I18n\ContentLocales;
 use Itk\Cms\I18n\I18n;
 use Itk\Cms\Repository\CollectionItemRepository;
 use Itk\Cms\Resource\HookDispatcher;
@@ -28,6 +29,8 @@ use Symfony\Component\DependencyInjection\Attribute\Autowire;
  */
 final class CollectionService
 {
+    private readonly ContentLocales $locales;
+
     public function __construct(
         private readonly EntityManagerInterface $em,
         private readonly CollectionItemRepository $items,
@@ -43,7 +46,9 @@ final class CollectionService
         private readonly DraftVersion $versions,
         #[Autowire(param: 'itk_cms.main_locale')]
         private readonly string $mainLocale,
+        ?ContentLocales $locales = null,
     ) {
+        $this->locales = $locales ?? new ContentLocales($mainLocale);
     }
 
     /**
@@ -184,6 +189,70 @@ final class CollectionService
         $this->hooks->created($this->record($c, $i, $locale));
 
         return $this->flat($c, $i, $locale);
+    }
+
+    /** Add one language to the existing record; its position, parent and singleton identity stay shared. @return array<string, mixed> */
+    public function addTranslation(string $collection, string $id, string $locale, ?string $from): array
+    {
+        $c = $this->collection($collection);
+        $this->assertTranslationLocale($locale);
+        if (null !== $from) {
+            if ('' === $from || $from === $locale) {
+                throw ContentException::invalid(I18n::t('content.translation_source_invalid'));
+            }
+            $this->locales->assertUsable($from);
+        }
+
+        return $this->lock->publish('item', $collection . ':' . $id, function () use ($c, $collection, $id, $locale, $from): array {
+            $i = $this->find($collection, $id);
+            $this->em->refresh($i, LockMode::PESSIMISTIC_WRITE);
+            if (isset($i->translations[$locale])) {
+                throw ContentException::conflict(I18n::t('content.translation_exists', ['language' => $this->locales->name($locale)]), ['code' => 'translation_exists', 'locale' => $locale]);
+            }
+            $data = [];
+            if (null !== $from) {
+                $source = $i->translations[$from] ?? throw ContentException::invalid(I18n::t('content.translation_source_missing', ['language' => $this->locales->name($from)]), ['code' => 'translation_source_missing']);
+                $data = $this->access->input($c->fieldList(), (array) ($source['draft'] ?? []));
+            }
+            $data = $this->hooks->creating('item', $collection, $locale, $data, translationOnly: true);
+            $draft = $this->normalized($c, $data) + $this->values->defaults($c->fieldList()) + $this->matrixDefaults($c);
+            $this->raw->assertFields($c->fieldList(), [], $draft);
+            $this->put($i, $locale, ['draft' => $draft, 'published' => null, 'status' => 'draft', 'updatedAt' => Json::now()]);
+            $this->history->item($collection, $i, $locale, Revision::CREATE);
+            $this->em->flush();
+            $this->hooks->created($this->record($c, $i, $locale, true));
+
+            return $this->flat($c, $i, $locale);
+        });
+    }
+
+    /** Remove only the requested JSON language key, keeping the record and the other versions. */
+    public function removeTranslation(string $collection, string $id, string $locale): void
+    {
+        $c = $this->collection($collection);
+        $this->assertTranslationLocale($locale);
+        $this->lock->publish('item', $collection . ':' . $id, function () use ($c, $collection, $id, $locale): void {
+            $i = $this->find($collection, $id);
+            $this->em->refresh($i, LockMode::PESSIMISTIC_WRITE);
+            $t = $i->translations[$locale] ?? throw new ContentException(I18n::t(PageService::NO_VERSION), 404, ['code' => 'no_translation', 'locale' => $locale]);
+            if ($locale === $this->mainLocale) {
+                throw ContentException::conflict(I18n::t('content.translation_main_required'));
+            }
+            if (\count($i->translations) <= 1) {
+                throw ContentException::conflict(I18n::t('content.item_translation_last_required'));
+            }
+            $record = $this->record($c, $i, $locale, true);
+            $this->hooks->deleting($record);
+            if (null !== $this->live($t)) {
+                $this->unpublishVersion($c, $i, $locale, $t, translationOnly: true);
+            }
+            $this->history->itemTranslationRemoved($i, $locale, $t);
+            $all = $i->translations;
+            unset($all[$locale]);
+            $i->translations = $all;
+            $this->em->flush();
+            $this->hooks->deleted($record);
+        });
     }
 
     /**
@@ -362,18 +431,24 @@ final class CollectionService
     {
         $c = $this->collection($collection);
         [$i, $t, $locale] = $this->version($collection, $id, $locale);
+        $this->unpublishVersion($c, $i, $locale, $t);
+
+        return $this->flat($c, $i, $locale);
+    }
+
+    /** @param array<string, mixed> $t */
+    private function unpublishVersion(Collection $c, CollectionItem $i, string $locale, array $t, bool $translationOnly = false): void
+    {
         if (null === $this->live($t)) {
             throw ContentException::conflict(I18n::t('content.item_already_unpublished'));
         }
-        $this->hooks->unpublishing($this->record($c, $i, $locale));
+        $this->hooks->unpublishing($this->record($c, $i, $locale, $translationOnly));
         $was = $this->history->itemState($i, $locale);
         $t['status'] = 'draft';
         $this->put($i, $locale, $t);
-        $this->history->item($collection, $i, $locale, Revision::UNPUBLISH, $was);
+        $this->history->item($c->key(), $i, $locale, Revision::UNPUBLISH, $was);
         $this->em->flush();
-        $this->hooks->unpublished($this->record($c, $i, $locale));
-
-        return $this->flat($c, $i, $locale);
+        $this->hooks->unpublished($this->record($c, $i, $locale, $translationOnly));
     }
 
     /**
@@ -395,11 +470,11 @@ final class CollectionService
         return $out;
     }
 
-    public function record(Collection $c, CollectionItem $i, string $locale): Record
+    public function record(Collection $c, CollectionItem $i, string $locale, bool $translationOnly = false): Record
     {
         $t = $i->translations[$locale] ?? null;
 
-        return new Record($i->id, 'item', $c->key(), $locale, (array) ($t['draft'] ?? []), null !== $t ? (string) ($t['status'] ?? 'draft') : 'missing', $c->isTree() ? ['parentId' => $i->parentId] : []);
+        return new Record($i->id, 'item', $c->key(), $locale, (array) ($t['draft'] ?? []), null !== $t ? (string) ($t['status'] ?? 'draft') : 'missing', $c->isTree() ? ['parentId' => $i->parentId] : [], $translationOnly);
     }
 
     /** @return array<string, mixed> */
@@ -648,6 +723,14 @@ final class CollectionService
     }
 
     /* ---------- internals ---------- */
+
+    private function assertTranslationLocale(string $locale): void
+    {
+        if ('' === $locale) {
+            throw ContentException::invalid(I18n::t('content.locale_unknown', ['locale' => $locale]));
+        }
+        $this->locales->assertUsable($locale);
+    }
 
     private function collection(string $key): Collection
     {

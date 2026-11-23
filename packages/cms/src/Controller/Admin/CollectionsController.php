@@ -138,6 +138,24 @@ final class CollectionsController extends AbstractApiController
         return $this->json(['ok' => true]);
     }
 
+    #[Route('/{col}/{id}/translations', name: 'translation_add', requirements: ['col' => '[a-z0-9_\-]+'], methods: ['POST'])]
+    public function addTranslation(Request $request, string $col, string $id): JsonResponse
+    {
+        $this->need($col, 'edit');
+        [$locale, $from] = $this->translationInput($request);
+
+        return $this->json($this->collections->addTranslation($col, $id, $locale, $from), 201);
+    }
+
+    #[Route('/{col}/{id}/translations/{locale}', name: 'translation_remove', requirements: ['col' => '[a-z0-9_\-]+', 'locale' => '[a-z]{2,3}'], methods: ['DELETE'])]
+    public function removeTranslation(string $col, string $id, string $locale): JsonResponse
+    {
+        $this->need($col, 'delete');
+        $this->collections->removeTranslation($col, $id, $locale);
+
+        return $this->json(['ok' => true]);
+    }
+
     #[Route('/{col}/{id}/{action}', name: 'action', requirements: ['col' => '[a-z0-9_\-]+', 'action' => 'publish|revert|submit|return'], methods: ['POST'])]
     public function action(Request $request, string $col, string $id, string $action): JsonResponse
     {

@@ -7,6 +7,7 @@ namespace Itk\Cms\Resource;
 /**
  * A light picture of one record for hooks, events and actions: a page (resourceKey = its template) or a collection item.
  * `fields` are the values of the version in `locale` (pages: the template fields; `meta` carries title, url, parentId, template).
+ * `translationOnly` marks hooks for the addition or removal of one language version of an existing record.
  */
 final class Record
 {
@@ -23,6 +24,7 @@ final class Record
         public readonly array $fields,
         public readonly string $status,
         public readonly array $meta = [],
+        public readonly bool $translationOnly = false,
     ) {
     }
 

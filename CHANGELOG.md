@@ -8,6 +8,7 @@ All notable changes to ITK CMS are recorded in this file. The format follows [Ke
 
 ### Added
 
+- Page and collection record translations can be created and deleted through the admin JSON API and the public `PageService` and `CollectionService` methods. A new translation is a draft copied from another language or filled with schema defaults. Deleting it preserves the other languages. The main and last versions cannot be deleted.
 - `itk_cms.locales` configures content languages and their display names and metadata.
 - The public `Itk\Cms\I18n\ContentLocales` service exposes the ordered language list, display names, prefixes and metadata.
 

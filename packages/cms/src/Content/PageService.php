@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace Itk\Cms\Content;
 
+use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use Doctrine\DBAL\LockMode;
 use Doctrine\ORM\EntityManagerInterface;
+use Doctrine\ORM\Query;
 use Itk\Cms\Entity\Page;
 use Itk\Cms\Entity\PageTranslation;
 use Itk\Cms\Entity\Revision;
@@ -208,6 +210,107 @@ final class PageService
     }
 
     /* ---------- writing ---------- */
+
+    /** A new language version belongs to the same page; only its draft is copied. @return array<string, mixed> */
+    public function addTranslation(string $id, string $locale, ?string $from): array
+    {
+        $this->assertTranslationLocale($locale);
+        if (null !== $from && ('' === $from || $from === $locale)) {
+            throw ContentException::invalid(I18n::t('content.translation_source_invalid'));
+        }
+        if (null !== $from) {
+            $this->locales->assertUsable($from);
+        }
+
+        try {
+            return $this->lock->publish('page', $id, function () use ($id, $locale, $from): array {
+                $p = $this->reloadTranslations($id);
+                if (null !== $p->translation($locale)) {
+                    throw $this->translationExists($locale);
+                }
+                $source = null !== $from ? $p->translation($from) : ($p->translation($this->mainLocale) ?? ($p->translations->first() ?: null));
+                if (null === $source) {
+                    throw ContentException::invalid(I18n::t('content.translation_source_missing', ['language' => $this->locales->name($from ?? $this->mainLocale)]), ['code' => 'translation_source_missing']);
+                }
+                $tpl = $this->schema->template($p->template) ?? throw ContentException::invalid(I18n::t('content.page_template_unknown'));
+                $title = (string) ($source->draft['title'] ?? '');
+                $url = $this->translationAddress($locale, $source->locale, (string) ($source->draft['url'] ?? ''));
+                if (null !== $from) {
+                    $draft = $this->snapshot($source->draft);
+                } else {
+                    $fields = $this->values->defaults($tpl->fieldList(), true);
+                    $nameKey = $this->nameKey($tpl);
+                    if (null !== $nameKey && '' === \trim((string) ($fields[$nameKey] ?? ''))) {
+                        $fields[$nameKey] = $this->titleAsField($tpl->field($nameKey), $title);
+                    }
+                    $draft = ['title' => $title, 'seo' => ['title' => '', 'description' => ''], 'fields' => $fields,
+                        'sections' => !$tpl->hasSections() || null !== $tpl->h1Field() ? [] : $this->defaultSections($title)];
+                }
+                $draft['url'] = $url;
+                $draft = $this->hooks->creating('page', $p->template, $locale, $draft, translationOnly: true);
+                $draft = $this->snapshot($draft);
+                $draft['title'] = \trim((string) $draft['title']);
+                if ('' === $draft['title']) {
+                    throw ContentException::invalid(I18n::t('content.page_title_required'));
+                }
+                if (null !== $from) {
+                    $draft['fields'] = $this->access->input($tpl->fieldList(), (array) $draft['fields']);
+                    $draft['sections'] = $this->guardSections((array) $draft['sections'], []);
+                } else {
+                    $draft['sections'] = $this->normalizeSections((array) $draft['sections']);
+                }
+                $this->assertTranslationAddress($locale, (string) $draft['url']);
+                if ($this->urlTaken($locale, (string) $draft['url'], null)) {
+                    throw ContentException::conflict(I18n::t('content.page_url_exists'));
+                }
+                $this->raw->assertFields($tpl->fieldList(), [], (array) $draft['fields']);
+                $this->raw->assertSections([], (array) $draft['sections']);
+                $t = new PageTranslation($p, $locale);
+                $t->draft = $draft;
+                $p->translations->set($locale, $t);
+                $this->em->persist($t);
+                $this->history->page($p, $t, Revision::CREATE);
+                $this->em->flush();
+                $this->hooks->created($this->record($p, $t, true));
+
+                return $this->flat($p, $t);
+            });
+        } catch (UniqueConstraintViolationException $e) {
+            // A writer that does not take our advisory lock can still reach the database constraint first.
+            if (!\str_contains($e->getMessage(), 'itk_page_translation_page_locale')) {
+                throw $e;
+            }
+
+            throw $this->translationExists($locale);
+        }
+    }
+
+    /** Removes one language, retaining the shared page and all its other versions. */
+    public function removeTranslation(string $id, string $locale): void
+    {
+        $this->assertTranslationLocale($locale);
+        $this->lock->publish('page', $id, function () use ($id, $locale): void {
+            $p = $this->reloadTranslations($id);
+            $t = $this->version($p, $locale);
+            if ($locale === $this->mainLocale) {
+                throw ContentException::conflict(I18n::t('content.translation_main_required'));
+            }
+            if (\count($p->translations) < 2) {
+                throw ContentException::conflict(I18n::t('content.translation_last_required'));
+            }
+            $record = $this->record($p, $t, true);
+            $this->hooks->deleting($record);
+            $removed = clone $t;
+            if ($t->isLive()) {
+                $this->unpublishVersion($p, $t, true);
+            }
+            $this->history->pageTranslationRemoved($p, $removed);
+            $p->translations->remove($locale);
+            $this->em->remove($t);
+            $this->em->flush();
+            $this->hooks->deleted($record);
+        });
+    }
 
     /**
      * New page, born in the main language as a draft.
@@ -568,7 +671,7 @@ final class PageService
         return $out;
     }
 
-    public function record(Page $p, PageTranslation $t): Record
+    public function record(Page $p, PageTranslation $t, bool $translationOnly = false): Record
     {
         $d = $t->draft;
 
@@ -578,7 +681,7 @@ final class PageService
             'seo' => (array) ($d['seo'] ?? []),
             'parentId' => $p->parentId(),
             'template' => $p->template,
-        ]);
+        ], translationOnly: $translationOnly);
     }
 
     /** @return array<string, mixed> */
@@ -680,21 +783,33 @@ final class PageService
     {
         $p = $this->find($id);
         $t = $this->version($p, $locale ?? $this->mainLocale);
-        if ($this->isRoot($p)) {
+
+        $this->unpublishVersion($p, $t);
+
+        return $this->flat($p, $t);
+    }
+
+    /** The same transition is used when deleting a live translation, with its after hook deferred until commit. */
+    private function unpublishVersion(Page $p, PageTranslation $t, bool $translationOnly = false): void
+    {
+        if ($this->isRoot($p) && ($t->locale === $this->mainLocale || (!$translationOnly && !$this->locales->isConfigured()))) {
             throw ContentException::conflict(I18n::t('content.page_home_not_unpublishable'));
         }
         if (!$t->isLive()) {
             throw ContentException::conflict(I18n::t('content.page_already_unpublished'));
         }
-        $this->hooks->unpublishing($this->record($p, $t));
+        $this->hooks->unpublishing($this->record($p, $t, $translationOnly));
         $was = $this->history->pageState($p, $t);
+        $previousPublishedUrl = $t->publishedUrl;
         $t->status = PageTranslation::DRAFT;
         $t->publishedUrl = null;
         $this->history->page($p, $t, Revision::UNPUBLISH, $was);
         $this->em->flush();
-        $this->hooks->unpublished($this->record($p, $t));
-
-        return $this->flat($p, $t);
+        $live = $this->locales->isConfigured() && $this->locales->has($t->locale) && $t->locale !== $this->mainLocale ? [
+            'url' => (string) ($t->published['url'] ?? $previousPublishedUrl),
+            'seo' => (array) ($t->published['seo'] ?? []),
+        ] : [];
+        $this->hooks->unpublished($this->record($p, $t, $translationOnly), $live);
     }
 
     /** Takes back unpublish(): the version is on the site again exactly as it was. */
@@ -845,6 +960,69 @@ final class PageService
     }
 
     /* ---------- internals ---------- */
+
+    private function assertTranslationLocale(string $locale): void
+    {
+        if ('' === $locale) {
+            throw ContentException::invalid(I18n::t('content.locale_unknown', ['locale' => $locale]));
+        }
+        $this->locales->assertUsable($locale);
+    }
+
+    private function translationExists(string $locale): ContentException
+    {
+        return ContentException::conflict(I18n::t('content.translation_exists', ['language' => $this->locales->name($locale)]), ['code' => 'translation_exists', 'locale' => $locale]);
+    }
+
+    /** Refresh both the shared row and its collection after acquiring the resource lock and starting the transaction. */
+    private function reloadTranslations(string $id): Page
+    {
+        $p = $this->find($id);
+        $this->em->refresh($p, LockMode::PESSIMISTIC_WRITE);
+
+        return $this->pages->createQueryBuilder('p')->addSelect('t')->leftJoin('p.translations', 't')
+            ->where('p.id = :id')->setParameter('id', $id)->getQuery()->setHint(Query::HINT_REFRESH, true)->getSingleResult();
+    }
+
+    private function assertTranslationAddress(string $locale, string $url): void
+    {
+        if (!Url::isLocalPath($url) || \mb_strlen($url) > 255 || false !== \strpbrk($url, '?#\\') || \str_contains($url, '//')) {
+            throw ContentException::invalid(I18n::t('content.translation_address_invalid'));
+        }
+        self::assertNotReserved($url);
+        $this->assertLocaleAddress($locale, $url);
+    }
+
+    private function translationAddress(string $locale, string $sourceLocale, string $sourceUrl): string
+    {
+        $sourceUrl = \trim($sourceUrl);
+        if (!Url::isLocalPath($sourceUrl) || false !== \strpbrk($sourceUrl, '?#\\') || \str_contains($sourceUrl, '//')) {
+            throw ContentException::invalid(I18n::t('content.translation_address_invalid'));
+        }
+        $prefix = $this->locales->prefix($sourceLocale);
+        $sourceKey = Url::key($sourceUrl);
+        $prefixKey = Url::key($prefix);
+        $ownLegacyPrefix = !$this->locales->isConfigured() && '' !== $prefix && ($sourceKey === $prefixKey || \str_starts_with($sourceKey, $prefixKey . '/'));
+        if ($this->locales->fromPath($sourceUrl) !== $sourceLocale && !$ownLegacyPrefix) {
+            $prefix = '';
+        }
+        $path = '' !== $prefix ? \substr($sourceUrl, \strlen($prefix)) : $sourceUrl;
+        $path = '/' . \trim($path, '/');
+        $trailing = '/' !== $path && Url::hasTrailingSlash($sourceUrl) ? '/' : '';
+        $url = $this->locales->prefix($locale) . ('/' === $path ? '' : $path) . $trailing;
+        $url = '' === $url ? '/' : $url;
+        $this->assertTranslationAddress($locale, $url);
+        $candidate = $url;
+        for ($suffix = 2; $this->urlTaken($locale, $candidate, null); ++$suffix) {
+            if ('/' === $path) {
+                throw ContentException::conflict(I18n::t('content.page_url_exists'));
+            }
+            $candidate = \rtrim($url, '/') . '-' . $suffix . $trailing;
+            $this->assertTranslationAddress($locale, $candidate);
+        }
+
+        return $candidate;
+    }
 
     private function requireDraftVersion(string $id, string $locale, string $expected, LockMode $lock = LockMode::NONE): void
     {

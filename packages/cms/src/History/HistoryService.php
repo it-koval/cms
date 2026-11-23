@@ -76,6 +76,20 @@ final class HistoryService
         return $this->snapshots->pageOf($p, $t);
     }
 
+    public function pageTranslationRemoved(Page $p, PageTranslation $t): void
+    {
+        $snapshot = $this->snapshots->pageOf($p, $t) + [
+            'published' => $t->published,
+            'publishedUrl' => $t->publishedUrl,
+            'publishedAt' => $t->publishedAt?->format(\DATE_ATOM),
+            'updatedAt' => $t->updatedAt->format(\DATE_ATOM),
+            'awaiting' => $t->awaiting,
+            'returned' => $t->returned,
+            'migrated' => $t->migrated,
+        ];
+        $this->write(Revision::PAGE, $p->id, $p->template, $t->locale, Revision::DELETE_TRANSLATION, $snapshot, null);
+    }
+
     /** Call before the page is removed (and flushed): the whole page goes to the trash. */
     public function pageRemoved(Page $p): void
     {
@@ -114,6 +128,13 @@ final class HistoryService
         $t = $i->translations[$locale] ?? null;
 
         return null === $t ? null : $this->snapshots->itemOf($i, $t);
+    }
+
+    /** @param array<string, mixed> $t the version before it was taken off the site */
+    public function itemTranslationRemoved(CollectionItem $i, string $locale, array $t): void
+    {
+        $snapshot = $this->snapshots->itemOf($i, $t) + $t;
+        $this->write(Revision::ITEM, $i->id, $i->collection, $locale, Revision::DELETE_TRANSLATION, $snapshot, null);
     }
 
     /** Call before the record is removed (and flushed). */

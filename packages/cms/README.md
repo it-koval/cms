@@ -737,6 +737,40 @@ The bundle recognizes the admin panel by the route names `itk_admin_*` and `itk_
 
 The `Itk\Cms\Admin\AdminPath` service tells where the admin panel is (`base()`, `to('/api/me')`), taking the import `prefix` into account. Links in e-mails are built through it.
 
+#### Page and record translations
+
+Each translation belongs to the same page or collection record. Creating a translation keeps its `id`, template, parent and position. The target language is the `locale` query parameter on creation and the final path segment on deletion.
+
+| Request | JSON body | Success response |
+|---|---|---|
+| `POST /admin/api/pages/{id}/translations?locale=kk` | `{"from":"ru"}` or `{"from":null}` | `201`, a flat page draft with the same `id` and `locale: "kk"` |
+| `DELETE /admin/api/pages/{id}/translations/{locale}` | None | `200 {"ok":true}` |
+| `POST /admin/api/collections/{col}/{id}/translations?locale=kk` | `{"from":"ru"}` or `{"from":null}` | `201`, a flat record draft with the same `id` and `locale: "kk"` |
+| `DELETE /admin/api/collections/{col}/{id}/translations/{locale}` | None | `200 {"ok":true}` |
+
+`from` selects the existing draft to copy, subject to field permissions. Pass `null` to fill a new draft with schema defaults. Each translation starts as an unpublished draft with no pending approval. New page addresses use the target language prefix. An occupied path gets an available suffix, while an occupied language homepage returns `409`.
+
+Creation requires `edit` and deletion requires `delete` on the template or collection. Both require sign-in and the CSRF header described above. Deletion removes the selected translation and records its snapshot in history. To remove the last version, delete the whole page or record.
+
+- `404` if the page or record is missing, or the translation to delete is missing.
+- `409` if the target translation already exists, its address conflicts, or the operation would delete the main or last version.
+- `422` if the target language is missing or disabled, `from` is invalid or selects a missing draft, or the address is invalid.
+- `401` if sign-in is required. `403` if the user lacks permission.
+
+Errors use `{error, details?}`. Existing responses for a missing translation retain `details.code: "no_translation"`. Reading a draft in a language without a translation still returns the read response wrapper with `translated: false` and `page: null` or `item: null`.
+
+Trusted site PHP code can use the same public operations on `Itk\Cms\Content\PageService` and `Itk\Cms\Content\CollectionService`. `addTranslation()` requires the source argument, a language code or `null`, and returns the flat draft as an array. `removeTranslation()` returns `void`.
+
+```php
+$pages->addTranslation($id, 'kk', 'ru');
+// Or: $pages->addTranslation($id, 'kk', null);
+$pages->removeTranslation($id, 'kk');
+
+$collections->addTranslation('tours', $id, 'kk', 'ru');
+// Or: $collections->addTranslation('tours', $id, 'kk', null);
+$collections->removeTranslation('tours', $id, 'kk');
+```
+
 ### Roles and permissions
 
 A permission is a pair of an area and an action. Actions: `view` (**View**), `edit` (**Edit**), `publish` (**Publish**), `delete` (**Delete**). `publish` and `delete` include `edit`, and `edit` includes `view`. The role matrix in **Settings** → **Users and roles** → **Roles** is built from the schema areas and picks up new rows automatically.

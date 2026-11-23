@@ -76,6 +76,20 @@ abstract class AbstractApiController
         return $this->contentLocales->assertUsable($locale);
     }
 
+    /** @return array{string, ?string} the target and optional source of a new translation */
+    protected function translationInput(Request $request): array
+    {
+        if (!\is_string($request->query->all()['locale'] ?? null) || null === ($locale = $this->locale($request))) {
+            throw ContentException::invalid(I18n::t('http.no_such_language'));
+        }
+        $from = $this->body($request)['from'] ?? null;
+        if (null !== $from && !\is_string($from)) {
+            throw ContentException::invalid(I18n::t('content.translation_source_invalid'));
+        }
+
+        return [$locale, $from];
+    }
+
     /**
      * @param array<string, mixed> $body
      *

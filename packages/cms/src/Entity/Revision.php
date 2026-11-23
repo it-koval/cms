@@ -36,9 +36,10 @@ class Revision
     public const UNPUBLISH = 'unpublish';
     public const REVERT = 'revert';
     public const DELETE = 'delete';
+    public const DELETE_TRANSLATION = 'delete_locale';
     public const RESTORE = 'restore';
     public const CREATE = 'create';
-    public const ACTIONS = [self::EDIT, self::PUBLISH, self::UNPUBLISH, self::REVERT, self::DELETE, self::RESTORE, self::CREATE];
+    public const ACTIONS = [self::EDIT, self::PUBLISH, self::UNPUBLISH, self::REVERT, self::DELETE, self::DELETE_TRANSLATION, self::RESTORE, self::CREATE];
 
     #[ORM\Id]
     #[ORM\GeneratedValue]

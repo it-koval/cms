@@ -84,12 +84,12 @@ final class HookDispatcher
      *
      * @return array<string, mixed> the data to store
      */
-    public function creating(string $kind, string $key, string $locale, array $data): array
+    public function creating(string $kind, string $key, string $locale, array $data, bool $translationOnly = false): array
     {
         $viewer = $this->access->viewer();
-        $this->events->dispatch($event = new RecordCreating($key, $kind, null, $data, $viewer));
+        $this->events->dispatch($event = new RecordCreating($key, $kind, null, $data, $viewer, $locale, $translationOnly));
 
-        return $this->array($this->resource($kind, $key)?->beforeCreating($event->data, $this->context($kind, $key, $locale)) ?? $event->data, 'beforeCreating');
+        return $this->array($this->resource($kind, $key)?->beforeCreating($event->data, $this->context($kind, $key, $locale, $translationOnly)) ?? $event->data, 'beforeCreating');
     }
 
     public function created(Record $record): void
@@ -161,10 +161,11 @@ final class HookDispatcher
         $this->resource($record->kind, $record->resourceKey)?->beforeUnpublishing($record, $this->contextOf($record));
     }
 
-    public function unpublished(Record $record): void
+    /** @param array{url: string, seo: array<string, mixed>}|array{} $previousLiveAddress */
+    public function unpublished(Record $record, array $previousLiveAddress = []): void
     {
-        $this->after(function () use ($record): void {
-            $this->events->dispatch(new RecordUnpublished($record->resourceKey, $record->kind, $record, [], $this->access->viewer()));
+        $this->after(function () use ($record, $previousLiveAddress): void {
+            $this->events->dispatch(new RecordUnpublished($record->resourceKey, $record->kind, $record, $previousLiveAddress, $this->access->viewer()));
             $this->resource($record->kind, $record->resourceKey)?->afterUnpublished($record, $this->contextOf($record));
         });
     }
@@ -210,14 +211,14 @@ final class HookDispatcher
         return 'page' === $kind ? $this->schema->template($key)?->resource() : $this->schema->collection($key)?->resource();
     }
 
-    private function context(string $kind, string $key, string $locale): Context
+    private function context(string $kind, string $key, string $locale, bool $translationOnly = false): Context
     {
-        return new Context($this->access->viewer(), $locale, $kind, $key);
+        return new Context($this->access->viewer(), $locale, $kind, $key, $translationOnly);
     }
 
     private function contextOf(Record $record): Context
     {
-        return $this->context($record->kind, $record->resourceKey, $record->locale);
+        return $this->context($record->kind, $record->resourceKey, $record->locale, $record->translationOnly);
     }
 
     /**
