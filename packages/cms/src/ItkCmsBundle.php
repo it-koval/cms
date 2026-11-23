@@ -13,6 +13,7 @@ use Itk\Cms\Doctrine\JsonText;
 use Itk\Cms\Doctrine\PhoneDigits;
 use Itk\Cms\Doctrine\VectorType;
 use Itk\Cms\I18n\AdminLocale;
+use Itk\Cms\I18n\ContentLocales;
 use Itk\Cms\I18n\I18n;
 use Itk\Cms\Mail\PublicUrl;
 use Itk\Cms\Media\ImageVariants;
@@ -137,12 +138,65 @@ final class ItkCmsBundle extends AbstractBundle
                     throw new InvalidConfigurationException(\sprintf('itk_cms.admin_locale "%s" is not one of itk_cms.admin_locales (%s).', \is_scalar($v['admin_locale']) ? $v['admin_locale'] : \gettype($v['admin_locale']), \implode(', ', $v['admin_locales'])));
                 })
             ->end()
+            ->validate()
+                ->ifTrue(static fn (array $v): bool => null !== $v['locales'])
+                ->then(static function (array $v): array {
+                    $main = \strtolower(\trim((string) $v['main_locale']));
+                    if ([] !== $v['locales'] && !isset($v['locales'][$main])) {
+                        throw new InvalidConfigurationException(\sprintf('itk_cms.main_locale "%s" is not one of itk_cms.locales (%s).', $main, \implode(', ', \array_keys($v['locales']))));
+                    }
+                    $v['main_locale'] = $main;
+
+                    return $v;
+                })
+            ->end()
             ->children()
                 ->scalarNode('schema_file')
                     ->info('PHP file that returns static function (SchemaBuilder $s): void')
                     ->defaultValue('%kernel.project_dir%/config/itk/schema.php')
                 ->end()
                 ->scalarNode('main_locale')->defaultValue('ru')->end()
+                ->arrayNode('locales')
+                    ->info('Languages of the site content, keyed by their short codes')
+                    ->useAttributeAsKey('code')
+                    ->normalizeKeys(false)
+                    ->defaultNull()
+                    ->arrayPrototype()
+                        ->children()
+                            ->scalarNode('name')
+                                ->isRequired()
+                                ->validate()->ifTrue(static fn ($v): bool => !\is_string($v) || '' === \trim($v))->thenInvalid('Language name must be a non-empty string')->end()
+                            ->end()
+                            ->scalarNode('html_lang')
+                                ->defaultNull()
+                                ->validate()->ifTrue(static fn ($v): bool => null !== $v && (!\is_string($v) || 1 !== \preg_match('~^[a-z]{2,3}(-[A-Za-z0-9]{2,8})?\z~', $v)))->thenInvalid('html_lang must be a language tag like en or zh-CN')->end()
+                            ->end()
+                            ->scalarNode('og_locale')
+                                ->defaultNull()
+                                ->validate()->ifTrue(static fn ($v): bool => null !== $v && (!\is_string($v) || 1 !== \preg_match('~^[a-z]{2,3}_[A-Z]{2}\z~', $v)))->thenInvalid('og_locale must be a language and country separated by an underscore, like zh_CN')->end()
+                            ->end()
+                        ->end()
+                    ->end()
+                    ->validate()
+                        ->always()
+                        ->then(static function (array $locales): array {
+                            $tags = [];
+                            foreach ($locales as $code => $locale) {
+                                if (1 !== \preg_match('~^[a-z]{2,3}\z~', (string) $code)) {
+                                    throw new InvalidConfigurationException(\sprintf('Invalid language code "%s" in itk_cms.locales. Use 2 or 3 lowercase letters.', $code));
+                                }
+                                $tag = $locale['html_lang'] ?? $code;
+                                $key = \strtolower($tag);
+                                if (isset($tags[$key])) {
+                                    throw new InvalidConfigurationException(\sprintf('Languages "%s" and "%s" in itk_cms.locales have the same html_lang "%s".', $tags[$key], $code, $tag));
+                                }
+                                $tags[$key] = $code;
+                            }
+
+                            return $locales;
+                        })
+                    ->end()
+                ->end()
                 ->scalarNode('admin_locale')
                     ->info('Language of the admin panel, of its letters and of the console for whoever has not chosen his own in "My profile". This is the language of the interface: the languages of the content are main_locale and the language versions of pages')
                     ->defaultValue('en')
@@ -377,7 +431,12 @@ final class ItkCmsBundle extends AbstractBundle
     {
         $parameters = $container->parameters();
         $parameters->set('itk_cms.schema_file', $config['schema_file']);
-        $parameters->set('itk_cms.main_locale', $config['main_locale']);
+        $mainLocale = (string) $config['main_locale'];
+        $locales = $config['locales'];
+        $main = $locales[$mainLocale] ?? ['name' => (new ContentLocales($mainLocale))->name($mainLocale), 'html_lang' => null, 'og_locale' => null];
+        $parameters->set('itk_cms.main_locale', $mainLocale);
+        $parameters->set('itk_cms.locales', [$mainLocale => $main] + ($locales ?? []));
+        $parameters->set('itk_cms.locales_configured', null !== $locales);
         $parameters->set('itk_cms.admin_locale', $config['admin_locale']);
         $parameters->set('itk_cms.admin_locales', \array_values(\array_unique($config['admin_locales'])));
         $parameters->set('itk_cms.blog', $config['blog']);

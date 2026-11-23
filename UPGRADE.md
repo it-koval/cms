@@ -39,7 +39,7 @@ These parts of the bundle are the public API and follow the rules above:
 - `Extension\ItkExtensionInterface`, `Extension\Registry`, and `Extension\NavItem`;
 - the interfaces a site implements and the classes they use: `Health\HealthCheckInterface`, `Health\HealthResult`, `Notification\NotifierInterface`, `Notification\Notification`, and `Notification\NotificationChannelInterface`;
 - `Content\ContentReader` and the content services `PageService`, `CollectionService`, `SettingsService`, and `MenuService`;
-- `Settings\Settings`, `I18n\I18n`, `Support\Url`, and `Admin\AdminPath`;
+- `Settings\Settings`, `I18n\I18n`, `I18n\ContentLocales`, `Support\Url`, and `Admin\AdminPath`;
 - the knowledge base search: `KnowledgeBase\KnowledgeSearch`, `KnowledgeBase\Model\{SearchOptions, SearchResult, Hit, Source, SourceKind, KnowledgeBaseUnavailable}`, and `KnowledgeBase\Embedding\*` except `OpenAiEmbedder`;
 - `Rendering\PageCache::clear()`;
 - the Twig functions of the bundle, including `itk_stylesheets()`;
@@ -58,6 +58,10 @@ The database schema (the `itk_*` tables) is not part of the public API. Read and
 ## Version notes
 
 This section lists the manual steps a release needs, newest first.
+
+### 0.3.0
+
+- `Mcp\AbstractMcpTool::locale()` is now non-static. Both `self::locale($args)` and `$this->locale($args)` work inside instance methods. Move calls from a static context into an instance method.
 
 ### 0.2.0
 

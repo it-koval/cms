@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace Itk\Cms\Controller\Admin;
 
 use Itk\Cms\Content\ContentException;
+use Itk\Cms\I18n\ContentLocales;
 use Itk\Cms\I18n\I18n;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
+use Symfony\Contracts\Service\Attribute\Required;
 
 /**
  * Helpers shared by the controllers of the admin JSON API (/admin/api/*). Errors are ContentException / AccessDeniedException: ApiErrorListener turns them into { error, details? }.
@@ -16,6 +18,14 @@ use Symfony\Component\HttpFoundation\Request;
  */
 abstract class AbstractApiController
 {
+    protected ContentLocales $contentLocales;
+
+    #[Required]
+    public function setContentLocales(ContentLocales $contentLocales): void
+    {
+        $this->contentLocales = $contentLocales;
+    }
+
     protected function json(mixed $data, int $status = 200): JsonResponse
     {
         $response = new JsonResponse($data, $status);
@@ -59,11 +69,11 @@ abstract class AbstractApiController
         if (null === $locale || '' === $locale) {
             return null;
         }
-        if (!\is_string($locale) || !\preg_match('/^[A-Za-z]{2,8}(-[A-Za-z0-9]{1,8})?$/', $locale)) {
+        if (!\is_string($locale)) {
             throw ContentException::invalid(I18n::t('http.no_such_language'));
         }
 
-        return $locale;
+        return $this->contentLocales->assertUsable($locale);
     }
 
     /**

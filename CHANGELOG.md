@@ -4,6 +4,20 @@ English | [Русский](CHANGELOG.ru.md)
 
 All notable changes to ITK CMS are recorded in this file. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html). [UPGRADE.md](UPGRADE.md) defines the public API.
 
+## [Unreleased]
+
+### Added
+
+- `itk_cms.locales` configures content languages and their display names and metadata.
+- The public `Itk\Cms\I18n\ContentLocales` service exposes the ordered language list, display names, prefixes and metadata.
+
+### Changed
+
+- `Mcp\AbstractMcpTool::locale()` is now non-static. Both `self::locale($args)` and `$this->locale($args)` work inside instance methods. Calls from a static context are no longer supported. See [UPGRADE.md](UPGRADE.md#030).
+- The admin API uses a shared language check and returns `422` for a code outside an explicitly configured list.
+- On sites with several configured languages, page versions use their language's address prefix. The main language's addresses cannot start with another configured language's path segment.
+- PHP and the admin editor transliterate Kazakh letters when generating slugs.
+
 ## [0.2.2] - 2026-11-22
 
 ### Fixed

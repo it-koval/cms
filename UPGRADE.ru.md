@@ -39,7 +39,7 @@ ITK CMS следует [семантическому версионирован�
 - `Extension\ItkExtensionInterface`, `Extension\Registry` и `Extension\NavItem`;
 - интерфейсы, которые реализует сайт, и классы, которые они используют: `Health\HealthCheckInterface`, `Health\HealthResult`, `Notification\NotifierInterface`, `Notification\Notification` и `Notification\NotificationChannelInterface`;
 - `Content\ContentReader` и сервисы содержимого `PageService`, `CollectionService`, `SettingsService` и `MenuService`;
-- `Settings\Settings`, `I18n\I18n`, `Support\Url` и `Admin\AdminPath`;
+- `Settings\Settings`, `I18n\I18n`, `I18n\ContentLocales`, `Support\Url` и `Admin\AdminPath`;
 - поиск по базе знаний: `KnowledgeBase\KnowledgeSearch`, `KnowledgeBase\Model\{SearchOptions, SearchResult, Hit, Source, SourceKind, KnowledgeBaseUnavailable}` и `KnowledgeBase\Embedding\*`, кроме `OpenAiEmbedder`;
 - `Rendering\PageCache::clear()`;
 - Twig-функции бандла, в том числе `itk_stylesheets()`;
@@ -58,6 +58,10 @@ ITK CMS следует [семантическому версионирован�
 ## Заметки к версиям
 
 Здесь перечислены ручные шаги, которые нужны при обновлении на релиз, новые версии сверху.
+
+### 0.3.0
+
+- `Mcp\AbstractMcpTool::locale()` теперь нестатический. Внутри методов экземпляра работают `self::locale($args)` и `$this->locale($args)`. Перенесите вызовы из статического контекста в метод экземпляра.
 
 ### 0.2.0
 

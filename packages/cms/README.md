@@ -320,7 +320,7 @@ Core templates: `home`, `default`, `blog`, `blog_category`, `blog_article`. A si
 
 **The H1 heading.** The first visible section of the `SectionType::FIRST_SCREEN` group gets the `is_h1` variable in its template. The H1 of that section is the field from `->h1('field')` or the first `headline` field. A group is the literal string passed to `group()`, and the admin panel shows it as written. Use `SectionType::FIRST_SCREEN` for the first-screen group. The admin panel shows this group and the default group in the interface language. A page template with `->h1('field')` owns the H1 itself. Only that field gets the **Page heading (H1)** label. If the H1 field has the `headline` type, the page title equals its first line as plain text.
 
-**Content in one language.** For now, site content is kept in one language, `main_locale`. The admin language is set separately (see [Admin language](#admin-language)).
+**Content languages.** Set `main_locale` for the primary content language and `locales` to list the languages available to editors. See [Content language configuration](#content-language-configuration) and [Admin language](#admin-language).
 
 ### Collections
 
@@ -1421,7 +1421,8 @@ All options are set in `config/packages/itk_cms.yaml` and are optional.
 | Option | Default | What it does |
 |---|---|---|
 | `schema_file` | `%kernel.project_dir%/config/itk/schema.php` | The site schema file |
-| `main_locale` | `ru` | The content language |
+| `main_locale` | `ru` | The main content language. With `locales`, spaces at the ends are removed and letters are lowercased |
+| `locales` | Omitted | Content languages and their names, keyed by code. See [Content language configuration](#content-language-configuration) |
 | `admin_locale` | `en` | The default admin language. Must be in `admin_locales` |
 | `admin_locales` | `[en, ru, kk]` | The languages a person chooses from |
 | `admin_path` | `/admin` | The admin path. The format is checked at startup |
@@ -1468,6 +1469,29 @@ All options are set in `config/packages/itk_cms.yaml` and are optional.
 | `max.enabled` | `true` | Sending requests to MAX |
 | `max.chat_ids` | `''` | Fallback MAX chats, comma-separated integers |
 | `update_source` | `null` | The URL for checking for a new version |
+
+### Content language configuration
+
+```yaml
+itk_cms:
+  main_locale: ru
+  locales:
+    ru: { name: Русский }
+    kk: { name: Қазақша }
+    tr: { name: Türkçe }
+    zh: { name: 中文, html_lang: zh-CN, og_locale: zh_CN }
+    en: { name: English }
+```
+
+- Language codes are 2 or 3 lowercase Latin letters. Each language needs a non-empty `name`. A non-empty list must include `main_locale`.
+- `html_lang` defaults to the code. It accepts 2 or 3 lowercase Latin letters with an optional hyphen and 2 to 8 letters or digits, as in `zh-CN`. Each language must have a distinct resulting tag.
+- `og_locale` accepts 2 or 3 lowercase Latin letters, an underscore and 2 uppercase Latin letters, as in `zh_CN`. The service can derive it from the region in `html_lang`. It returns `null` when neither is present.
+- The admin lists the main language first and then follows the configuration order. When `locales` is omitted, the admin lists only the main language and the API still accepts legacy language codes. An explicit list restricts API inputs to the listed languages. An explicit empty list allows only the main language.
+- On a site with multiple configured languages, addresses for the main language have no language prefix. Other versions use `/{code}`. For example, the Kazakh home page uses `/kk`, and other Kazakh pages use paths such as `/kk/about`. The server checks these addresses when saving, restoring or publishing a version.
+
+Inject `Itk\Cms\I18n\ContentLocales` to read the site's language codes, display names, path prefixes and metadata. Public routing for language-prefixed addresses is planned for 0.3.0.
+
+### Rate limits
 
 The bundle sets the limits in `framework.rate_limiter`, and the site can override them under the same names:
 

@@ -13,7 +13,6 @@ use Itk\Cms\Repository\PageRepository;
 use Itk\Cms\Request\RequestService;
 use Itk\Cms\Schema\Schema;
 use Itk\Cms\Security\Access;
-use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpKernel\Attribute\AsController;
 use Symfony\Component\Routing\Attribute\Route;
@@ -43,8 +42,6 @@ final class DashboardController extends AbstractApiController
         private readonly CollectionItemRepository $items,
         private readonly CollectionService $collections,
         private readonly RequestService $requests,
-        #[Autowire(param: 'itk_cms.main_locale')]
-        private readonly string $mainLocale,
     ) {
     }
 
@@ -122,7 +119,7 @@ final class DashboardController extends AbstractApiController
             'awaiting' => $awaiting,
             'proposals' => [],
             'recent' => \array_slice($recent, 0, self::RECENT),
-            'languages' => MetaController::languagesOf($this->mainLocale),
+            'languages' => $this->contentLocales->catalog(),
         ]);
     }
 }

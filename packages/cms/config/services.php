@@ -8,6 +8,7 @@ use Itk\Cms\Doctrine\MigrationVersionComparator;
 use Itk\Cms\Health\KnowledgeBaseHealthCheck;
 use Itk\Cms\Health\MessengerMonitor;
 use Itk\Cms\I18n\AdminLocale;
+use Itk\Cms\I18n\ContentLocales;
 use Itk\Cms\IndexNow\IndexNowSite;
 use Itk\Cms\IndexNow\PingIndexNowHandler;
 use Itk\Cms\KnowledgeBase\Embedding\Embedder;
@@ -79,6 +80,8 @@ return static function (ContainerConfigurator $container): void {
 
     // the bundle hands it to the facade Itk\Cms\I18n\I18n when it boots; a site with framework.translator off has no switcher (the facade then reads the files of the bundle)
     $services->get(AdminLocale::class)->public();
+
+    $services->get(ContentLocales::class)->public();
 
     // the bot token never reaches a log (HttpClient logs the Telegram URL with it); only when Monolog is installed
     if (\interface_exists(ProcessorInterface::class)) {

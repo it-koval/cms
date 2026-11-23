@@ -12,6 +12,7 @@ use Itk\Cms\Entity\Revision;
 use Itk\Cms\Entity\User;
 use Itk\Cms\Field\FieldInterface;
 use Itk\Cms\History\HistoryService;
+use Itk\Cms\I18n\ContentLocales;
 use Itk\Cms\I18n\I18n;
 use Itk\Cms\Repository\PageRepository;
 use Itk\Cms\Repository\PageTranslationRepository;
@@ -57,6 +58,7 @@ final class PageService
         private readonly Security $security,
         private readonly EditLock $lock,
         private readonly DraftVersion $versions,
+        private readonly ContentLocales $locales,
         #[Autowire(param: 'itk_cms.main_locale')]
         private readonly string $mainLocale,
     ) {
@@ -236,6 +238,7 @@ final class PageService
         }
         $tpl = $this->schema->template($templateKey) ?? throw ContentException::invalid(I18n::t('content.page_template_unknown'));
         self::assertNotReserved($url);
+        $this->assertLocaleAddress($locale, $url);
         if ($this->urlTaken($locale, $url, null)) {
             throw ContentException::conflict(I18n::t('content.page_url_exists'));
         }
@@ -356,6 +359,10 @@ final class PageService
         }
         foreach ($versions as $locale => $v) {
             $url = (string) ($v['draft']['url'] ?? '');
+            $this->assertLocaleAddress((string) $locale, $url);
+            if (\is_array($v['published'] ?? null)) {
+                $this->assertLocaleAddress((string) $locale, (string) ($v['published']['url'] ?? ''));
+            }
             if ($this->urlTaken((string) $locale, $url, null) || $this->urlTaken((string) $locale, (string) ($v['published']['url'] ?? ''), null)) {
                 throw ContentException::conflict(I18n::t('content.page_url_taken_restore', ['url' => $url]));
             }
@@ -595,6 +602,7 @@ final class PageService
         if ('' === $url) {
             throw ContentException::invalid(I18n::t('content.page_publish_url_required'));
         }
+        $this->assertLocaleAddress($locale, $url);
         foreach ($this->translations->findForLocale($locale) as $other) {
             if ($other->id !== $t->id && $other->publishedUrl === $url) {
                 throw ContentException::conflict(I18n::t('content.page_url_taken_published'));
@@ -699,6 +707,7 @@ final class PageService
             throw ContentException::conflict(I18n::t('content.page_republished'));
         }
         $url = Url::key((string) ($t->published['url'] ?? ''));
+        $this->assertLocaleAddress($locale, $url);
         foreach ($this->translations->findForLocale($locale) as $other) {
             if ($other->id !== $t->id && $other->publishedUrl === $url) {
                 throw ContentException::conflict(I18n::t('content.page_url_taken_published'));
@@ -1000,6 +1009,22 @@ final class PageService
         }
     }
 
+    /** i18n-dynamic: content.url_locale_prefix, content.url_other_locale_prefix (returned by ContentLocales::addressProblem). */
+    private function assertLocaleAddress(string $locale, string $url): void
+    {
+        $problem = $this->locales->addressProblem($locale, $url);
+        if (null === $problem) {
+            return;
+        }
+        $language = 'content.url_other_locale_prefix' === $problem ? $this->locales->fromPath($url) : $locale;
+
+        throw ContentException::invalid(I18n::t($problem, [
+            'url' => \trim($url),
+            'prefix' => $this->locales->prefix($language),
+            'language' => $this->locales->name($language),
+        ]));
+    }
+
     /** Is `url` already the address of another page version in `locale` (draft or live)? An empty address is never «taken». */
     private function urlTaken(string $locale, string $url, ?string $exceptPageId): bool
     {
@@ -1089,8 +1114,12 @@ final class PageService
         if (null !== $tpl) {
             $next = $this->syncH1($tpl, $cur, $next);
         }
-        if (Url::key((string) ($next['url'] ?? '')) !== Url::key((string) ($cur['url'] ?? ''))) {
+        $nextUrl = Url::key((string) ($next['url'] ?? ''));
+        if ($nextUrl !== Url::key((string) ($cur['url'] ?? ''))) {
             self::assertNotReserved((string) $next['url']);
+            if ('' !== $nextUrl) {
+                $this->assertLocaleAddress($locale, (string) $next['url']);
+            }
             if ($this->urlTaken($locale, (string) $next['url'], $p->id)) {
                 throw ContentException::conflict(I18n::t('content.page_url_exists'));
             }

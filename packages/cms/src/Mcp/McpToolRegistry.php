@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Itk\Cms\Mcp;
 
 use Itk\Cms\Extension\Registry;
+use Itk\Cms\I18n\ContentLocales;
 use Symfony\Component\DependencyInjection\Attribute\AutowireIterator;
 
 /**
@@ -24,6 +25,7 @@ final class McpToolRegistry
         #[AutowireIterator('itk.mcp_tool')]
         private readonly iterable $tools,
         private readonly Registry $extensions,
+        private readonly ?ContentLocales $contentLocales = null,
     ) {
     }
 
@@ -43,6 +45,9 @@ final class McpToolRegistry
                     $tool = new $class();
                 } catch (\Throwable) {
                     continue; // a tool that needs arguments must be a service: it is already in the list above
+                }
+                if ($tool instanceof AbstractMcpTool && null !== $this->contentLocales) {
+                    $tool->setContentLocales($this->contentLocales);
                 }
                 $this->add($list, $tool);
             }

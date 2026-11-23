@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest'
+import slugCases from '../../../../packages/cms/tests/Fixtures/slug-cases.json'
 import { autoUrl, normalizeUrl, pageWithUrl, slugify, urlError, urlKey } from './slug.js'
 
 describe('slugify', () => {
+  it.each(slugCases)('transliterates "$in" with a limit of $max', ({ in: text, out, max }) => {
+    expect(slugify(text, max)).toBe(out)
+  })
+
   it('transliterates Russian and drops everything that is no address character', () => {
     expect(slugify('Доставка и оплата')).toBe('dostavka-i-oplata')
     expect(slugify('Щётка № 5, «Ёж»!')).toBe('schetka-5-ezh')

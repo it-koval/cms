@@ -4,12 +4,24 @@ declare(strict_types=1);
 
 namespace Itk\Cms\Mcp;
 
+use Itk\Cms\Content\ContentException;
+use Itk\Cms\I18n\ContentLocales;
+use Symfony\Contracts\Service\Attribute\Required;
+
 /**
  * The common part of the tools of the core: schema builders and argument helpers. A tool of a site may extend it too.
  * There is no default for annotations(): a tool says itself whether it reads, writes or destroys, because a client asks the person (or does not) by this hint.
  */
 abstract class AbstractMcpTool implements McpToolInterface
 {
+    private ?ContentLocales $contentLocales = null;
+
+    #[Required]
+    public function setContentLocales(ContentLocales $contentLocales): void
+    {
+        $this->contentLocales = $contentLocales;
+    }
+
     /** Says nothing, so McpToolRegistry refuses the tool with its name. An abstract method would stop the whole site with a fatal error when a tool written before the rule is loaded. */
     public function annotations(): array
     {
@@ -57,17 +69,28 @@ abstract class AbstractMcpTool implements McpToolInterface
     }
 
     /** @param array<string, mixed> $args */
-    protected static function locale(array $args): ?string
+    protected function locale(array $args): ?string
     {
         $l = $args['locale'] ?? null;
         if (null === $l || '' === $l) {
             return null;
         }
-        if (!\is_string($l) || 1 !== \preg_match('/^[A-Za-z]{2,8}(-[A-Za-z0-9]{1,8})?$/', $l)) {
+        if (!\is_string($l)) {
             throw new McpToolException('locale must be a language code like "ru" or "en"');
         }
+        if (null === $this->contentLocales) {
+            if (1 !== \preg_match('/^[A-Za-z]{2,8}(-[A-Za-z0-9]{1,8})?$/', $l)) {
+                throw new McpToolException('locale must be a language code like "ru" or "en"');
+            }
 
-        return $l;
+            return $l;
+        }
+
+        try {
+            return $this->contentLocales->assertUsable($l);
+        } catch (ContentException) {
+            throw new McpToolException('locale must be a language code like "ru" or "en"');
+        }
     }
 
     /** @param array<string, mixed> $args */

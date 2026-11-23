@@ -6,6 +6,7 @@ namespace Itk\Cms\Content;
 
 use Doctrine\ORM\EntityManagerInterface;
 use Itk\Cms\Entity\SeoRule;
+use Itk\Cms\I18n\ContentLocales;
 use Itk\Cms\I18n\I18n;
 use Itk\Cms\Repository\SeoRuleRepository;
 use Itk\Cms\Support\Url;
@@ -25,6 +26,7 @@ final class SeoRuleService
         private readonly EntityManagerInterface $em,
         private readonly SeoRuleRepository $rules,
         private readonly SeoResolver $resolver,
+        private readonly ContentLocales $contentLocales,
         private readonly ?SitemapBuilder $sitemap = null,
         private readonly ?CrawlerFiles $crawlerFiles = null,
     ) {
@@ -151,9 +153,17 @@ final class SeoRuleService
         }
         $locale = $rule->locale;
         if (\array_key_exists('locale', $data)) {
-            $locale = null === $data['locale'] || '' === $data['locale'] ? null : (string) $data['locale'];
-            if (null !== $locale && !\preg_match('/^[A-Za-z]{2,8}$/', $locale)) {
+            $input = $data['locale'];
+            if (null === $input || '' === $input) {
+                $locale = null;
+            } elseif (!\is_string($input)) {
                 $errors['locale'] = I18n::t('content.seo_locale_unknown');
+            } else {
+                try {
+                    $locale = $this->contentLocales->assertUsable($input);
+                } catch (ContentException) {
+                    $errors['locale'] = I18n::t('content.seo_locale_unknown');
+                }
             }
         }
         $values = [];
