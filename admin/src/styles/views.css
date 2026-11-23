@@ -1,4 +1,4 @@
-/* Feature-area styles ported from the prototype: login, Сегодня, Страницы, Настройки, Коллекции (cards, product form, options matrix), Заявки, Медиатека. Feature builders may add their own files; do not edit this one. */
+/* Feature-area styles: login, dashboard, pages, settings, collections (cards, product form, options matrix), requests, media library. Shared styles live here; features may also have their own files. */
 /* ---------- login ---------- */
 .login{min-height:100vh;display:grid;grid-template-columns:minmax(0,1fr) minmax(320px,520px);background:var(--ground)}
 .login .side{background:var(--cy);color:var(--rail-ink);padding:48px 56px;display:flex;flex-direction:column;justify-content:space-between;position:relative;overflow:hidden}
@@ -7,14 +7,8 @@
 .login .panel{display:flex;align-items:center;justify-content:center;padding:32px}
 .login form{width:100%;max-width:360px;display:flex;flex-direction:column;gap:14px}
 .login form h1{font-size:var(--t-xl);font-weight:650;letter-spacing:-.012em}
-.login .fld{display:flex;flex-direction:column;gap:5px}
-.login .fld label{font-size:var(--t-sm);font-weight:580}
 .login .small{font-size:var(--t-xs);color:var(--ink-2);margin-top:4px}
 .login .btn{height:40px;justify-content:center}
-.stack-art{display:flex;flex-direction:column;gap:8px;width:230px;margin-top:6px}
-.stack-art i{display:block;border-radius:3px;background:rgba(255,255,255,.14);height:36px}
-.stack-art i:nth-child(1){height:60px;background:rgba(0,0,0,.4)}
-.stack-art i:nth-child(3){height:48px;background:rgba(255,255,255,.26)}
 
 /* ---------- today ---------- */
 .today{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(280px,1fr);gap:24px;align-items:start}
@@ -36,7 +30,6 @@
 .done-l .ok{color:var(--green)}
 
 /* ---------- pages list ---------- */
-.tree-row td:first-child{padding-left:14px}
 .tr-ttl{display:flex;align-items:center;gap:8px;padding-left:calc(var(--l,0)*24px)}
 .tr-ttl .twist{background:none;border:0;width:22px;height:22px;display:grid;place-items:center;border-radius:4px;color:var(--ink-3);transition:transform var(--dur)}
 .tr-ttl .twist:hover{background:var(--hair-2)}
@@ -103,16 +96,8 @@ table.t td.nw{white-space:nowrap}
 .set-sec>h2,.set-sec>h3:not(.fsec){font-size:var(--t-md);font-weight:650;margin-bottom:2px;display:flex;align-items:center;gap:10px}
 .set-sec>p.d{color:var(--ink-2);font-size:var(--t-sm);margin-bottom:8px;max-width:64ch}
 .g2{display:grid;grid-template-columns:1fr 1fr;gap:0 18px}
-.doc-r{display:flex;align-items:center;gap:12px;padding:9px 0;border-bottom:1px solid var(--hair-2)}
-.doc-r:last-child{border-bottom:0}
-.doc-r .fi{width:34px;height:40px;border:1px solid var(--hair);border-radius:4px;display:grid;place-items:center;color:var(--red);background:#fff;flex:none}
-.doc-r .x{flex:1;min-width:0}
-.tg-chat{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--hair-2)}
-.tg-chat:last-child{border-bottom:0}
 
 /* ---------- collections ---------- */
-.ctabs{display:none}
-.prod-t .thumb{width:48px;height:48px;object-fit:contain;background:#fff}
 .cardgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:14px;padding:16px}
 .amb{border:1px solid var(--hair);border-radius:var(--r-lg);overflow:hidden;background:#fff;display:flex;flex-direction:column;text-align:left;padding:0;transition:box-shadow var(--dur),border-color var(--dur)}
 .amb:hover{box-shadow:var(--sh-2);border-color:var(--ctl)}
@@ -124,9 +109,6 @@ table.t td.nw{white-space:nowrap}
 .so-c{display:inline-flex;align-items:center;gap:4px;font-size:var(--t-xs);font-weight:560;color:var(--ink-2);background:var(--hair-2);border-radius:11px;padding:2px 8px 2px 6px}
 .prod-form{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:24px;align-items:start}
 .prod-form .sheet{padding:6px 22px 18px}
-.var-i{border:1px solid var(--hair);border-radius:var(--r);background:#fff}
-.var-i .vh{display:flex;gap:10px;align-items:center;padding:8px 10px 8px 6px}
-.var-i .vb{padding:4px 14px 14px;border-top:1px solid var(--hair-2);background:var(--sheet-2)}
 .seo-prev{border:1px solid var(--hair);border-radius:var(--r);padding:12px 14px;background:#fff;margin-top:8px}
 .seo-prev .su{font-size:var(--t-xs);color:var(--ink-2)}
 .seo-prev .st{font-size:var(--t-md);color:#1a5fb0;font-weight:500;margin:2px 0}
@@ -158,7 +140,6 @@ table.mx td.cell .sw{justify-content:center}
 .rq-row td .ph{font-weight:600;font-variant-numeric:tabular-nums}
 tr.unread td{font-weight:600}
 tr.unread td .ph{font-weight:700}
-.rq-list-m{display:none}
 
 /* ---------- media ---------- */
 .media{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:20px;align-items:start}
@@ -174,9 +155,6 @@ tr.unread td .ph{font-weight:700}
 .mdi .pic .pdf{color:var(--red);display:flex;flex-direction:column;align-items:center;gap:4px;font-size:var(--t-xs);font-weight:650}
 .mdi .nm{padding:7px 9px 8px;font-size:var(--t-xs);line-height:1.3;word-break:break-all}
 .mdi .nm small{display:block;color:var(--ink-2)}
-.m-det{position:sticky;top:20px;padding:16px;display:flex;flex-direction:column;gap:12px}
-.m-det .pre{border-radius:var(--r);overflow:hidden;background:var(--hair-2);aspect-ratio:4/3;display:grid;place-items:center;border:1px solid var(--hair)}
-.m-det .pre img{width:100%;height:100%;object-fit:contain}
 .used a{display:flex;align-items:center;gap:6px;font-size:var(--t-sm)}
 
 .settings>*,.prod-form>*,.media>*,.today>*{min-width:0}

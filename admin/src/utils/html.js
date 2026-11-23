@@ -184,6 +184,3 @@ export function textToHtml(text, mode = 'rich') {
   if (mode === 'headline') return escapeHtml(t).replace(/\n/g, '<br>')
   return t.split(/\n{2,}/).map((c) => c.replace(/^\n+|\n+$/g, '')).filter((c) => c !== '').map((c) => `<p>${escapeHtml(c).replace(/\n/g, '<br>')}</p>`).join('')
 }
-
-/** Two HTML values are the same text after sanitising (so re-normalising is never a «change»). */
-export const sameHtml = (a, b, mode = 'rich') => sanitizeHtml(a, mode) === sanitizeHtml(b, mode)

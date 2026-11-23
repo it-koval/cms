@@ -1,5 +1,5 @@
 // State and document logic of the page editor (no DOM): the working copy of the page, undo/redo snapshots, autosave,
-// section operations, AI proposals, publish. Ported from the prototype editor model (renderEditor and everything under it).
+// section operations, AI proposals, publish.
 //
 //   const ed = useEditorState(pageId, locale)     // reactive: refs and computeds are unwrapped, so ed.page, ed.sel, ed.changes ... read directly
 //   provide(EDITOR_KEY, ed)

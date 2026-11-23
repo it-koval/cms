@@ -1,6 +1,6 @@
 <script setup>
 // Медиатека: folder tree on the left; grid of photos and PDFs, search + type filter, upload (file input and drag-and-drop), details drawer.
-// Port of the prototype mediaView(). Uploads go through api.media.upload (into the open folder); «Где используется» is asked from the server for the file that is open (api.media.usage).
+// Uploads go through api.media.upload (into the open folder); «Где используется» is asked from the server for the file that is open (api.media.usage).
 // Files go to a folder by dragging a tile onto the tree, or by ticking tiles and choosing «Перенести в…». The open folder is kept in ?folder= ('' all, 'none' no folder, or an id).
 // RIGHTS (area media): without «Править» there is no upload (button and drop zone), no folders work and no moving, and the captions only read; without «Удалять» the drawer has no «Удалить».
 import { computed, onMounted, ref, watch } from 'vue'

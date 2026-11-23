@@ -22,7 +22,7 @@
 //   areas    — menu areas the template's layout shows: 'layout' (the site's layout, schema.layout) or { top: [keys], bottom: [keys] },
 // }
 // The server checks the same guards when a page is created, moved or gets another template; the UI uses them to disable impossible choices.
-import { defaultsFor, fieldsOf } from '@/utils/fields.js'
+import { fieldsOf } from '@/utils/fields.js'
 import { t } from '@/i18n/index.js'
 import { onSchema } from './registry.js'
 
@@ -39,12 +39,8 @@ onSchema((sc) => {
 export const templatesFor = () => [...all.filter((t) => t.core), ...all.filter((t) => !t.core)]
 export const getTemplate = (key) => index.get(key) || null
 export const templateName = (key) => (index.has(key) ? index.get(key).name : t('forms.template_default'))
-/** Is this template available on the site? */
-export const templateOnSite = (key) => index.has(key)
 /** Editable fields of a template (readonly notes left out). */
 export const templateFields = (key) => (index.has(key) ? fieldsOf(index.get(key).fields) : [])
-/** Quick links of the rail: [{ template, label }] for the templates of the site that have a `shortcut`. */
-export const shortcutsFor = () => templatesFor().filter((t) => t.shortcut).map((t) => ({ template: t.key, label: t.shortcut }))
 
 /* ---------- where a template may stand ---------- */
 
@@ -109,34 +105,10 @@ export function canChangeTemplate(page, key, pages) {
 }
 
 /**
- * Templates for a new page under `parent` (a page or null): [{ template, ok, reason }] in picker order. A card is disabled when `ok` is false and shows `reason`.
- */
-export function templateChoices(parent, pages) {
-  return templatesFor().map((t) => ({ template: t, ...canPlace(t.key, parent, pages) }))
-}
-
-/**
  * Templates a page may get (its own first): [{ template, ok, reason, lost }].
  */
 export function templateChoicesFor(page, pages) {
   return templatesFor().map((t) => ({ template: t, ...canChangeTemplate(page, t.key, pages) }))
-}
-
-/* ---------- the fields of a page ---------- */
-
-/** Empty fields of a template for a new page: texts start empty (required ones are asked for when publishing), switches off, lists empty. */
-export function fieldDefaults(key) {
-  const out = defaultsFor(templateFields(key))
-  templateFields(key).forEach((f) => { if (['text', 'textarea', 'headline'].includes(f.t)) out[f.k] = '' })
-  return out
-}
-
-/** The fields object a page version gets for template `key`: values of `old` that the template keeps, empty defaults for the rest. */
-export function convertFields(key, old = {}) {
-  const defaults = fieldDefaults(key)
-  const out = {}
-  templateFields(key).forEach((f) => { out[f.k] = old && old[f.k] !== undefined ? old[f.k] : defaults[f.k] })
-  return out
 }
 
 /**
@@ -156,13 +128,3 @@ export function listingSwitchIn(templates, key) {
   return old ? { key: 'catalog', label: old.label || t('forms.listing_show') } : null
 }
 export const listingSwitch = (key) => listingSwitchIn(all, key)
-
-/** The list a page fills by itself: pages (rows of api.pages.list of one language) below `page` whose template is in `listing.of` (and with the `onlyIf` toggle on). */
-export function listedPages(page, rows) {
-  const t = getTemplate(page.template)
-  const l = t && t.listing
-  if (!l || !l.of) return []
-  const below = new Set()
-  ;(function walk(id) { rows.filter((p) => p.parentId === id).forEach((c) => { below.add(c.id); walk(c.id) }) })(page.id)
-  return rows.filter((p) => below.has(p.id) && l.of.includes(p.template) && p.translated !== false && (!l.onlyIf || (p.fields && p.fields[l.onlyIf])))
-}

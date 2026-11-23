@@ -142,7 +142,7 @@ const empty = computed(() => (editor.value ? editor.value.isEmpty : !props.model
 /* ---- toolbar ---- */
 const on = (name) => !!editor.value && editor.value.isActive(name)
 
-/** «Градиент» with the caret inside a word and nothing selected: take the whole word (like the prototype). */
+/** Gradient with the caret inside a word and nothing selected: take the whole word. */
 function wordRange(ed) {
   const { $from, empty: caretOnly } = ed.state.selection
   if (!caretOnly) return null

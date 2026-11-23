@@ -1,4 +1,4 @@
-/* RichText (TipTap): looks like a text input; gradient words show as ink on the soft brand wash (DESIGN.md «Headline field») */
+/* RichText (TipTap): looks like a text input; gradient words show as ink on the soft brand wash */
 .rt{display:flex;flex-direction:column;gap:6px}
 .rt-ed{position:relative;display:block;width:100%;min-height:36px;border:1px solid var(--ctl);border-radius:var(--r);background:#fff;transition:border-color var(--dur),box-shadow var(--dur),background var(--dur);cursor:text}
 .rt-ed:hover{border-color:var(--ink-3)}

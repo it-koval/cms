@@ -1,4 +1,4 @@
-// Scroll and focus helpers of the page editor (ported from the prototype: scrollIn, smooth).
+// Scroll and focus helpers of the page editor.
 export const smooth = () => (matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth')
 
 /** Scroll ONE container (the page stage or the sidebar body) so that el sits at its start, centre or nearest edge.

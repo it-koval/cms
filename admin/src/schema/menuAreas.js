@@ -18,4 +18,3 @@ export function makeAreaKey(name, taken = []) {
   for (let n = 2; taken.includes(key); n++) key = `${base}_${n}`
   return key
 }
-export const isAreaKey = (key) => /^[a-z][a-z0-9_]{0,31}$/.test(String(key || ''))

@@ -1,4 +1,4 @@
-// Section silhouettes: tiny abstract SVG thumbnails for the block library and the structure list. Ported from the prototype sil().
+// Section silhouettes: tiny abstract SVG thumbnails for the block library and the structure list.
 export const TONES = { dark: ['#16191C', '#fff'], gray: ['#E2E6E8', '#16191C'], white: ['#FFFFFF', '#16191C'], photo: ['#566872', '#fff'], blue: ['#E6F0FB', '#16191C'] }
 
 let gid = 0
@@ -45,6 +45,3 @@ export function silhouette(kind, tone, W = 184, H = 96) {
   const defs = `<defs><linearGradient id="${id}" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#01CDC1"/><stop offset=".5" stop-color="#2BE62B"/><stop offset="1" stop-color="#ADFF00"/></linearGradient></defs>`
   return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid slice" aria-hidden="true">${defs}<rect width="${W}" height="${H}" fill="${bg}"/>${o}</svg>`
 }
-
-/** Silhouette of a section type (uses its sil and tone). */
-export const silhouetteFor = (type, W, H) => (type ? silhouette(type.sil, type.tone, W, H) : silhouette('text', 'white', W, H))

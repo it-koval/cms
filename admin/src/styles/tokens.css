@@ -1,4 +1,4 @@
-/* ITK CMS design tokens (DESIGN.md). Ported from the prototype :root. Colors, type scale, shadows, radii, motion. */
+/* ITK CMS design tokens: colors, type scale, shadows, radii, motion. */
 :root{
   --ground:#F2F4F5; --sheet:#FFFFFF; --sheet-2:#F7F9FA;
   --ink:#14181C; --ink-2:#3F4D57; --ink-3:#586873;

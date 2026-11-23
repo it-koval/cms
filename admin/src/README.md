@@ -308,7 +308,7 @@ In this mode the page does not get `window.ITK_ADMIN` from the server, so `api/h
 `npm run dev:mock` (the same as `VITE_MOCK=1 npm run dev`; `.env.mock` enables it for `vite --mode mock`) shows the screens without PHP and without a database.
 
 - `main.js` calls `mock/install.js`, which intercepts `fetch` for `/admin/api/*`. `mock/handler.js` answers from the data in `mock/fixtures.js`: a made-up demo site with sections and templates, 8 pages, a News collection, and a Plans options matrix.
-- The mock covers pages, collections, requests, notification and bot settings, `robots.txt` and `llms.txt`, and Yandex Webmaster. Any other request gets a 404 that says the demo does not have it. A screen whose permission the fixture role lacks shows "No access".
+- The mock covers, among other routes, pages, collections, requests, notification and bot settings, `robots.txt` and `llms.txt`, and Yandex Webmaster. Unsupported routes get a 404 that says the demo does not have them. A screen whose permission the fixture role lacks shows "No access".
 - Writes go to the tab's memory (draft, publish, revert, create, delete, tree moves). A page reload restores the fixtures.
 - The page preview is a placeholder, because the site templates normally render it.
 - The mock is not part of `npm run build`: the branch in `main.js` is removed when the variable is not set.

@@ -1,11 +1,10 @@
 // Pages API: a thin fetch client over /admin/api. A PAGE is one node of the site tree with a version per content language
-// (see ARCHITECTURE.md §2). What the api hands out is a FLAT page of one language:
+// The API returns a flat page of one language:
 //   { id, parentId, template, locale, translated:true, title, url, status, updatedAt, version, migrated, seo, sections, fields, awaiting, returned }
 // `locale` goes in the query string (?locale=ru); omitted = the main language. Errors are ApiError with the server's message (404 / 409 / 422).
 //
 //   list({ locale, template, parentId })  GET    pages?locale=&template=&parentId=      all pages (without sections), see ROW below
 //   get(id, locale)                       GET    pages/:id/draft                        working copy of one language (404 when there is no such version)
-//   getPublished(id, locale)              GET    pages/:id/draft                        snapshot on the live site or null
 //   getDraft(id, locale)                  GET    pages/:id/draft?locale                 { page, published, changes, locale, translated, locales, shell } — the page editor loads this
 //   saveDraft(id, locale, data, baseVersion)  PUT pages/:id/draft?locale                 autosave: title, url, seo, sections, fields, parentId, template -> flat page + changed.
 //                                                                                        baseVersion = the `version` of the page as the editor last had it: a draft that changed meanwhile gives 409 (isConflict) and nothing is written; without it the save is not checked
@@ -39,9 +38,6 @@ export async function get(id, locale) {
   const d = await getDraft(id, locale)
   if (!d.page) throw new ApiError(NO_VERSION, 404, { code: 'no_translation', locale: d.locale })
   return d.page
-}
-export async function getPublished(id, locale) {
-  return (await getDraft(id, locale)).published || null
 }
 
 export const saveDraft = (id, locale, data = {}, baseVersion = null) => http.put(`pages/${enc(id)}/draft`, { ...pick(data, DRAFT_KEYS), ...(baseVersion ? { baseVersion } : {}) }, loc(locale))

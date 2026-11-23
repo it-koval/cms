@@ -1,6 +1,6 @@
 <script setup>
 // Заявки: list with filters (phone, status, form, period) and a drawer per request (route /requests/:id).
-// Port of the prototype requestsView(). The work status (Новая / В работе / Закрыта / Спам), the private note and the delivery to the messengers
+// The work status (New / In progress / Closed / Spam), the private note and the delivery to the messengers
 // state are all fields of the request (api.requests); «new» is the work status «Новая», for the badge, the bold rows and the filter alike.
 // VIEWS: «Таблица» and «Доска» (columns Новая / В работе / Закрыта; a card dragged to another column, or moved with its arrows, changes the work status of the request — the same update as in the drawer).
 // The choice is kept for the person on the server (api.prefs, «requests.view»). Spam is not on the board (it is not work), the board says how many are hidden.
