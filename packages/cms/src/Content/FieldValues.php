@@ -74,12 +74,6 @@ final class FieldValues
         return $out;
     }
 
-    /** @return array<string, mixed> */
-    public function defaultItem(FieldInterface $repeater): array
-    {
-        return ['_id' => Json::nid('p')] + $this->defaults($repeater->subFields());
-    }
-
     /** True when a REQUIRED field has no usable value. */
     public function isMissing(FieldInterface $f, mixed $v): bool
     {

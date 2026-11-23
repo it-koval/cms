@@ -46,7 +46,7 @@ final class TelegramNotifier implements ChannelNotifier
         $this->connection = $chatter instanceof TelegramConnection ? $chatter : new TelegramConnection($chatter, $logger);
     }
 
-    /** Is there a Telegram to send to: the Notifier is installed, a chatter transport is configured and can be built? */
+    /** Whether Telegram has a usable transport. The token saved in the admin takes priority over the site's chatter. */
     public function isConnected(): bool
     {
         return null !== $this->connection->transport();

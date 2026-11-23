@@ -22,8 +22,6 @@ use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
  */
 final class GraphBuilder
 {
-    public const ORGANIZATION_TYPES = ['Organization', 'LocalBusiness'];
-
     public function __construct(
         private readonly SettingsService $settings,
         private readonly SitemapBuilder $sitemap,

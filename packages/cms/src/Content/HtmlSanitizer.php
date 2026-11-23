@@ -244,36 +244,9 @@ final class HtmlSanitizer
         return $html;
     }
 
-    /** Length for the «n / max» budget: characters without line breaks. */
-    public function textLength(mixed $html): int
-    {
-        return \mb_strlen(\str_replace("\n", '', $this->toText($html)));
-    }
-
     public function isEmpty(mixed $html): bool
     {
         return '' === \trim($this->toText($html));
-    }
-
-    /** Plain text -> HTML for the given mode. Everything is escaped. */
-    public function fromText(?string $text, string $mode = 'rich'): string
-    {
-        $t = \str_replace("\r", '', (string) $text);
-        if ('' === $t) {
-            return '';
-        }
-        if ('headline' === $mode) {
-            return \str_replace("\n", '<br>', self::escape($t));
-        }
-        $out = '';
-        foreach (\preg_split('/\n{2,}/', $t) ?: [] as $chunk) {
-            $chunk = \trim($chunk, "\n");
-            if ('' !== $chunk) {
-                $out .= '<p>' . \str_replace("\n", '<br>', self::escape($chunk)) . '</p>';
-            }
-        }
-
-        return $out;
     }
 
     private function parse(string $html): \DOMElement

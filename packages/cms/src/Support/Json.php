@@ -76,24 +76,6 @@ final class Json
         return $data;
     }
 
-    /** @param array<string, mixed> $data */
-    public static function set(array &$data, string $path, mixed $value): void
-    {
-        $keys = \explode('.', $path);
-        $ref = &$data;
-        foreach ($keys as $i => $key) {
-            if ($i === \count($keys) - 1) {
-                $ref[$key] = $value;
-
-                return;
-            }
-            if (!isset($ref[$key]) || !\is_array($ref[$key])) {
-                $ref[$key] = [];
-            }
-            $ref = &$ref[$key];
-        }
-    }
-
     /** UTC ISO time like JS toISOString(). */
     public static function now(): string
     {

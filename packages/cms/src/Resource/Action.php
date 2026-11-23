@@ -8,7 +8,7 @@ use Itk\Cms\Field\FieldInterface;
 use Itk\Cms\Security\Viewer;
 
 /**
- * Something a person can run on records of a collection (or pages of a template).
+ * An action a person can run in a collection.
  *
  *   Action::make('Скопировать', 'duplicate')->row()->icon('copy')
  *       ->handle(static fn (ActionContext $c): ActionResult => ActionResult::message('Готово')->reload());
@@ -124,7 +124,7 @@ final class Action
         return $this;
     }
 
-    /** The right on the collection (the pages, for a template) that running needs: view | edit | publish | delete. Default: edit. */
+    /** The collection right required to run the action: view | edit | publish | delete. Default: edit. */
     public function requires(string $right): self
     {
         $this->requires = $right;

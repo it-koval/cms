@@ -39,10 +39,4 @@ final class H1Rule
 
         return null;
     }
-
-    /** @param list<array<string, mixed>> $sections */
-    public function hasPageH1(array $sections, ?Template $template = null): bool
-    {
-        return (null !== $template && null !== $template->h1Field()) || null !== $this->pageH1Id($sections);
-    }
 }

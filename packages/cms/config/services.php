@@ -91,15 +91,15 @@ return static function (ContainerConfigurator $container): void {
     // the site schema is read once per request from config/itk/schema.php
     $services->set(Schema::class)->factory([service(SchemaLoader::class), 'load']);
 
-    // Telegram goes through the site's Notifier chatter and is optional: a closure, so that TELEGRAM_DSN is read only when a request is sent (a variable nobody set
-    // must not break every controller that needs this class); without a chatter requests are saved and the delivery stays «pending»
+    // The Telegram token saved in the admin takes priority. With no admin token, the site's Notifier chatter is resolved lazily, so a missing TELEGRAM_DSN
+    // does not break controllers. When no transport is available, requests are saved and Telegram delivery stays «pending».
     $services->get(TelegramConnection::class)
         ->arg('$chatter', service_closure('chatter.transports')->nullOnInvalid())
         ->arg('$http', service('http_client')->nullOnInvalid());
     $services->get(TelegramNotifier::class)->arg('$chatter', service(TelegramConnection::class));
 
-    // MAX goes through the client of yuri-kovalev/max-bot-symfony-bundle and is optional too: closures, so that a client that cannot be built (no token) breaks nothing;
-    // without the bundle there is no such service and the sender reports «not connected»
+    // The MAX token saved in the admin takes priority over the site's client. The client and configuration from yuri-kovalev/max-bot-symfony-bundle
+    // are optional and resolved lazily. Without the bundle the sender reports «not connected».
     $services->alias(MaxSender::class, MaxApiSender::class);
     $services->get(MaxApiSender::class)
         ->arg('$client', service_closure(MaxApiClient::class)->nullOnInvalid())

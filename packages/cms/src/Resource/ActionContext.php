@@ -49,7 +49,7 @@ final class ActionContext
         return $this->resourceKey;
     }
 
-    /** 'item' (collection record) or 'page'. */
+    /** The action runner supplies 'item' for collection records. */
     public function kind(): string
     {
         return $this->kind;
