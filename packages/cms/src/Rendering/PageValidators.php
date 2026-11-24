@@ -12,6 +12,7 @@ use Itk\Cms\CriticalCss\Stylesheets;
 use Itk\Cms\Doctrine\JsonPath;
 use Itk\Cms\Entity\PageTranslation;
 use Itk\Cms\I18n\ContentLocales;
+use Itk\Cms\Security\CspNonce;
 use Itk\Cms\Support\Json;
 use Psr\Clock\ClockInterface;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
@@ -116,7 +117,7 @@ final class PageValidators
      */
     public function forPage(PageTranslation $t, Request $request, ?string $fingerprint = null): ?array
     {
-        if (!$this->enabled || $this->debug || null === $t->publishedAt || $request->headers->has('Authorization') || $request->hasPreviousSession()) {
+        if (!$this->enabled || $this->debug || null === $t->publishedAt || $request->headers->has('Authorization') || $request->hasPreviousSession() || null !== CspNonce::fromRequest($request)) {
             return null;
         }
         if (null === $fingerprint || $fingerprint !== ($this->last[0] ?? null)) {

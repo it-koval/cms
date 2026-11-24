@@ -325,6 +325,31 @@ final class AnalyticsInjectionTest extends WebTestCase
     }
 
     #[Test]
+    #[DataProvider('nonceModes')]
+    public function theLoaderUsesTheSameTrustedRequestNonceAsTheSitesStylesheets(string $start): void
+    {
+        $client = $this->client(['itk' => ['analytics' => ['start' => $start]]]);
+        $this->configure(['yandexMetrikaId' => '12345678']);
+
+        $html = $this->body($client, '/test-analytics/nonce');
+
+        self::assertResponseIsSuccessful();
+        self::assertLoader($html, '12345678', start: $start);
+        $dom = new Crawler($html);
+        $nonce = $dom->filter('head style')->attr('nonce');
+        self::assertNotEmpty($nonce);
+        self::assertSame($nonce, $dom->filter('head script[data-itk-analytics]')->attr('nonce'));
+        self::assertStringContainsString("script-src 'nonce-" . $nonce . "' 'strict-dynamic'", (string) $client->getResponse()->headers->get('Content-Security-Policy'));
+    }
+
+    /** @return iterable<string, array{string}> */
+    public static function nonceModes(): iterable
+    {
+        yield 'automatic' => ['auto'];
+        yield 'manual' => ['manual'];
+    }
+
+    #[Test]
     public function manualModeExposesBothIdsWithoutAnyVendorMarkupOrNoscript(): void
     {
         $client = $this->client(['itk' => ['analytics' => ['start' => 'manual']]]);

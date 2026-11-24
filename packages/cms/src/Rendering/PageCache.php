@@ -7,6 +7,7 @@ namespace Itk\Cms\Rendering;
 use Itk\Cms\Content\SiteAddress;
 use Itk\Cms\Content\SitemapBuilder;
 use Itk\Cms\Entity\PageTranslation;
+use Itk\Cms\Security\CspNonce;
 use Itk\Cms\Support\Url;
 use Psr\Cache\CacheItemPoolInterface;
 use Psr\Clock\ClockInterface;
@@ -45,10 +46,11 @@ final class PageCache
     ) {
     }
 
-    /** True when the request neither reads nor writes the cache: the option is off, debug, Authorization, a visitor with a session (he sees the site fresh), a method other than GET and HEAD, a query string, a host or a port nobody vouched for, a spelling of the address that is not the page's own, a Forwarded or X-Forwarded-Prefix header. */
+    /** True when the request neither reads nor writes the cache: the option is off, debug, Authorization, a visitor with a session, a CSP nonce, a method other than GET and HEAD, a query string, an untrusted host or port, a non-canonical address, or a Forwarded or X-Forwarded-Prefix header. */
     public function bypasses(Request $request, PageTranslation $page): bool
     {
-        return !$this->enabled || $this->debug || !$request->isMethodCacheable() || $request->headers->has('Authorization') || $request->hasPreviousSession() || null !== $request->getQueryString()
+        return !$this->enabled || $this->debug || !$request->isMethodCacheable() || $request->headers->has('Authorization') || $request->hasPreviousSession()
+            || null !== CspNonce::fromRequest($request) || null !== $request->getQueryString()
             || $request->headers->has('X-Forwarded-Prefix') || $request->headers->has('Forwarded') || $request->getPathInfo() !== self::canonical($page) || !$this->vouches($request);
     }
 

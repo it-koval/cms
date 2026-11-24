@@ -10,6 +10,7 @@ function browser(attributes = {}, options = {}) {
   const inserted = []
   const events = []
   const windowEvents = []
+  const errors = []
   const documentListeners = []
   const windowListeners = []
   const script = {
@@ -21,6 +22,7 @@ function browser(attributes = {}, options = {}) {
     addEventListener(name, listener) {
       if (name === 'itk-analytics:started') windowListeners.push(listener)
     },
+    ...options.globals,
   }
   const document = {
     currentScript: options.fallback ? null : script,
@@ -61,12 +63,15 @@ function browser(attributes = {}, options = {}) {
       Object.assign(this, options)
     }
   }
-  const context = vm.createContext({ window, document, CustomEvent })
+  const context = vm.createContext({
+    window, document, CustomEvent,
+    console: { error(...args) { errors.push(args) } },
+  })
   function evaluate() {
     vm.runInContext(readFileSync(asset, 'utf8'), context, { filename: 'analytics.js' })
   }
   evaluate()
-  return { window, document, created, inserted, events, windowEvents, evaluate }
+  return { window, document, created, inserted, events, windowEvents, errors, evaluate }
 }
 
 function values(value) {
@@ -131,6 +136,126 @@ test('start() starts all configured counters in order and dispatches one bubblin
     ['document', ['metrika', 'ga'], 2, ['metrika', 'ga']],
     ['window', ['metrika', 'ga']],
   ])
+})
+
+test('existing site ym, gtag and dataLayer are preserved and used', () => {
+  const metrikaCalls = []
+  const gaCalls = []
+  const ym = (...args) => metrikaCalls.push(args)
+  ym.l = 123
+  ym.a = [['queued-site-goal']]
+  const gtag = (...args) => gaCalls.push(args)
+  const dataLayer = [['queued-site-event']]
+  const page = browser(configured, { globals: { ym, gtag, dataLayer } })
+
+  page.window.itkAnalytics.start()
+
+  assert.equal(page.window.ym, ym)
+  assert.equal(ym.l, 123)
+  assert.deepEqual(ym.a, [['queued-site-goal']])
+  assert.deepEqual(values(metrikaCalls), [
+    ['12345678', 'init', { clickmap: true, trackLinks: true, accurateTrackBounce: true, webvisor: true }],
+  ])
+  assert.equal(page.window.gtag, gtag)
+  assert.deepEqual(gaCalls.map(args => args[0]), ['js', 'config'])
+  assert.equal(gaCalls[1][1], 'G-ABC123XYZ9')
+  assert.equal(page.window.dataLayer, dataLayer)
+  assert.deepEqual(dataLayer, [['queued-site-event']])
+  assert.deepEqual(values(page.window.itkAnalytics.started), ['metrika', 'ga'])
+  assert.deepEqual(counters(page.events), [['metrika', 'ga']])
+})
+
+test('the GA queue stub appends to an existing site dataLayer', () => {
+  const dataLayer = [['queued-site-event']]
+  const page = browser(configured, { globals: { dataLayer } })
+
+  page.window.itkAnalytics.start(['ga'])
+
+  assert.equal(page.window.dataLayer, dataLayer)
+  assert.deepEqual(dataLayer[0], ['queued-site-event'])
+  assert.deepEqual(Array.from(dataLayer.slice(1), args => args[0]), ['js', 'config'])
+  assert.equal(dataLayer[2][1], 'G-ABC123XYZ9')
+})
+
+test('provider failures are isolated and only failed counters can be retried', () => {
+  for (const failed of ['metrika', 'ga']) {
+    const failure = new Error(failed + ' initialization failed')
+    const calls = []
+    const global = failed === 'metrika' ? 'ym' : 'gtag'
+    const page = browser(configured, { globals: { [global]() { throw failure } } })
+
+    assert.doesNotThrow(() => page.window.itkAnalytics.start())
+
+    const successful = failed === 'metrika' ? 'ga' : 'metrika'
+    assert.equal(page.inserted.length, 1)
+    assert.deepEqual(values(page.window.itkAnalytics.started), [successful])
+    assert.deepEqual(counters(page.events), [[successful]])
+    assert.equal(page.errors.length, 1)
+    assert.match(page.errors[0][0], new RegExp(failed))
+    assert.equal(page.errors[0][1], failure)
+
+    page.window[global] = (...args) => calls.push(args)
+    page.window.itkAnalytics.start()
+    page.window.itkAnalytics.start()
+
+    assert.equal(page.inserted.length, 2)
+    assert.equal(calls.length, failed === 'metrika' ? 1 : 2)
+    assert.deepEqual(values(page.window.itkAnalytics.started), [successful, failed])
+    assert.deepEqual(counters(page.events), [[successful], [failed]])
+    assert.equal(page.errors.length, 1)
+  }
+})
+
+test('incompatible existing globals stay intact and failed selections emit no started event', () => {
+  const ym = {}
+  const gtag = {}
+  const page = browser(configured, { globals: { ym, gtag } })
+
+  assert.doesNotThrow(() => page.window.itkAnalytics.start())
+
+  assert.equal(page.window.ym, ym)
+  assert.equal(page.window.gtag, gtag)
+  assert.deepEqual(page.created, [])
+  assert.deepEqual(values(page.window.itkAnalytics.started), [])
+  assert.deepEqual(page.events, [])
+  assert.equal(page.errors.length, 2)
+  assert.match(page.errors[0][0], /metrika/)
+  assert.match(page.errors[1][0], /ga/)
+
+  delete page.window.ym
+  delete page.window.gtag
+  page.window.itkAnalytics.start()
+
+  assert.equal(page.inserted.length, 2)
+  assert.deepEqual(values(page.window.itkAnalytics.started), ['metrika', 'ga'])
+  assert.deepEqual(counters(page.events), [['metrika', 'ga']])
+})
+
+test('script insertion failures release reservations while reentrant starts stay idempotent', () => {
+  const failure = new Error('script insertion failed')
+  let fail = true
+  const page = browser(configured, {
+    onInsert(window, node) {
+      window.itkAnalytics.start()
+      if (fail && node.src.includes('googletagmanager.com')) {
+        fail = false
+        throw failure
+      }
+    },
+  })
+
+  page.window.itkAnalytics.start()
+
+  assert.deepEqual(values(page.window.itkAnalytics.started), ['metrika'])
+  assert.deepEqual(counters(page.events), [['metrika']])
+  assert.equal(page.errors[0][1], failure)
+  page.window.itkAnalytics.start()
+  page.window.itkAnalytics.start()
+
+  assert.equal(page.inserted.length, 3)
+  assert.equal(page.window.ym.a.length, 1)
+  assert.deepEqual(values(page.window.itkAnalytics.started), ['metrika', 'ga'])
+  assert.deepEqual(counters(page.events), [['metrika'], ['ga']])
 })
 
 test('Webvisor is omitted unless its attribute is exactly 1', () => {

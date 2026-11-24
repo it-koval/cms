@@ -1020,10 +1020,52 @@ The browser API is available after the loader runs. `window.itkAnalytics.start()
 
 After beginning initialization of new counters, the loader dispatches `itk-analytics:started` on `document` with `bubbles: true` and `detail.counters`, for example `['ga']`. Listeners on both `document` and `window` receive it. A call that starts no new counter emits no event. The event records initialization starting, without waiting for provider downloads or delivery.
 
-For a site's own consent banner, include an external script in the site's Twig layout and use its existing accept button. This example assumes a button with `id="accept-analytics"`.
+In `auto`, the event can fire while the loader runs, before a later deferred site script runs. Check `window.itkAnalytics?.started` before subscribing. The array lists the counters this loader has started. Check for the specific key your code needs.
+
+**Migrating early calls from 0.2.** Even in `auto`, `ym`, `dataLayer` and `gtag` may be undefined during HTML parsing or in a deferred site script that precedes the loader. Move those calls into `DOMContentLoaded` handlers in `auto`, or wait for the required counter as below. In `manual`, the site controls when counters start. Save this example as `public/js/analytics-events.js` and include it with `defer` in the site's layout. Replace the GA ID and event with the site's values.
+
+```js
+function whenCounterStarts(counter, callback) {
+    if (window.itkAnalytics?.started.includes(counter)) {
+        callback();
+        return;
+    }
+
+    function onStarted(event) {
+        if (!event.detail.counters.includes(counter)) return;
+        document.removeEventListener('itk-analytics:started', onStarted);
+        callback();
+    }
+
+    document.addEventListener('itk-analytics:started', onStarted);
+}
+
+whenCounterStarts('ga', () => {
+    window.gtag('event', 'contact_view', { send_to: 'G-XXXXXXXXXX' });
+});
+```
+
+For Metrika, use the `metrika` key and call `window.ym` with the site's counter ID inside the callback. To keep early calls in `auto`, define queue stubs in an external script that executes before both the loader and the calls. A synchronous script in `<head>` works. The loader preserves existing `ym`, `dataLayer` and `gtag` queues. Limit the stubs to queuing calls.
+
+```js
+if (!window.ym) {
+    window.ym = function () {
+        (window.ym.a = window.ym.a || []).push(arguments);
+    };
+    window.ym.l = Date.now();
+}
+window.dataLayer = window.dataLayer || [];
+window.gtag = window.gtag || function () {
+    window.dataLayer.push(arguments);
+};
+```
+
+For a site's own consent banner, include an external script in the site's Twig layout and use its existing accept button. Use `defer` as shown, or place a synchronous script after the closing `</head>` and after the banner markup. This ensures the script can find the loader tag and the button in the DOM. This example uses a button with `id="accept-analytics"` in `<body>`.
 
 ```twig
+{# In <head> with defer. #}
 <script src="{{ app.request.basePath }}/js/analytics-consent.js" defer></script>
+{# In <body>. #}
 <button type="button" id="accept-analytics">Allow analytics</button>
 ```
 
@@ -1050,7 +1092,7 @@ document.getElementById('accept-analytics')?.addEventListener('click', () => {
 
 The site implements the banner, stores the visitor's choice and calls the same function on later visits only when that choice permits analytics. On revocation, update the stored choice and reload the page without calling `start()`. The CMS does not stop counters already running on the current page. Before enabling `manual`, remove direct counter scripts, pixels, tag-manager triggers and analytics `preconnect` or `dns-prefetch` links from the site's templates and scripts so they cannot contact providers before the site's choice.
 
-For a strict CSP, allow the bundle and site scripts from their actual asset origin in `script-src`. The following table is a starting allowlist for the standard provider integrations. Include only the providers and features the site uses.
+For a CSP based on source allowlists, allow the bundle and site scripts from their actual asset origin in `script-src`. The following table is a starting allowlist for the standard provider integrations. Include only the providers and features the site uses.
 
 | Directive | Provider sources and scope |
 |---|---|
@@ -1060,6 +1102,18 @@ For a strict CSP, allow the bundle and site scripts from their actual asset orig
 | `frame-src` | When Webvisor uses frames, allow the frame origins required by the enabled recording and playback features |
 
 Provider endpoints can vary with region, Webvisor features, Google Signals, advertising integrations and custom collection endpoints. The table covers the bundle's standard script URLs and common collection origins. Check the site's CSP reports and browser network log with its actual provider settings to complete the allowlist, including any Webvisor frame origins. The CMS does not change the site's CSP or grant provider origins automatically.
+
+With `script-src 'nonce-…' 'strict-dynamic'`, authorize the loader with a nonce. The site must generate an unpredictable nonce for each response, set the trusted Symfony request attribute `csp_nonce` before rendering (for example, in an early `kernel.request` listener), and put the same nonce in the response's CSP. The CMS copies the server-set attribute to the loader tag. With `strict-dynamic`, the trusted loader can load the provider scripts it creates. The `connect-src`, `img-src` and applicable `frame-src` rules still apply.
+
+Use the same nonce on the site's own scripts.
+
+```twig
+<script src="{{ app.request.basePath }}/js/analytics-consent.js"
+        nonce="{{ app.request.attributes.get('csp_nonce') }}" defer></script>
+{{ itk_stylesheets({nonce: app.request.attributes.get('csp_nonce')}) }}
+```
+
+A request with `csp_nonce` bypasses the CMS page HTML cache and conditional ETag handling to keep each response's nonce fresh. Configure any site-owned or upstream response cache accordingly. Pass the nonce explicitly to the stylesheet helper. See [Critical CSS](#critical-css).
 
 - The tags go into CMS pages and pages of site controllers for the main request with status 200 or 404, `text/html` and an ordinary `Response`. Preview, admin, API, MCP, profiler, 304, redirects, streamed and compressed responses are excluded.
 - In `auto`, the core skips a counter already present in the HTML with the same ID. Verification tags are deduplicated by name and code in both modes.

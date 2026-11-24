@@ -17,6 +17,7 @@ use Itk\Cms\Entity\MediaFile;
 use Itk\Cms\Rendering\PageCache;
 use Itk\Cms\Rendering\PageValidators;
 use Itk\Cms\Repository\PageRepository;
+use Itk\Cms\Security\CspNonce;
 use Itk\Cms\Tests\App\QueryCounter;
 use Itk\Cms\Tests\App\TestKernel;
 use Itk\Cms\Tests\Core\Fixture\TemporarySettings;
@@ -322,6 +323,40 @@ final class ConditionalResponseTest extends WebTestCase
         self::assertNotSame($etag, $manualEtag);
         self::assertStringContainsString('data-start="manual"', $html);
         self::assertSame(304, $this->get($manual, $url, ['HTTP_IF_NONE_MATCH' => $manualEtag])[0]);
+    }
+
+    #[Test]
+    public function aRequestNonceBypassesTheCachedPageAndConditionalResponse(): void
+    {
+        $client = $this->client();
+        $url = '/test-cond-analytics-nonce';
+        $this->publish('Аналитика с CSP', $url);
+        $this->setting('domain', 'localhost');
+        $this->setting(AnalyticsConfig::GA_ID, 'G-ABCD1234');
+        $cache = self::getContainer()->get(PageCache::class);
+
+        try {
+            [, $etag] = $this->get($client, $url);
+            self::assertNotSame('', $etag);
+            $this->get($client, $url);
+            self::assertSame('HIT', $client->getResponse()->headers->get('X-ITK-Cache'));
+
+            $request = Request::create('http://localhost' . $url, server: ['HTTP_IF_NONE_MATCH' => $etag]);
+            $request->attributes->set(CspNonce::ATTRIBUTE, 'test-response-nonce');
+            $kernel = self::$kernel;
+            self::assertNotNull($kernel);
+            $response = $kernel->handle($request, catch: false);
+
+            self::assertSame(200, $response->getStatusCode());
+            self::assertSame('BYPASS', $response->headers->get('X-ITK-Cache'));
+            self::assertFalse($response->headers->has('ETag'));
+            self::assertStringContainsString('nonce="test-response-nonce"', (string) $response->getContent());
+            [, , $cached] = $this->get($client, $url);
+            self::assertSame('HIT', $client->getResponse()->headers->get('X-ITK-Cache'));
+            self::assertStringNotContainsString('test-response-nonce', $cached);
+        } finally {
+            $cache->clear();
+        }
     }
 
     #[Test]

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Itk\Cms\Analytics;
 
 use Itk\Cms\Content\SettingsService;
+use Itk\Cms\Security\CspNonce;
 use Itk\Cms\YandexWebmaster\WebmasterStore;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
@@ -55,7 +56,7 @@ final class InjectAnalyticsListener
         if ($config->isEmpty()) {
             return;
         }
-        $injected = AnalyticsInjector::inject($html, $config, $this->asset);
+        $injected = AnalyticsInjector::inject($html, $config, $this->asset, CspNonce::fromRequest($event->getRequest()));
         if ($injected === $html) {
             return;
         }

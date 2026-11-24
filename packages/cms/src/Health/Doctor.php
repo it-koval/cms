@@ -10,6 +10,7 @@ use Doctrine\Migrations\DependencyFactory;
 use Doctrine\Migrations\Metadata\AvailableMigration;
 use Doctrine\Migrations\Metadata\Storage\TableMetadataStorageConfiguration;
 use Itk\Cms\Admin\AdminPath;
+use Itk\Cms\Analytics\AnalyticsAsset;
 use Itk\Cms\Content\SettingsService;
 use Itk\Cms\I18n\ContentLocales;
 use Itk\Cms\I18n\I18n;
@@ -66,6 +67,7 @@ final class Doctor
         #[Autowire(param: 'itk_cms.main_locale')]
         private readonly string $mainLocale,
         private readonly ?ContentLocales $contentLocales = null,
+        private readonly AnalyticsAsset $analyticsAsset = new AnalyticsAsset(),
     ) {
     }
 
@@ -103,6 +105,7 @@ final class Doctor
         $add($site, I18n::t('ops.doctor_name_firewall_mcp'), $this->firewall(McpGate::PATH, ApiTokenAuthenticator::class));
         $add($site, I18n::t('ops.doctor_name_queue'), $this->queue());
         $add($site, I18n::t('ops.doctor_name_admin_build'), $this->adminBuild());
+        $add($site, I18n::t('ops.doctor_name_analytics_loader'), self::checkAnalyticsLoader($this->analyticsAsset, $this->projectDir . '/public/' . AnalyticsAsset::PATH));
 
         foreach ($this->report($done) as [$name, $result]) {
             $add(I18n::t('ops.doctor_group_health'), $name, $result);
@@ -364,6 +367,17 @@ final class Doctor
     private function adminBuild(): HealthResult
     {
         return self::checkAdminBuild(\dirname(__DIR__, 2) . '/public/admin', $this->projectDir . '/public/bundles/itkcms/admin');
+    }
+
+    public static function checkAnalyticsLoader(AnalyticsAsset $bundled, string $installed): HealthResult
+    {
+        $version = (new AnalyticsAsset(file: $installed))->version();
+
+        return match (true) {
+            '0' === $version => HealthResult::warn(I18n::t('ops.doctor_analytics_loader_missing')),
+            $version !== $bundled->version() => HealthResult::warn(I18n::t('ops.doctor_analytics_loader_outdated')),
+            default => HealthResult::ok(I18n::t('ops.doctor_analytics_loader_ok')),
+        };
     }
 
     /**

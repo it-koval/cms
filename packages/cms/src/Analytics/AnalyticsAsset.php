@@ -10,9 +10,10 @@ use Symfony\Component\HttpFoundation\RequestStack;
 /** @internal The loader published by Symfony's assets:install. */
 final class AnalyticsAsset
 {
-    private const PATH = 'bundles/itkcms/analytics.js';
+    public const PATH = 'bundles/itkcms/analytics.js';
 
-    private ?string $version = null;
+    private int|false|null $modifiedAt = null;
+    private string $version = '0';
 
     public function __construct(
         private readonly ?RequestStack $requests = null,
@@ -32,6 +33,14 @@ final class AnalyticsAsset
 
     public function version(): string
     {
-        return $this->version ??= \is_file($this->file) ? \substr((string) \hash_file('sha256', $this->file), 0, 16) : '0';
+        \clearstatcache(true, $this->file);
+        $modifiedAt = @\filemtime($this->file);
+        if ($modifiedAt !== $this->modifiedAt) {
+            $hash = false === $modifiedAt ? false : @\hash_file('sha256', $this->file);
+            $this->modifiedAt = $modifiedAt;
+            $this->version = false === $hash ? '0' : \substr($hash, 0, 16);
+        }
+
+        return $this->version;
     }
 }

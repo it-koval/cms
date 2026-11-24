@@ -12,12 +12,13 @@ namespace Itk\Cms\Analytics;
  */
 final class AnalyticsInjector
 {
-    public static function inject(string $html, AnalyticsConfig $config, ?AnalyticsAsset $asset = null): string
+    public static function inject(string $html, AnalyticsConfig $config, ?AnalyticsAsset $asset = null, ?string $nonce = null): string
     {
-        $headAt = \stripos($html, '</head>');
-        $head = self::head($html, $config, $asset ?? new AnalyticsAsset());
-        $body = self::noscript($html, $config);
-        $bodyAt = self::bodyEnd($html, false === $headAt ? 0 : $headAt);
+        $searchable = self::withoutComments($html);
+        $headAt = \stripos($searchable, '</head>');
+        $head = self::head($searchable, $config, $asset ?? new AnalyticsAsset(), $nonce);
+        $body = self::noscript($searchable, $config);
+        $bodyAt = self::bodyEnd($searchable, false === $headAt ? 0 : $headAt);
 
         // the later position first, so the earlier one stays valid
         if ('' !== $body && null !== $bodyAt) {
@@ -30,7 +31,7 @@ final class AnalyticsInjector
         return $html;
     }
 
-    private static function head(string $html, AnalyticsConfig $config, AnalyticsAsset $asset): string
+    private static function head(string $html, AnalyticsConfig $config, AnalyticsAsset $asset, ?string $nonce): string
     {
         $out = '';
         // two accounts may verify one site, so the code of the owner and the one of the CMS can differ and both stay
@@ -45,6 +46,7 @@ final class AnalyticsInjector
             $metrika = null !== $config->metrikaId && (!$auto || !self::hasMetrika($html, $config->metrikaId)) ? $config->metrikaId : '';
             $ga = null !== $config->googleAnalyticsId && (!$auto || !self::hasGoogleAnalytics($html, $config->googleAnalyticsId)) ? $config->googleAnalyticsId : '';
             $out .= '<script src="' . self::attr($asset->url()) . '" defer data-itk-analytics'
+                . (null !== $nonce && '' !== $nonce ? ' nonce="' . self::attr($nonce) . '"' : '')
                 . ' data-start="' . self::attr($config->startMode()) . '"'
                 . ' data-metrika="' . self::attr($metrika) . '"'
                 . ' data-webvisor="' . self::attr($config->webvisor ? '1' : '0') . '"'
@@ -52,6 +54,20 @@ final class AnalyticsInjector
         }
 
         return $out;
+    }
+
+    /** Mask actual HTML comments without moving offsets or changing the original page. Script contents, including legacy HTML-style wrappers, are not HTML comments. */
+    private static function withoutComments(string $html): string
+    {
+        if (!\str_contains($html, '<!--')) {
+            return $html;
+        }
+
+        return \preg_replace_callback(
+            '~<(script|style|textarea|title)\b(?:"[^"]*"|\'[^\']*\'|[^>"\'])*>.*?</\1\s*>|<!--.*?(?:-->|$)|<(?:"[^"]*"|\'[^\']*\'|[^>"\'])*>~is',
+            static fn (array $match): string => \str_starts_with($match[0], '<!--') ? \str_repeat(' ', \strlen($match[0])) : $match[0],
+            $html,
+        ) ?? $html;
     }
 
     private static function verification(string $html, string $name, string $code): string
@@ -97,14 +113,17 @@ final class AnalyticsInjector
         return \html_entity_decode($m[1] ?: ($m[2] ?? '') ?: ($m[3] ?? ''), \ENT_QUOTES | \ENT_HTML5, 'UTF-8');
     }
 
-    /** The script of Metrika with this counter: tag.js?id=ID, or ym(ID, … written by hand, or the older watch.js with yaCounterID. */
+    /** An exact counter URL, ym(ID, 'init', …), or the older watch.js with yaCounterID. Sending a goal does not initialize a counter. */
     private static function hasMetrika(string $html, string $id): bool
     {
-        if (1 !== \preg_match('~mc\.yandex\.ru/metrika/(?:tag|watch)\.js~i', $html)) {
-            return false;
+        $quoted = \preg_quote($id, '~');
+        if (1 === \preg_match('~mc\.yandex\.ru/metrika/tag\.js\?id=' . $quoted . '(?=[&\#\s\'"<>`]|$)~i', $html)) {
+            return true;
         }
 
-        return 1 === \preg_match('~(?:tag\.js\?id=|\bym\(\s*[\'"]?|yaCounter)' . \preg_quote($id, '~') . '(?!\d)~', $html);
+        return 1 === \preg_match('~\bym\s*\(\s*(?:\'' . $quoted . '\'|"' . $quoted . '"|' . $quoted . ')\s*,\s*([\'"])init\1\s*[,)]~', $html)
+            || (1 === \preg_match('~mc\.yandex\.ru/metrika/watch\.js(?=[?\s\'"<>`]|$)~i', $html)
+                && 1 === \preg_match('~\byaCounter' . $quoted . '(?![\w$])~', $html));
     }
 
     private static function hasGoogleAnalytics(string $html, string $id): bool

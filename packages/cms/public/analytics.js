@@ -23,10 +23,12 @@
   }
 
   function metrika() {
-    window.ym = window.ym || function () {
-      (window.ym.a = window.ym.a || []).push(arguments)
+    if (typeof window.ym === 'undefined') {
+      window.ym = function () {
+        (window.ym.a = window.ym.a || []).push(arguments)
+      }
+      window.ym.l = +new Date()
     }
-    window.ym.l = +new Date()
     var options = { clickmap: true, trackLinks: true, accurateTrackBounce: true }
     if (webvisor) options.webvisor = true
     window.ym(config.metrika, 'init', options)
@@ -38,8 +40,10 @@
   }
 
   function ga() {
-    window.dataLayer = window.dataLayer || []
-    window.gtag = function () { window.dataLayer.push(arguments) }
+    if (typeof window.dataLayer === 'undefined') window.dataLayer = []
+    if (typeof window.gtag === 'undefined') {
+      window.gtag = function () { window.dataLayer.push(arguments) }
+    }
     window.gtag('js', new Date())
     window.gtag('config', config.ga)
     load('https://www.googletagmanager.com/gtag/js?id=' + encodeURIComponent(config.ga))
@@ -57,15 +61,23 @@
       state[key] = true
       counters.push(key)
     }
+    var started = []
     for (var j = 0; j < counters.length; j++) {
-      api.started.push(counters[j])
-      if (counters[j] === 'metrika') metrika()
-      else ga()
+      var counter = counters[j]
+      try {
+        if (counter === 'metrika') metrika()
+        else ga()
+        api.started.push(counter)
+        started.push(counter)
+      } catch (error) {
+        delete state[counter]
+        console.error('ITK CMS analytics failed to start ' + counter, error)
+      }
     }
-    if (counters.length) {
+    if (started.length) {
       document.dispatchEvent(new CustomEvent('itk-analytics:started', {
         bubbles: true,
-        detail: { counters: counters },
+        detail: { counters: started },
       }))
     }
   }
