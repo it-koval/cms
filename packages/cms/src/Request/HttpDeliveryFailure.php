@@ -36,10 +36,10 @@ final class HttpDeliveryFailure
         if ($response instanceof NativeResponse) {
             return true;
         }
-        if ($seen->contains($response)) {
+        if (isset($seen[$response])) {
             return false;
         }
-        $seen->attach($response);
+        $seen[$response] = null;
         for ($class = new \ReflectionObject($response); false !== $class; $class = $class->getParentClass()) {
             foreach ($class->getProperties() as $property) {
                 if ($property->isStatic() || $property->getDeclaringClass()->getName() !== $class->getName() || !$property->isInitialized($response)) {

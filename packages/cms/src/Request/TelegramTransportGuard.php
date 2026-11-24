@@ -64,7 +64,7 @@ final class TelegramTransportGuard
      */
     private static function copy(object $source, \SplObjectStorage $copies, ?LoggerInterface $logger = null, array &$secrets = []): object
     {
-        if ($copies->contains($source)) {
+        if (isset($copies[$source])) {
             return $copies[$source];
         }
         // Register before descending so a decorating client cannot introduce an infinite recursion.

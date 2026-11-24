@@ -8,6 +8,7 @@ All notable changes to ITK CMS are recorded in this file. The format follows [Ke
 
 ### Breaking changes
 
+- The bundle requires the dependency versions it is tested with: Symfony 7.4.23 or newer in the 7.4 line, or Symfony 8.1 and newer, Doctrine ORM 3.8 and DBAL 4.6 or newer, Twig 3.31 or newer. Symfony 8.0 reached its end of life and is no longer supported. Update with `composer update itk/cms --with-all-dependencies`. Older versions broke request delivery, Site Health and page cache expiry.
 - Twig functions `menu`, `settings`, `listing`, `media_url`, `media_srcset`, `media_width`, `media_ratio`, `page_url` and `render_sections` now use the `itk_` prefix. See [the migration command](UPGRADE.md#twig-functions).
 - Admin requests and media lists take `page` and `perPage` and return a paginated object. Admin and MCP lists use creation-time and ID cursors for adjacent pages. See [UPGRADE.md](UPGRADE.md#030).
 - Forms use a 1,000-character limit for fields without `max()`. Schema lint and Site status report those fields. MCP `request_get` reads up to 6,000 characters of each form value.
