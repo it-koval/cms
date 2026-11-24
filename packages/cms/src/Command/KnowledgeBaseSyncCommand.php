@@ -38,6 +38,8 @@ use Symfony\Component\Messenger\MessageBusInterface;
  *
  * Safe to run any number of times and on every deploy: a Current document costs one extraction, no API call.
  * There is no --all: a rewrite of a Current document would reuse the same vectors by hash and change nothing.
+ *
+ * @internal
  */
 #[AsCommand(name: 'itk:knowledge-base:sync', description: 'ops.cmd_knowledge_base_sync_description')]
 final class KnowledgeBaseSyncCommand extends Command

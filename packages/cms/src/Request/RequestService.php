@@ -18,7 +18,11 @@ use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\Messenger\Exception\HandlerFailedException;
 use Symfony\Component\Messenger\MessageBusInterface;
 
-/** Requests (заявки): accepting them from the site forms, the staff's work on them, delivery to the messengers (Telegram, MAX). */
+/**
+ * Requests (заявки): accepting them from the site forms, the staff's work on them, delivery to the messengers (Telegram, MAX).
+ *
+ * @internal
+ */
 final class RequestService
 {
     /** The effective character limit for a field without max(). */

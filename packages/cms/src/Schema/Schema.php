@@ -27,7 +27,6 @@ final class Schema
 
     /**
      * @param list<string> $headlineMarks
-     * @param array<string, bool> $features
      * @param array<string, MenuAreaDef> $menuAreas
      * @param array{top: list<string>, bottom: list<string>} $layout
      * @param array<string, SectionType> $sections
@@ -40,7 +39,6 @@ final class Schema
     public function __construct(
         private readonly string $mainLocale,
         private readonly array $headlineMarks,
-        private readonly array $features,
         private readonly array $menuAreas,
         private readonly array $layout,
         private readonly array $sections,
@@ -415,7 +413,6 @@ final class Schema
         return [
             'mainLocale' => $this->mainLocale,
             'design' => ['headlineMarks' => $this->headlineMarks],
-            'features' => $this->features,
             'sections' => \array_values(\array_map(static fn (SectionType $s): array => $s->toArray($viewer), $this->sections)),
             'sectionGroups' => $this->sectionGroups(),
             'pageFields' => \array_map(static fn (FieldInterface $f): array => $f->toArray(), self::pageFields()),

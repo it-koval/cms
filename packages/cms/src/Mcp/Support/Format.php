@@ -4,7 +4,11 @@ declare(strict_types=1);
 
 namespace Itk\Cms\Mcp\Support;
 
-/** Small helpers that keep tool results compact. */
+/**
+ * Small helpers that keep tool results compact.
+ *
+ * @internal
+ */
 final class Format
 {
     /** Plain text of a value for a list row: tags removed, spaces folded, cut to `$max` signs. */

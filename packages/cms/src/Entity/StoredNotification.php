@@ -10,6 +10,8 @@ use Doctrine\ORM\Mapping as ORM;
 /**
  * A notification kept for the bell of the admin (Itk\Cms\Notification\Notification as DatabaseChannel stores it). Who has read it: itk_notification_read.
  * `audience` decides who sees it (null = everyone signed in; a permission area / 'area:action'; 'role:<key>'). `dedupeKey` keeps one row per matter.
+ *
+ * @internal
  */
 #[ORM\Entity]
 #[ORM\Table(name: 'itk_notification')]

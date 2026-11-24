@@ -24,7 +24,7 @@ final class RenderState
     public string $template = 'default';
     /** @var array<string, string> collection record id => collection key, discovered by Twig reads in this render */
     public array $collectionOwners = [];
-    /** @var list<array<string, mixed>> exact site/settings() maps handed to Twig in this render */
+    /** @var list<array<string, mixed>> exact site/itk_settings() maps handed to Twig in this render */
     public array $settingsSubjects = [];
     /** What itk_cache() asked of the cache of pages in this render: seconds the entry may live at most, false = do not keep, null = nothing asked. */
     public int|false|null $cache = null;

@@ -33,6 +33,8 @@ use Symfony\Component\Console\Style\SymfonyStyle;
  *
  * Safe to run any number of times.
  * Not needed after a CSS deploy: the first render of each page asks for it (CriticalCssService::forLiveRender); running it in the deploy script only does it sooner.
+ *
+ * @internal
  */
 #[AsCommand(name: 'itk:critical-css:generate', description: 'ops.cmd_critical_css_description')]
 final class GenerateCriticalCssCommand extends Command

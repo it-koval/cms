@@ -108,16 +108,6 @@
   "collections.act_done": "Готово",
   "collections.act_failed": "Не получилось выполнить действие",
   "collections.draft_save_failed": "Не удалось сохранить",
-  "collections.pr_label": "Предложения ИИ-агента",
-  "collections.pr_header": {
-    "one": "ИИ-агент предложил {count} правку",
-    "few": "ИИ-агент предложил {count} правки",
-    "many": "ИИ-агент предложил {count} правок",
-    "other": "ИИ-агент предложил {count} правки"
-  },
-  "collections.pr_note": "{note}. Пока вы не примете, ничего не меняется.",
-  "collections.pr_accept": "Принять",
-  "collections.pr_reject": "Отклонить",
   "collections.pp_send": "Отправить на публикацию",
   "collections.pp_title": "Что будет опубликовано",
   "collections.pp_count": {
@@ -323,10 +313,6 @@
   "collections.iv_delete_version_text": "«{title}» перестанет показываться {site}. Версии на других языках останутся. Это нельзя отменить.",
   "collections.iv_delete_version_text_page": "«{title}» перестанет показываться {site} вместе со своей страницей. Версии на других языках останутся. Это нельзя отменить.",
   "collections.iv_version_deleted": "{version} удалена",
-  "collections.iv_accepted": "Правка принята и лежит в черновике: на сайт попадёт после публикации",
-  "collections.iv_accept_failed": "Не получилось принять правку",
-  "collections.iv_rejected": "Правка отклонена",
-  "collections.iv_reject_failed": "Не получилось отклонить",
   "collections.iv_not_found": "Такой записи нет",
   "collections.iv_not_loaded": "Запись не загрузилась",
   "collections.iv_deleted_hint": "Возможно, её удалили. Вернитесь к списку.",

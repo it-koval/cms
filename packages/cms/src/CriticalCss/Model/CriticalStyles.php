@@ -9,6 +9,8 @@ namespace Itk\Cms\CriticalCss\Model;
  * (crittr keeps the @media wrappers of the source, so the union is right on every screen).
  * When the runs cannot be united (a stylesheet that does not split, or two runs that disagree on the order of rules), one block per media range,
  * adjacent ranges with identical CSS merged. Rows stored before the union hold such blocks too.
+ *
+ * @internal
  */
 final readonly class CriticalStyles
 {

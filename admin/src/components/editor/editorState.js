@@ -1,11 +1,11 @@
 // State and document logic of the page editor (no DOM): the working copy of the page, undo/redo snapshots, autosave,
-// section operations, AI proposals, publish.
+// section operations, publish.
 //
 //   const ed = useEditorState(pageId, locale)     // reactive: refs and computeds are unwrapped, so ed.page, ed.sel, ed.changes ... read directly
 //   provide(EDITOR_KEY, ed)
 //
 // LANGUAGE: the editor edits ONE language version of the page (`locale`, default = the current content language app.locale; fixed for the life of the state:
-// the editor view re-creates the state when the language changes). Everything below (draft, published copy, publish, revert, proposals, preview context)
+// the editor view re-creates the state when the language changes). Everything below (draft, published copy, publish, revert, preview context)
 // is of that language. A page that has no version in `locale` leaves ed.page = null and ed.translated = false (ed.error stays empty: the editor shows the
 // «Версии ещё нет» empty state and createVersion({ from }) makes it); ed.locales (status of every language of the page) and ed.shell ({ id, parentId, template }) are filled.
 // RIGHTS (the role of app.user, judged for the page's template): ed.denied = the role may not even look at this page; ed.readOnly = it may look but not change (every editing function below does nothing, the screen draws no editing controls);
@@ -22,19 +22,17 @@
 // Publishing and the like wait for that choice (flushAll() throws); closing the tab with edits that wait for it makes the browser ask (saveNow).
 // A save that FAILED (the server said no, no connection) leaves the edits waiting too: flush() resolves true only when nothing is left unsaved (false: a failure or a conflict), and
 // flushAll() throws then (code 'save_failed' for a failure), so nothing is published, submitted, returned, reverted or rendered from an older draft, and the screen that is left asks first.
-// History: snapshots of { sections, proposals } (max 50). Typing is grouped (500 ms), structural edits push at once.
-// AI proposals are part of the snapshot (undo of an accepted edit brings the proposal back); the decisions are sent to the API
-// when the editor is left or the page is published (see commitProposals).
+// History: snapshots of sections and template fields (max 50). Typing is grouped (500 ms), structural edits push at once.
 import { computed, reactive, ref } from 'vue'
 import { api, isConflict, whileClosing } from '@/api/index.js'
 import { app, can } from '@/stores/app.js'
 import { getSectionType, hasPageH1, newSectionData, pageH1Id, sectionName } from '@/schema/sections.js'
 import { getTemplate, templateFields } from '@/schema/templates.js'
 import { pageChanges, sectionChangedKeys } from '@/utils/changes.js'
-import { fromPlainText, validate } from '@/utils/fields.js'
-import { clone, same, setIn } from '@/utils/objects.js'
+import { validate } from '@/utils/fields.js'
+import { clone, same } from '@/utils/objects.js'
 import { nid } from '@/utils/ids.js'
-import { firstLineText, htmlToText } from '@/utils/html.js'
+import { firstLineText } from '@/utils/html.js'
 import { toast } from '@/components/ui/useToast.js'
 import { isMulti } from '@/utils/locales.js'
 import { cap, version } from '@/utils/langWords.js'
@@ -51,13 +49,6 @@ const readSb = () => { try { return localStorage.getItem(SB_KEY) } catch (e) { r
 /** Remember whether the sidebar was open (per browser). */
 export const rememberSb = (on) => { try { localStorage.setItem(SB_KEY, on ? '1' : '0') } catch (e) { /* not remembered */ } }
 const startOpen = () => { const v = readSb(); return v === '1' ? true : v === '0' ? false : innerWidth >= 1200 }
-
-const fieldOf = (type, key) => { const t = getSectionType(type); return t ? t.fields.find((f) => f.k === key) || null : null }
-const isHtmlField = (f) => !!f && (f.t === 'headline' || (f.t === 'textarea' && f.rich))
-/** Proposals carry plain text: a headline / description field gets it as HTML. */
-export const propValue = fromPlainText
-/** Text of a stored value for the «было» line of a proposal. */
-export const propText = (f, v) => (isHtmlField(f) ? htmlToText(v) : String(v ?? ''))
 
 function reid(o) {
   if (Array.isArray(o)) o.forEach(reid)
@@ -83,7 +74,6 @@ export function useEditorState(pageId, locale = app.locale) {
   const error = ref('')
   const page = ref(null)
   const published = ref(null)
-  const proposals = ref([])
   const rev = ref(0) // bumped whenever what the server renders changed (saved draft, published, reverted): the preview frame reloads
   const pages = ref([])
   const translated = ref(true) // false: the page has no version in this language
@@ -138,7 +128,6 @@ export function useEditorState(pageId, locale = app.locale) {
   }
   const h1Key = computed(() => (template.value && template.value.h1 && tplFields.value.some((f) => f.k === template.value.h1.field) ? template.value.h1.field : ''))
   const pubById = computed(() => Object.fromEntries(((published.value && published.value.sections) || []).map((s) => [s.id, s])))
-  const liveProps = computed(() => (readOnly.value ? [] : proposals.value.filter((p) => sections.value.some((s) => s.id === p.sectionId))))
   const curSec = computed(() => sections.value.find((s) => s.id === sel.value) || null)
   const info = computed(() => {
     const out = {}
@@ -152,7 +141,6 @@ export function useEditorState(pageId, locale = app.locale) {
         chg: !!pub && (!ps || keys.length > 0 || !!ps.hidden !== !!s.hidden),
         keys,
         err: t ? validate(t.fields, s.data).length > 0 : false,
-        np: liveProps.value.filter((p) => p.sectionId === s.id).length,
       }
     })
     return out
@@ -194,7 +182,7 @@ export function useEditorState(pageId, locale = app.locale) {
   /* ---------- history ---------- */
   let hist = { st: [], i: 0 }
   let histT = null
-  const snap = () => ({ s: clone(page.value.sections), f: clone(page.value.fields || {}), p: clone(proposals.value) })
+  const snap = () => ({ s: clone(page.value.sections), f: clone(page.value.fields || {}) })
   function pushHist() {
     clearTimeout(histT)
     histT = null
@@ -219,7 +207,6 @@ export function useEditorState(pageId, locale = app.locale) {
   let saveChain = Promise.resolve()
   let baseVersion = null // the version of the draft as the server last told it (a load, a save); each save asks to find the draft still at it
   let flying = 0 // queued or in flight, including a last save sent while the tab is closing
-  let unchecked = false // the next save is not checked (the API has just written the draft itself, see commitProposals)
   const conflict = ref(null) // { version, by, at, via, viaName } while the draft changed behind our back and the person has not chosen yet; autosave is stopped
   const STOPPED = t('editor.err_decide_first')
   let failure = null // why the last save failed (not a conflict): its edits still wait, the next save tries again
@@ -253,9 +240,8 @@ export function useEditorState(pageId, locale = app.locale) {
       try {
         if (conflict.value) { dirty = true; return }
         // the version is read now, not when the save was queued: the save before it in the chain has brought a newer one
-        const put = () => api.pages.saveDraft(pageId, locale, payload, unchecked ? null : baseVersion)
+        const put = () => api.pages.saveDraft(pageId, locale, payload, baseVersion)
         const r = await (closing ? whileClosing(put) : put())
-        unchecked = false
         failure = null
         takeVersion(r)
         if (page.value && r) page.value.updatedAt = r.updatedAt
@@ -294,10 +280,6 @@ export function useEditorState(pageId, locale = app.locale) {
     saveT = null
     dirty = false
     failure = null
-    unchecked = false
-    // the proposals decided on screen go with the edits: nothing is sent about them, and they are offered again the next time the page is opened
-    decisions.clear()
-    initialProps = proposals.value.map((p) => p.id)
     conflict.value = null
     return true
   }
@@ -320,31 +302,9 @@ export function useEditorState(pageId, locale = app.locale) {
     else { histT = setTimeout(pushHist, 500); histPending.value = true }
   }
 
-  /* ---------- AI proposals ---------- */
-  let initialProps = []
-  const decisions = new Map()
-  function decided() {
-    const left = new Set(proposals.value.map((p) => p.id))
-    return initialProps.filter((id) => !left.has(id))
-  }
-  const accepted = (ids) => ids.some((id) => decisions.get(id) === 'accept')
-  async function commitProposals() {
-    const done = decided()
-    if (!done.length) return
-    initialProps = initialProps.filter((id) => !done.includes(id))
-    done.forEach((id) => {
-      const kind = decisions.get(id) === 'accept' ? 'accept' : 'reject'
-      api.proposals[kind](id).catch(() => api.proposals.reject(id).catch(() => {})) // accept of a deleted section: drop the proposal
-    })
-    dirty = true // the saved page below carries the accepted values and wins over whatever the API wrote
-    if (accepted(done)) unchecked = true // the API has just changed the draft itself: the save below is not checked (its answer brings the version again)
-  }
-  /** Leave the editor / publish: send the decisions about AI proposals, then the last autosave. */
+  /** Leave the editor / publish: capture the last history step and save pending edits. */
   async function flushAll() {
     pushHist()
-    if (accepted(decided())) dirty = true // the save after an accepted proposal is not checked, so this one has to go out even when the autosave has already sent everything
-    await settled() // our own edits first, and checked: a draft changed behind our back is found out before the decisions below are written on top of it
-    await commitProposals()
     await settled()
   }
   /** Throws unless everything is saved: the draft on the server is not ours (conflict), or it is older than the screen (failed save). Nothing may be published or rendered from it. */
@@ -362,9 +322,8 @@ export function useEditorState(pageId, locale = app.locale) {
     loading.value = true
     error.value = ''
     try {
-      const [d, props, list] = await Promise.all([
+      const [d, list] = await Promise.all([
         api.pages.getDraft(pageId, locale),
-        api.proposals.list({ locale }).catch(() => []),
         api.pages.list({ locale }).catch(() => []),
       ])
       if (my !== loadSeq) return
@@ -375,22 +334,18 @@ export function useEditorState(pageId, locale = app.locale) {
       if (!d.translated) { // no version in this language: the editor shows the «создать версию» state, nothing to edit
         page.value = null
         published.value = null
-        proposals.value = []
-        initialProps = []
         sel.value = null
         return
       }
       page.value = d.page
       takeVersion(d.page)
       published.value = d.published
-      proposals.value = props.filter((p) => p.kind === 'page' && p.pageId === pageId && p.sectionId && !p.stale).map((p) => ({ id: p.id, sectionId: p.sectionId, key: p.key, label: p.label, old: p.old, nw: p.nw, note: p.note }))
-      initialProps = proposals.value.map((p) => p.id)
       sel.value = d.page.sections.length ? d.page.sections[0].id : null
       const parked = isMulti() ? histCache.get(cacheKey) : null
       histCache.delete(cacheKey)
       if (parked && same(parked.st[parked.i].s, d.page.sections) && same(parked.st[parked.i].f || {}, d.page.fields || {})) {
-        // the same content as when this language was left: its undo steps come back (proposals were decided meanwhile, so the steps carry today's list)
-        hist = { st: parked.st.map((x) => ({ s: x.s, f: x.f, p: clone(proposals.value) })), i: parked.i }
+        // The same content as when this language was left: its undo steps come back.
+        hist = parked
         histI.value = hist.i
         histN.value = hist.st.length
         histPending.value = false
@@ -533,7 +488,6 @@ export function useEditorState(pageId, locale = app.locale) {
       page.value.fields = clone(hist.st[j].f)
       if (h1Key.value) page.value.title = nameOfHeading(page.value.fields[h1Key.value])
     }
-    proposals.value = clone(hist.st[j].p)
     histI.value = hist.i
     if (delToast) { toast.dismiss(delToast); delToast = null } // its section array is gone with the old history state
     if (!secById(sel.value)) {
@@ -543,52 +497,6 @@ export function useEditorState(pageId, locale = app.locale) {
     if (insertAt.value > sections.value.length) insertAt.value = sections.value.length
     markDirty()
     return true
-  }
-
-  /* ---------- AI proposals: accept / reject ---------- */
-  function applyProposal(p) {
-    const s = secById(p.sectionId)
-    if (!s) return
-    s.data = setIn(s.data, p.key, propValue(fieldOf(s.type, p.key), p.nw))
-  }
-  function acceptProposal(id) {
-    if (readOnly.value) return null
-    const i = proposals.value.findIndex((p) => p.id === id)
-    if (i < 0) return null
-    const p = proposals.value[i]
-    applyProposal(p)
-    proposals.value.splice(i, 1)
-    decisions.set(id, 'accept')
-    touch(true)
-    toast.show(t('editor.toast_accepted'))
-    return p
-  }
-  function rejectProposal(id) {
-    if (readOnly.value) return null
-    const i = proposals.value.findIndex((p) => p.id === id)
-    if (i < 0) return null
-    const p = proposals.value[i]
-    proposals.value.splice(i, 1)
-    decisions.set(id, 'reject')
-    touch(true)
-    toast.show(t('editor.toast_rejected'), {
-      undoLabel: t('editor.undo_restore'),
-      undo: () => {
-        if (!proposals.value.some((x) => x.id === p.id)) proposals.value.splice(Math.min(i, proposals.value.length), 0, p)
-        decisions.delete(id)
-        touch(true)
-      },
-    })
-    return p
-  }
-  function acceptAll(sectionId) {
-    if (readOnly.value) return []
-    const mine = proposals.value.filter((p) => p.sectionId === sectionId)
-    mine.forEach((p) => { applyProposal(p); decisions.set(p.id, 'accept') })
-    proposals.value = proposals.value.filter((p) => p.sectionId !== sectionId)
-    touch(true)
-    toast.show(t('editor.toast_accepted_all', { count: mine.length }))
-    return mine
   }
 
   /* ---------- page level ---------- */
@@ -785,8 +693,6 @@ export function useEditorState(pageId, locale = app.locale) {
     saveT = histT = null
     dirty = false
     failure = null
-    unchecked = false
-    decisions.clear()
     histCache.delete(cacheKey)
   }
   function dispose() {
@@ -797,19 +703,17 @@ export function useEditorState(pageId, locale = app.locale) {
     if (delToast) toast.dismiss(delToast)
     if (discarded) return
     if (page.value && isMulti()) { pushHist(); parkHist(cacheKey, hist) }
-    // proposals first, then the page: the saved copy is the one that counts
-    commitProposals().then(() => {}, () => {})
     flush()
   }
 
   return reactive({
-    pageId, locale, translated, locales, shell, loading, error, page, published, proposals, rev, pages, sel, sb, sbLast, sbFull, pane, insertAt, libGrp, device, save, conflict, histI, histN, restored, busy,
+    pageId, locale, translated, locales, shell, loading, error, page, published, rev, pages, sel, sb, sbLast, sbFull, pane, insertAt, libGrp, device, save, conflict, histI, histN, restored, busy,
     denied, readOnly, canPublish, canDelete, awaiting, returned, tplKey,
-    sections, pageTitle, template, h1Id, hasH1, tplFields, hasFields, canAdd, listing, h1Key, tplErrors, tplInfo, pubById, liveProps, curSec, info, changes, errors, status, canUndo, canRedo,
+    sections, pageTitle, template, h1Id, hasH1, tplFields, hasFields, canAdd, listing, h1Key, tplErrors, tplInfo, pubById, curSec, info, changes, errors, status, canUndo, canRedo,
     pubOf, indexOf, secById,
     load, touch, flush, flushAll, pushHist, saveNow, discardPending, dispose,
     updateData, updateFields, addSection, moveSec, reorder, dupSec, delSec, toggleHide,
-    stepHist, acceptProposal, rejectProposal, acceptAll,
+    stepHist,
     publish, submit, returnToAuthor, revertAll, reloadDraft, showNewVersion, keepMine, saveMeta, createVersion, removeVersion,
   })
 }

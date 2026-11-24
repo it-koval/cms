@@ -348,7 +348,7 @@ Use a business field such as `stage` for a kanban column. Collection fields cann
 
 ### Menus
 
-`menuArea()` declares menu areas. Items are edited in **Settings** → **Menus** (the `set:menus` permission). An item leads to a page or to a URL. Items are dragged by the handle on the left, and the area `depth` limits nesting. In a template, `menu('header')` outputs the menu. Only published pages appear in the menu.
+`menuArea()` declares menu areas. Items are edited in **Settings** → **Menus** (the `set:menus` permission). An item leads to a page or to a URL. Items are dragged by the handle on the left, and the area `depth` limits nesting. In a template, `itk_menu('header')` outputs the menu. Only published pages appear in the menu.
 
 ### Settings
 
@@ -376,7 +376,7 @@ $settings->get('siteName', locale: 'en'); // for fields with translatable()
 $settings->all();                         // all settings of the language
 ```
 
-The call's default is used when the setting is not in the schema or is empty. `false` and `0` count as real values. Until the setting is saved, the field's `default()` is read. The `settings()` Twig function uses the same service. `canSee()` restrictions do not apply to this service.
+The call's default is used when the setting is not in the schema or is empty. `false` and `0` count as real values. Until the setting is saved, the field's `default()` is read. The `itk_settings()` Twig function uses the same service. `canSee()` restrictions do not apply to this service.
 
 ### Media library and images
 
@@ -389,7 +389,7 @@ Originals are stored at `{upload_url}/Y/m/name.jpg` (by default `/uploads/media`
 - In `article` and `description` fields, `<img src="/uploads/…">` tags get on output the `src` of the 960 copy, a `srcset` up to 1920, `sizes`, `loading="lazy"` and `decoding="async"`. The database keeps the original HTML.
 - `php bin/console itk:media:warm [--width=640 --width=1280]` creates copies of all images in advance, for example after an import.
 
-**Crops and focal point.** A media library file has a focal point and saved crops for aspect ratios (**Media library** → file → **Crop and focal point**). A crop URL is `{upload_url}/_v/w{width}-r{A}x{B}/Y/m/name.webp`, and `media_url(image, 960, '16:9')` returns it. Without a saved crop, the largest frame of that ratio around the focal point is used. Allowed ratios are those in `images.ratios` and those for which the file has a saved crop. Write the ratio unreduced (`16x9`, not `32x18`), otherwise you get 404. The browser caches a crop for a day, not a year, because the crop can be redrawn.
+**Crops and focal point.** A media library file has a focal point and saved crops for aspect ratios (**Media library** → file → **Crop and focal point**). A crop URL is `{upload_url}/_v/w{width}-r{A}x{B}/Y/m/name.webp`, and `itk_media_url(image, 960, '16:9')` returns it. Without a saved crop, the largest frame of that ratio around the focal point is used. Allowed ratios are those in `images.ratios` and those for which the file has a saved crop. Write the ratio unreduced (`16x9`, not `32x18`), otherwise you get 404. The browser caches a crop for a day, not a year, because the crop can be redrawn.
 
 **Folders.** Folders nest up to 6 levels, and a name is unique among siblings. A folder with content can be deleted only by moving the content to another folder or to the top level. API (the `media` area): `GET|POST media-folders`, `PATCH|DELETE media-folders/{id}` (`?moveTo=<id>|root`), `GET media?folder=<id>|none`, `PATCH media/{id} {folderId}`, `POST media/move {ids, folderId}`.
 
@@ -407,26 +407,28 @@ The site puts its templates in `templates/`:
 
 A page template has access to `page` (`id`, `parentId`, `template`, `locale`, `html_lang`, `og_locale`, `translations`, `title`, `url`, `seo`, `fields`, `sections`, `h1Id`) and `site` (the settings, plus `name`, `domain`, `locale`).
 
-To make a record or setting clickable in the page preview, use `itk_field(record, 'title')` on a row from `itk_collection()` or `listing()`, and `itk_field(site, 'phone')` or `itk_field(settings(), 'phone')` for a setting. Use `itk_field_attrs()` on the surrounding element for custom markup. A click opens the field in the preview language when the editor has access.
+To make a record or setting clickable in the page preview, use `itk_field(record, 'title')` on a row from `itk_collection()` or `itk_listing()`, and `itk_field(site, 'phone')` or `itk_field(itk_settings(), 'phone')` for a setting. Use `itk_field_attrs()` on the surrounding element for custom markup. A click opens the field in the preview language when the editor has access.
 
 ### Twig functions
 
+All bundle Twig functions use the `itk_` prefix. To upgrade to 0.3.0, rename the old calls with the command in the [upgrade guide](https://github.com/it-koval/cms/blob/main/UPGRADE.md#twig-functions).
+
 | Function | What it does |
 |---|---|
-| `render_sections(page)` | Renders the visible sections through `sections/<type>.html.twig` |
+| `itk_render_sections(page)` | Renders the visible sections through `sections/<type>.html.twig` |
 | `itk_field(section\|page, 'key')` | The field value. `headline` and formatted text come as safe HTML, `text` as escaped text, everything else as data. In preview, wraps the value in markup for highlighting |
 | `itk_field_attrs(section\|page, 'key')` | Preview attributes for non-text fields |
 | `itk_section_attrs(section)`, `itk_section_class(section)` | Attributes of the section root and the `chg` class for a changed section, in preview only |
 | `itk_is_preview()` | `true` while the admin panel shows a draft |
-| `menu('header')` | The area items: `label`, `kind`, `url`, `active`, `open`, `children` |
-| `settings('phone')`, `settings('phone', 'none')`, `settings()` | Settings |
-| `page_url(link)` | A safe URL from a **Link** field value, a page or a page id |
-| `listing(page)` | The published pages or records that the page collects. Each row has `parentId` |
+| `itk_menu('header')` | The area items: `label`, `kind`, `url`, `active`, `open`, `children` |
+| `itk_settings('phone')`, `itk_settings('phone', 'none')`, `itk_settings()` | Settings |
+| `itk_page_url(link)` | A safe URL from a **Link** field value, a page or a page id |
+| `itk_listing(page)` | The published pages or records that the page collects. Each row has `parentId` |
 | `itk_pages({...})`, `itk_page(id)`, `itk_collection(key, {...})` | Public data reading, see the section below |
-| `media_url(image[, width[, ratio]])` | The image URL, its WebP copy of the nearest allowed width not smaller than the given one, or a crop of the ratio |
-| `media_srcset(image[, maxWidth[, ratio]])` | A `srcset` value up to the original or up to the first copy that covers `maxWidth`. Empty for GIF, SVG and external URLs |
-| `media_width(image)` | The width of the original in pixels, or `null` |
-| `media_ratio(width, height)` | The ratio key of a slot in the layout: `media_ratio(700, 250)` returns `'14:5'` |
+| `itk_media_url(image[, width[, ratio]])` | The image URL, its WebP copy of the nearest allowed width not smaller than the given one, or a crop of the ratio |
+| `itk_media_srcset(image[, maxWidth[, ratio]])` | A `srcset` value up to the original or up to the first copy that covers `maxWidth`. Empty for GIF, SVG and external URLs |
+| `itk_media_width(image)` | The width of the original in pixels, or `null` |
+| `itk_media_ratio(width, height)` | The ratio key of a slot in the layout: `itk_media_ratio(700, 250)` returns `'14:5'` |
 | `itk_img(image, {...})` | A ready `<img>` with `srcset`, `sizes`, `alt`, `loading="lazy"`, `decoding="async"`. Wrapped in `<picture>` when AVIF is supported |
 | `itk_seo({...})` | Meta tags of the current URL, see [SEO rules for URLs](#seo-rules-for-urls) |
 | `itk_cache(300)`, `itk_cache(false)` | The lifetime of the entry in the page cache, see [Page cache](#page-cache) |
@@ -437,7 +439,7 @@ To make a record or setting clickable in the page preview, use `itk_field(record
 
 `itk_img` options: `sizes`, `class`, `width`, `height`, `loading`, `alt`, `ratio`, `src_width` (the width of `src`, by default `width`, otherwise 960), `max_width` (the widest image in device pixels, by default `2 × width`), `attrs` (an array of attributes or `itk_field_attrs(...)`). `sizes` defaults to `(max-width: {width}px) 100vw, {width}px`.
 
-A ratio that is in neither `images.ratios` nor the file's crops does not break the page. The whole image is used, and a warning goes to the log. To make an image fit the shape of its slot, write `media_url(img, 700, media_ratio(700, 250))`.
+A ratio that is in neither `images.ratios` nor the file's crops does not break the page. The whole image is used, and a warning goes to the log. To make an image fit the shape of its slot, write `itk_media_url(img, 700, itk_media_ratio(700, 250))`.
 
 ### Public data reading
 
@@ -450,7 +452,7 @@ A ratio that is in neither `images.ratios` nor the file's crops does not break t
 {% for t in itk_collection('tours', {where: {state: 'open', seats: {from: 5}, level: ['easy', 'mid']}, sort: '-start', limit: 10, offset: 20}) %}…{% endfor %}
 ```
 
-- `itk_pages` returns rows `{id, parentId, template, locale, title, url, seo, fields, position, publishedAt}`. Parameters: `template` (a key or a list), `parent` (a page id, direct children only; an empty value is an error), `limit`, `sort`. `sort` accepts `position` (the default), `createdAt`, `publishedAt`, `title`, `url` and `fields.<key>`. A `-` sign means descending order. Write several keys as a list or comma-separated. A numeric field sorts as a number. Rows have no sections. `listing()` returns those.
+- `itk_pages` returns rows `{id, parentId, template, locale, title, url, seo, fields, position, publishedAt}`. Parameters: `template` (a key or a list), `parent` (a page id, direct children only; an empty value is an error), `limit`, `sort`. `sort` accepts `position` (the default), `createdAt`, `publishedAt`, `title`, `url` and `fields.<key>`. A `-` sign means descending order. Write several keys as a list or comma-separated. A numeric field sorts as a number. Rows have no sections. `itk_listing()` returns those.
 - `itk_page(id)` returns the same kind of row, or `null`. All pages of the language are read in one query per visitor request, so a loop with `itk_page(a.parentId)` does not run a query for each article.
 - `itk_collection(key)` returns records in order. Parameters: `where` (`{field: value}`; a list means any of the values, `true` and `false` for a toggle, `{from, to}` for a number or a date such as `2026-11-30`), `sort` (`position`, `createdAt` or a field), `limit`, `offset`. A record comes as `{id, ...fields}`.
 - In PHP, `ContentReader` throws `\InvalidArgumentException` for an invalid parameter, field or template. In Twig, invalid `itk_pages` or `itk_collection(key, options)` calls throw `\LogicException` in strict mode. In soft mode they return `[]` and log a warning. Pass `{}` as options to check a collection key without filters.
@@ -461,7 +463,7 @@ The `itk_cms.strict` option (equal to `kernel.debug` by default) makes template 
 
 ### Safe URLs
 
-`page_url()` returns only a safe URL: a site path (`/blog`, but not `//host`), a page URL by id, `http(s)://`, `mailto:`, `tel:` and `#anchor`. A URL with another scheme (`javascript:`, `data:`) becomes an empty string. The **Link** field is checked by the same rule on save. The rule is the same for pages, records, settings and menu items.
+`itk_page_url()` returns only a safe URL: a site path (`/blog`, but not `//host`), a page URL by id, `http(s)://`, `mailto:`, `tel:` and `#anchor`. A URL with another scheme (`javascript:`, `data:`) becomes an empty string. The **Link** field is checked by the same rule on save. The rule is the same for pages, records, settings and menu items.
 
 The `Itk\Cms\Support\Url` class gives these checks to site code: `safeLocalPath()`, `isLocalPath()`, `cleanPageRef()`, `cleanLinkUrl()`, `safeHref()`. `Url::safeLocalPath($path)` returns a path that is safe to put in `Location` or `href`. It keeps exactly one `/` at the start, reads `\` as `/`, and removes tabs and line breaks. Pass through it any part of a URL from the request that goes into a redirect:
 
@@ -1715,7 +1717,7 @@ In Twig, `page.locale` is the version's language code, `page.html_lang` is the t
 {% endif %}
 ```
 
-Menus, `site`, `settings()`, `listing()`, `itk_pages()`, `itk_collection()` and `page_url()` use the page's language. A menu link to a page requires a published version in that language. Literal URL links keep their address. Translatable settings read the current language without fallback to the main language. Shared settings have one value across languages, and unsaved settings use their schema defaults.
+Menus, `site`, `itk_settings()`, `itk_listing()`, `itk_pages()`, `itk_collection()` and `itk_page_url()` use the page's language. A menu link to a page requires a published version in that language. Literal URL links keep their address. Translatable settings read the current language without fallback to the main language. Shared settings have one value across languages, and unsaved settings use their schema defaults.
 
 On a site with `itk_cms.locales`, `POST /request/{form}` records the language from `?locale=` if supplied. Without the query parameter, the form uses the decoded page address from a same-origin `Referer`. The default port may be present or omitted. With no same-origin referrer the form uses the main language. An unlisted explicit code uses the main language for `429` and returns `422` if the request passes the rate limiter and honeypot checks. To pass the language explicitly, use `action="/request/callback?locale={{ page.locale }}"` on the form. For AJAX, pass the same address and send the form data.
 
@@ -1969,7 +1971,7 @@ Agents read instructions from the project root, so reference the file in the sit
 
 ## Public API and compatibility
 
-[UPGRADE.md](https://github.com/it-koval/cms/blob/main/UPGRADE.md) lists the public API and the upgrade rules between versions. Classes marked `@internal` in their docblock are not public and may change in any minor release. PHPStan and IDEs warn when you use them. A site reads pages and collections through `ContentReader` and the Twig functions, not through repositories.
+[API.md](API.md) is the authoritative public API contract: it lists every public PHP type and the supported `PageService` operations, including translations. [UPGRADE.md](https://github.com/it-koval/cms/blob/main/UPGRADE.md) describes compatibility rules and release-specific migration steps. Unlisted types and members marked `@internal` are implementation details and may change in a minor release. A site reads pages and collections through `ContentReader` and the Twig functions, not through repositories.
 
 ## Developing and testing the bundle
 
@@ -1978,7 +1980,8 @@ The [it-koval/cms](https://github.com/it-koval/cms) monorepo holds the bundle (`
 ## Other documents
 
 - [CHANGELOG.md](https://github.com/it-koval/cms/blob/main/CHANGELOG.md): changes by version.
-- [UPGRADE.md](https://github.com/it-koval/cms/blob/main/UPGRADE.md): upgrading between versions and the boundary of the public API.
+- [API.md](API.md): the public API contract.
+- [UPGRADE.md](https://github.com/it-koval/cms/blob/main/UPGRADE.md): compatibility rules and upgrading between versions.
 - [CONTRIBUTING.md](https://github.com/it-koval/cms/blob/main/CONTRIBUTING.md): how to contribute.
 - [SECURITY.md](https://github.com/it-koval/cms/blob/main/SECURITY.md): how to report a vulnerability.
 - [SITE-AGENTS.md](SITE-AGENTS.md): rules for an AI agent in the site project.

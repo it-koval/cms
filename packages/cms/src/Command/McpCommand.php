@@ -17,6 +17,8 @@ use Symfony\Component\Console\Output\OutputInterface;
  * The MCP server on standard input and output, for assistants that start a program (Claude Desktop, Claude Code with a command):
  *   ITK_MCP_TOKEN=itk_… bin/console itk:mcp        (or --token=itk_…, which other users of the machine can see in the process list)
  * Nothing but JSON-RPC lines goes to the output. In Docker: `docker compose exec -T php bin/console itk:mcp` (-T: no terminal).
+ *
+ * @internal
  */
 #[AsCommand(name: 'itk:mcp', description: 'ops.cmd_mcp_description')]
 final class McpCommand extends Command

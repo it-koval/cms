@@ -48,7 +48,7 @@ final class BotsControllerTest extends TestCase
         $this->role->builtin = true;
         $roles = $this->createStub(RoleRepository::class);
         $roles->method('find')->willReturnCallback(fn (): Role => $this->role);
-        $schema = new Schema('ru', [], [], [], ['top' => [], 'bottom' => []], [], [], [], [], []);
+        $schema = new Schema('ru', [], [], ['top' => [], 'bottom' => []], [], [], [], [], []);
         $security = $this->createStub(Security::class);
         $security->method('getUser')->willReturn(new User('bots@example.com', 'Bots', 'admin'));
         $access = new Access($security, new RoleResolver($schema, $roles));

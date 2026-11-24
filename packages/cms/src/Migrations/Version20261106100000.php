@@ -11,6 +11,8 @@ use Doctrine\Migrations\AbstractMigration;
 /**
  * ITK CMS: the knowledge base (itk_kb_document, itk_kb_chunk) on pgvector.
  * Runs whether the knowledge base is on or off: the tables stay empty until it is enabled. 1536 is KnowledgeBase\Embedding\Space::DIMENSIONS.
+ *
+ * @internal
  */
 final class Version20261106100000 extends AbstractMigration
 {

@@ -9,7 +9,7 @@ vi.mock('vue-router', () => ({ useRouter: () => ({}), RouterLink: { render() { r
 vi.mock('@/api/index.js', () => ({ api: { site: { getDashboard: async () => ({ newRequests: [
   { id: 'both', city: 'City', place: 'Place' }, { id: 'city', city: 'City', place: '' },
   { id: 'place', city: '', place: 'Place' }, { id: 'neither', city: '', place: '' },
-], unpublished: [], proposals: [], recent: [], awaiting: [] }) } } }))
+], unpublished: [], recent: [], awaiting: [] }) } } }))
 vi.mock('@/components/today/YandexWebmasterCard.vue', () => ({ default: { render: () => null } }))
 clientComponent(Today, source)
 let mounted

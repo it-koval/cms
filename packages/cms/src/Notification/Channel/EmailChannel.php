@@ -18,6 +18,8 @@ use Psr\Log\LoggerInterface;
  * (the form's own list, else the list of «остальные формы»), put into the queue; the worker sends it through the mail server of «Настройки → Почта».
  * Nothing is sent while mail is not configured or no address is given. A letter that fails for good shows in the bell and on «Состояние сайта» (MailFailureListener).
  * Telegram is a separate channel and works as before. Other notifications do not go by e-mail.
+ *
+ * @internal
  */
 final class EmailChannel implements NotificationChannelInterface
 {

@@ -27,6 +27,8 @@ use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
  * Telegram is optional. A site without a transport, with a TELEGRAM_DSN nobody set, with null://null, with a DSN that cannot be built, or without a chat keeps its requests
  * in the admin: the delivery stays «pending» (the same neutral state as a switched-off Telegram), nothing is retried and nobody is told about a failure.
  * Only a message that a connected Telegram refused is a failure.
+ *
+ * @internal
  */
 final class TelegramNotifier implements ChannelNotifier
 {

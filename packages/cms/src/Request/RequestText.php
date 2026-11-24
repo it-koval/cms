@@ -12,6 +12,8 @@ use Itk\Cms\Schema\Schema;
  * The text of a request for a messenger chat (Telegram and MAX read the same): the template of the form (FormDef::telegram(), used for every messenger),
  * else the title and one «label: value» line per field. Plain lines with escaped values, so both messengers take it as HTML.
  * In the current language (the senders run it in admin_locale: a chat is read by many).
+ *
+ * @internal
  */
 final class RequestText
 {

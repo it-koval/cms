@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Itk\Cms\Schema;
 
-/** A place for a menu that site templates show with {{ menu('key') }}. */
+/** A place for a menu that site templates show with {{ itk_menu('key') }}. */
 final class MenuAreaDef
 {
     public function __construct(

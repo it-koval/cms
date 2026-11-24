@@ -6,7 +6,11 @@ namespace Itk\Cms\Notification;
 
 use Itk\Cms\Security\Viewer;
 
-/** Who a notification is for: null = everybody who is signed in; 'role:<key>' = people of one role; anything else is a right (Viewer::allows: 'requests', 'col:tours:edit', 'set:users'). */
+/**
+ * Who a notification is for: null = everybody who is signed in; 'role:<key>' = people of one role; anything else is a right (Viewer::allows: 'requests', 'col:tours:edit', 'set:users').
+ *
+ * @internal
+ */
 final class Audience
 {
     public static function matches(?string $audience, Viewer $viewer): bool

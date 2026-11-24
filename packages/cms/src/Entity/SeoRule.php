@@ -14,6 +14,8 @@ use Symfony\Component\Uid\Uuid;
  * `path` is a path with an optional query string ("/catalog", "/catalog?page=2"); `matchType` ("match" in the API) says if it stands for that address only
  * ('exact') or for everything below it too ('prefix': "/blog" covers "/blog" and "/blog/a", not "/blogger").
  * Empty text fields do not override anything: the page's own SEO (or the site's default) stays. `locale` null = every language.
+ *
+ * @internal
  */
 #[ORM\Entity(repositoryClass: SeoRuleRepository::class)]
 #[ORM\Table(name: 'itk_seo_rule')]

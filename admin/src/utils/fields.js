@@ -14,7 +14,7 @@ import { formatNumber, t } from '@/i18n/index.js'
 import { homeUrl } from './locales.js'
 import { same } from './objects.js'
 import { siteText } from './siteTexts.js'
-import { htmlToText, isHtmlEmpty, sanitizeHtml, textLength, textToHtml } from './html.js'
+import { htmlToText, isHtmlEmpty, sanitizeHtml, textLength } from './html.js'
 import { renderFirst } from './itemTemplate.js'
 
 export const fieldsOf = (schema) => (schema || []).filter((f) => f.t !== 'readonly')
@@ -47,13 +47,6 @@ export function defaultsFor(schema) {
   const o = {}
   fieldsOf(schema).forEach((f) => { o[f.k] = defaultFor(f) })
   return o
-}
-
-/** Plain text (an AI proposal) as the stored value of field f: headlines and descriptions hold HTML. */
-export function fromPlainText(f, v) {
-  if (f && f.t === 'headline') return textToHtml(v, 'headline')
-  if (f && f.t === 'textarea' && f.rich) return textToHtml(v, 'rich')
-  return v
 }
 
 /** True when a REQUIRED field has no usable value. */

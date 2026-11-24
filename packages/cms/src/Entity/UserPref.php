@@ -8,7 +8,11 @@ use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\Mapping as ORM;
 use Itk\Cms\Repository\UserPrefRepository;
 
-/** A setting of one person that follows him between devices: the filters and sorting of a list, the chosen view. */
+/**
+ * A setting of one person that follows him between devices: the filters and sorting of a list, the chosen view.
+ *
+ * @internal
+ */
 #[ORM\Entity(repositoryClass: UserPrefRepository::class)]
 #[ORM\Table(name: 'itk_user_pref')]
 class UserPref

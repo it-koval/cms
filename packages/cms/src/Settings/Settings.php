@@ -14,7 +14,7 @@ use Symfony\Component\DependencyInjection\Attribute\Autowire;
  *   $settings->string('phone')         $settings->bool('maintenance')        $settings->int('seats', 10)
  *   $settings->array('socials')        $settings->media('logo')              $settings->get('siteName', locale: 'en')
  *
- * Twig: settings('phone') is the same. A setting of a field marked translatable() is read in the language you ask for (default: the main one).
+ * Twig: itk_settings('phone') is the same. A setting of a field marked translatable() is read in the language you ask for (default: the main one).
  * A default is used when the setting is not in the schema or is empty (an empty text / number / list); false and 0 are real values.
  */
 final class Settings

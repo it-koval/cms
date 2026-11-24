@@ -4,7 +4,11 @@ declare(strict_types=1);
 
 namespace Itk\Cms\CriticalCss\Model;
 
-/** One page as the generator hands it to the extractor: rendered by PHP (PageRenderer::renderSource), never fetched over HTTP. */
+/**
+ * One page as the generator hands it to the extractor: rendered by PHP (PageRenderer::renderSource), never fetched over HTTP.
+ *
+ * @internal
+ */
 final readonly class SourcePage
 {
     public function __construct(

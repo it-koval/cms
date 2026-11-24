@@ -17,7 +17,7 @@ use Itk\Cms\Support\Url;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 
 /**
- * Menu areas and their items. An area is a place a site template shows with {{ menu('key') }}; the items are per language.
+ * Menu areas and their items. An area is a place a site template shows with {{ itk_menu('key') }}; the items are per language.
  * Item: { _id, label, link: { kind: 'page'|'url'|'modal', page, url }, children?: [] }; a page link holds the ADDRESS of the page.
  */
 final class MenuService
@@ -60,7 +60,7 @@ final class MenuService
             }
             $out[] = [
                 'key' => $a->key, 'name' => $a->name, 'depth' => $a->depth,
-                'snippet' => "{{ menu('{$a->key}') }}",
+                'snippet' => "{{ itk_menu('{$a->key}') }}",
                 'usedIn' => $usage['templates'], 'usedInAll' => $usage['all'],
                 'counts' => $counts + [$this->mainLocale => 0],
             ];

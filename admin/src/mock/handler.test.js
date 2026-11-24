@@ -114,7 +114,7 @@ describe('what the admin asks before it starts', () => {
   it('the schema has what the screens read, and every key of the admin\'s shape', () => {
     const { status, body } = get('schema')
     expect(status).toBe(200)
-    for (const k of ['mainLocale', 'design', 'features', 'sections', 'sectionGroups', 'pageFields', 'templates', 'layout', 'collections', 'menuAreas', 'settings', 'forms', 'permissionAreas', 'nav']) expect(body).toHaveProperty(k)
+    for (const k of ['mainLocale', 'design', 'sections', 'sectionGroups', 'pageFields', 'templates', 'layout', 'collections', 'menuAreas', 'settings', 'forms', 'permissionAreas', 'nav']) expect(body).toHaveProperty(k)
     expect(body.templates.map((t) => t.key)).toEqual(expect.arrayContaining(['home', 'default', 'blog_article']))
     expect(body.collections.some((c) => c.view === 'matrix' && c.matrix.words)).toBe(true)
   })

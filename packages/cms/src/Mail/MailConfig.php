@@ -7,6 +7,8 @@ namespace Itk\Cms\Mail;
 /**
  * The «Почта» settings as the code reads them (Mail\MailSettings::config()). The password is here in plain text, for building the connection
  * and for nothing else: it never goes into a response, a log or a message of the queue.
+ *
+ * @internal
  */
 final class MailConfig
 {

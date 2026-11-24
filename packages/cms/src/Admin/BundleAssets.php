@@ -8,7 +8,11 @@ use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\HttpFoundation\RequestStack;
 use Twig\Extension\RuntimeExtensionInterface;
 
-/** Bundle files follow the site's Symfony Asset package, or the current installation directory when Asset is absent. */
+/**
+ * Bundle files follow the site's Symfony Asset package, or the current installation directory when Asset is absent.
+ *
+ * @internal
+ */
 final class BundleAssets implements RuntimeExtensionInterface
 {
     private const PATH = 'bundles/itkcms/';

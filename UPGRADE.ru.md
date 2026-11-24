@@ -30,36 +30,58 @@ ITK CMS следует [семантическому версионирован�
 
 ## Публичный API
 
-Эти части бандла образуют публичный API и подчиняются правилам выше:
-
-- API схемы: `Schema\SchemaBuilder`, `Schema\Field`, `Template`, `SectionType`, `Collection`, `SettingsGroup` и `FormDef`;
-- поля `Field\*`;
-- классы-ресурсы и их API: `Resource\*` (`CollectionResource`, `TemplateResource`, `SectionResource`, `SettingsResource`, `Action` и `Metric`) и атрибуты `Attribute\*`;
-- события `Event\*`;
-- `Extension\ItkExtensionInterface`, `Extension\Registry` и `Extension\NavItem`;
-- интерфейсы, которые реализует сайт, и классы, которые они используют: `Health\HealthCheckInterface`, `Health\HealthResult`, `Notification\NotifierInterface`, `Notification\Notification` и `Notification\NotificationChannelInterface`;
-- `Content\ContentReader` и сервисы содержимого `PageService`, `CollectionService`, `SettingsService` и `MenuService`;
-- `Settings\Settings`, `I18n\I18n`, `I18n\ContentLocales`, `Support\Url` и `Admin\AdminPath`;
-- поиск по базе знаний: `KnowledgeBase\KnowledgeSearch`, `KnowledgeBase\Model\{SearchOptions, SearchResult, Hit, Source, SourceKind, KnowledgeBaseUnavailable}` и `KnowledgeBase\Embedding\*`, кроме `OpenAiEmbedder`;
-- `Rendering\PageCache::clear()`;
-- Twig-функции бандла, в том числе `itk_stylesheets()`;
-- имена маршрутов и опции `itk_cms`;
-- имена консольных команд и их опций;
-- имена транспортов Messenger (`async`, `critical_css`, `knowledge_base` и `failed`) и ограничителей в `framework.rate_limiter`;
-- классы сообщений Messenger, чтобы сайт мог их маршрутизировать: `Request\SendRequestNotification`, `Media\GenerateImageVariants`, `Mail\SendMail`, `Security\RequestPasswordLink`, `IndexNow\Model\PingIndexNow`, `CriticalCss\Model\GenerateCriticalCss` и `KnowledgeBase\Model\SyncKnowledge`;
-- классы, которые сайт указывает в своей конфигурации: `Entity\User`, `Security\{AdminUserProvider, UserChecker, UserManager, Viewer, PermissionVoter, Access}` и `Mcp\{ApiTokenAuthenticator, McpToolInterface, AbstractMcpTool, McpContext, McpScopes, McpToolException, McpConditionalTool}`;
-- контракт плагинов админки `window.ITK`, его версия в `ITK.version`;
-- вид JSON API под адресом админки в той мере, в какой на него опираются собранная админка и описанные клиенты.
-
-Классы с пометкой `@internal` в докблоке не являются публичными и могут измениться в любом минорном релизе. Сюда входят `Repository\*`, `Controller\*`, `Generator\*`, `Rendering\*` (кроме `PageCache::clear()`), `Mcp\Tool\*`, слушатели `Security\*` и `Twig\{ItkExtension, ItkRuntime, SeoRuntime}`. Чтобы читать страницы и коллекции в шаблонах, используйте `Content\ContentReader` и Twig-функции, а не репозитории.
-
-Схема базы данных (таблицы `itk_*`) не входит в публичный API. Читайте и записывайте через сервисы. Эти таблицы меняют только миграции бандла.
+Типы, методы и точки интеграции, на которые распространяются эти правила версионирования, перечислены в [публичном API ITK CMS](packages/cms/API.ru.md).
 
 ## Заметки к версиям
 
 Здесь перечислены ручные шаги, которые нужны при обновлении на релиз, новые версии сверху.
 
 ### 0.3.0
+
+#### Предложения ИИ
+
+Удалите `->feature('ai')` из цепочки сборки схемы сайта, обычно в `config/itk/schema.php`. Панель предложений ИИ в редакторе и её флаг удалены.
+
+#### Функции Twig
+
+Переименуйте следующие вызовы в шаблонах сайта и переопределениях шаблонов бандла.
+
+| Было | Стало |
+| --- | --- |
+| `menu` | `itk_menu` |
+| `settings` | `itk_settings` |
+| `listing` | `itk_listing` |
+| `media_url` | `itk_media_url` |
+| `media_srcset` | `itk_media_srcset` |
+| `media_width` | `itk_media_width` |
+| `media_ratio` | `itk_media_ratio` |
+| `page_url` | `itk_page_url` |
+| `render_sections` | `itk_render_sections` |
+
+Запустите команду из корня сайта. Она изменяет файлы в `templates/`. Проверьте diff и запустите `bin/console lint:twig templates`. Проверьте отдельно Twig внутри PHP и вызовы внутри интерполяций строк Twig. Если сайт объявляет свои функции или импортирует макросы с прежними именами, проверьте эти вызовы.
+
+```bash
+find templates -type f -name '*.twig' -exec perl -0777 -pi -e '
+  s{
+    \{\#.*?\#\}
+    | \{%[-~]?\s*verbatim\s*[-~]?%\}.*?\{%[-~]?\s*endverbatim\s*[-~]?%\}
+    | (\{\{|\{%)((?:"(?:\\.|[^"\\])*"|\x27(?:\\.|[^\x27\\])*\x27|\#[^\r\n]*|.)*?)(\}\}|%\})
+  }{
+    my ($open, $body, $close, $original) = ($1, $2, $3, $&);
+    if (defined $body) {
+      $body =~ s{
+        (?:"(?:\\.|[^"\\])*"|\x27(?:\\.|[^\x27\\])*\x27|\#[^\r\n]*|[.|]\s*\w+|\bmacro\s+\w+|\bis\s+(?:not\s+)?\w+)(*SKIP)(*F)
+        | (?<![\w\x80-\xff])(menu|settings|listing|media_url|media_srcset|media_width|media_ratio|page_url|render_sections)(?=\s*\()
+      }{itk_$1}gsx;
+      $open . $body . $close;
+    } else {
+      $original;
+    }
+  }gsex;
+' {} +
+```
+
+#### Другие изменения
 
 - Поле **«Фотографии»** теперь добавляет из админки объекты `{src, alt}`, в том числе при пустом `alt`. Старые строки с URL остаются без изменений: в одном поле могут быть и строки, и объекты. Обновите шаблоны сайта до добавления новых фотографий редакторами; для каждого значения предусмотрите прежний формат:
 
@@ -88,7 +110,7 @@ ITK CMS следует [семантическому версионирован�
 - Выполните миграции бандла до использования сохранённых настроек SMTP: они теперь хранятся в общем внутреннем ключе `itk:mail` независимо от поля сайта `mail`. Миграция `20261124110100` переносит только известный объект SMTP. Если прежняя миграция пространства имён перенесла в `itk:mail` другое значение, оно возвращается в `mail`, когда тот отсутствует. При наличии обоих ключей сохраняются оба значения; проверьте конфликт до использования сохранённых настроек SMTP. Языковые значения сайта не меняются.
 - У публичной формы по умолчанию предел тела 256 КиБ. У поля без `max()` предел 1000 символов. Задайте нужные пределы полей и согласуйте `itk_cms.requests.max_body` с PHP и прокси. Клиент формы должен показывать ошибки полей и обрабатывать HTTP 413.
 - Клиент API повторной отправки читает результат каждого выбранного канала в `outcomes`. HTTP 202 означает ожидающее задание выбранного канала. `queuedChannels` показывает очередь и при повторном открытии заявки. Штатный транспорт `async` повторяет доставку через 60, 120 и 240 секунд. Настройки транспорта сайта имеют приоритет.
-- Передавайте явный `Viewer` в `MediaService::usage()` и в `present()` с включённым использованием. Добавьте `PublicFieldInterface` кастомным полям, доступным для индексации, и реализуйте `isPublic()`.
+- Внутренние методы `MediaService::usage()` и `present()` с включённым использованием теперь требуют явного `Viewer`. Добавьте `PublicFieldInterface` кастомным полям, доступным для индексации, и реализуйте `isPublic()`.
 - Для автоматического создания администратора в Docker-ките подключите секрет `itk_admin_password` к `php` или запустите установку интерактивно. Уберите прежнюю переменную `ADMIN_PASSWORD`. Скопируйте `docker/chrome-seccomp.json` и подключите его к `php` и `worker` для критического CSS. Скопируйте обновлённый конфиг nginx, чтобы предел формы срабатывал до разбора PHP.
 - При создании администратора установщиком используйте пароль длиной от 10 до 200 символов. Те же пределы действуют для `--password-file`.
 - Действия коллекций требуют входа и разрешения. Блокировка пользователя закрывает доступ при следующем запросе. Управляющие символы делают URL ссылки или изображения в редакторе недопустимым. MCP `request_get` возвращает до 6000 символов значения формы.

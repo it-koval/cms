@@ -4,7 +4,11 @@ declare(strict_types=1);
 
 namespace Itk\Cms\Support;
 
-/** Latin slugs from Russian and Kazakh text. */
+/**
+ * Latin slugs from Russian and Kazakh text.
+ *
+ * @internal
+ */
 final class Slug
 {
     public static function slugify(string $text, int $max = 64): string

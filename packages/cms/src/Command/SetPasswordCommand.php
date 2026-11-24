@@ -16,7 +16,11 @@ use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
 
-/** For the case nobody can sign in (the only administrator forgot the password): the server owner sets one from the console. */
+/**
+ * For the case nobody can sign in (the only administrator forgot the password): the server owner sets one from the console.
+ *
+ * @internal
+ */
 #[AsCommand(name: 'itk:user:password', description: 'ops.cmd_set_password_description')]
 final class SetPasswordCommand extends Command
 {

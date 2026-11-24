@@ -8,7 +8,11 @@ use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\Security\Core\Authentication\Token\Storage\TokenStorageInterface;
 use Symfony\Component\Security\Core\Exception\AccessDeniedException;
 
-/** Release the admin session lock during slow I/O, then check that another tab did not sign out. @internal */
+/**
+ * Release the admin session lock during slow I/O, then check that another tab did not sign out.
+ *
+ * @internal
+ */
 final class SessionWork
 {
     public function __construct(private readonly TokenStorageInterface $tokens)

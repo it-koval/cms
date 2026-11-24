@@ -24,6 +24,8 @@ use Symfony\Component\DependencyInjection\Attribute\Autowire;
  *   → { items, total, page, perPage, facets, metrics }
  *
  * `status` (draft | published) is a filter and a sort key of every collection, `updatedAt`, `createdAt` and `position` are sort keys.
+ *
+ * @internal
  */
 final class CollectionQuery
 {

@@ -12,6 +12,8 @@ use Doctrine\Migrations\Version\Version;
  * Doctrine's own order is by the whole class name, so every migration of the site (DoctrineMigrations\…) would run before every migration of the bundle
  * (Itk\Cms\Migrations\…) and a site migration that reads a bundle table would fail on an empty database. The bundle registers this class for every site
  * (ItkCmsBundle::prependExtension); a site that sets its own `doctrine_migrations.services` comparator keeps it.
+ *
+ * @internal
  */
 final class MigrationVersionComparator implements Comparator
 {

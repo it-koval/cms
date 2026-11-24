@@ -99,13 +99,6 @@
   "collections.act_done": "Дайын",
   "collections.act_failed": "Әрекетті орындау мүмкін болмады",
   "collections.draft_save_failed": "Сақтау мүмкін болмады",
-  "collections.pr_label": "ЖИ-агенттің ұсыныстары",
-  "collections.pr_header": {
-    "other": "ЖИ-агент {count} түзету ұсынды"
-  },
-  "collections.pr_note": "{note}. Сіз қабылдамайынша ештеңе өзгермейді.",
-  "collections.pr_accept": "Қабылдау",
-  "collections.pr_reject": "Қабылдамау",
   "collections.pp_send": "Жариялауға жіберу",
   "collections.pp_title": "Не жарияланады",
   "collections.pp_count": {
@@ -302,10 +295,6 @@
   "collections.iv_delete_version_text": "«{title}» {site} көрсетілмейтін болады. Басқа тілдердегі нұсқалар қалады. Мұны қайтару мүмкін емес.",
   "collections.iv_delete_version_text_page": "«{title}» өз бетімен бірге {site} көрсетілмейтін болады. Басқа тілдердегі нұсқалар қалады. Мұны қайтару мүмкін емес.",
   "collections.iv_version_deleted": "{version} жойылды",
-  "collections.iv_accepted": "Түзету қабылданды және жобада тұр: сайтқа жарияланғаннан кейін шығады",
-  "collections.iv_accept_failed": "Түзетуді қабылдау мүмкін болмады",
-  "collections.iv_rejected": "Түзету қабылданбады",
-  "collections.iv_reject_failed": "Қабылдамау мүмкін болмады",
   "collections.iv_not_found": "Мұндай жазба жоқ",
   "collections.iv_not_loaded": "Жазба жүктелмеді",
   "collections.iv_deleted_hint": "Мүмкін, ол жойылған. Тізімге оралыңыз.",

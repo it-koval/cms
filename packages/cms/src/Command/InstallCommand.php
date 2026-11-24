@@ -33,6 +33,8 @@ use Symfony\Contracts\Service\ServiceProviderInterface;
 /**
  * First-time setup (safe to run again): built-in roles, menu areas from the schema, default settings, the home page, the first administrator.
  * Run after doctrine:migrations:migrate.
+ *
+ * @internal
  */
 #[AsCommand(name: 'itk:install', description: 'ops.cmd_install_description')]
 final class InstallCommand extends Command

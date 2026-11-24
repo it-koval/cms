@@ -16,6 +16,8 @@ use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 /**
  * SEO rules of addresses (Настройки → SEO → Правила адресов): the list, create, change, remove. Saved at once, there is no publish step.
  * The rules themselves are applied by SeoResolver.
+ *
+ * @internal
  */
 final class SeoRuleService
 {

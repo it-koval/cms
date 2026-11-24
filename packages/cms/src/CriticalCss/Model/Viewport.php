@@ -4,7 +4,11 @@ declare(strict_types=1);
 
 namespace Itk\Cms\CriticalCss\Model;
 
-/** One crittr run: the window the first screen is measured in. Built from config (validated there), so the numbers are trusted here. */
+/**
+ * One crittr run: the window the first screen is measured in. Built from config (validated there), so the numbers are trusted here.
+ *
+ * @internal
+ */
 final readonly class Viewport
 {
     public function __construct(

@@ -2,7 +2,7 @@ English | [Русский](CHANGELOG.ru.md)
 
 # Changelog
 
-All notable changes to ITK CMS are recorded in this file. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html). [UPGRADE.md](UPGRADE.md) defines the public API.
+All notable changes to ITK CMS are recorded in this file. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html). The [public API reference](packages/cms/API.md) defines the supported integration points.
 
 ## [Unreleased]
 
@@ -25,6 +25,9 @@ All notable changes to ITK CMS are recorded in this file. The format follows [Ke
 - The public `Itk\Cms\I18n\ContentLocales` service exposes the ordered language list, display names, prefixes and metadata.
 
 ### Changed
+
+- The [public API reference](packages/cms/API.md) lists the supported PHP types. Internal types and `PageService` implementation methods carry `@internal` annotations.
+- Twig functions `menu`, `settings`, `listing`, `media_url`, `media_srcset`, `media_width`, `media_ratio`, `page_url` and `render_sections` now use the `itk_` prefix. See [the migration command](UPGRADE.md#twig-functions).
 
 - Record after-events expose the committed snapshot in `data.fields`, `data.meta` and `data.status`. Publishing reports the live version. Deleting reports the snapshot captured before removal.
 - CI runs the PHP and Symfony matrix in Docker, covers PostgreSQL 16 and 17 and lowest dependencies, tests two random orders, and checks a clean Symfony install and the production Compose stack. The package split requires a successful CI run for the same commit.
@@ -73,6 +76,10 @@ All notable changes to ITK CMS are recorded in this file. The format follows [Ke
 - MCP stdio and workers reset request state. MCP logs a failed tool constructor, while other tools remain available. Messenger handlers work with named buses.
 - The install, health and generator commands agree on upload checks, dotted transport names, field names and built-in types. Page creation dates have a stable database column.
 - Knowledge indexing retries temporary database failures, follows changes to `noindex` and labels fragments with their actual field keys.
+
+### Removed
+
+- Removed the AI suggestions editor panel and the schema option `feature('ai')`. Update the site schema as described in [UPGRADE.md](UPGRADE.md#ai-suggestions).
 
 ### Security
 

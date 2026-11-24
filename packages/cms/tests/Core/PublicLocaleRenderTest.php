@@ -152,21 +152,21 @@ final class PublicLocaleRenderTest extends KernelTestCase
         shared: site[page.fields.probe ~ '_shared'],
         initial: site[page.fields.probe ~ '_initial']
     },
-    menu: menu(page.fields.probe),
+    menu: itk_menu(page.fields.probe),
     settings: {
-        text: settings(page.fields.probe ~ '_text'),
-        missing: settings(page.fields.probe ~ '_missing', 'Caller default'),
-        shared: settings(page.fields.probe ~ '_shared'),
-        initial: settings(page.fields.probe ~ '_initial'),
-        unknown: settings('unknown_' ~ page.fields.probe, 'Unknown default')
+        text: itk_settings(page.fields.probe ~ '_text'),
+        missing: itk_settings(page.fields.probe ~ '_missing', 'Caller default'),
+        shared: itk_settings(page.fields.probe ~ '_shared'),
+        initial: itk_settings(page.fields.probe ~ '_initial'),
+        unknown: itk_settings('unknown_' ~ page.fields.probe, 'Unknown default')
     },
     pages: itk_pages({parent: page.id}),
-    listing: listing(page),
+    listing: itk_listing(page),
     collection: itk_collection('test_public_locale_items'),
     filteredCollection: itk_collection('test_public_locale_items', {where: {title: 'KK record'}}),
-    pageUrl: page_url(page.fields.target),
-    missingPageUrl: page_url(page.fields.missingTarget),
-    literalUrl: page_url({kind: 'url', url: '/literal?keep=1#fragment'})
+    pageUrl: itk_page_url(page.fields.target),
+    missingPageUrl: itk_page_url(page.fields.missingTarget),
+    literalUrl: itk_page_url({kind: 'url', url: '/literal?keep=1#fragment'})
 }|json_encode|raw }}</script>
 {% endblock %}
 TWIG]), $this->loader]));
@@ -296,9 +296,9 @@ TWIG]), $this->loader]));
         $twig->setLoader(new ChainLoader([new ArrayLoader(['pages/test_public_locale.html.twig' => <<<'TWIG'
 <html><head></head><body>
 {{ itk_field(site, page.fields.probe ~ '_text') }}
-<div{{ itk_field_attrs(settings(), page.fields.probe ~ '_shared') }}>{{ settings(page.fields.probe ~ '_shared') }}</div>
+<div{{ itk_field_attrs(itk_settings(), page.fields.probe ~ '_shared') }}>{{ itk_settings(page.fields.probe ~ '_shared') }}</div>
 {% for item in itk_collection('test_public_locale_items') %}{{ itk_field(item, 'title') }}{% endfor %}
-{% for item in listing(page) %}<b{{ itk_field_attrs(item, 'title') }}>{{ item.title }}</b>{% endfor %}
+{% for item in itk_listing(page) %}<b{{ itk_field_attrs(item, 'title') }}>{{ item.title }}</b>{% endfor %}
 </body></html>
 TWIG]), $this->loader]));
         foreach (['ru', 'kk'] as $locale) {
@@ -343,7 +343,7 @@ TWIG]), $this->loader]));
 {{ itk_field(item, 'faq.0.title') }}<div{{ itk_field_attrs(item, 'faq.0.answers.0.text') }}>Answer</div>
 {% endfor %}
 {{ itk_field(site, page.fields.probe ~ '_faq.0.title') }}
-<div{{ itk_field_attrs(settings(), page.fields.probe ~ '_faq.0.answers.0.text') }}>Setting</div>
+<div{{ itk_field_attrs(itk_settings(), page.fields.probe ~ '_faq.0.answers.0.text') }}>Setting</div>
 </body></html>
 TWIG]), $this->loader]));
         foreach (['ru', 'kk'] as $locale) {
@@ -387,9 +387,9 @@ TWIG]), $this->loader]));
         $twig->setLoader(new ChainLoader([new ArrayLoader(['pages/test_public_locale.html.twig' => <<<'TWIG'
 <html><head></head><body>
 <p>{{ itk_field(site, page.fields.probe ~ '_text') }}</p>
-<p>{{ itk_field(settings(), page.fields.probe ~ '_text') }}</p>
+<p>{{ itk_field(itk_settings(), page.fields.probe ~ '_text') }}</p>
 <div{{ itk_field_attrs(site, page.fields.probe ~ '_text') }}>Site</div>
-<div{{ itk_field_attrs(settings(), page.fields.probe ~ '_text') }}>Settings</div>
+<div{{ itk_field_attrs(itk_settings(), page.fields.probe ~ '_text') }}>Settings</div>
 </body></html>
 TWIG]), $this->loader]));
         foreach (['type' => 'test-settings-owner', 'id' => [['_id' => 'owner', 'title' => 'Owner']], 'template' => 'test-settings-owner', 'fields' => 'test-settings-owner'] as $key => $value) {

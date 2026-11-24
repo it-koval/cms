@@ -22,6 +22,8 @@ use Symfony\Contracts\Service\ResetInterface;
  *
  * A rule only overrides the fields it fills in: title and description lay over the page's own SEO, robots / canonical / ogImage are new.
  * Used by PageRenderer (the page's `seo` already carries the rule) and by the Twig function itk_seo() (any address).
+ *
+ * @internal
  */
 final class SeoResolver implements ResetInterface
 {

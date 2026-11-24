@@ -1,6 +1,6 @@
 <script setup>
 // Menus of the site: one section per MENU AREA (header, footers, legal links...; the areas come from the `areas` prop). An area is a place for a menu: it has a snippet that the developers insert into a site template
-// ({{ menu('footer_main') }}, with «Скопировать»), the list of templates it is inserted in («Пока нигде не вставлена» when none), and can be added, renamed and deleted (saved at once: structure, not content).
+// ({{ itk_menu('footer_main') }}, with «Скопировать»), the list of templates it is inserted in («Пока нигде не вставлена» when none), and can be added, renamed and deleted (saved at once: structure, not content).
 // The items of an area: each links to a page or an address; items can be moved up/down and nested one level (a nested item belongs to the item above it).
 // Edits a plain object; saving the ITEMS is the view's job. After an area changed the view gets `areas` (fresh list) so it can keep its saved / draft menus in step.
 // LANGUAGE: the menus belong to the content language app.locale. The page picker lists only the pages that have a version in that language

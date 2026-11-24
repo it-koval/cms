@@ -2,14 +2,14 @@
 // Everything site-specific the admin knows is here: section types, page templates, collections, menu areas, settings groups, forms, permission areas, the design.
 // The other files of schema/ hold only the generic logic over it (placement guards, the H1 rule, the block library...).
 //
-// shape: { mainLocale, design:{ headlineMarks }, features:{ ai }, sections:[...], sectionGroups:[...], pageFields:[...], templates:[...], layout:{ top, bottom },
+// shape: { mainLocale, design:{ headlineMarks }, sections:[...], sectionGroups:[...], pageFields:[...], templates:[...], layout:{ top, bottom },
 //          collections:[...], menuAreas:[...], settings:{ groups:[{ key, title, description, fields }] }, forms:[{ key, title, fields }], permissionAreas:[...],
 //          nav:[{ key, group, icon, order, items:[{ key, label, to, icon, order, badge?, sub? }] }] }   nav = the left rail, built by the server for this person (layouts/AppLayout.vue)
 // `schema` is ONE object that is filled in place by loadSchema(), so every importer sees the loaded data (the admin loads it before it mounts).
 import { http } from '@/api/http.js'
 
 const EMPTY = () => ({
-  mainLocale: 'ru', design: { headlineMarks: [] }, features: { ai: false }, sections: [], sectionGroups: [], pageFields: [], templates: [], layout: { top: [], bottom: [] },
+  mainLocale: 'ru', design: { headlineMarks: [] }, sections: [], sectionGroups: [], pageFields: [], templates: [], layout: { top: [], bottom: [] },
   collections: [], menuAreas: [], settings: { groups: [] }, forms: [], permissionAreas: [], nav: [],
 })
 
@@ -25,7 +25,6 @@ export function onSchema(fn) {
 export function loadSchema(raw) {
   const next = { ...EMPTY(), ...(raw || {}) }
   next.design = { headlineMarks: [], ...(next.design || {}) }
-  next.features = { ai: false, ...(next.features || {}) }
   next.layout = { top: [], bottom: [], ...(next.layout || {}) }
   next.settings = { groups: [], ...(next.settings || {}) }
   Object.assign(schema, next)

@@ -7,6 +7,8 @@ namespace Itk\Cms\Admin\Theme;
 /**
  * The 50..950 ladder of a colour, made in OKLCH: the hue stays, the lightness walks a fixed ladder, the chroma follows the brand's own.
  * The step nearest to the brand's lightness is the brand itself, so a picked colour is always on its ladder.
+ *
+ * @internal
  */
 final class Palette
 {

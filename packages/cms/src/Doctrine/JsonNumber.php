@@ -10,7 +10,11 @@ use Doctrine\ORM\Query\Parser;
 use Doctrine\ORM\Query\SqlWalker;
 use Doctrine\ORM\Query\TokenType;
 
-/** DQL: JSON_NUMBER(i.translations, '{"ru","draft","seats"}') — the value at a JsonPath as a number, a JSON number or a numeric string alike, NULL otherwise: to sort and compare numbers (registered by the bundle). */
+/**
+ * DQL: JSON_NUMBER(i.translations, '{"ru","draft","seats"}') — the value at a JsonPath as a number, a JSON number or a numeric string alike, NULL otherwise: to sort and compare numbers (registered by the bundle).
+ *
+ * @internal
+ */
 final class JsonNumber extends FunctionNode
 {
     private Node $json;

@@ -16,6 +16,8 @@ use Doctrine\ORM\Mapping as ORM;
  *
  * The index itk_kb_chunk_embedding_idx is `USING hnsw (embedding vector_cosine_ops)` in the migration; the mapping names the same index on the same
  * column so that doctrine:schema:validate sees no difference (DBAL does not compare the access method; DoctrineSchemaTest proves it).
+ *
+ * @internal
  */
 #[ORM\Entity]
 #[ORM\Table(name: 'itk_kb_chunk')]

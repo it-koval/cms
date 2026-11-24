@@ -14,6 +14,8 @@ use Itk\Cms\Security\Viewer;
 /**
  * The bell of the admin from the side of the reader: what a person sees (by the audience of each notification), what is unread, marking as read.
  * A person does not see what was sent before he joined. Writing is DatabaseChannel's job.
+ *
+ * @internal
  */
 final class NotificationInbox
 {

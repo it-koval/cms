@@ -18,6 +18,8 @@ use Symfony\Component\DependencyInjection\Attribute\Autowire;
  * The theme becomes CSS variables (vars()): the shell page puts them into a <style> before the admin starts, so there is no flash of the old colours,
  * and the admin sets the same variables on the page after a save. The palette 50..950 and every derived colour are made here, in OKLCH (Palette).
  * The values that reach the CSS are only checked hex colours and whole numbers.
+ *
+ * @internal
  */
 final class AdminTheme
 {

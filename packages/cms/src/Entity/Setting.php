@@ -8,7 +8,11 @@ use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\Mapping as ORM;
 use Itk\Cms\Repository\SettingRepository;
 
-/** One typed setting. locale '*' = shared by all languages. */
+/**
+ * One typed setting. locale '*' = shared by all languages.
+ *
+ * @internal
+ */
 #[ORM\Entity(repositoryClass: SettingRepository::class)]
 #[ORM\Table(name: 'itk_setting')]
 class Setting

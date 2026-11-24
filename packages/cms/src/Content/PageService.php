@@ -47,6 +47,7 @@ final class PageService
     private readonly ContentLocales $locales;
     private ?ManagerRegistry $registry = null;
 
+    /** @internal Core implementation; excluded from the site API. */
     public function __construct(
         private readonly EntityManagerInterface $em,
         private readonly PageRepository $pages,
@@ -87,6 +88,8 @@ final class PageService
      * @param \Closure(): T $work
      *
      * @return T
+     *
+     * @internal core implementation; excluded from the site API
      */
     public function locked(string $id, \Closure $work): mixed
     {
@@ -100,6 +103,7 @@ final class PageService
 
     /* ---------- reading ---------- */
 
+    /** @internal Core implementation; excluded from the site API. */
     public function find(string $id): Page
     {
         return $this->pages->find($id) ?? throw ContentException::notFound(I18n::t('content.page_not_found'));
@@ -176,13 +180,21 @@ final class PageService
         ];
     }
 
-    /** @return array<string, mixed>|null the live snapshot (null while the version is a draft or unpublished) */
+    /**
+     * @return array<string, mixed>|null the live snapshot (null while the version is a draft or unpublished)
+     *
+     * @internal
+     */
     public function liveSnapshot(PageTranslation $t): ?array
     {
         return $t->isLive() ? $t->published : null;
     }
 
-    /** Number of unpublished changes (0 when the version was never published). */
+    /**
+     * Number of unpublished changes (0 when the version was never published).
+     *
+     * @internal
+     */
     public function changeCount(PageTranslation $t): int
     {
         $live = $this->liveSnapshot($t);
@@ -190,7 +202,11 @@ final class PageService
         return null === $live ? 0 : $this->changes->pageChangeCount($t->draft, $t->page->template, $live);
     }
 
-    /** @return list<array<string, mixed>> */
+    /**
+     * @return list<array<string, mixed>>
+     *
+     * @internal
+     */
     public function changesOf(PageTranslation $t): array
     {
         return $this->changes->pageChanges($t->draft, $t->page->template, $this->liveSnapshot($t));
@@ -200,6 +216,8 @@ final class PageService
      * The page's one H1 id (section id or null).
      *
      * @param array<string, mixed> $draftOrSnapshot
+     *
+     * @internal core implementation; excluded from the site API
      */
     public function h1Id(array $draftOrSnapshot, string $template): ?string
     {
@@ -212,6 +230,8 @@ final class PageService
      * @param array<string, mixed> $draft
      *
      * @return list<array<string, mixed>>
+     *
+     * @internal core implementation; excluded from the site API
      */
     public function requiredErrors(array $draft, string $template): array
     {
@@ -466,6 +486,8 @@ final class PageService
      * @param array<string, mixed> $draft
      *
      * @return array<string, mixed> the flat page
+     *
+     * @internal core implementation; excluded from the site API
      */
     public function restoreVersion(string $id, ?string $locale, array $draft): array
     {
@@ -480,6 +502,8 @@ final class PageService
      * @param array<string, mixed> $snapshot
      *
      * @return array<string, mixed> the flat page (main language, else the first one)
+     *
+     * @internal core implementation; excluded from the site API
      */
     public function restoreRemoved(array $snapshot): array
     {
@@ -746,6 +770,7 @@ final class PageService
         return $out;
     }
 
+    /** @internal Core implementation; excluded from the site API. */
     public function record(Page $p, PageTranslation $t): Record
     {
         return $this->recordFrom($p, $t, $t->draft);
@@ -989,6 +1014,8 @@ final class PageService
      * The flat page of one language version.
      *
      * @return array<string, mixed>
+     *
+     * @internal core implementation; excluded from the site API
      */
     public function flat(Page $p, PageTranslation $t): array
     {
@@ -1014,7 +1041,11 @@ final class PageService
         ];
     }
 
-    /** What the editor sends back as `baseVersion`: it changes when the draft, the place of the page or its template change (not with publishing). */
+    /**
+     * What the editor sends back as `baseVersion`: it changes when the draft, the place of the page or its template change (not with publishing).
+     *
+     * @internal
+     */
     public function versionOf(Page $p, PageTranslation $t): string
     {
         return $this->versions->of(['draft' => $t->draft, 'parentId' => $p->parentId(), 'template' => $p->template]);
@@ -1026,6 +1057,8 @@ final class PageService
      * @param array<string, mixed> $v draft or snapshot
      *
      * @return array<string, mixed>
+     *
+     * @internal core implementation; excluded from the site API
      */
     public function present(array $v): array
     {
@@ -1042,7 +1075,11 @@ final class PageService
         return $v;
     }
 
-    /** @return array<string, mixed> the ROW of the list */
+    /**
+     * @return array<string, mixed> the ROW of the list
+     *
+     * @internal
+     */
     public function row(Page $p, string $locale): array
     {
         $t = $p->translation($locale);
@@ -1076,7 +1113,11 @@ final class PageService
         ];
     }
 
-    /** @return array<string, array<string, mixed>|null> */
+    /**
+     * @return array<string, array<string, mixed>|null>
+     *
+     * @internal
+     */
     public function summary(Page $p): array
     {
         $out = [$this->mainLocale => null];
@@ -1100,6 +1141,7 @@ final class PageService
         return $out;
     }
 
+    /** @internal Core implementation; excluded from the site API. */
     public function iso(\DateTimeImmutable $d): string
     {
         return $d->setTimezone(new \DateTimeZone('UTC'))->format('Y-m-d\TH:i:s.v\Z');
@@ -1331,7 +1373,11 @@ final class PageService
         return $out;
     }
 
-    /** Addresses handled by the core, mapped to their message keys. @internal */
+    /**
+     * Addresses handled by the core, mapped to their message keys.
+     *
+     * @internal
+     */
     public const RESERVED_URLS = [
         '/mcp' => 'content.reserved_url_mcp',
         '/healthz' => 'content.reserved_url_healthz',
@@ -1681,6 +1727,8 @@ final class PageService
      * @param list<array<string, mixed>> $sections
      *
      * @return list<array<string, mixed>>
+     *
+     * @internal core implementation; excluded from the site API
      */
     public function normalizeSections(array $sections): array
     {
@@ -1713,6 +1761,8 @@ final class PageService
      * The first section a new page gets: the first «Первый экран» type, with the title as its headline.
      *
      * @return list<array<string, mixed>>
+     *
+     * @internal core implementation; excluded from the site API
      */
     public function defaultSections(string $title): array
     {

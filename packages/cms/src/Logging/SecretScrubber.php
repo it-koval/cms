@@ -4,7 +4,11 @@ declare(strict_types=1);
 
 namespace Itk\Cms\Logging;
 
-/** One policy for credentials in transport errors, health output and logs. @internal */
+/**
+ * One policy for credentials in transport errors, health output and logs.
+ *
+ * @internal
+ */
 final class SecretScrubber
 {
     /** @param list<string> $tokens known secrets that may also occur without a recognizable URL */

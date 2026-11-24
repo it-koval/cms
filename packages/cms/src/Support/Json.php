@@ -6,6 +6,8 @@ namespace Itk\Cms\Support;
 
 /**
  * Helpers for JSON-ish data (PHP arrays decoded from JSON columns).
+ *
+ * @internal
  */
 final class Json
 {

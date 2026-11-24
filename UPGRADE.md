@@ -30,36 +30,58 @@ Database changes come as bundle migrations. The bundle does not change the site'
 
 ## Public API
 
-These parts of the bundle are the public API and follow the rules above:
-
-- the schema API: `Schema\SchemaBuilder`, `Schema\Field`, `Template`, `SectionType`, `Collection`, `SettingsGroup`, and `FormDef`;
-- the fields in `Field\*`;
-- resource classes and their API: `Resource\*` (`CollectionResource`, `TemplateResource`, `SectionResource`, `SettingsResource`, `Action`, and `Metric`) and the attributes in `Attribute\*`;
-- the events in `Event\*`;
-- `Extension\ItkExtensionInterface`, `Extension\Registry`, and `Extension\NavItem`;
-- the interfaces a site implements and the classes they use: `Health\HealthCheckInterface`, `Health\HealthResult`, `Notification\NotifierInterface`, `Notification\Notification`, and `Notification\NotificationChannelInterface`;
-- `Content\ContentReader` and the content services `PageService`, `CollectionService`, `SettingsService`, and `MenuService`;
-- `Settings\Settings`, `I18n\I18n`, `I18n\ContentLocales`, `Support\Url`, and `Admin\AdminPath`;
-- the knowledge base search: `KnowledgeBase\KnowledgeSearch`, `KnowledgeBase\Model\{SearchOptions, SearchResult, Hit, Source, SourceKind, KnowledgeBaseUnavailable}`, and `KnowledgeBase\Embedding\*` except `OpenAiEmbedder`;
-- `Rendering\PageCache::clear()`;
-- the Twig functions of the bundle, including `itk_stylesheets()`;
-- route names and the `itk_cms` configuration options;
-- console command names and their options;
-- the names of the Messenger transports (`async`, `critical_css`, `knowledge_base`, and `failed`) and of the rate limiters in `framework.rate_limiter`;
-- the Messenger message classes, so that a site can route them: `Request\SendRequestNotification`, `Media\GenerateImageVariants`, `Mail\SendMail`, `Security\RequestPasswordLink`, `IndexNow\Model\PingIndexNow`, `CriticalCss\Model\GenerateCriticalCss`, and `KnowledgeBase\Model\SyncKnowledge`;
-- the classes a site puts in its own configuration: `Entity\User`, `Security\{AdminUserProvider, UserChecker, UserManager, Viewer, PermissionVoter, Access}`, and `Mcp\{ApiTokenAuthenticator, McpToolInterface, AbstractMcpTool, McpContext, McpScopes, McpToolException, McpConditionalTool}`;
-- the admin plugin contract `window.ITK`, versioned by `ITK.version`;
-- the shape of the JSON API under the admin URL, as far as the built admin panel and documented clients rely on it.
-
-Classes marked `@internal` in their docblock are not public and may change in any minor release. This includes `Repository\*`, `Controller\*`, `Generator\*`, `Rendering\*` (except `PageCache::clear()`), `Mcp\Tool\*`, the `Security\*` listeners, and `Twig\{ItkExtension, ItkRuntime, SeoRuntime}`. To read pages and collections in templates, use `Content\ContentReader` and the Twig functions, not the repositories.
-
-The database schema (the `itk_*` tables) is not part of the public API. Read and write through the services. Only bundle migrations change these tables.
+See the [ITK CMS public API](packages/cms/API.md) for the supported types, methods and integration points covered by the versioning policy above.
 
 ## Version notes
 
 This section lists the manual steps a release needs, newest first.
 
 ### 0.3.0
+
+#### AI suggestions
+
+Remove `->feature('ai')` from the site's schema builder chain, usually in `config/itk/schema.php`. The editor's AI suggestions panel and its configuration flag were removed.
+
+#### Twig functions
+
+Update the following Twig function calls in site templates and bundle overrides.
+
+| Before | After |
+| --- | --- |
+| `menu` | `itk_menu` |
+| `settings` | `itk_settings` |
+| `listing` | `itk_listing` |
+| `media_url` | `itk_media_url` |
+| `media_srcset` | `itk_media_srcset` |
+| `media_width` | `itk_media_width` |
+| `media_ratio` | `itk_media_ratio` |
+| `page_url` | `itk_page_url` |
+| `render_sections` | `itk_render_sections` |
+
+Run this command from the site root to update `templates/` in place. Review the diff and lint the templates with `bin/console lint:twig templates`. Check inline Twig in PHP and calls inside Twig string interpolations separately. Review any site-defined functions or imported macros with the old names.
+
+```bash
+find templates -type f -name '*.twig' -exec perl -0777 -pi -e '
+  s{
+    \{\#.*?\#\}
+    | \{%[-~]?\s*verbatim\s*[-~]?%\}.*?\{%[-~]?\s*endverbatim\s*[-~]?%\}
+    | (\{\{|\{%)((?:"(?:\\.|[^"\\])*"|\x27(?:\\.|[^\x27\\])*\x27|\#[^\r\n]*|.)*?)(\}\}|%\})
+  }{
+    my ($open, $body, $close, $original) = ($1, $2, $3, $&);
+    if (defined $body) {
+      $body =~ s{
+        (?:"(?:\\.|[^"\\])*"|\x27(?:\\.|[^\x27\\])*\x27|\#[^\r\n]*|[.|]\s*\w+|\bmacro\s+\w+|\bis\s+(?:not\s+)?\w+)(*SKIP)(*F)
+        | (?<![\w\x80-\xff])(menu|settings|listing|media_url|media_srcset|media_width|media_ratio|page_url|render_sections)(?=\s*\()
+      }{itk_$1}gsx;
+      $open . $body . $close;
+    } else {
+      $original;
+    }
+  }gsex;
+' {} +
+```
+
+#### Other changes
 
 - The **Photos** field now adds `{src, alt}` objects in the admin panel, including when `alt` is empty. Existing URL strings stay unchanged, so one field can contain both strings and objects. Update site templates before editors add new photos; render each value with a fallback for the old format:
 
@@ -88,7 +110,7 @@ After the bundle loader runs, call `window.itkAnalytics.start()` for all configu
 - Run the bundle migrations before using saved SMTP settings: SMTP now uses the shared internal key `itk:mail`, leaving the site's `mail` field independent. Migration `20261124110100` moves only the known SMTP object and restores unrelated values moved to `itk:mail` by an earlier namespace migration when `mail` is absent. If both keys exist, it preserves both; review conflicting values before using saved SMTP settings. Localized site values are unchanged.
 - Public forms default to a 256 KiB body limit and a 1,000-character limit on fields lacking `max()`. Set explicit field limits and coordinate `itk_cms.requests.max_body` with PHP and the reverse proxy. The form client must display field errors and handle HTTP 413.
 - A request resend API client reads `outcomes` for the result of each selected channel. HTTP 202 indicates a selected channel has a pending job. `queuedChannels` shows pending jobs when the request is reopened. The default async transport retries request delivery at 60, 120 and 240 seconds. Site transport settings take precedence.
-- Pass an explicit `Viewer` to `MediaService::usage()` and to `present()` with usage enabled. Add `PublicFieldInterface` to custom fields that can be indexed and implement `isPublic()`.
+- Calls to the internal `MediaService::usage()` and to `present()` with usage enabled now require an explicit `Viewer`. Add `PublicFieldInterface` to custom fields that can be indexed and implement `isPublic()`.
 - For automatic administrator setup in the Docker kit, mount the `itk_admin_password` secret in `php` or use the interactive installer. Retire the old `ADMIN_PASSWORD` environment variable. Copy `docker/chrome-seccomp.json` and attach it to `php` and `worker` for Critical CSS. Copy the updated nginx configuration to enforce the form limits before PHP parses the body.
 - Use a password of 10 to 200 characters when the installer creates an administrator. The same limits apply to `--password-file`.
 - Admin collection actions require sign-in and permission. Blocking a user ends access on their next request. Rich-text links and image URLs reject control characters. MCP `request_get` returns up to 6,000 characters per form value.

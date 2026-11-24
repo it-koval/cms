@@ -10,6 +10,8 @@ use Twig\Environment;
 /**
  * The check behind itk:schema:lint and the schema line of itk:doctor: Schema::validate() and the Twig templates the schema asks for.
  * A problem of the first kind or a section without its template is an error; a page template without its own file only a warning (the page is drawn by the template «default»).
+ *
+ * @internal
  */
 final class SchemaLint
 {

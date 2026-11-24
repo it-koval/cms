@@ -8,7 +8,11 @@ use Psr\Log\LoggerInterface;
 use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
 use Symfony\Component\Messenger\Event\WorkerMessageFailedEvent;
 
-/** Retry decisions have been made at priority 100; final failure releases the operator's action. */
+/**
+ * Retry decisions have been made at priority 100; final failure releases the operator's action.
+ *
+ * @internal
+ */
 #[AsEventListener(priority: -150)]
 final class RequestDeliveryJobListener
 {

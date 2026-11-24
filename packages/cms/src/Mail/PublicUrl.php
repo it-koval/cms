@@ -19,6 +19,8 @@ use Symfony\Component\HttpFoundation\RequestStack;
  *   3. the setting «domain» (https:// unless it carries a scheme);
  *   4. the address of the request as it came, only in debug mode (development).
  * These fallbacks apply to ordinary site links through base(). Password and invitation links use only the explicit full origin through trustedBase().
+ *
+ * @internal
  */
 final class PublicUrl
 {

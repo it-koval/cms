@@ -4,7 +4,11 @@ declare(strict_types=1);
 
 namespace Itk\Cms\Content;
 
-/** What CollectionImporter did (or, in a dry run, would do). */
+/**
+ * What CollectionImporter did (or, in a dry run, would do).
+ *
+ * @internal
+ */
 final class ImportResult
 {
     public int $created = 0;

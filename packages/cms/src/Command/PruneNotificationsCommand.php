@@ -13,7 +13,11 @@ use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
 
-/** Drops old notifications of the bell together with their «прочитано» marks. Meant for the schedule: once a day. */
+/**
+ * Drops old notifications of the bell together with their «прочитано» marks. Meant for the schedule: once a day.
+ *
+ * @internal
+ */
 #[AsCommand(name: 'itk:notifications:prune', description: 'ops.cmd_prune_notifications_description')]
 final class PruneNotificationsCommand extends Command
 {

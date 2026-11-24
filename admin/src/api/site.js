@@ -2,7 +2,7 @@
 //   currentSiteSync()                      { key, name, domain }   from window.ITK_ADMIN.site (written by the server shell)
 //   getLanguages()                         GET /languages         -> { main:'ru', list:[{ code:'ru', name:'Русский' }] }  main is always first
 //                                          (the server may answer a plain list of codes / { code, name } rows: both are turned into this shape)
-//   getDashboard()                         GET /dashboard         -> { newRequests, failedCount, unpublished, awaiting, proposals, recent, languages, locales }  for «Сегодня»
+//   getDashboard()                         GET /dashboard         -> { newRequests, failedCount, unpublished, awaiting, recent, languages, locales }  for «Сегодня»
 // Content languages are configured by the site developer.
 import { http, boot } from './http.js'
 import { knownName } from '@/utils/locales.js'
@@ -32,5 +32,5 @@ export async function getLanguages() {
 
 export async function getDashboard() {
   const d = (await http.get('dashboard')) || {}
-  return { newRequests: [], failedCount: 0, unpublished: [], awaiting: [], proposals: [], recent: [], ...d, languages: d.languages ? normalizeLanguages(d.languages) : { main: MAIN, list: [{ code: MAIN, name: knownName(MAIN) }] } }
+  return { newRequests: [], failedCount: 0, unpublished: [], awaiting: [], recent: [], ...d, languages: d.languages ? normalizeLanguages(d.languages) : { main: MAIN, list: [{ code: MAIN, name: knownName(MAIN) }] } }
 }

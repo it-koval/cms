@@ -4,8 +4,8 @@
     <article>
         <h1>{{ itk_field(page, 'title') }}</h1>
         {% if page.fields.date|default('') != '' %}<time>{{ page.fields.date }}</time>{% endif %}
-        {% if page.fields.cover.src|default('') != '' %}<img src="{{ media_url(page.fields.cover) }}" alt="{{ page.fields.cover.alt|default('') }}"{{ itk_field_attrs(page, 'cover') }}>{% endif %}
+        {% if page.fields.cover.src|default('') != '' %}<img src="{{ itk_media_url(page.fields.cover) }}" alt="{{ page.fields.cover.alt|default('') }}"{{ itk_field_attrs(page, 'cover') }}>{% endif %}
         <div class="itk-article-body">{{ itk_field(page, 'body') }}</div>
     </article>
-    {{ render_sections(page) }}
+    {{ itk_render_sections(page) }}
 {% endblock %}

@@ -177,7 +177,7 @@ final class GeneratorsTest extends TestCase
         self::assertSame([], [...$r->fields()]);
 
         $twig = (string) \file_get_contents($this->project . '/templates/pages/test_gen_tpl.html.twig');
-        self::assertStringContainsString('{{ render_sections(page) }}', $twig);
+        self::assertStringContainsString('{{ itk_render_sections(page) }}', $twig);
         self::assertStringContainsString('“test_gen_tpl”', $twig);
         (new Environment(new ArrayLoader()))->tokenize(new Source($twig, 'test_gen_tpl'));
     }
@@ -203,7 +203,7 @@ final class GeneratorsTest extends TestCase
         $t = $this->exec(new MakeSettingsCommand($this->make), ['key' => 'test_gen_set', 'name' => 'Тест', '--dir' => 'src/Itk/Settings']);
         self::assertSame(Command::SUCCESS, $t->getStatusCode());
         $code = $this->code('src/Itk/Settings/TestGenSetSettings.php');
-        self::assertStringContainsString("settings('testGenSetText')", $code);
+        self::assertStringContainsString("itk_settings('testGenSetText')", $code);
         $class = $this->generatedClass('src/Itk/Settings/TestGenSetSettings.php', 'Gen\\Itk\\Settings\\TestGenSetSettings', SettingsResource::class);
         $r = new $class();
         self::assertSame(['testGenSetText'], \array_map(static fn ($f): string => $f->key(), [...$r->fields()]));

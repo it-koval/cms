@@ -16,6 +16,8 @@ use Symfony\Contracts\Service\ResetInterface;
 /**
  * The admin token wins, then the site's bundle client is the fallback. Secrets are read again before each delivery.
  * The MAX client package is optional; an absent package or token leaves requests pending.
+ *
+ * @internal
  */
 final class MaxApiSender implements MaxSender, ResetInterface
 {

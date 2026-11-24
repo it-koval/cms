@@ -364,7 +364,7 @@ export function createMock(db = makeDb()) {
       if (t.published) recent.push({ label: String(t[cfg.titleField] || cfg.title), to, at: t.updatedAt, locale })
     }
     const newest = (a, b) => String(b.updatedAt || b.at).localeCompare(String(a.updatedAt || a.at))
-    return { newRequests: [], failedCount: 0, unpublished: unpublished.sort(newest), awaiting: unpublished.filter((r) => r.awaiting).map((r) => ({ ...r, by: r.awaiting.by, at: r.awaiting.at })), proposals: [], recent: recent.sort(newest).slice(0, 8), languages: copy(LANGUAGES), locales }
+    return { newRequests: [], failedCount: 0, unpublished: unpublished.sort(newest), awaiting: unpublished.filter((r) => r.awaiting).map((r) => ({ ...r, by: r.awaiting.by, at: r.awaiting.at })), recent: recent.sort(newest).slice(0, 8), languages: copy(LANGUAGES), locales }
   }
 
   function history(method, rest, query) {

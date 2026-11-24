@@ -10,7 +10,11 @@ use Doctrine\ORM\Query\Parser;
 use Doctrine\ORM\Query\SqlWalker;
 use Doctrine\ORM\Query\TokenType;
 
-/** DQL: JSON_GET(t.published, '{"seo"}') — the value at a JsonPath as JSON (jsonb #>; registered by the bundle). JSON_TEXT gives the same value as text. */
+/**
+ * DQL: JSON_GET(t.published, '{"seo"}') — the value at a JsonPath as JSON (jsonb #>; registered by the bundle). JSON_TEXT gives the same value as text.
+ *
+ * @internal
+ */
 final class JsonGet extends FunctionNode
 {
     private Node $json;

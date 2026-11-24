@@ -13,6 +13,8 @@ use Symfony\Contracts\Service\ResetInterface;
 /**
  * Works out the rights of a role against the permission areas of the schema (mirror of admin/src/utils/permissions.js).
  * Built-in roles follow the structure of the site; custom roles carry perms { area: [actions] } and templates (null = every template).
+ *
+ * @internal
  */
 final class RoleResolver implements ResetInterface
 {

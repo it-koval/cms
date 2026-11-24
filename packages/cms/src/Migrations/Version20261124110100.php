@@ -8,7 +8,11 @@ use Doctrine\DBAL\Platforms\PostgreSQLPlatform;
 use Doctrine\DBAL\Schema\Schema;
 use Doctrine\Migrations\AbstractMigration;
 
-/** Isolate SMTP settings while preserving a site's unrelated shared field named mail. */
+/**
+ * Isolate SMTP settings while preserving a site's unrelated shared field named mail.
+ *
+ * @internal
+ */
 final class Version20261124110100 extends AbstractMigration
 {
     /** The complete typed object written by MailSettings::save(), including disabled configurations. */

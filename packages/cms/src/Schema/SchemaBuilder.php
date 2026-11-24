@@ -8,6 +8,7 @@ use Itk\Cms\Analytics\AnalyticsConfig;
 use Itk\Cms\Field\FieldInterface;
 use Itk\Cms\I18n\I18n;
 use Itk\Cms\IndexNow\IndexNowSite;
+use Symfony\Component\Config\Definition\Exception\InvalidConfigurationException;
 
 /**
  * The builder a site's config/itk/schema.php receives:
@@ -29,8 +30,6 @@ final class SchemaBuilder
 {
     /** @var list<string> */
     private array $headlineMarks = [];
-    /** @var array<string, bool> */
-    private array $features = ['ai' => false];
     /** @var array<string, MenuAreaDef> */
     private array $menuAreas = [];
     /** @var array{top: list<string>, bottom: list<string>}|null */
@@ -109,11 +108,18 @@ final class SchemaBuilder
         return $this;
     }
 
-    public function feature(string $name, bool $on = true): self
+    /**
+     * @param array<array-key, mixed> $arguments
+     *
+     * @internal
+     */
+    public function __call(string $name, array $arguments): never
     {
-        $this->features[$name] = $on;
+        if ('feature' === $name) {
+            throw new InvalidConfigurationException('SchemaBuilder::feature() was removed in ITK CMS 0.3.0. Remove this call from config/itk/schema.php. See UPGRADE.md.');
+        }
 
-        return $this;
+        throw new \BadMethodCallException(\sprintf('Unknown schema configuration method SchemaBuilder::%s().', $name));
     }
 
     public function menuArea(string $key, string $name, int $depth = 1): self
@@ -220,7 +226,6 @@ final class SchemaBuilder
         return new Schema(
             mainLocale: $this->mainLocale,
             headlineMarks: $this->headlineMarks,
-            features: $this->features,
             menuAreas: $areas,
             layout: $layout,
             sections: $this->sections,

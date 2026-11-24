@@ -6,7 +6,11 @@ namespace Itk\Cms\Mail;
 
 use Symfony\Component\Mime\Address;
 
-/** How letters go out right now: the DSN (it holds the password: keep it inside the Mail namespace), where it comes from and the sender. */
+/**
+ * How letters go out right now: the DSN (it holds the password: keep it inside the Mail namespace), where it comes from and the sender.
+ *
+ * @internal
+ */
 final class MailRoute
 {
     public const SETTINGS = 'settings';

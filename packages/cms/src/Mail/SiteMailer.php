@@ -14,6 +14,8 @@ use Symfony\Component\Mime\Email;
 /**
  * Sends letters of the site: to the queue (a page does not wait for the mail server) or at once (the «Отправить тестовое письмо» button shows the real error).
  * The connection is built from «Настройки → Почта» at the moment of sending (MailerFactory). Errors are cleaned of passwords before they are kept, logged or shown.
+ *
+ * @internal
  */
 final class SiteMailer
 {

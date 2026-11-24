@@ -6,8 +6,6 @@ namespace Itk\Cms\Content;
 
 /**
  * The address of a site the way a URL carries it: the scheme, the host in ASCII (an international name in punycode) and the port when it is not the default of the scheme.
- *
- * @internal
  */
 final readonly class SiteAddress
 {

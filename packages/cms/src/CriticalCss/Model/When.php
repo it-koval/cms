@@ -9,6 +9,8 @@ namespace Itk\Cms\CriticalCss\Model;
  *   Outdated   Missing | Stale             the publish listener and the live render: a failure is never re-run on the same input by itself
  *   NotReady   Missing | Stale | Failed    the command without options: this is how failed pages are retried
  *   Always     everything                  the command --all (for example after a crittr upgrade the basis cannot see)
+ *
+ * @internal
  */
 enum When
 {

@@ -20,7 +20,11 @@ use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\HttpFoundation\File\UploadedFile;
 use Symfony\Component\Messenger\MessageBusInterface;
 
-/** The media library: files in public/uploads/media/Y/m/, rows in itk_media_file, usage lookup across pages, records and settings. */
+/**
+ * The media library: files in public/uploads/media/Y/m/, rows in itk_media_file, usage lookup across pages, records and settings.
+ *
+ * @internal
+ */
 final class MediaService
 {
     private const TYPES = [

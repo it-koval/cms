@@ -142,7 +142,7 @@ watch(() => [props.invalid, props.ariaDescribedby, props.ariaLabel, props.ariaLa
   } } })
 })
 
-// outside changes (revert, undo, proposals) -> editor
+// outside changes (revert, undo) -> editor
 watch(() => props.modelValue, (v) => {
   const ed = editor.value
   if (!ed) return

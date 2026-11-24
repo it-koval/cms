@@ -23,11 +23,11 @@ final class SchemaExportTest extends KernelTestCase
     public function itExportsEverythingTheAdminNeeds(): void
     {
         $s = $this->export();
-        foreach (['mainLocale', 'design', 'features', 'sections', 'sectionGroups', 'pageFields', 'templates', 'layout', 'collections', 'menuAreas', 'settings', 'forms', 'permissionAreas'] as $key) {
+        foreach (['mainLocale', 'design', 'sections', 'sectionGroups', 'pageFields', 'templates', 'layout', 'collections', 'menuAreas', 'settings', 'forms', 'permissionAreas'] as $key) {
             self::assertArrayHasKey($key, $s, $key);
         }
         self::assertSame('ru', $s['mainLocale']);
-        self::assertFalse($s['features']['ai']);
+        self::assertArrayNotHasKey('features', $s);
         self::assertSame(['hero', 'text', 'html', 'notes', 'image', 'faq'], \array_column($s['sections'], 'key'));
         self::assertNotFalse(\json_encode($s, \JSON_THROW_ON_ERROR | \JSON_UNESCAPED_UNICODE));
     }

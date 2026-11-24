@@ -10,7 +10,11 @@ use Doctrine\ORM\Query\Parser;
 use Doctrine\ORM\Query\SqlWalker;
 use Doctrine\ORM\Query\TokenType;
 
-/** The first value in a JSON object, in the same order it is read from jsonb. */
+/**
+ * The first value in a JSON object, in the same order it is read from jsonb.
+ *
+ * @internal
+ */
 final class JsonFirstValue extends FunctionNode
 {
     private Node $json;

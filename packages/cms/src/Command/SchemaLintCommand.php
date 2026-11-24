@@ -12,7 +12,11 @@ use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
 
-/** Checks the schema of the site (config/itk/schema.php and the resource classes) and the Twig templates of its sections and pages. Exit code 1 when there is an error. */
+/**
+ * Checks the schema of the site (config/itk/schema.php and the resource classes) and the Twig templates of its sections and pages. Exit code 1 when there is an error.
+ *
+ * @internal
+ */
 #[AsCommand(name: 'itk:schema:lint', description: 'ops.cmd_schema_lint_description')]
 final class SchemaLintCommand extends Command
 {

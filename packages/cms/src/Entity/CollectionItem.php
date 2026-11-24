@@ -13,6 +13,8 @@ use Symfony\Component\Uid\Uuid;
  * A record of a collection (no page of its own).
  *
  * translations: { ru: { draft: {…fields}, published: {…fields}|null, status: 'draft'|'published', updatedAt, publishedAt?, awaiting?, returned? } }
+ *
+ * @internal
  */
 #[ORM\Entity(repositoryClass: CollectionItemRepository::class)]
 #[ORM\Table(name: 'itk_collection_item')]

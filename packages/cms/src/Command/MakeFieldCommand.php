@@ -11,6 +11,7 @@ use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
 
+/** @internal */
 #[AsCommand(name: 'itk:make:field', description: 'ops.cmd_make_field_description')]
 final class MakeFieldCommand extends AbstractMakeCommand
 {

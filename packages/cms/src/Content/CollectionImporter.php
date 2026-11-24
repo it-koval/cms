@@ -16,6 +16,8 @@ use Itk\Cms\Schema\Schema;
  * Copies rows from anywhere (a SQL table, a JSON file) into records of a collection. The id of the row in the source is kept in the
  * record (translations[<language>].meta.sourceId), so a second run updates the records it made instead of making them again.
  * Every row goes through the normal CollectionService path: the same checks, hooks and events as a record made by hand.
+ *
+ * @internal
  */
 final class CollectionImporter
 {

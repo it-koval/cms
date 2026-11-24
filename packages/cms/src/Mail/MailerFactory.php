@@ -19,6 +19,8 @@ use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
  *   2. otherwise the environment variable MAILER_DSN, when it holds a real transport (null://null means «ничего не отправлять» and counts as not configured);
  *   3. otherwise mail is «не настроена».
  * The sender (from) is always the one of «Настройки → Почта»; with only MAILER_DSN and no address saved, noreply@<домен сайта> is used when the site has a domain.
+ *
+ * @internal
  */
 final class MailerFactory
 {

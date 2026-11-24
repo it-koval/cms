@@ -11,7 +11,11 @@ use Itk\Cms\Entity\StoredNotification;
 use Itk\Cms\Notification\Notification;
 use Itk\Cms\Notification\NotificationChannelInterface;
 
-/** The bell of the admin: keeps every notification in itk_notification; NotificationInbox shows it to the people of its audience. One row per `key`. */
+/**
+ * The bell of the admin: keeps every notification in itk_notification; NotificationInbox shows it to the people of its audience. One row per `key`.
+ *
+ * @internal
+ */
 final class DatabaseChannel implements NotificationChannelInterface
 {
     public function __construct(private readonly EntityManagerInterface $em)

@@ -7,6 +7,8 @@ namespace Itk\Cms\Security\TwoFactor;
 /**
  * One-time codes by RFC 6238 (TOTP) over RFC 4226 (HOTP): HMAC-SHA1, 6 digits, a new code every 30 seconds, the secret in Base32 (what Google Authenticator,
  * 1Password, Authy and others scan). Pure functions: the time is always passed in.
+ *
+ * @internal
  */
 final class Totp
 {

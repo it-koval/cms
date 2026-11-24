@@ -11,6 +11,8 @@ use Itk\Cms\Repository\UserTwoFactorRepository;
 /**
  * The second sign-in factor of one person (TOTP). The row appears when he starts the setup; `enabledAt` is set when he confirms with a first code, until then the
  * secret is only pending and does not protect the sign-in.
+ *
+ * @internal
  */
 #[ORM\Entity(repositoryClass: UserTwoFactorRepository::class)]
 #[ORM\Table(name: 'itk_user_2fa')]

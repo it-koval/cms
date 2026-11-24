@@ -1,9 +1,8 @@
 <script setup>
-// «Что требует внимания»: new requests (mark as seen in one click), what is not published yet, what the AI agent
-// suggested (accept / reject here), and what was published recently. Data: api.site.getDashboard().
-// On a site with 2+ languages every unpublished VERSION, AI proposal and new request carries a small language tag (EN). «Нет перевода» is never listed:
+// «Что требует внимания»: new requests (mark as seen in one click), unpublished content and recent publications. Data: api.site.getDashboard().
+// On a site with 2+ languages every unpublished VERSION and new request carries a small language tag (EN). «Нет перевода» is never listed:
 // a missing translation is a choice, not an error. A site with one language shows no tags.
-// RIGHTS: every block is drawn only when the role may use it («Новые заявки» — Заявки; «Не опубликовано», «Недавно опубликовано» — pages or collections; «ИИ-агент» — a right to edit; «Просмотрено» — a right to edit requests)
+// RIGHTS: every block is drawn only when the role may use it («Новые заявки» — Заявки; «Не опубликовано», «Недавно опубликовано» — pages or collections; «Просмотрено» — a right to edit requests)
 // and lists only what the role may see (the template scope of pages included). Plugins of the site may add blocks under the sections (widgets, plugins/state.js). «Ждут публикации» is for people who may publish: what an author sent «на публикацию», with «Посмотреть» into the editor.
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { api } from '@/api/index.js'
@@ -12,26 +11,21 @@ import Icon from '@/components/ui/Icon.vue'
 import Skeleton from '@/components/ui/Skeleton.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import { useToast } from '@/components/ui/useToast.js'
-import { useRouter } from 'vue-router'
 import { fmtDT, fmtUpdated, MIGRATED_NOTE } from '@/utils/format.js'
 import { formatDate, t } from '@/i18n/index.js'
 import { workLabel } from '@/composables/requestMeta.js'
-import ProposalItem from '@/components/today/ProposalItem.vue'
 import YandexWebmasterCard from '@/components/today/YandexWebmasterCard.vue'
 import LangTag from '@/components/ui/LangTag.vue'
 import PluginSlot from '@/components/ui/PluginSlot.vue'
 import { pluginWidgets } from '@/plugins/state.js'
 import { isMulti } from '@/utils/locales.js'
-import { schema } from '@/schema/registry.js'
 
 const toast = useToast()
-const router = useRouter()
 const multi = computed(() => isMulti())
 
 const data = ref(null)
 const loadError = ref('')
 const busyReq = ref(new Set())
-const busyProp = ref(new Set())
 const showAllUnpub = ref(false)
 const UNPUB_LIMIT = 6
 
@@ -85,14 +79,11 @@ onMounted(load)
 const seeReq = computed(() => can('requests'))
 const editReq = computed(() => can('requests', 'edit'))
 const seeContent = computed(() => can('pages') || canAnyCol())
-const editContent = computed(() => can('pages', 'edit') || canAnyCol('edit'))
 const publisher = computed(() => can('pages', 'publish') || canAnyCol('publish'))
 const itemRight = (u, action) => (u.kind === 'page' ? can('pages', action, { template: u.template }) : can('col:' + u.collection, action))
-const propRight = (p, action) => (p.kind === 'page' ? can('pages', action, { template: p.template }) : can('col:' + p.collection, action))
 // what waits for the people who may publish it, and the rest of the unpublished (what is already in the queue of a publisher is not listed twice)
 const awaiting = computed(() => (data.value && publisher.value ? data.value.awaiting.filter((u) => itemRight(u, 'publish')) : []))
 const unpubList = computed(() => (data.value ? data.value.unpublished.filter((u) => itemRight(u, 'view') && !(u.awaiting && itemRight(u, 'publish'))) : []))
-const proposalList = computed(() => (data.value ? data.value.proposals.filter((p) => propRight(p, 'edit')) : []))
 const recentList = computed(() => (data.value ? data.value.recent : []))
 const showAside = computed(() => seeContent.value)
 const localeCounts = computed(() => Object.entries(data.value?.locales || {}))
@@ -133,25 +124,6 @@ async function markSeen(r) {
   }
 }
 
-async function decide(p, accept) {
-  if (busyProp.value.has(p.id)) return
-  busyProp.value = new Set(busyProp.value).add(p.id)
-  try {
-    if (accept) {
-      await api.proposals.accept(p.id)
-      toast.show(t('ui.today_accepted'), { undoLabel: t('ui.toast_open'), undo: () => router.push(p.to) })
-    } else {
-      await api.proposals.reject(p.id)
-      toast.show(t('ui.today_rejected'))
-    }
-    await load()
-  } catch (e) {
-    toast.error(e.message)
-    await load()
-  } finally {
-    const s = new Set(busyProp.value); s.delete(p.id); busyProp.value = s
-  }
-}
 </script>
 
 <template>
@@ -241,17 +213,6 @@ async function decide(p, accept) {
               </button>
             </template>
             <div v-else class="empty" style="padding:26px"><p>{{ t('ui.today_unpublished_empty') }}</p></div>
-          </div>
-        </section>
-
-        <!-- AI agent -->
-        <section v-if="schema.features.ai && editContent" aria-labelledby="t-ai">
-          <h2 id="t-ai">{{ t('ui.today_ai') }}<span v-if="proposalList.length" class="chip ai">{{ proposalList.length }}</span></h2>
-          <div class="sheet list">
-            <template v-if="proposalList.length">
-              <ProposalItem v-for="p in proposalList" :key="p.id" :proposal="p" :busy="busyProp.has(p.id)" @accept="decide($event, true)" @reject="decide($event, false)" />
-            </template>
-            <div v-else class="empty" style="padding:26px"><p>{{ t('ui.today_ai_empty') }}</p></div>
           </div>
         </section>
 
