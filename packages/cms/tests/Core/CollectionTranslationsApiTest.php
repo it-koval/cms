@@ -5,23 +5,32 @@ declare(strict_types=1);
 namespace Itk\Cms\Tests\Core;
 
 use Doctrine\DBAL\DriverManager;
+use Doctrine\DBAL\Exception\DriverException;
 use Doctrine\ORM\EntityManagerInterface;
 use Itk\Cms\Content\CollectionService;
 use Itk\Cms\Content\ContentException;
+use Itk\Cms\Content\EditLock;
 use Itk\Cms\Entity\CollectionItem;
 use Itk\Cms\Entity\Revision;
 use Itk\Cms\Event\RecordCreated;
 use Itk\Cms\Event\RecordCreating;
 use Itk\Cms\Event\RecordDeleted;
+use Itk\Cms\Event\RecordDeleting;
+use Itk\Cms\Event\RecordTranslationAdded;
+use Itk\Cms\Event\RecordTranslationRemoved;
 use Itk\Cms\Event\RecordUnpublished;
+use Itk\Cms\Event\RecordUpdating;
 use Itk\Cms\Field\Text;
 use Itk\Cms\Field\Textarea;
 use Itk\Cms\Field\Toggle;
 use Itk\Cms\Resource\CollectionResource;
+use Itk\Cms\Resource\Context;
+use Itk\Cms\Resource\Record;
 use Itk\Cms\Resource\ResourceRegistry;
 use Itk\Cms\Schema\Schema;
 use Itk\Cms\Security\UserManager;
 use Itk\Cms\Tests\App\TestKernel;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
@@ -45,6 +54,7 @@ final class CollectionTranslationsApiTest extends WebTestCase
 
     protected function setUp(): void
     {
+        TranslationItemsCollection::$lifecycle = [];
         $this->client = static::createClient();
         $this->client->disableReboot();
         self::getContainer()->get(ResourceRegistry::class)->add(new TranslationItemsCollection());
@@ -100,16 +110,24 @@ final class CollectionTranslationsApiTest extends WebTestCase
         $creating = [];
         self::getContainer()->get('event_dispatcher')->addListener(RecordCreating::class, static function (RecordCreating $event) use (&$creating): void {
             if (self::COLLECTION === $event->resourceKey) {
-                $creating[] = [$event->locale, $event->translationOnly];
+                $creating[] = $event->locale;
             }
         });
         $created = [];
         self::getContainer()->get('event_dispatcher')->addListener(RecordCreated::class, static function (RecordCreated $event) use (&$created): void {
             if (self::COLLECTION === $event->resourceKey) {
-                $created[] = [$event->record->locale, $event->record->translationOnly];
+                $created[] = $event->record->locale;
             }
         });
 
+        $added = [];
+        self::getContainer()->get('event_dispatcher')->addListener(RecordTranslationAdded::class, static function (RecordTranslationAdded $event) use (&$added): void {
+            if (self::COLLECTION === $event->resourceKey) {
+                self::assertFalse(self::getContainer()->get(EntityManagerInterface::class)->getConnection()->isTransactionActive());
+                $added[] = $event->record->locale;
+            }
+        });
+        TranslationItemsCollection::$lifecycle = [];
         $translation = $this->api('POST', '/' . $id . '/translations?locale=kk', ['from' => 'ru'], 201);
         self::assertSame($id, $translation['id']);
         self::assertSame('kk', $translation['locale']);
@@ -118,8 +136,10 @@ final class CollectionTranslationsApiTest extends WebTestCase
         self::assertSame('draft', $translation['status']);
         self::assertNull($translation['awaiting']);
         self::assertNull($translation['returned']);
-        self::assertSame([['kk', true]], $creating);
-        self::assertSame([['kk', true]], $created);
+        self::assertSame([], $creating);
+        self::assertSame([], $created);
+        self::assertSame([], TranslationItemsCollection::$lifecycle);
+        self::assertSame(['kk'], $added);
         $em = self::getContainer()->get(EntityManagerInterface::class);
         $em->clear();
         $entity = $em->find(CollectionItem::class, $id);
@@ -175,16 +195,18 @@ final class CollectionTranslationsApiTest extends WebTestCase
         $this->api('POST', '/' . $id . '/translations?locale=kk', ['from' => 'ru'], 201);
         $this->service()->publish(self::COLLECTION, $id, 'kk');
         $events = [];
-        foreach ([RecordDeleted::class, RecordUnpublished::class] as $class) {
+        foreach ([RecordDeleting::class, RecordDeleted::class, RecordUnpublished::class, RecordTranslationRemoved::class] as $class) {
             self::getContainer()->get('event_dispatcher')->addListener($class, static function ($event) use (&$events, $class): void {
                 if (self::COLLECTION === $event->resourceKey) {
                     self::assertFalse(self::getContainer()->get(EntityManagerInterface::class)->getConnection()->isTransactionActive());
-                    $events[] = [$class, $event->record->locale, $event->record->translationOnly];
+                    $events[] = [$class, $event->record->locale];
                 }
             });
         }
+        TranslationItemsCollection::$lifecycle = [];
         self::assertSame(['ok' => true], $this->api('DELETE', '/' . $id . '/translations/kk'));
-        self::assertSame([[RecordUnpublished::class, 'kk', true], [RecordDeleted::class, 'kk', true]], $events);
+        self::assertSame([[RecordUnpublished::class, 'kk'], [RecordTranslationRemoved::class, 'kk']], $events);
+        self::assertSame([], TranslationItemsCollection::$lifecycle);
         $missing = $this->api('GET', '/' . $id . '?locale=kk');
         self::assertFalse($missing['translated']);
         self::assertNull($missing['item']);
@@ -278,6 +300,162 @@ final class CollectionTranslationsApiTest extends WebTestCase
     }
 
     #[Test]
+    public function deletionValidatesLocalePathSegmentsAgainstTheConfiguredList(): void
+    {
+        $id = $this->api('POST', '', ['title' => 'Source'], 201)['id'];
+        foreach (['KK', 'en-US', 'not_a_locale'] as $locale) {
+            $this->api('DELETE', '/' . $id . '/translations/' . $locale, [], 422);
+        }
+        self::assertSame('Source', $this->api('GET', '/' . $id)['item']['title']);
+    }
+
+    /** @return iterable<string, array{string}> */
+    public static function translationMutations(): iterable
+    {
+        foreach (['update', 'updateWithVersion', 'restoreVersion', 'publish', 'publishWithVersion', 'revert', 'submit', 'returnToAuthor', 'unpublish'] as $mutation) {
+            yield $mutation => [$mutation];
+        }
+    }
+
+    #[Test]
+    #[DataProvider('translationMutations')]
+    public function everyLanguageMutationPreservesAConcurrentlyAddedLanguage(string $mutation): void
+    {
+        $service = $this->service();
+        $item = $service->create(self::COLLECTION, ['title' => 'Live']);
+        $id = $item['id'];
+        $service->publish(self::COLLECTION, $id);
+        $item = $service->update(self::COLLECTION, $id, ['title' => 'Draft']);
+        $em = self::getContainer()->get(EntityManagerInterface::class);
+        $stale = $em->find(CollectionItem::class, $id);
+        self::assertNotNull($stale);
+        $fresh = $stale->translations;
+        $fresh['kk'] = ['draft' => ['title' => 'Concurrent Kazakh'], 'published' => null, 'status' => 'draft', 'updatedAt' => '2026-11-24T00:00:00+00:00'];
+        $other = DriverManager::getConnection($em->getConnection()->getParams());
+        try {
+            // Write after Doctrine loaded the entity: reusing its identity-map JSON loses this key.
+            $other->executeStatement('UPDATE itk_collection_item SET translations = ? WHERE id = ?', [\json_encode($fresh, \JSON_THROW_ON_ERROR), $id]);
+            self::assertArrayNotHasKey('kk', $stale->translations);
+            $result = match ($mutation) {
+                'update' => $service->update(self::COLLECTION, $id, ['title' => 'Edited'], 'ru'),
+                'updateWithVersion' => $service->update(self::COLLECTION, $id, ['title' => 'Edited'], 'ru', baseVersion: $item['version']),
+                'restoreVersion' => $service->restoreVersion(self::COLLECTION, $id, ['title' => 'Restored'], 'ru'),
+                'publish' => $service->publish(self::COLLECTION, $id, 'ru'),
+                'publishWithVersion' => $service->publish(self::COLLECTION, $id, 'ru', $item['version']),
+                'revert' => $service->revert(self::COLLECTION, $id, 'ru'),
+                'submit' => $service->submit(self::COLLECTION, $id, 'ru'),
+                'returnToAuthor' => $service->returnToAuthor(self::COLLECTION, $id, 'ru'),
+                'unpublish' => $service->unpublish(self::COLLECTION, $id, 'ru'),
+            };
+            self::assertSame('ru', $result['locale']);
+            $stored = \json_decode($other->fetchOne('SELECT translations FROM itk_collection_item WHERE id = ?', [$id]), true, flags: \JSON_THROW_ON_ERROR);
+            self::assertArrayHasKey('kk', $stored);
+            self::assertEquals($fresh['kk'], $stored['kk']);
+            self::assertSame(match ($mutation) {
+                'update', 'updateWithVersion' => 'Edited',
+                'restoreVersion' => 'Restored',
+                'revert' => 'Live',
+                default => 'Draft',
+            }, $stored['ru']['draft']['title']);
+            if ('submit' === $mutation) {
+                self::assertArrayHasKey('awaiting', $stored['ru']);
+            } elseif ('returnToAuthor' === $mutation) {
+                self::assertArrayHasKey('returned', $stored['ru']);
+            } elseif ('unpublish' === $mutation) {
+                self::assertSame('draft', $stored['ru']['status']);
+            } elseif (\str_starts_with($mutation, 'publish')) {
+                self::assertSame('Draft', $stored['ru']['published']['title']);
+            }
+        } finally {
+            $other->close();
+        }
+    }
+
+    /** @return iterable<string, array{bool}> */
+    public static function updateVersionChecks(): iterable
+    {
+        yield 'without baseVersion' => [false];
+        yield 'with baseVersion' => [true];
+    }
+
+    #[Test]
+    #[DataProvider('updateVersionChecks')]
+    public function updateHoldsBothItemLocksBeforeRunningMutationHooks(bool $withVersion): void
+    {
+        $item = $this->api('POST', '', ['title' => 'Source'], 201);
+        $em = self::getContainer()->get(EntityManagerInterface::class);
+        $other = DriverManager::getConnection($em->getConnection()->getParams());
+        $dispatcher = self::getContainer()->get('event_dispatcher');
+        $checked = false;
+        $listener = static function (RecordUpdating $event) use ($item, $other, &$checked): void {
+            if (self::COLLECTION !== $event->resourceKey || $event->record->id !== $item['id']) {
+                return;
+            }
+            $checked = true;
+            $key = EditLock::key('item', self::COLLECTION . ':' . $item['id']);
+            $acquired = $other->fetchOne('SELECT pg_try_advisory_lock(?)', [$key]);
+            if ($acquired) {
+                $other->fetchOne('SELECT pg_advisory_unlock(?)', [$key]);
+            }
+            self::assertFalse((bool) $acquired, 'The shared item advisory lock must be held before updating.');
+            try {
+                $other->fetchOne('SELECT id FROM itk_collection_item WHERE id = ? FOR UPDATE NOWAIT', [$item['id']]);
+                self::fail('The item must already be refreshed with PESSIMISTIC_WRITE.');
+            } catch (DriverException $error) {
+                self::assertSame('55P03', $error->getSQLState());
+            }
+        };
+        $dispatcher->addListener(RecordUpdating::class, $listener);
+        try {
+            $this->service()->update(self::COLLECTION, $item['id'], ['title' => 'Edited'], 'ru', baseVersion: $withVersion ? $item['version'] : null);
+            self::assertTrue($checked);
+        } finally {
+            $dispatcher->removeListener(RecordUpdating::class, $listener);
+            $other->close();
+        }
+    }
+
+    #[Test]
+    public function translationEventsAreDiscardedWhenTheOuterTransactionRollsBack(): void
+    {
+        $id = $this->api('POST', '', ['title' => 'Source'], 201)['id'];
+        $events = [];
+        foreach ([RecordTranslationAdded::class, RecordTranslationRemoved::class] as $class) {
+            self::getContainer()->get('event_dispatcher')->addListener($class, static function ($event) use (&$events): void {
+                if (self::COLLECTION === $event->resourceKey) {
+                    $events[] = $event;
+                }
+            });
+        }
+        $em = self::getContainer()->get(EntityManagerInterface::class);
+        $hooks = self::getContainer()->get(\Itk\Cms\Resource\HookDispatcher::class);
+        foreach (['add', 'remove'] as $operation) {
+            if ('remove' === $operation) {
+                $this->service()->addTranslation(self::COLLECTION, $id, 'kk', 'ru');
+                $events = [];
+            }
+            try {
+                $hooks->deferAfter(fn () => $em->getConnection()->transactional(function () use ($id, $operation): void {
+                    if ('add' === $operation) {
+                        $this->service()->addTranslation(self::COLLECTION, $id, 'kk', 'ru');
+                    } else {
+                        $this->service()->removeTranslation(self::COLLECTION, $id, 'kk');
+                    }
+                    throw new \RuntimeException('roll back translation');
+                }));
+                self::fail('Expected a rollback.');
+            } catch (\RuntimeException $error) {
+                self::assertSame('roll back translation', $error->getMessage());
+            }
+            self::assertSame([], $events);
+            $em->clear();
+            $stored = $em->find(CollectionItem::class, $id);
+            self::assertNotNull($stored);
+            self::assertSame('remove' === $operation, isset($stored->translations['kk']));
+        }
+    }
+
+    #[Test]
     public function copyingRawContentRetainsTheCreationGuardAndCanStillCreateABlankTranslation(): void
     {
         $id = $this->api('POST', '', ['title' => 'Source', 'html' => '<p>Trusted source</p>'], 201)['id'];
@@ -291,6 +469,31 @@ final class CollectionTranslationsApiTest extends WebTestCase
 
 final class TranslationItemsCollection extends CollectionResource
 {
+    /** @var list<string> */
+    public static array $lifecycle = [];
+
+    public function beforeCreating(array $data, Context $ctx): array
+    {
+        self::$lifecycle[] = 'beforeCreating';
+
+        return $data;
+    }
+
+    public function afterCreated(Record $record, Context $ctx): void
+    {
+        self::$lifecycle[] = 'afterCreated';
+    }
+
+    public function beforeDeleting(Record $record, Context $ctx): void
+    {
+        self::$lifecycle[] = 'beforeDeleting';
+    }
+
+    public function afterDeleted(Record $record, Context $ctx): void
+    {
+        self::$lifecycle[] = 'afterDeleted';
+    }
+
     public function key(): string
     {
         return 'test_translation_items';

@@ -156,7 +156,7 @@ final class SeoRuleService
             $input = $data['locale'];
             if (null === $input || '' === $input) {
                 $locale = null;
-            } elseif (!\is_string($input)) {
+            } elseif (!\is_string($input) || (!$this->contentLocales->isConfigured() && 1 !== \preg_match('/^[A-Za-z]{2,8}\z/', $input))) {
                 $errors['locale'] = I18n::t('content.seo_locale_unknown');
             } else {
                 try {

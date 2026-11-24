@@ -142,17 +142,15 @@ final class PagesController extends AbstractApiController
     #[Route('/{id}/translations', name: 'translation_add', methods: ['POST'])]
     public function addTranslation(Request $request, string $id): JsonResponse
     {
-        $this->need($id, 'edit');
         [$locale, $from] = $this->translationInput($request);
 
-        return $this->json($this->pages->addTranslation($id, $locale, $from), 201);
+        return $this->json($this->pages->addTranslation($id, $locale, $from, fn (Page $page) => $this->access->require('pages', 'edit', $page->template)), 201);
     }
 
-    #[Route('/{id}/translations/{locale}', name: 'translation_remove', requirements: ['locale' => '[a-z]{2,3}'], methods: ['DELETE'])]
+    #[Route('/{id}/translations/{locale}', name: 'translation_remove', requirements: ['locale' => '[^/]+'], methods: ['DELETE'])]
     public function removeTranslation(string $id, string $locale): JsonResponse
     {
-        $this->need($id, 'delete');
-        $this->pages->removeTranslation($id, $locale);
+        $this->pages->removeTranslation($id, $locale, fn (Page $page) => $this->access->require('pages', 'delete', $page->template));
 
         return $this->json(['ok' => true]);
     }

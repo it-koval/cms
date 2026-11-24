@@ -576,7 +576,7 @@ A class with the key of a core template (`blog_article`) changes that template. 
 
 ### Hooks and events
 
-Each operation on a collection record or a page goes like this: first a Symfony event, then a method of the resource class. For a page, the resource is the class of its template, and `kind` is `page`. For a record, the resource is the collection class, and `kind` is `item`.
+Each object lifecycle operation on a collection record or a page goes like this: first a Symfony event, then a method of the resource class. For a page, the resource is the class of its template, and `kind` is `page`. For a record, the resource is the collection class, and `kind` is `item`.
 
 | Moment | Event (`Itk\Cms\Event\`) | Class method |
 |---|---|---|
@@ -586,10 +586,12 @@ Each operation on a collection record or a page goes like this: first a Symfony 
 | Delete | `RecordDeleting`, `RecordDeleted` | `beforeDeleting(Record, Context)`, `afterDeleted(Record, Context)` |
 | Publish | `RecordPublishing`, `RecordPublished` | `beforePublishing(Record, Context)`, `afterPublished(Record, Context)` |
 | Unpublish | `RecordUnpublishing`, `RecordUnpublished` | `beforeUnpublishing(Record, Context)`, `afterUnpublished(Record, Context)` |
+| Translation added or removed (after commit) | `RecordTranslationAdded`, `RecordTranslationRemoved` | |
 | Page template change | `PageTemplateChanged` (`from` is the old template, `resourceKey` the new one) | |
 | Several records at once | `MassAction` (`action`: `delete`, `publish`, `unpublish`; `phase`: `before`, `after`) | `beforeMassDeleting`, `afterMassDeleted`, `beforeMassPublishing`, `afterMassPublished`, `beforeMassUnpublishing`, `afterMassUnpublished` (`array $records, Context`) |
 
 - An event has `resourceKey`, `kind`, `record` (`null` in `RecordCreating`), `data` and `viewer`. You can change `data` in `RecordCreating` and `RecordUpdating`, and the changed data is saved.
+- `RecordTranslationAdded` and `RecordTranslationRemoved` extend `RecordEvent` and carry the operation language in `locale` (also in `record->locale`). They are dispatched only after the transaction commits. Adding or removing a translation does not call the object create/delete events or the resource lifecycle hooks. Removing a live translation still calls `RecordUnpublishing` / `RecordUnpublished` and the corresponding unpublish hooks.
 - `Record` is `{id, kind, resourceKey, locale, fields, status, meta}` with a `get($key)` method. For a page, `fields` holds the template fields, and `meta` holds `title`, `url`, `parentId`, `template`.
 - `Context` holds `viewer`, `locale`, `kind`, `resourceKey`. `Viewer` is either a person with permissions (`can('col:tours', 'publish')`, `allows('set:users')`, `user()`, `role()`) or the system (console, import, queue: `isSystem()`, everything is allowed).
 - Any `before…` can throw `Itk\Cms\Content\ContentException`. The change is cancelled, and the editor sees the exception text. `after…` runs after the save, and an exception in it rolls nothing back.
@@ -748,9 +750,9 @@ Each translation belongs to the same page or collection record. Creating a trans
 | `POST /admin/api/collections/{col}/{id}/translations?locale=kk` | `{"from":"ru"}` or `{"from":null}` | `201`, a flat record draft with the same `id` and `locale: "kk"` |
 | `DELETE /admin/api/collections/{col}/{id}/translations/{locale}` | None | `200 {"ok":true}` |
 
-`from` selects the existing draft to copy, subject to field permissions. Pass `null` to fill a new draft with schema defaults. Each translation starts as an unpublished draft with no pending approval. New page addresses use the target language prefix. An occupied path gets an available suffix, while an occupied language homepage returns `409`.
+`from` selects the existing draft to copy, subject to field permissions. Pass `null` to use schema defaults for fields and sections; a page still takes its title and the basis of its address from the main translation. Each translation starts as an unpublished draft with no pending approval. New page addresses use the target language prefix. An occupied path gets an available suffix, while an occupied language homepage returns `409`.
 
-Creation requires `edit` and deletion requires `delete` on the template or collection. Both require sign-in and the CSRF header described above. Deletion removes the selected translation and records its snapshot in history. To remove the last version, delete the whole page or record.
+Creation requires `edit` and deletion requires `delete` on the template or collection. Both require sign-in and the CSRF header described above. Deletion removes the selected translation and records its snapshot in history as `delete_locale`. This audit entry is not a current version, is not placed in the trash and cannot be restored; create a new translation instead. To remove the last version, delete the whole page or record.
 
 - `404` if the page or record is missing, or the translation to delete is missing.
 - `409` if the target translation already exists, its address conflicts, or the operation would delete the main or last version.
@@ -784,7 +786,7 @@ A permission is a pair of an area and an action. Actions: `view` (**View**), `ed
 | `set:<group>` | A settings group, including `set:site` and `set:analytics` |
 | `set:menus`, `set:redirects`, `set:seo` | Menus, redirects, SEO rules, `robots.txt` and `llms.txt` |
 | `set:notifications`, `set:mail`, `set:bots` | Notification recipients, mail server, bot tokens |
-| `set:theme`, `set:languages`, `set:users`, `set:mcp` | Admin appearance, content languages (management screen planned for 0.3.0; currently only the main language), users and roles, AI assistants |
+| `set:theme`, `set:languages`, `set:users`, `set:mcp` | Admin appearance, content languages configured in `itk_cms.locales` (a management screen is planned), users and roles, AI assistants |
 | `templates` | Viewing templates |
 | `dev` | The **For developers** section: **Site status** |
 | `action:<collection>:<action>` | Running an action with `permission()` |
@@ -1517,11 +1519,11 @@ itk_cms:
     en: { name: English }
 ```
 
-- Language codes are 2 or 3 lowercase Latin letters. Each language needs a non-empty `name`. A non-empty list must include `main_locale`.
+- Language codes are 2 or 3 lowercase Latin letters. Each language needs a non-empty `name`. An explicitly configured list must be non-empty and include `main_locale`. A code must not conflict with a reserved system path segment (for example `mcp`) or the first segment of `admin_path` (including when the conflicting code is the main language).
 - `html_lang` defaults to the code. It accepts 2 or 3 lowercase Latin letters with an optional hyphen and 2 to 8 letters or digits, as in `zh-CN`. Each language must have a distinct resulting tag.
 - `og_locale` accepts 2 or 3 lowercase Latin letters, an underscore and 2 uppercase Latin letters, as in `zh_CN`. The service can derive it from the region in `html_lang`. It returns `null` when neither is present.
-- The admin lists the main language first and then follows the configuration order. When `locales` is omitted, the admin lists only the main language and the API still accepts legacy language codes. An explicit list restricts API inputs to the listed languages. An explicit empty list allows only the main language.
-- On a site with multiple configured languages, addresses for the main language have no language prefix. Other versions use `/{code}`. For example, the Kazakh home page uses `/kk`, and other Kazakh pages use paths such as `/kk/about`. The server checks these addresses when saving, restoring or publishing a version.
+- The admin lists the main language first and then follows the configuration order. When `locales` is omitted, the admin lists only the main language and the API still accepts legacy language codes. An explicit list restricts API inputs to the listed languages. An explicit empty list is rejected; omit `locales` for legacy behavior.
+- On a site with multiple configured languages, addresses for the main language have no language prefix. Other versions use `/{code}`. For example, the Kazakh home page uses `/kk`, and other Kazakh pages use paths such as `/kk/about`. The server checks the language prefix when creating a translation, changing its address (including a restore that changes the address), and publishing. Saving other fields without changing the address remains possible for legacy pages with an incompatible prefix.
 
 Inject `Itk\Cms\I18n\ContentLocales` to read the site's language codes, display names, path prefixes and metadata. Public routing for language-prefixed addresses is planned for 0.3.0.
 

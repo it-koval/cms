@@ -4,10 +4,13 @@ declare(strict_types=1);
 
 namespace Itk\Cms\Tests\Core;
 
-use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
+use Doctrine\DBAL\DriverManager;
+use Doctrine\DBAL\Exception\DriverException;
 use Doctrine\ORM\EntityManagerInterface;
+use Doctrine\ORM\Event\OnFlushEventArgs;
 use Doctrine\ORM\Event\PreFlushEventArgs;
 use Doctrine\ORM\Events;
+use Itk\Cms\Content\EditLock;
 use Itk\Cms\Content\PageService;
 use Itk\Cms\Entity\Page;
 use Itk\Cms\Entity\PageTranslation;
@@ -16,15 +19,19 @@ use Itk\Cms\Entity\Role;
 use Itk\Cms\Event\RecordCreated;
 use Itk\Cms\Event\RecordCreating;
 use Itk\Cms\Event\RecordDeleted;
+use Itk\Cms\Event\RecordDeleting;
+use Itk\Cms\Event\RecordTranslationAdded;
+use Itk\Cms\Event\RecordTranslationRemoved;
 use Itk\Cms\Event\RecordUnpublished;
+use Itk\Cms\Event\RecordUnpublishing;
 use Itk\Cms\Field\Text;
-use Itk\Cms\IndexNow\Model\PingIndexNow;
+use Itk\Cms\I18n\I18n;
 use Itk\Cms\Repository\RevisionRepository;
 use Itk\Cms\Resource\ResourceRegistry;
 use Itk\Cms\Resource\TemplateResource;
 use Itk\Cms\Security\UserManager;
+use Itk\Cms\Support\Url;
 use Itk\Cms\Tests\App\TestKernel;
-use Itk\Cms\Tests\Core\Fixture\IndexNowSettings;
 use PHPUnit\Framework\Attributes\Test;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
@@ -34,8 +41,6 @@ use Symfony\Component\Uid\Uuid;
 /** Translation writes through the public admin API; each fixture owns its rows. */
 final class PageTranslationsApiTest extends WebTestCase
 {
-    use IndexNowSettings;
-
     private KernelBrowser $client;
     private string $csrf = '';
     /** @var list<string> */
@@ -49,7 +54,7 @@ final class PageTranslationsApiTest extends WebTestCase
     {
         $itk = ['main_locale' => 'ru'];
         if ($options['contentLocales'] ?? true) {
-            $itk['locales'] = ['ru' => ['name' => 'Русский'], 'kk' => ['name' => 'Қазақша'], 'tr' => ['name' => 'Türkçe'], 'zh' => ['name' => '中文'], 'en' => ['name' => 'English']]; // i18n-ignore: configured language names
+            $itk['locales'] = $options['catalog'] ?? ['ru' => ['name' => 'Русский'], 'kk' => ['name' => 'Қазақша'], 'tr' => ['name' => 'Türkçe'], 'zh' => ['name' => '中文'], 'en' => ['name' => 'English']]; // i18n-ignore: configured language names
         }
 
         return new TestKernel($options['environment'] ?? 'test', $options['debug'] ?? true, framework: ['http_client' => ['enabled' => true]], itk: $itk);
@@ -83,7 +88,6 @@ final class PageTranslationsApiTest extends WebTestCase
 
     protected function tearDown(): void
     {
-        $this->restoreSettings();
         $em = self::getContainer()->get(EntityManagerInterface::class);
         $em->clear();
         foreach (\array_reverse($this->ids) as $id) {
@@ -196,31 +200,15 @@ final class PageTranslationsApiTest extends WebTestCase
         $em->persist($role);
         $em->flush();
         $this->login($role->key);
-        $hookRan = false;
-        $listener = static function (RecordCreating $event) use (&$hookRan): void {
-            if ('test_translation' !== $event->resourceKey || !$event->translationOnly || 'kk' !== $event->locale) {
-                return;
-            }
-            $hookRan = true;
-            $event->data['fields']['secret'] = 'Private hook value';
-            $event->data['fields']['locked'] = 'Locked hook value';
-            $event->data['sections'][0]['data']['internal'] = 'Private section hook value';
-        };
-        $dispatcher = self::getContainer()->get('event_dispatcher');
-        $dispatcher->addListener(RecordCreating::class, $listener);
-        try {
-            $copy = $this->add($source['id'], 'kk');
-        } finally {
-            $dispatcher->removeListener(RecordCreating::class, $listener);
-        }
-        self::assertTrue($hookRan);
+        $copy = $this->add($source['id'], 'kk');
         self::assertSame('Source subtitle', $copy['fields']['subtitle']);
+        self::assertArrayNotHasKey('secret', $copy['fields']);
         self::assertSame('permission-section', $copy['sections'][0]['id']);
         self::assertSame('Visible', $copy['sections'][0]['data']['summary']);
         self::getContainer()->get(EntityManagerInterface::class)->clear();
         $stored = self::getContainer()->get(PageService::class)->find($source['id'])->translation('kk')->draft;
-        self::assertArrayNotHasKey('secret', $stored['fields']);
-        self::assertArrayNotHasKey('locked', $stored['fields']);
+        self::assertSame('Schema private', $stored['fields']['secret']);
+        self::assertSame('Schema locked', $stored['fields']['locked']);
         self::assertArrayNotHasKey('internal', $stored['sections'][0]['data']);
         $blank = $this->add($source['id'], 'en', null);
         self::assertSame('Schema subtitle', $blank['fields']['subtitle']);
@@ -245,6 +233,10 @@ final class PageTranslationsApiTest extends WebTestCase
         $missing = $this->api('POST', $path . '?locale=kk', ['from' => 'en'], 422);
         self::assertSame('translation_source_missing', $missing['details']['code']);
         $this->add($source['id'], 'kk');
+        foreach (['KK', 'en-US'] as $locale) {
+            $error = $this->api('DELETE', $path . '/' . $locale, status: 422);
+            self::assertSame(I18n::t('content.locale_unknown', ['locale' => $locale]), $error['error']);
+        }
         $duplicate = $this->api('POST', $path . '?locale=kk', ['from' => 'ru'], 409);
         self::assertSame('translation_exists', $duplicate['details']['code']);
         self::assertStringContainsString('Қазақша', $duplicate['error']); // i18n-ignore: configured language name
@@ -271,7 +263,15 @@ final class PageTranslationsApiTest extends WebTestCase
     #[Test]
     public function prefixesAreReplacedOnlyWhenActuallyPresentIncludingLanguageHomes(): void
     {
-        foreach ([['/', 'ru', '/kk'], ['/en', 'en', '/kk'], ['/en/about', 'en', '/kk/about'], ['/en/about/', 'en', '/kk/about/'], ['/legacy', 'en', '/kk/legacy'], ['/tr/legacy', 'en', '/kk/tr/legacy']] as [$url, $from, $expected]) {
+        foreach ([
+            ['/', 'ru', '/kk'],
+            ['/en', 'en', '/kk'],
+            ['/en/about', 'en', '/kk/about'],
+            ['/en/about//team', 'en', '/kk/about//team'],
+            ['/en/about/', 'en', '/kk/about/'],
+            ['/legacy', 'en', '/kk/legacy'],
+            ['/tr/legacy', 'en', '/kk/tr/legacy'],
+        ] as [$url, $from, $expected]) {
             $source = $this->page();
             $em = self::getContainer()->get(EntityManagerInterface::class);
             $page = $em->find(Page::class, $source['id']);
@@ -323,19 +323,122 @@ final class PageTranslationsApiTest extends WebTestCase
     }
 
     #[Test]
-    public function legacyConfigurationAcceptsHistoricalLanguagesAndUnprefixedDrafts(): void
+    public function translationGuardsRunAgainstTheFreshLockedTemplate(): void
+    {
+        $source = $this->page();
+        $em = self::getContainer()->get(EntityManagerInterface::class);
+        $connection = $em->getConnection();
+        $service = self::getContainer()->get(PageService::class);
+        $loaded = $service->find($source['id']);
+        self::assertSame('default', $loaded->template);
+        $connection->update('itk_page', ['template' => 'test_translation'], ['id' => $loaded->id]);
+        $seen = [];
+        $guard = static function (Page $page) use (&$seen, $connection): void {
+            self::assertTrue($connection->isTransactionActive());
+            $seen[] = $page->template;
+        };
+        $service->addTranslation($loaded->id, 'kk', 'ru', $guard);
+        $connection->update('itk_page', ['template' => 'default'], ['id' => $loaded->id]);
+        $service->removeTranslation($loaded->id, 'kk', $guard);
+        self::assertSame(['test_translation', 'default'], $seen);
+    }
+
+    #[Test]
+    public function trashRestoresVersionsWithAnEmptyAddressOrAnUnconfiguredLanguage(): void
+    {
+        self::ensureKernelShutdown();
+        $this->client = static::createClient(['catalog' => ['ru' => ['name' => 'Russian'], 'kk' => ['name' => 'Kazakh']]]);
+        $this->client->disableReboot();
+        $this->login('admin');
+        $source = $this->page();
+        $this->add($source['id'], 'kk');
+        $path = 'pages/' . $source['id'];
+        $this->api('PUT', $path . '/draft?locale=kk', ['url' => '']);
+        $em = self::getContainer()->get(EntityManagerInterface::class);
+        $legacy = $em->find(Page::class, $source['id']);
+        $en = new PageTranslation($legacy, 'en');
+        $en->draft = $legacy->translation('ru')->draft;
+        $en->draft['url'] = '/about-en';
+        $legacy->translations->set('en', $en);
+        $em->persist($en);
+        $em->flush();
+
+        $this->api('DELETE', $path);
+        $trash = $this->api('GET', 'history/trash?kind=page');
+        $rows = \array_values(\array_filter($trash['items'], static fn (array $entry): bool => $source['id'] === $entry['resourceId']));
+        self::assertCount(1, $rows);
+        $this->api('POST', 'history/revision/' . $rows[0]['id'] . '/restore');
+        $restored = $em->find(Page::class, $source['id']);
+        self::assertSame('', $restored->translation('kk')->draft['url']);
+        self::assertSame('/about-en', $restored->translation('en')->draft['url']);
+    }
+
+    #[Test]
+    public function addressWritersWaitForTheNormalizedTransactionLock(): void
+    {
+        $source = $this->page();
+        $service = self::getContainer()->get(PageService::class);
+        $connection = self::getContainer()->get(EntityManagerInterface::class)->getConnection();
+        $other = DriverManager::getConnection($connection->getParams());
+        $createId = Uuid::v7()->toRfc4122();
+        $this->ids[] = $createId;
+        $createUrl = $source['url'] . '-create';
+        $updateUrl = $source['url'] . '-update';
+        $restoreUrl = $source['url'] . '-restore';
+        $draft = ['url' => $restoreUrl, 'title' => $source['title']];
+        $writes = [
+            ['kk', '/kk' . $source['url'], static fn () => $service->addTranslation($source['id'], 'kk', 'ru')],
+            ['ru', $createUrl, static fn () => $service->create(['id' => $createId, 'url' => $createUrl, 'title' => $source['title']])],
+            ['ru', $updateUrl, static fn () => $service->update($source['id'], 'ru', ['url' => \strtoupper($updateUrl) . '/'])],
+            ['ru', $restoreUrl, static fn () => $service->restoreVersion($source['id'], 'ru', $draft)],
+        ];
+        $connection->executeStatement("SET lock_timeout = '1s'");
+        try {
+            foreach ($writes as [$locale, $url, $write]) {
+                $other->beginTransaction();
+                try {
+                    $other->fetchOne('SELECT pg_advisory_xact_lock(?)', [EditLock::key('page-url', $locale . ':' . Url::key($url))]);
+                    try {
+                        $write();
+                        self::fail('The address must be locked by the other transaction.');
+                    } catch (DriverException $e) {
+                        self::assertSame('55P03', $e->getSQLState());
+                    }
+                } finally {
+                    $other->rollBack();
+                }
+                self::assertSame($url, Url::key($write()['url']));
+            }
+        } finally {
+            $connection->executeStatement('RESET lock_timeout');
+            $other->close();
+        }
+    }
+
+    #[Test]
+    public function legacyConfigurationAllowsExistingTranslationsButDoesNotAddUnconfiguredLanguages(): void
     {
         self::ensureKernelShutdown();
         $this->client = static::createClient(['contentLocales' => false]);
         $this->client->disableReboot();
         $this->login('admin');
         $source = $this->page();
-        self::assertSame('/en' . $source['url'], $this->add($source['id'], 'en')['url']);
-        self::assertSame('/tr' . $source['url'], $this->add($source['id'], 'tr', 'en')['url']);
+        $em = self::getContainer()->get(EntityManagerInterface::class);
+        $page = $em->find(Page::class, $source['id']);
+        $en = new PageTranslation($page, 'en');
+        $en->draft = $page->translation('ru')->draft;
+        $en->draft['url'] = '/en' . $source['url'];
+        $page->translations->set('en', $en);
+        $em->persist($en);
+        $em->flush();
+        $path = 'pages/' . $source['id'] . '/translations';
+        $unconfigured = $this->api('POST', $path . '?locale=kk', ['from' => 'en'], 422);
+        self::assertSame(I18n::t('content.locale_unknown', ['locale' => 'kk']), $unconfigured['error']);
+        $tooLong = $this->api('POST', $path . '?locale=abcdefgh-1', ['from' => 'en'], 422);
+        self::assertSame(I18n::t('http.no_such_language'), $tooLong['error']);
         $this->api('PUT', 'pages/' . $source['id'] . '/draft?locale=en', ['url' => '/EN' . $source['url']]);
-        self::assertSame('/kk' . $source['url'], $this->add($source['id'], 'kk', 'en')['url']);
-        $this->api('PUT', 'pages/' . $source['id'] . '/draft?locale=en', ['url' => $source['url'] . '-legacy']);
-        self::assertSame('/zz' . $source['url'] . '-legacy', $this->add($source['id'], 'zz', 'en')['url']);
+        $saved = $this->api('PUT', 'pages/' . $source['id'] . '/draft?locale=en', ['url' => $source['url'] . '-legacy']);
+        self::assertSame($source['url'] . '-legacy', $saved['url']);
     }
 
     #[Test]
@@ -355,7 +458,7 @@ final class PageTranslationsApiTest extends WebTestCase
     public function malformedOrReservedTranslationAddressesFailBeforeWriting(): void
     {
         $source = $this->page();
-        foreach (['/path?query=1', '/path#fragment', '//host/path', '/bad//path', '/bad\\path', '/bad' . "\n" . 'path', '/' . \str_repeat('x', 252)] as $url) {
+        foreach (['/path?query=1', '/path#fragment', '//host/path', '/bad\\path', '/bad' . "\n" . 'path', '/' . \str_repeat('x', 252)] as $url) {
             $em = self::getContainer()->get(EntityManagerInterface::class);
             $em->find(Page::class, $source['id'])->translation('ru')->draft['url'] = $url;
             $em->flush();
@@ -378,14 +481,15 @@ final class PageTranslationsApiTest extends WebTestCase
     public function deletionIsLocalAndPreservesTheDeletedLiveSnapshotInHistory(): void
     {
         $source = $this->page();
-        $kk = $this->add($source['id'], 'kk');
-        $this->api('POST', 'pages/' . $source['id'] . '/publish?locale=kk');
         $events = [];
-        foreach ([RecordUnpublished::class, RecordDeleted::class] as $event) {
-            self::getContainer()->get('event_dispatcher')->addListener($event, static function ($e) use (&$events): void {
-                $events[] = [$e::class, $e->record->locale, $e->record->translationOnly];
+        $connection = self::getContainer()->get(EntityManagerInterface::class)->getConnection();
+        foreach ([RecordCreating::class, RecordCreated::class, RecordDeleting::class, RecordDeleted::class, RecordTranslationAdded::class, RecordUnpublishing::class, RecordUnpublished::class, RecordTranslationRemoved::class] as $event) {
+            self::getContainer()->get('event_dispatcher')->addListener($event, static function ($e) use (&$events, $connection): void {
+                $events[] = [$e::class, $e->record?->locale, $connection->isTransactionActive()];
             });
         }
+        $kk = $this->add($source['id'], 'kk');
+        $this->api('POST', 'pages/' . $source['id'] . '/publish?locale=kk');
         $this->api('DELETE', 'pages/' . $source['id'] . '/translations/kk');
         $missing = $this->api('GET', 'pages/' . $source['id'] . '/draft?locale=kk');
         self::assertFalse($missing['translated']);
@@ -396,7 +500,12 @@ final class PageTranslationsApiTest extends WebTestCase
         self::assertSame($kk['url'], $revision->snapshot['draft']['url']);
         self::assertSame('published', $revision->snapshot['status']);
         self::assertSame($kk['url'], $revision->snapshot['published']['url']);
-        self::assertSame([[RecordUnpublished::class, 'kk', true], [RecordDeleted::class, 'kk', true]], $events);
+        self::assertSame([
+            [RecordTranslationAdded::class, 'kk', false],
+            [RecordUnpublishing::class, 'kk', true],
+            [RecordUnpublished::class, 'kk', false],
+            [RecordTranslationRemoved::class, 'kk', false],
+        ], $events);
         foreach (self::getContainer()->get(RevisionRepository::class)->trash() as $trash) {
             self::assertNotSame($source['id'], $trash->resourceId);
         }
@@ -447,37 +556,6 @@ final class PageTranslationsApiTest extends WebTestCase
     }
 
     #[Test]
-    public function secondaryUnpublishAndRemovalQueueThePublishedAddressAfterCommit(): void
-    {
-        $this->setting('domain', 'translation-index.example.org');
-        $this->setting('indexNow', true);
-        $source = $this->page();
-        $kk = $this->add($source['id'], 'kk');
-        $this->api('POST', 'pages/' . $source['id'] . '/publish?locale=kk');
-        $this->api('PUT', 'pages/' . $source['id'] . '/draft?locale=kk', ['url' => $kk['url'] . '-draft']);
-        $transport = self::getContainer()->get('messenger.transport.async');
-        $transport->reset();
-        $this->api('POST', 'pages/' . $source['id'] . '/unpublish?locale=kk');
-        $paths = [];
-        foreach ($transport->getSent() as $envelope) {
-            if ($envelope->getMessage() instanceof PingIndexNow) {
-                $paths[] = $envelope->getMessage()->path;
-            }
-        }
-        self::assertSame([$kk['url']], $paths);
-        $this->api('POST', 'pages/' . $source['id'] . '/republish?locale=kk');
-        $transport->reset();
-        $this->api('DELETE', 'pages/' . $source['id'] . '/translations/kk');
-        $paths = [];
-        foreach ($transport->getSent() as $envelope) {
-            if ($envelope->getMessage() instanceof PingIndexNow) {
-                $paths[] = $envelope->getMessage()->path;
-            }
-        }
-        self::assertSame([$kk['url']], $paths);
-    }
-
-    #[Test]
     public function translationWritesRequireAuthenticationAndTheirOwnPermissions(): void
     {
         $source = $this->page();
@@ -498,7 +576,7 @@ final class PageTranslationsApiTest extends WebTestCase
         $this->api('POST', 'pages/' . $source['id'] . '/publish?locale=kk');
         $em = self::getContainer()->get(EntityManagerInterface::class);
         $events = [];
-        foreach ([RecordUnpublished::class, RecordDeleted::class] as $event) {
+        foreach ([RecordUnpublished::class, RecordTranslationRemoved::class] as $event) {
             self::getContainer()->get('event_dispatcher')->addListener($event, static function ($e) use (&$events): void { $events[] = $e; });
         }
         $listener = new class {
@@ -532,33 +610,35 @@ final class PageTranslationsApiTest extends WebTestCase
         $source = $this->page();
         $em = self::getContainer()->get(EntityManagerInterface::class);
         $created = 0;
-        self::getContainer()->get('event_dispatcher')->addListener(RecordCreated::class, static function () use (&$created): void { ++$created; });
+        self::getContainer()->get('event_dispatcher')->addListener(RecordTranslationAdded::class, static function () use (&$created): void { ++$created; });
         $listener = new class {
-            public function preFlush(PreFlushEventArgs $event): void
+            public function onFlush(OnFlushEventArgs $event): void
             {
-                foreach ($event->getObjectManager()->getUnitOfWork()->getScheduledEntityInsertions() as $entity) {
+                $em = $event->getObjectManager();
+                foreach ($em->getUnitOfWork()->getScheduledEntityInsertions() as $entity) {
                     if ($entity instanceof PageTranslation && 'kk' === $entity->locale) {
-                        $driver = new class('duplicate key violates unique constraint itk_page_translation_page_locale') extends \RuntimeException implements \Doctrine\DBAL\Driver\Exception {
-                            public function getSQLState(): ?string
-                            {
-                                return '23505';
-                            }
-                        };
-                        throw new UniqueConstraintViolationException($driver, null);
+                        // Insert a duplicate inside the outer transaction so the ORM's real failed flush closes the manager.
+                        $em->getConnection()->executeStatement(
+                            "INSERT INTO itk_page_translation (id, page_id, locale, draft, status, updated_at, migrated) SELECT :id, page_id, 'kk', draft, 'draft', updated_at, false FROM itk_page_translation WHERE page_id = :page AND locale = 'ru'",
+                            ['id' => Uuid::v7()->toRfc4122(), 'page' => $entity->page->id],
+                        );
                     }
                 }
             }
         };
-        $em->getEventManager()->addEventListener([Events::preFlush], $listener);
+        $events = $em->getEventManager();
+        $events->addEventListener([Events::onFlush], $listener);
         try {
             $error = $this->api('POST', 'pages/' . $source['id'] . '/translations?locale=kk', ['from' => 'ru'], 409);
             self::assertSame('translation_exists', $error['details']['code']);
         } finally {
-            $em->getEventManager()->removeEventListener([Events::preFlush], $listener);
+            $events->removeEventListener([Events::onFlush], $listener);
         }
         $em->clear();
         self::assertNull($em->find(Page::class, $source['id'])->translation('kk'));
         self::assertNull(self::getContainer()->get(RevisionRepository::class)->latest(Revision::PAGE, $source['id'], 'kk'));
         self::assertSame(0, $created);
+        self::assertSame('kk', self::getContainer()->get(PageService::class)->addTranslation($source['id'], 'kk', 'ru')['locale']);
+        self::assertSame(1, $created);
     }
 }

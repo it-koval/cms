@@ -61,7 +61,35 @@ ITK CMS следует [семантическому версионирован�
 
 ### 0.3.0
 
-- `Mcp\AbstractMcpTool::locale()` теперь нестатический. Внутри методов экземпляра работают `self::locale($args)` и `$this->locale($args)`. Перенесите вызовы из статического контекста в метод экземпляра.
+- `Mcp\AbstractMcpTool::locale()` теперь нестатический. Внутри методов экземпляра работают `self::locale($args)` и `$this->locale($args)`. Перенесите вызовы из статического контекста в метод экземпляра. Если класс сайта переопределяет `locale()` как `static`, уберите `static` из переопределения, иначе PHP не загрузит класс.
+- При подключении `itk_cms.locales` у `main_locale` обрезаются пробелы и понижается регистр; код должен состоять из 2 или 3 строчных латинских букв и входить в список. Без `locales` прежнее значение сохраняется. Если на работающем сайте основной код нестандартный (`RU`, ` ru ` или `pt-BR`), выберите поддерживаемый код и до включения `locales` вручную перенесите сохранённые языковые значения и ключи JSON. Изменение конфига само по себе не переносит содержимое. Региональные метаданные задавайте в `html_lang` / `og_locale`.
+
+Пример PostgreSQL ниже меняет точный старый код `RU` на `ru`. Подставьте оба значения по данным сайта; сначала проверьте резервную копию и разрешите конфликты, когда старый и новый коды уже сосуществуют (переводы страниц, настройки, меню, записи коллекций и исторические снимки). Обновления JSON намеренно пропускают строку, в которой уже есть новый ключ. Сохраните общие настройки (`locale = '*'`) и SEO-правила для всех языков (`locale IS NULL`). Отдельно проверьте таблицы и интеграции сайта. Это пример ручного обслуживания, а не миграция бандла.
+
+```sql
+BEGIN;
+UPDATE itk_page_translation SET locale = 'ru' WHERE locale = 'RU';
+UPDATE itk_setting SET locale = 'ru' WHERE locale = 'RU';
+UPDATE itk_revision SET locale = 'ru' WHERE locale = 'RU';
+UPDATE itk_seo_rule SET locale = 'ru' WHERE locale = 'RU';
+UPDATE itk_menu_area
+SET items = (items - 'RU') || jsonb_build_object('ru', items->'RU')
+WHERE items ? 'RU' AND NOT (items ? 'ru');
+UPDATE itk_collection_item
+SET translations = (translations - 'RU') || jsonb_build_object('ru', translations->'RU')
+WHERE translations ? 'RU' AND NOT (translations ? 'ru');
+
+-- Исторические снимки удалённых целиком страниц и записей коллекций.
+UPDATE itk_revision
+SET snapshot = jsonb_set(snapshot, '{versions}',
+    ((snapshot->'versions') - 'RU') || jsonb_build_object('ru', snapshot->'versions'->'RU'))
+WHERE snapshot->'versions' ? 'RU' AND NOT (snapshot->'versions' ? 'ru');
+UPDATE itk_revision
+SET snapshot = jsonb_set(snapshot, '{translations}',
+    ((snapshot->'translations') - 'RU') || jsonb_build_object('ru', snapshot->'translations'->'RU'))
+WHERE snapshot->'translations' ? 'RU' AND NOT (snapshot->'translations' ? 'ru');
+COMMIT;
+```
 
 ### 0.2.0
 

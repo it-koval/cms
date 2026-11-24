@@ -84,6 +84,11 @@ final class HistoryAdmin
         $out['against'] = [];
         $out['current'] = false;
         $out['inTrash'] = false;
+        if (Revision::DELETE_TRANSLATION === $r->action) {
+            $out['canRestore'] = false;
+
+            return $out;
+        }
         if (Revision::DELETE === $r->action) {
             $out['inTrash'] = $this->inTrash($r);
             $out['locales'] = \array_map('strval', \array_keys((array) ($r->snapshot['versions'] ?? $r->snapshot['translations'] ?? [])));
@@ -112,6 +117,9 @@ final class HistoryAdmin
     {
         $r = $this->get($id);
         $this->needRevision($r, 'edit');
+        if (Revision::DELETE_TRANSLATION === $r->action) {
+            throw ContentException::invalid(I18n::t('content.history_cannot_restore'));
+        }
         $base = ['ok' => true, 'kind' => $r->kind, 'id' => $r->resourceId, 'key' => $r->resourceKey, 'locale' => $r->locale];
 
         if (Revision::DELETE === $r->action) {

@@ -7,6 +7,7 @@ namespace Itk\Cms\Tests\Core;
 use Itk\Cms\Content\ContentException;
 use Itk\Cms\I18n\ContentLocales;
 use Itk\Cms\I18n\I18n;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 
@@ -97,6 +98,8 @@ final class ContentLocalesTest extends TestCase
         self::assertSame('en', $locales->assertUsable(null));
         self::assertSame('en', $locales->assertUsable(''));
         self::assertSame('pt-BR', $locales->assertUsable('pt-BR'));
+        self::assertSame('abcd-123', $locales->assertUsable('abcd-123'));
+        self::assertSame('abcdefgh', $locales->assertUsable('abcdefgh'));
         self::assertSame('en', $locales->fromPath('/kk/about'));
         self::assertNull($locales->addressProblem('kk', '/about'));
 
@@ -104,6 +107,25 @@ final class ContentLocalesTest extends TestCase
         $this->expectExceptionCode(422);
         $this->expectExceptionMessage(I18n::t('http.no_such_language'));
         $locales->assertUsable('kk/news');
+    }
+
+    /** @return iterable<string, array{string}> */
+    public static function unusableHistoricalCodes(): iterable
+    {
+        yield 'over eight letters' => ['abcdefghi'];
+        yield 'over eight including a region' => ['abcdefgh-1'];
+        yield 'trailing newline' => ["en\n"];
+    }
+
+    #[Test]
+    #[DataProvider('unusableHistoricalCodes')]
+    public function rejectsHistoricalCodesLongerThanTheStoredLanguage(string $code): void
+    {
+        $this->expectException(ContentException::class);
+        $this->expectExceptionCode(422);
+        $this->expectExceptionMessage(I18n::t('http.no_such_language'));
+
+        (new ContentLocales('en'))->assertUsable($code);
     }
 
     #[Test]

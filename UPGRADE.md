@@ -61,7 +61,35 @@ This section lists the manual steps a release needs, newest first.
 
 ### 0.3.0
 
-- `Mcp\AbstractMcpTool::locale()` is now non-static. Both `self::locale($args)` and `$this->locale($args)` work inside instance methods. Move calls from a static context into an instance method.
+- `Mcp\AbstractMcpTool::locale()` is now non-static. Both `self::locale($args)` and `$this->locale($args)` work inside instance methods. Move calls from a static context into an instance method. If a site subclass overrides `locale()` as `static`, remove `static` from the override; otherwise PHP rejects the class.
+- Opting into `itk_cms.locales` trims and lowercases `main_locale` and restricts it to a listed code of 2 or 3 lowercase letters. Without `locales`, the existing value is preserved. If an existing site has a nonstandard main code such as `RU`, ` ru ` or `pt-BR`, choose the intended supported code and manually migrate stored language values and JSON keys before enabling `locales`. Changing configuration alone does not migrate content. Region metadata belongs in `html_lang` / `og_locale`.
+
+The PostgreSQL example below maps the exact old code `RU` to `ru`. Adapt both literals to the site's data; inspect a backup first and resolve collisions where the old and new codes already coexist (page translations, settings, menus, collection records and historical snapshots). The JSON updates deliberately skip a row that already has the new key. Keep shared settings (`locale = '*'`) and language-independent SEO rules (`locale IS NULL`). Review site-owned tables and integrations separately. This is a manual maintenance example, not a bundle migration.
+
+```sql
+BEGIN;
+UPDATE itk_page_translation SET locale = 'ru' WHERE locale = 'RU';
+UPDATE itk_setting SET locale = 'ru' WHERE locale = 'RU';
+UPDATE itk_revision SET locale = 'ru' WHERE locale = 'RU';
+UPDATE itk_seo_rule SET locale = 'ru' WHERE locale = 'RU';
+UPDATE itk_menu_area
+SET items = (items - 'RU') || jsonb_build_object('ru', items->'RU')
+WHERE items ? 'RU' AND NOT (items ? 'ru');
+UPDATE itk_collection_item
+SET translations = (translations - 'RU') || jsonb_build_object('ru', translations->'RU')
+WHERE translations ? 'RU' AND NOT (translations ? 'ru');
+
+-- Historical snapshots of whole deleted pages and collection records.
+UPDATE itk_revision
+SET snapshot = jsonb_set(snapshot, '{versions}',
+    ((snapshot->'versions') - 'RU') || jsonb_build_object('ru', snapshot->'versions'->'RU'))
+WHERE snapshot->'versions' ? 'RU' AND NOT (snapshot->'versions' ? 'ru');
+UPDATE itk_revision
+SET snapshot = jsonb_set(snapshot, '{translations}',
+    ((snapshot->'translations') - 'RU') || jsonb_build_object('ru', snapshot->'translations'->'RU'))
+WHERE snapshot->'translations' ? 'RU' AND NOT (snapshot->'translations' ? 'ru');
+COMMIT;
+```
 
 ### 0.2.0
 

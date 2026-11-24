@@ -21,7 +21,6 @@ final class RecordCreating extends RecordEvent
         array $data,
         Viewer $viewer,
         public readonly ?string $locale = null,
-        public readonly bool $translationOnly = false,
     ) {
         parent::__construct($resourceKey, $kind, $record, $data, $viewer);
     }

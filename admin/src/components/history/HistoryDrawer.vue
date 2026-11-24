@@ -78,10 +78,11 @@ const lead = computed(() => {
   return `${whoLabel(o)}, ${fmtDT(o.updatedAt)}`
 })
 const sameAsNow = computed(() => !!opened.value && (opened.value.current || opened.value.same))
+const restorable = computed(() => !!opened.value && opened.value.action !== 'delete_locale' && opened.value.canRestore !== false)
 
 async function restore() {
   const o = opened.value
-  if (!o || restoring.value) return
+  if (!o || !restorable.value || restoring.value) return
   const ok = await confirm({
     title: t('ui.history_restore_title'),
     message: t(`ui.history_restore_msg_${subject.value}`, { when: fmtDT(o.updatedAt) }),
@@ -117,7 +118,7 @@ async function restore() {
       <p v-else class="hd-p">{{ t(kind === 'page' ? 'ui.history_deleted_page' : 'ui.history_deleted_item') }} {{ t(opened.inTrash ? 'ui.history_in_trash' : 'ui.history_restored_already') }}</p>
 
       <!-- only when restoring would change something; the current version needs no «what changes» block -->
-      <section v-if="opened.action !== 'delete' && !sameAsNow">
+      <section v-if="opened.action !== 'delete' && restorable && !sameAsNow">
         <h3 class="hd-h">{{ t('ui.history_what_changes') }}</h3>
         <p class="muted hd-p">{{ t('ui.history_against', { count: opened.against.length }) }}</p>
         <ChangeRows :rows="opened.against" />
@@ -135,7 +136,7 @@ async function restore() {
             <button type="button" :class="['hd-row', { busy: openBusy === e.id }]" :aria-label="`${actionLabel(e)}, ${whoLabel(e)}, ${fmtDT(e.updatedAt)}`" @click="show(e)">
               <span class="hd-dot" :data-a="e.action" aria-hidden="true" />
               <span class="hd-main">
-                <b>{{ actionLabel(e) }}<span v-if="i === 0" class="chip pub hd-now">{{ t('ui.history_now') }}</span></b>
+                <b>{{ actionLabel(e) }}<span v-if="i === 0 && e.action !== 'delete_locale'" class="chip pub hd-now">{{ t('ui.history_now') }}</span></b>
                 <span class="muted">{{ whoLabel(e) }} · {{ fmtDT(e.updatedAt) }}</span>
                 <span v-if="shortSummary(e.summary)" class="hd-sum">{{ shortSummary(e.summary) }}</span>
               </span>
@@ -149,7 +150,7 @@ async function restore() {
 
     <template v-if="opened && opened.action !== 'delete'" #footer>
       <button type="button" class="btn" @click="opened = null">{{ t('ui.back') }}</button>
-      <button v-if="canRestore && !sameAsNow" type="button" :class="['btn primary', { loading: restoring }]" @click="restore">{{ t('ui.history_restore') }}</button>
+      <button v-if="canRestore && restorable && !sameAsNow" type="button" :class="['btn primary', { loading: restoring }]" @click="restore">{{ t('ui.history_restore') }}</button>
     </template>
   </Drawer>
 </template>

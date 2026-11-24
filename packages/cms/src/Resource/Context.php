@@ -17,7 +17,6 @@ final class Context
         public readonly string $locale,
         public readonly string $kind,
         public readonly string $resourceKey,
-        public readonly bool $translationOnly = false,
     ) {
     }
 

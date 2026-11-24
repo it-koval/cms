@@ -136,6 +136,43 @@ final class ContentLocaleInputsTest extends TestCase
         self::assertNull($service->create(['path' => '/news', 'locale' => null, 'title' => 'News'])->locale);
     }
 
+    /** @return iterable<string, array{string, bool}> */
+    public static function legacySeoLocales(): iterable
+    {
+        yield 'two letters' => ['en', true];
+        yield 'eight letters' => ['abcdefgh', true];
+        yield 'uppercase letters' => ['EN', true];
+        yield 'region' => ['pt-BR', false];
+        yield 'over eight' => ['abcdefghi', false];
+        yield 'trailing newline' => ["en\n", false];
+    }
+
+    #[Test]
+    #[DataProvider('legacySeoLocales')]
+    public function seoKeepsItsStrictHistoricalLanguageCodesWithoutAList(string $locale, bool $usable): void
+    {
+        $em = $this->createMock(EntityManagerInterface::class);
+        $em->expects($usable ? self::once() : self::never())->method('persist');
+        $em->expects($usable ? self::once() : self::never())->method('flush');
+        $rules = $this->createMock(SeoRuleRepository::class);
+        $rules->expects($usable ? self::once() : self::never())->method('findSame')->willReturn(null);
+        $service = new SeoRuleService($em, $rules, new SeoResolver($rules, new RequestStack(), 'ru'), new ContentLocales('ru'));
+
+        if ($usable) {
+            self::assertSame($locale, $service->create(['path' => '/news', 'locale' => $locale, 'title' => 'News'])->locale);
+
+            return;
+        }
+
+        try {
+            $service->create(['path' => '/news', 'locale' => $locale, 'title' => 'News']);
+            self::fail('An unusable historical SEO language was accepted.');
+        } catch (ContentException $e) {
+            self::assertSame(422, $e->status());
+            self::assertSame(['locale' => I18n::t('content.seo_locale_unknown')], $e->details());
+        }
+    }
+
     /** @return iterable<string, array{string|bool}> */
     public static function wrongSeoLocales(): iterable
     {

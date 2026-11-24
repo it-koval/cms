@@ -147,11 +147,11 @@ final class CollectionsController extends AbstractApiController
         return $this->json($this->collections->addTranslation($col, $id, $locale, $from), 201);
     }
 
-    #[Route('/{col}/{id}/translations/{locale}', name: 'translation_remove', requirements: ['col' => '[a-z0-9_\-]+', 'locale' => '[a-z]{2,3}'], methods: ['DELETE'])]
+    #[Route('/{col}/{id}/translations/{locale}', name: 'translation_remove', requirements: ['col' => '[a-z0-9_\-]+', 'locale' => '[^/]+'], methods: ['DELETE'])]
     public function removeTranslation(string $col, string $id, string $locale): JsonResponse
     {
         $this->need($col, 'delete');
-        $this->collections->removeTranslation($col, $id, $locale);
+        $this->collections->removeTranslation($col, $id, $this->contentLocales->assertUsable($locale));
 
         return $this->json(['ok' => true]);
     }

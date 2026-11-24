@@ -188,6 +188,77 @@ final class PageLanguagePolicyTest extends WebTestCase
     }
 
     #[Test]
+    public function changedAddressesAndPublicationRejectMalformedPaths(): void
+    {
+        $this->start();
+        $page = $this->page();
+        $path = 'pages/' . $page['id'];
+        $invalid = ['relative', '/bad?x=1', '/bad#fragment', '/bad\\path', '//host/path', '/bad' . "\n" . 'path', '/' . \str_repeat('a', 255)];
+        foreach ($invalid as $url) {
+            $saved = $this->api('PUT', $path . '/draft', ['url' => $url], 422);
+            self::assertSame(I18n::t('content.page_url_invalid'), $saved['error'], $url);
+        }
+        self::assertSame($page['url'], $this->api('GET', $path)['url']);
+
+        $em = self::getContainer()->get(EntityManagerInterface::class);
+        foreach ($invalid as $url) {
+            $em->find(Page::class, $page['id'])->translation('ru')->draft['url'] = $url;
+            $em->flush();
+            $published = $this->api('POST', $path . '/publish', [], 422);
+            self::assertSame(I18n::t('content.page_url_invalid'), $published['error'], $url);
+        }
+        self::assertNull($this->api('GET', $path . '/draft')['published']);
+    }
+
+    #[Test]
+    public function aDoubleSlashInsideAnAddressCanBeSavedAndPublished(): void
+    {
+        $this->start();
+        $page = $this->page();
+        $path = 'pages/' . $page['id'];
+        $url = $page['url'] . '//mid';
+
+        self::assertSame($url, $this->api('PUT', $path . '/draft', ['url' => $url])['url']);
+        $this->api('POST', $path . '/publish');
+        self::assertSame($url, $this->api('GET', $path . '/published')['url']);
+    }
+
+    #[Test]
+    public function theSitemapAddressIsReserved(): void
+    {
+        $this->start();
+        $page = $this->page();
+        $error = I18n::t('content.reserved_url', [
+            'url' => '/sitemap.xml',
+            'what' => I18n::t('content.reserved_url_sitemap'),
+        ]);
+        $created = $this->api('POST', 'pages', ['title' => 'Sitemap', 'url' => '/sitemap.xml'], 422);
+        self::assertSame($error, $created['error']);
+        $updated = $this->api('PUT', 'pages/' . $page['id'] . '/draft', ['url' => '/sitemap.xml'], 422);
+        self::assertSame($error, $updated['error']);
+    }
+
+    #[Test]
+    public function aLegacySecondaryHomeCanMoveOnlyToItsLanguagePrefix(): void
+    {
+        $this->start();
+        $page = $this->page();
+        $this->addTranslation($page['id'], 'kk', '/');
+        $em = self::getContainer()->get(EntityManagerInterface::class);
+        $em->find(Page::class, $page['id'])->template = 'home';
+        $em->flush();
+        $path = 'pages/' . $page['id'] . '/draft?locale=kk';
+
+        foreach (['/kk/elsewhere', '/kk/'] as $url) {
+            $locked = $this->api('PUT', $path, ['url' => $url], 422);
+            self::assertSame(I18n::t('content.page_home_url_locked'), $locked['error']);
+        }
+        self::assertSame('/kk', $this->api('PUT', $path, ['url' => '/kk'])['url']);
+        $locked = $this->api('PUT', $path, ['url' => '/kk/elsewhere'], 422);
+        self::assertSame(I18n::t('content.page_home_url_locked'), $locked['error']);
+    }
+
+    #[Test]
     public function anOlderSiteWithoutLocalesKeepsItsExistingLanguageAndAddress(): void
     {
         $this->start(false);

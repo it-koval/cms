@@ -36,6 +36,14 @@ class PageTranslationRepository extends ServiceEntityRepository
         return $this->createQueryBuilder('t')->addSelect('p')->join('t.page', 'p')->where('t.locale = :locale')->setParameter('locale', $locale)->getQuery()->getResult();
     }
 
+    /** @return list<array{pageId: string, draftUrl: ?string, publishedUrl: ?string}> fresh addresses without ORM identity-map caching */
+    public function findAddresses(string $locale): array
+    {
+        return $this->createQueryBuilder('t')
+            ->select('IDENTITY(t.page) AS pageId', "JSON_TEXT(t.draft, '{\"url\"}') AS draftUrl", 't.publishedUrl AS publishedUrl')
+            ->where('t.locale = :locale')->setParameter('locale', $locale)->getQuery()->getArrayResult();
+    }
+
     /** @return list<PageTranslation> live pages of a language */
     public function findLiveForLocale(string $locale): array
     {

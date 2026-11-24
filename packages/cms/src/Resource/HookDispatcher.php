@@ -12,6 +12,8 @@ use Itk\Cms\Event\RecordDeleted;
 use Itk\Cms\Event\RecordDeleting;
 use Itk\Cms\Event\RecordPublished;
 use Itk\Cms\Event\RecordPublishing;
+use Itk\Cms\Event\RecordTranslationAdded;
+use Itk\Cms\Event\RecordTranslationRemoved;
 use Itk\Cms\Event\RecordUnpublished;
 use Itk\Cms\Event\RecordUnpublishing;
 use Itk\Cms\Event\RecordUpdated;
@@ -84,12 +86,12 @@ final class HookDispatcher
      *
      * @return array<string, mixed> the data to store
      */
-    public function creating(string $kind, string $key, string $locale, array $data, bool $translationOnly = false): array
+    public function creating(string $kind, string $key, string $locale, array $data): array
     {
         $viewer = $this->access->viewer();
-        $this->events->dispatch($event = new RecordCreating($key, $kind, null, $data, $viewer, $locale, $translationOnly));
+        $this->events->dispatch($event = new RecordCreating($key, $kind, null, $data, $viewer, $locale));
 
-        return $this->array($this->resource($kind, $key)?->beforeCreating($event->data, $this->context($kind, $key, $locale, $translationOnly)) ?? $event->data, 'beforeCreating');
+        return $this->array($this->resource($kind, $key)?->beforeCreating($event->data, $this->context($kind, $key, $locale)) ?? $event->data, 'beforeCreating');
     }
 
     public function created(Record $record): void
@@ -141,6 +143,20 @@ final class HookDispatcher
         });
     }
 
+    public function translationAdded(Record $record): void
+    {
+        $this->after(function () use ($record): void {
+            $this->events->dispatch(new RecordTranslationAdded($record->resourceKey, $record->kind, $record, [], $this->access->viewer()));
+        });
+    }
+
+    public function translationRemoved(Record $record): void
+    {
+        $this->after(function () use ($record): void {
+            $this->events->dispatch(new RecordTranslationRemoved($record->resourceKey, $record->kind, $record, [], $this->access->viewer()));
+        });
+    }
+
     public function publishing(Record $record): void
     {
         $this->events->dispatch(new RecordPublishing($record->resourceKey, $record->kind, $record, [], $this->access->viewer()));
@@ -161,11 +177,10 @@ final class HookDispatcher
         $this->resource($record->kind, $record->resourceKey)?->beforeUnpublishing($record, $this->contextOf($record));
     }
 
-    /** @param array{url: string, seo: array<string, mixed>}|array{} $previousLiveAddress */
-    public function unpublished(Record $record, array $previousLiveAddress = []): void
+    public function unpublished(Record $record): void
     {
-        $this->after(function () use ($record, $previousLiveAddress): void {
-            $this->events->dispatch(new RecordUnpublished($record->resourceKey, $record->kind, $record, $previousLiveAddress, $this->access->viewer()));
+        $this->after(function () use ($record): void {
+            $this->events->dispatch(new RecordUnpublished($record->resourceKey, $record->kind, $record, [], $this->access->viewer()));
             $this->resource($record->kind, $record->resourceKey)?->afterUnpublished($record, $this->contextOf($record));
         });
     }
@@ -211,14 +226,14 @@ final class HookDispatcher
         return 'page' === $kind ? $this->schema->template($key)?->resource() : $this->schema->collection($key)?->resource();
     }
 
-    private function context(string $kind, string $key, string $locale, bool $translationOnly = false): Context
+    private function context(string $kind, string $key, string $locale): Context
     {
-        return new Context($this->access->viewer(), $locale, $kind, $key, $translationOnly);
+        return new Context($this->access->viewer(), $locale, $kind, $key);
     }
 
     private function contextOf(Record $record): Context
     {
-        return $this->context($record->kind, $record->resourceKey, $record->locale, $record->translationOnly);
+        return $this->context($record->kind, $record->resourceKey, $record->locale);
     }
 
     /**

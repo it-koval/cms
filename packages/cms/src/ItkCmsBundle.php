@@ -7,6 +7,7 @@ namespace Itk\Cms;
 use Doctrine\Migrations\Version\Comparator;
 use Itk\Cms\Admin\Theme\AdminTheme;
 use Itk\Cms\Admin\Theme\Color;
+use Itk\Cms\Content\PageService;
 use Itk\Cms\Doctrine\JsonGet;
 use Itk\Cms\Doctrine\JsonNumber;
 use Itk\Cms\Doctrine\JsonText;
@@ -141,8 +142,30 @@ final class ItkCmsBundle extends AbstractBundle
             ->validate()
                 ->ifTrue(static fn (array $v): bool => null !== $v['locales'])
                 ->then(static function (array $v): array {
+                    if ([] === $v['locales']) {
+                        throw new InvalidConfigurationException('itk_cms.locales must list at least the main language');
+                    }
+                    $reserved = [];
+                    foreach ([...\array_keys(PageService::RESERVED_URLS), '/bundles'] as $path) {
+                        $segment = \explode('/', \ltrim($path, '/'), 2)[0];
+                        if (!\str_contains($segment, '.')) {
+                            $reserved[$segment] = $path;
+                        }
+                    }
+                    $admin = \strtolower(\explode('/', \ltrim($v['admin_path'], '/'), 2)[0]);
+                    foreach (\array_keys($v['locales']) as $code) {
+                        if (isset($reserved[$code])) {
+                            throw new InvalidConfigurationException(\sprintf('Language code "%s" in itk_cms.locales conflicts with reserved path "%s".', $code, $reserved[$code]));
+                        }
+                        if ($code === $admin) {
+                            throw new InvalidConfigurationException(\sprintf('Language code "%s" in itk_cms.locales conflicts with itk_cms.admin_path "%s".', $code, $v['admin_path']));
+                        }
+                        if (1 !== \preg_match('~^[a-z]{2,3}\z~', (string) $code)) {
+                            throw new InvalidConfigurationException(\sprintf('Invalid language code "%s" in itk_cms.locales. Use 2 or 3 lowercase letters.', $code));
+                        }
+                    }
                     $main = \strtolower(\trim((string) $v['main_locale']));
-                    if ([] !== $v['locales'] && !isset($v['locales'][$main])) {
+                    if (!isset($v['locales'][$main])) {
                         throw new InvalidConfigurationException(\sprintf('itk_cms.main_locale "%s" is not one of itk_cms.locales (%s).', $main, \implode(', ', \array_keys($v['locales']))));
                     }
                     $v['main_locale'] = $main;
@@ -182,10 +205,7 @@ final class ItkCmsBundle extends AbstractBundle
                         ->then(static function (array $locales): array {
                             $tags = [];
                             foreach ($locales as $code => $locale) {
-                                if (1 !== \preg_match('~^[a-z]{2,3}\z~', (string) $code)) {
-                                    throw new InvalidConfigurationException(\sprintf('Invalid language code "%s" in itk_cms.locales. Use 2 or 3 lowercase letters.', $code));
-                                }
-                                $tag = $locale['html_lang'] ?? $code;
+                                $tag = $locale['html_lang'] ?? (string) $code;
                                 $key = \strtolower($tag);
                                 if (isset($tags[$key])) {
                                     throw new InvalidConfigurationException(\sprintf('Languages "%s" and "%s" in itk_cms.locales have the same html_lang "%s".', $tags[$key], $code, $tag));

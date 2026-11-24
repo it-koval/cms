@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Itk\Cms\Tests\Core;
 
+use Itk\Cms\Content\PageService;
 use Itk\Cms\I18n\ContentLocales;
 use Itk\Cms\Tests\App\TestKernel;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -64,21 +65,59 @@ final class ContentLocalesConfigTest extends TestCase
     }
 
     #[Test]
-    public function anExplicitEmptyListKeepsOnlyTheMainLanguage(): void
+    public function pageServiceKeepsThePreLocalesPositionalConstructor(): void
     {
-        $container = $this->boot(['main_locale' => 'en', 'locales' => []]);
+        $constructor = (new \ReflectionClass(PageService::class))->getConstructor();
+        self::assertNotNull($constructor);
+        $parameters = $constructor->getParameters();
+        $required = \array_values(\array_filter($parameters, static fn (\ReflectionParameter $parameter): bool => !$parameter->isOptional()));
+
+        self::assertSame(18, \count($required));
+        self::assertSame('mainLocale', $required[17]->getName());
+        self::assertCount(19, $parameters);
+        $locales = $parameters[18];
+        self::assertSame('locales', $locales->getName());
+        self::assertNull($locales->getDefaultValue());
+    }
+
+    #[Test]
+    public function onlyTheFirstAdminSegmentAndWholeReservedSegmentsConflict(): void
+    {
+        $container = $this->boot(['admin_path' => '/panel/en', 'locales' => [
+            'ru' => ['name' => 'Russian'],
+            'en' => ['name' => 'English'],
+            'llm' => ['name' => 'LLM'],
+            'rob' => ['name' => 'Rob'],
+            'sit' => ['name' => 'Sit'],
+        ]]);
         $locales = $container->get(ContentLocales::class);
 
         self::assertInstanceOf(ContentLocales::class, $locales);
-        self::assertTrue($locales->isConfigured());
-        self::assertSame(['en'], $locales->codes());
-        self::assertSame(['en' => ['name' => 'English', 'html_lang' => null, 'og_locale' => null]], $container->getParameter('itk_cms.locales'));
+        self::assertSame(['ru', 'en', 'llm', 'rob', 'sit'], $locales->codes());
+    }
+
+    #[Test]
+    public function anExplicitEmptyListRejectsTheConfiguration(): void
+    {
+        try {
+            $this->boot(['main_locale' => 'en', 'locales' => []]);
+            self::fail('An explicit empty language list was accepted.');
+        } catch (InvalidConfigurationException $e) {
+            self::assertSame('itk_cms.locales must list at least the main language', $e->getMessage());
+        }
     }
 
     /** @return iterable<string, array{array<string, mixed>, string}> */
     public static function invalidOptions(): iterable
     {
+        yield 'reserved MCP' => [['locales' => ['ru' => ['name' => 'Russian'], 'mcp' => ['name' => 'MCP']]], 'Language code "mcp" in itk_cms.locales conflicts with reserved path "/mcp"'];
+        yield 'reserved health' => [['locales' => ['ru' => ['name' => 'Russian'], 'healthz' => ['name' => 'Health']]], 'Language code "healthz" in itk_cms.locales conflicts with reserved path "/healthz"'];
+        yield 'reserved assets' => [['locales' => ['ru' => ['name' => 'Russian'], 'bundles' => ['name' => 'Assets']]], 'Language code "bundles" in itk_cms.locales conflicts with reserved path "/bundles"'];
+        yield 'admin first segment' => [['admin_path' => '/en/panel', 'locales' => ['ru' => ['name' => 'Russian'], 'en' => ['name' => 'English']]], 'Language code "en" in itk_cms.locales conflicts with itk_cms.admin_path "/en/panel"'];
+        yield 'admin first segment case' => [['admin_path' => '/EN/panel', 'locales' => ['ru' => ['name' => 'Russian'], 'en' => ['name' => 'English']]], 'Language code "en" in itk_cms.locales conflicts with itk_cms.admin_path "/EN/panel"'];
+        yield 'main also conflicts' => [['main_locale' => 'mcp', 'locales' => ['mcp' => ['name' => 'MCP']]], 'Language code "mcp" in itk_cms.locales conflicts with reserved path "/mcp"'];
         yield 'missing main' => [['main_locale' => 'en', 'locales' => ['ru' => ['name' => 'Russian']]], 'itk_cms.main_locale "en"'];
+        yield 'numeric code' => [['locales' => ['ru' => ['name' => 'Russian'], 123 => ['name' => 'Invalid']]], 'Invalid language code "123"'];
         yield 'uppercase code' => [['locales' => ['ru' => ['name' => 'Russian'], 'KZ' => ['name' => 'Kazakh']]], 'Invalid language code "KZ"'];
         yield 'html_lang' => [['locales' => ['ru' => ['name' => 'Russian', 'html_lang' => 'ru_RU']]], 'html_lang'];
         yield 'og_locale' => [['locales' => ['ru' => ['name' => 'Russian', 'og_locale' => 'ru-RU']]], 'og_locale'];

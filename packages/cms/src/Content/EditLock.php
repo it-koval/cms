@@ -63,10 +63,30 @@ final class EditLock
      */
     public function publish(string $kind, string $id, \Closure $work): mixed
     {
-        return $this->around($kind, $id, fn () => $this->hooks->deferAfter(fn () => $this->em->getConnection()->transactional($work)));
+        return $this->around($kind, $id, fn () => $this->transactional($work));
     }
 
-    /** The 64-bit key of the advisory lock of a page or item. */
+    /**
+     * Runs a write in a transaction and defers its after hooks until commit.
+     *
+     * @template T
+     *
+     * @param \Closure(): T $work
+     *
+     * @return T
+     */
+    public function transactional(\Closure $work): mixed
+    {
+        return $this->hooks->deferAfter(fn () => $this->em->getConnection()->transactional($work));
+    }
+
+    /** Takes a lock held until the active transaction ends. */
+    public function inTransaction(string $kind, string $id): void
+    {
+        $this->em->getConnection()->fetchOne('SELECT pg_advisory_xact_lock(?)', [self::key($kind, $id)]);
+    }
+
+    /** The 64-bit advisory lock key. */
     public static function key(string $kind, string $id): int
     {
         return \unpack('q', \hash('md5', $kind . ':' . $id, true))[1];
