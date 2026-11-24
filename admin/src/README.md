@@ -11,7 +11,7 @@ Run the commands from `admin/` inside Docker: `docker compose run --rm node <com
 | Command | What it does |
 |---|---|
 | `npm ci` | Installs the dependencies from the lock file. |
-| `npm run dev` | Starts Vite at `http://127.0.0.1:5174/bundles/itkcms/admin/` and proxies the API to the site. See [Develop without the server shell](#develop-without-the-server-shell). |
+| `npm run dev` | Starts Vite at `http://127.0.0.1:18023/bundles/itkcms/admin/` (via `make admin-dev`) and proxies the API to the site. See [Develop without the server shell](#develop-without-the-server-shell). |
 | `npm run dev:mock` | Runs the admin panel without PHP, on made-up data. See [Mock mode](#mock-mode). |
 | `npm run lint` | ESLint 9. |
 | `npm run check:i18n` | Checks the interface catalogs. See [Interface language](#interface-language). |

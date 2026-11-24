@@ -13,53 +13,50 @@
 
 ## Настройка окружения
 
-Установите Docker с Compose. Выполните команды настройки PHP из корня репозитория. Compose запускает PostgreSQL с pgvector и Mailpit.
+Установите Docker с Compose. Выполните эти команды из корня репозитория:
 
 ```bash
-test_compose() {
-  docker compose --project-directory packages/cms \
-    -f packages/cms/docker/compose.yaml -f packages/cms/tests/docker/compose.ci.yaml "$@"
-}
-
-export ITK_CI_UID="$(id -u)" ITK_CI_GID="$(id -g)"
-test_compose up -d --wait database mailer
-test_compose build php
-test_compose run --rm --no-deps php composer install
+make build
+make install
+make up
 ```
+
+`make up` запускает PostgreSQL с pgvector и Mailpit. `make help` показывает все цели. По умолчанию стенд использует порты 18020–18023 на `127.0.0.1`. Их можно переопределить переменными `HTTP_PORT`, `DB_PORT`, `MAILPIT_PORT` и `ADMIN_PORT`.
 
 ## Запуск проверок
 
-### PHP
-
-Запустите проверки из корня репозитория с теми же настройками Compose.
+Запустите проверки из корня репозитория:
 
 ```bash
-test_compose run --rm --no-deps php composer test
-test_compose run --rm --no-deps php composer stan
-test_compose run --rm --no-deps php composer cs
+make test
+make lint
+make audit
+make admin-build
 ```
 
-`composer test` проверяет SQL, пересоздаёт тестовую базу и запускает PHPUnit. `composer stan` проверяет `src` и `tests` на уровне 6 PHPStan. `composer cs` проверяет форматирование.
+### PHP
 
-Для одного класса сначала выполните `composer test:prepare` в сервисе PHP, затем `php vendor/bin/phpunit --filter ИмяКласса`. Для случайного порядка после подготовки выполните `composer test:run -- --order-by=random --random-order-seed=30301`. CI также использует seed `30302`.
+`make test` вызывает `composer test`. Эта команда проверяет SQL, пересоздаёт тестовую базу и запускает PHPUnit. `make lint` проверяет пакет Composer, запускает PHPStan уровня 6 для `src` и `tests` и проверяет форматирование PHP.
 
-Тесты из `tests/Core` используют сайт в `tests/App`. Для отдельного тестового стенда задайте своё имя проекта Compose. Если указываете собственный `DATABASE_URL`, сохраните в нём `serverVersion`. Для отдельного кэша задайте `ITK_TEST_CACHE_DIR`. Тесты подменяют Telegram и MAX. Почтовым тестам нужен `ITK_TEST_MAILPIT_URL`.
+Для проверки одного класса запустите стенд через `make up` и откройте оболочку PHP через `make sh`. В ней один раз выполните `composer test:prepare`, затем `php vendor/bin/phpunit --filter ClassName`. Для случайного порядка после подготовки выполните `composer test:run -- --order-by=random --random-order-seed=30301`. CI также использует seed `30302`.
+
+Тесты из `tests/Core` используют сайт в `tests/App`. Для отдельного тестового стенда выполните `COMPOSE_PROJECT_NAME=itkcms-alt make test`. Сначала соберите образ PHP с тем же именем проекта. Если основной стенд запущен, укажите свободные порты в `DB_PORT` и `MAILPIT_PORT`.
+
+Если задаёте собственный `DATABASE_URL` в оболочке PHP, сохраните в нём `serverVersion`. Для отдельного кэша задайте там же `ITK_TEST_CACHE_DIR`. Тесты подменяют Telegram и MAX. Почтовым тестам нужен `ITK_TEST_MAILPIT_URL`.
 
 ### Админка
 
-Команды запускаются из `admin`:
+`make test` также запускает Vitest. `make lint` запускает ESLint, сверяет каталоги интерфейса и проверяет код на кириллицу. `make audit` проверяет зависимости npm. `make admin-build` записывает сборку в `packages/cms/public/admin`.
+
+`make admin-dev` запускает Vite на `http://127.0.0.1:18023/bundles/itkcms/admin/`. По умолчанию контейнер обращается к API сайта по адресу `host.docker.internal:8080`. Другой адрес задаётся переменной `ITK_SITE_URL`.
+
+Чтобы запустить админку на выдуманных данных без PHP, выполните эту команду из корня репозитория:
 
 ```bash
-docker compose run --rm node npm ci
-docker compose run --rm node npm audit --include=dev
-docker compose run --rm node npm audit --omit=dev --audit-level=high
-docker compose run --rm node npm run lint
-docker compose run --rm node npm run check:i18n  # каталоги интерфейса и кириллица в коде
-docker compose run --rm node npm test
-docker compose run --rm node npm run build        # записывает сборку в packages/cms/public/admin
+docker compose -f admin/compose.yaml run --rm --service-ports node npm run dev:mock -- --host 0.0.0.0
 ```
 
-`docker compose up node` запускает Vite на `http://127.0.0.1:5174/bundles/itkcms/admin/`. По умолчанию контейнер обращается к API сайта по адресу `host.docker.internal:8080`. Другой адрес задаётся переменной `ITK_SITE_URL`. Чтобы запустить админку без PHP, на выдуманных данных, выполните `docker compose run --rm --service-ports node npm run dev:mock -- --host 0.0.0.0`.
+Откройте `http://127.0.0.1:18023/bundles/itkcms/admin/`.
 
 `admin/compose.yaml` монтирует корень репозитория в `/workspace` и хранит Linux-зависимости в отдельном named volume. Контейнер не использует и не перезаписывает `node_modules` хоста. `npm ci` ставит ровно то, что записано в lock-файле. Версия Node в `admin/compose.yaml` и `admin/.nvmrc` должна совпадать.
 

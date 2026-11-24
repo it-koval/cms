@@ -13,53 +13,50 @@ Follow the [code of conduct](CODE_OF_CONDUCT.md) when taking part. Report securi
 
 ## Set up the environment
 
-Install Docker with Compose. Run the PHP setup from the repository root. Compose starts PostgreSQL with pgvector and Mailpit.
+Install Docker with Compose. Run these commands from the repository root:
 
 ```bash
-test_compose() {
-  docker compose --project-directory packages/cms \
-    -f packages/cms/docker/compose.yaml -f packages/cms/tests/docker/compose.ci.yaml "$@"
-}
-
-export ITK_CI_UID="$(id -u)" ITK_CI_GID="$(id -g)"
-test_compose up -d --wait database mailer
-test_compose build php
-test_compose run --rm --no-deps php composer install
+make build
+make install
+make up
 ```
+
+`make up` starts PostgreSQL with pgvector and Mailpit. `make help` lists all targets. The stack uses ports 18020–18023 on `127.0.0.1` by default. Override them with `HTTP_PORT`, `DB_PORT`, `MAILPIT_PORT`, and `ADMIN_PORT`.
 
 ## Run the checks
 
-### PHP
-
-Run the checks from the repository root with the same Compose settings.
+Run the checks from the repository root:
 
 ```bash
-test_compose run --rm --no-deps php composer test
-test_compose run --rm --no-deps php composer stan
-test_compose run --rm --no-deps php composer cs
+make test
+make lint
+make audit
+make admin-build
 ```
 
-`composer test` checks SQL, recreates the test database, and runs PHPUnit. `composer stan` checks `src` and `tests` at PHPStan level 6. `composer cs` checks formatting.
+### PHP
 
-To test one class, run `composer test:prepare` once in the PHP service, then `php vendor/bin/phpunit --filter ClassName` there. For a random run, use `composer test:run -- --order-by=random --random-order-seed=30301` after preparation. CI also uses seed `30302`.
+`make test` runs `composer test`. This checks SQL, recreates the test database, and runs PHPUnit. `make lint` validates the Composer package, checks `src` and `tests` at PHPStan level 6, and checks PHP formatting.
 
-The `tests/App` site runs the tests in `tests/Core`. For a separate test stack, use a different Compose project name. If you supply your own `DATABASE_URL`, keep `serverVersion` in it. `ITK_TEST_CACHE_DIR` can isolate the test cache. The tests stub Telegram and MAX. Mail tests need `ITK_TEST_MAILPIT_URL`.
+To test one class, start the stack with `make up` and open the PHP shell with `make sh`. Inside it, run `composer test:prepare` once, then `php vendor/bin/phpunit --filter ClassName`. For a random run, use `composer test:run -- --order-by=random --random-order-seed=30301` after preparation. CI also uses seed `30302`.
+
+The tests in `tests/Core` use the site in `tests/App`. For a separate test stack, run `COMPOSE_PROJECT_NAME=itkcms-alt make test`. Build the PHP image with that same project name first. If the main stack is running, set `DB_PORT` and `MAILPIT_PORT` to free ports as well.
+
+If you supply your own `DATABASE_URL` in the PHP shell, keep `serverVersion` in it. Set `ITK_TEST_CACHE_DIR` there to isolate the test cache. The tests stub Telegram and MAX. Mail tests need `ITK_TEST_MAILPIT_URL`.
 
 ### Admin panel
 
-Run these commands from `admin`:
+`make test` also runs Vitest. `make lint` runs ESLint and checks the interface catalogs and Cyrillic in the code. `make audit` checks npm dependencies. `make admin-build` writes the build to `packages/cms/public/admin`.
+
+`make admin-dev` starts Vite at `http://127.0.0.1:18023/bundles/itkcms/admin/`. By default the container reaches the site API at `host.docker.internal:8080`. Set `ITK_SITE_URL` to use another address.
+
+To run the admin panel on made-up data without PHP, run this command from the repository root:
 
 ```bash
-docker compose run --rm node npm ci
-docker compose run --rm node npm audit --include=dev
-docker compose run --rm node npm audit --omit=dev --audit-level=high
-docker compose run --rm node npm run lint
-docker compose run --rm node npm run check:i18n  # interface catalogs and Cyrillic in the code
-docker compose run --rm node npm test
-docker compose run --rm node npm run build        # writes the build to packages/cms/public/admin
+docker compose -f admin/compose.yaml run --rm --service-ports node npm run dev:mock -- --host 0.0.0.0
 ```
 
-`docker compose up node` starts Vite at `http://127.0.0.1:5174/bundles/itkcms/admin/`. By default the container reaches the site API at `host.docker.internal:8080`. Set `ITK_SITE_URL` to use another address. To run the admin panel without PHP, on made-up data, run `docker compose run --rm --service-ports node npm run dev:mock -- --host 0.0.0.0`.
+Open `http://127.0.0.1:18023/bundles/itkcms/admin/`.
 
 `admin/compose.yaml` mounts the repository root at `/workspace` and keeps the Linux dependencies in a named volume. The container does not use or overwrite a `node_modules` directory on the host. `npm ci` installs exactly what the lock file lists. Keep the Node version the same in `admin/compose.yaml` and `admin/.nvmrc`.
 
