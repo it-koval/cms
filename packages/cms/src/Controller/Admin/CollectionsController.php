@@ -8,6 +8,7 @@ use Itk\Cms\Content\CollectionQuery;
 use Itk\Cms\Content\CollectionService;
 use Itk\Cms\Content\ContentException;
 use Itk\Cms\I18n\I18n;
+use Itk\Cms\Schema\Collection;
 use Itk\Cms\Schema\Schema;
 use Itk\Cms\Security\Access;
 use Symfony\Component\HttpFoundation\JsonResponse;
@@ -19,10 +20,9 @@ use Symfony\Component\Security\Core\Exception\AccessDeniedException;
 /**
  * Collections (records without pages of their own). Rights: area `col:<key>`. Locale: ?locale=ru.
  *   GET collections                          [{ key, title, count, unpublished, … }] (only collections the person may see)
- *   GET collections/{col}?q=&status=&onlyTranslated=   rows                 PUT collections/{col}/order { ids }
- *   GET collections/{col}?q=&filter[status]=published&filter[date][from]=2026-11-01&sort=-date&page=2&perPage=50&locale=
- *        { items, total, page, perPage, facets, metrics } — the list made by the database (Itk\Cms\Content\CollectionQuery). It is used as soon as
- *        the request has page, perPage, sort or filter (or `envelope=1`); a request with none of them keeps the old answer, a bare list of rows.
+ *   GET collections/{col}?q=&status=&onlyTranslated=&filter[date][from]=2026-11-01&sort=-date&page=2&perPage=50&locale=
+ *        { items, total, page, perPage, facets, metrics } — see Itk\Cms\Content\CollectionQuery.
+ *   PUT collections/{col}/order { ids }
  *   PUT collections/{col}/tree [{ id, parentId, position }]   moves records of a collection with tree() ({ ok, moved }); nodes not named stay
  *   GET collections/{col}/{id}               { item, published, changes, locale, translated, locales }
  *   PUT|PATCH collections/{col}/{id}         flat record (data merged)      POST collections/{col}   new record (201)
@@ -65,23 +65,12 @@ final class CollectionsController extends AbstractApiController
     #[Route('/{col}', name: 'rows', requirements: ['col' => '[a-z0-9_\-]+'], methods: ['GET'])]
     public function rows(Request $request, string $col): JsonResponse
     {
-        $this->need($col, 'view');
+        $collection = $this->need($col, 'view');
         $locale = $this->locale($request);
-        if ($request->query->has('page') || $request->query->has('perPage') || $request->query->has('sort') || $request->query->has('filter') || $request->query->has('envelope')) {
-            $this->collections->loaded($col, $locale);
-            $result = $this->query->run($this->schema->collection($col), $request->query->all(), $locale);
-            if (\filter_var($request->query->get('onlyTranslated', false), \FILTER_VALIDATE_BOOLEAN)) {
-                $result['items'] = \array_values(\array_filter($result['items'], static fn (array $r): bool => $r['translated']));
-            }
+        $this->collections->ensureSingleton($collection);
+        $this->collections->loaded($col, $locale);
 
-            return $this->json($result);
-        }
-        $rows = $this->collections->list($col, (string) $request->query->get('q', ''), (string) $request->query->get('status', ''), $locale);
-        if (\filter_var($request->query->get('onlyTranslated', false), \FILTER_VALIDATE_BOOLEAN)) {
-            $rows = \array_values(\array_filter($rows, static fn (array $r): bool => $r['translated']));
-        }
-
-        return $this->json($rows);
+        return $this->json($this->query->run($collection, $request->query->all(), $locale));
     }
 
     #[Route('/{col}', name: 'create', requirements: ['col' => '[a-z0-9_\-]+'], methods: ['POST'])]
@@ -171,12 +160,14 @@ final class CollectionsController extends AbstractApiController
         return $this->json($this->collections->{$method}($col, $id, $locale));
     }
 
-    private function need(string $col, string $action): void
+    private function need(string $col, string $action): Collection
     {
         $collection = $this->schema->collection($col) ?? throw ContentException::notFound(I18n::t('http.collection_not_found'));
         if (!$collection->isVisibleTo($this->access->viewer())) {
             throw new AccessDeniedException(I18n::t('http.no_permission'));
         }
         $this->access->require('col:' . $col, $action);
+
+        return $collection;
     }
 }

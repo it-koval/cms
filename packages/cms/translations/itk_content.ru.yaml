@@ -6,6 +6,7 @@
 'content.query_sort_not_allowed': 'По этому полю сортировать нельзя'
 'content.query_bad_field_or_language': 'Неверное поле или язык'
 'content.query_bad_filter_value': 'Неверное значение фильтра'
+'content.query_bad_status': 'Укажите в status значение draft, published или missing либо оставьте параметр пустым.'
 'content.settings_required': 'Заполните обязательные поля'
 'content.settings_chat_id_hint': 'ID чата — число вроде -1001234567890 или имя канала вроде @my_channel'
 'content.settings_chat_ids_check': 'Проверьте ID чатов'

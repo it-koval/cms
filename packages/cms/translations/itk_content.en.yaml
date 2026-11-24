@@ -6,6 +6,7 @@
 'content.query_sort_not_allowed': 'Cannot sort by this field'
 'content.query_bad_field_or_language': 'Invalid field or language'
 'content.query_bad_filter_value': 'Invalid filter value'
+'content.query_bad_status': 'Use draft, published, or missing for status, or leave it empty.'
 'content.settings_required': 'Fill in the required fields'
 'content.settings_chat_id_hint': 'The chat ID is a number like -1001234567890 or a channel name like @my_channel'
 'content.settings_chat_ids_check': 'Check the chat IDs'

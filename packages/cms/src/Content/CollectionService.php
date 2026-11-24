@@ -848,8 +848,8 @@ final class CollectionService
         return 'matrix' === $c->viewName() ? ['cols' => [], 'rows' => []] : [];
     }
 
-    /** The only record of a singleton collection (the tariff matrix) exists from the first read. */
-    private function ensureSingleton(Collection $c): void
+    /** @internal The only record of a singleton collection (the tariff matrix) exists from the first read. */
+    public function ensureSingleton(Collection $c): void
     {
         if (null !== $c->singletonId() && null === $this->items->find($c->singletonId())) {
             $this->create($c->key(), [], null, $c->singletonId());

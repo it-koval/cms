@@ -502,6 +502,11 @@ final class Collection
         return $this->singleton;
     }
 
+    public function subFieldKey(): ?string
+    {
+        return $this->subField;
+    }
+
     /** The title field the collection named itself (titleField()); null when the first text field stands for it. */
     public function declaredTitleField(): ?string
     {
