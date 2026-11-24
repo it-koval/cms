@@ -7,6 +7,7 @@ namespace Itk\Cms;
 use Doctrine\Migrations\Version\Comparator;
 use Itk\Cms\Admin\Theme\AdminTheme;
 use Itk\Cms\Admin\Theme\Color;
+use Itk\Cms\Analytics\AnalyticsConfig;
 use Itk\Cms\Content\PageService;
 use Itk\Cms\Doctrine\JsonFirstValue;
 use Itk\Cms\Doctrine\JsonGet;
@@ -251,6 +252,16 @@ final class ItkCmsBundle extends AbstractBundle
                     ->info('ETag and Last-Modified on live pages for a visitor without a session, and 304 when the page has not changed (the tag follows the page, the live pages, settings, menus, collections and SEO rules); never in debug')
                     ->defaultTrue()
                 ->end()
+                ->arrayNode('analytics')
+                    ->addDefaultsIfNotSet()
+                    ->children()
+                        ->enumNode('start')
+                            ->info('When to start the configured analytics counters: auto on page load, or manual through itkAnalytics.start() in the site frontend')
+                            ->values([AnalyticsConfig::AUTO, AnalyticsConfig::MANUAL])
+                            ->defaultValue(AnalyticsConfig::AUTO)
+                        ->end()
+                    ->end()
+                ->end()
                 ->arrayNode('page_cache')
                     ->info('The finished HTML of live pages, kept so that a repeated visit is answered without a render. The key follows the content (the same fingerprint as the ETag), so an edit shows at once; never in debug, for a visitor with a session or with Authorization')
                     ->addDefaultsIfNotSet()
@@ -463,6 +474,7 @@ final class ItkCmsBundle extends AbstractBundle
         $parameters->set('itk_cms.blog', $config['blog']);
         $parameters->set('itk_cms.security_headers', $config['security_headers']);
         $parameters->set('itk_cms.conditional_responses', $config['conditional_responses']);
+        $parameters->set('itk_cms.analytics.start', $config['analytics']['start']);
         $parameters->set('itk_cms.page_cache.enabled', $config['page_cache']['enabled']);
         $parameters->set('itk_cms.page_cache.ttl', $config['page_cache']['ttl']);
         $critical = $config['critical_css'];

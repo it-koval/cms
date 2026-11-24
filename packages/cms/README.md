@@ -993,20 +993,77 @@ final class ProductMarkup
 
 ### Analytics and verification codes
 
-The owner enters counter IDs and verification codes in **Settings** → **General** → **Analytics and webmaster tools** (the `set:analytics` area, by default only the administrator has it). The core puts them on the pages.
+The owner enters counter IDs and verification codes in **Settings** → **General** → **Analytics and webmaster tools** (the `set:analytics` area, by default only the administrator has it). The core puts them on public pages.
 
 | Field | Format |
 |---|---|
-| Yandex Metrika: counter ID (`yandexMetrikaId`) | 4 to 12 digits |
+| Yandex Metrika counter ID (`yandexMetrikaId`) | 4 to 12 digits |
 | Webvisor (`yandexMetrikaWebvisor`) | A toggle. Works when a counter is set |
 | Google Analytics 4 (`googleAnalyticsId`) | `G-XXXXXXXXXX` |
 | Yandex Webmaster, Google Search Console (`yandexVerification`, `googleVerification`) | The code from the meta tag, or the whole meta tag. Latin letters, digits, `-` and `_`, 8 to 120 characters |
 
-- Meta tags and scripts go before the first `</head>`, and the Metrika `<noscript>` after `<body>`.
-- The tags go into CMS pages and pages of site controllers: the main request, status 200 or 404, `text/html`, an ordinary `Response`. The preview, the admin panel, the API, MCP, the profiler, 304, redirects, streamed and compressed responses are not changed.
-- The core does not add a counter or a meta tag that is already in the HTML with the same ID or code.
+Set `itk_cms.analytics.start` in `config/packages/itk_cms.yaml`. This option has no control in the admin panel.
+
+```yaml
+itk_cms:
+    analytics:
+        start: manual # auto by default
+```
+
+- `auto` starts configured counters when the bundle loader runs. Metrika's `<noscript>` pixel follows the opening `<body>` and can send a request when JavaScript is disabled.
+- `manual` waits for the site's call to `window.itkAnalytics.start()`. The bundle makes no requests or preliminary connections to Yandex or Google before that call and outputs no `<noscript>` pixel.
+- Both modes output verification meta tags, including when no counter is configured. Distinct Yandex verification codes are preserved, and identical tags are deduplicated.
+
+When at least one valid counter is configured, a single versioned external `defer` loader, marked with `data-itk-analytics`, goes before the first `</head>`. Its URL follows the site's asset configuration and base path. Its `data-*` attributes carry the mode, validated IDs and Webvisor flag. The loader needs no executable inline script.
+
+The browser API is available after the loader runs. `window.itkAnalytics.start()` starts all configured counters. `window.itkAnalytics.start(['ga'])` starts only GA. The allowed keys are `metrika` and `ga`. Unknown and unconfigured keys are skipped. Repeated or overlapping calls initialize each counter once per page.
+
+After beginning initialization of new counters, the loader dispatches `itk-analytics:started` on `document` with `bubbles: true` and `detail.counters`, for example `['ga']`. Listeners on both `document` and `window` receive it. A call that starts no new counter emits no event. The event records initialization starting, without waiting for provider downloads or delivery.
+
+For a site's own consent banner, include an external script in the site's Twig layout and use its existing accept button. This example assumes a button with `id="accept-analytics"`.
+
+```twig
+<script src="{{ app.request.basePath }}/js/analytics-consent.js" defer></script>
+<button type="button" id="accept-analytics">Allow analytics</button>
+```
+
+Save the following code as `public/js/analytics-consent.js`. It waits for the bundle script if the site's script runs first. Finding the script by its attribute also works when the site is served from a subdirectory.
+
+```js
+function startAnalytics(counters) {
+    if (window.itkAnalytics) {
+        window.itkAnalytics.start(counters);
+        return;
+    }
+
+    document.querySelector('script[data-itk-analytics]')
+        ?.addEventListener('load', () => {
+            window.itkAnalytics?.start(counters);
+        }, { once: true });
+}
+
+document.getElementById('accept-analytics')?.addEventListener('click', () => {
+    startAnalytics();
+    // Use startAnalytics(['ga']) for a choice that allows only GA.
+});
+```
+
+The site implements the banner, stores the visitor's choice and calls the same function on later visits only when that choice permits analytics. On revocation, update the stored choice and reload the page without calling `start()`. The CMS does not stop counters already running on the current page. Before enabling `manual`, remove direct counter scripts, pixels, tag-manager triggers and analytics `preconnect` or `dns-prefetch` links from the site's templates and scripts so they cannot contact providers before the site's choice.
+
+For a strict CSP, allow the bundle and site scripts from their actual asset origin in `script-src`. The following table is a starting allowlist for the standard provider integrations. Include only the providers and features the site uses.
+
+| Directive | Provider sources and scope |
+|---|---|
+| `script-src` | `https://mc.yandex.ru` for Metrika's `tag.js`, `https://www.googletagmanager.com` for GA's `gtag/js` |
+| `connect-src` | `https://mc.yandex.ru` and `https://mc.yandex.com` for Metrika collection, `https://*.google-analytics.com` for GA collection including regional endpoints |
+| `img-src` | `https://mc.yandex.ru` for the Metrika pixel in `auto`, and the relevant collection origins above if the provider uses image requests |
+| `frame-src` | When Webvisor uses frames, allow the frame origins required by the enabled recording and playback features |
+
+Provider endpoints can vary with region, Webvisor features, Google Signals, advertising integrations and custom collection endpoints. The table covers the bundle's standard script URLs and common collection origins. Check the site's CSP reports and browser network log with its actual provider settings to complete the allowlist, including any Webvisor frame origins. The CMS does not change the site's CSP or grant provider origins automatically.
+
+- The tags go into CMS pages and pages of site controllers for the main request with status 200 or 404, `text/html` and an ordinary `Response`. Preview, admin, API, MCP, profiler, 304, redirects, streamed and compressed responses are excluded.
+- In `auto`, the core skips a counter already present in the HTML with the same ID. Verification tags are deduplicated by name and code in both modes.
 - An invalid value is not output to the site. **Site status** shows it marked as **warning**.
-- Cookie consent stays the site's job: the counters load right away. If the law requires consent, leave these fields empty and add the counters with your own code. A strict site CSP must allow `mc.yandex.ru` and `googletagmanager.com`. The core does not mark the inline scripts with a `nonce`.
 
 ### Yandex Webmaster
 

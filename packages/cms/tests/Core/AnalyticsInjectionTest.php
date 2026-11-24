@@ -6,7 +6,6 @@ namespace Itk\Cms\Tests\Core;
 
 use Doctrine\ORM\EntityManagerInterface;
 use Itk\Cms\Content\PageService;
-use Itk\Cms\Content\SettingsService;
 use Itk\Cms\Rendering\PageCache;
 use Itk\Cms\Rendering\PageRenderer;
 use Itk\Cms\Repository\PageRepository;
@@ -17,6 +16,7 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
+use Symfony\Component\DomCrawler\Crawler;
 use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 use Symfony\Component\HttpFoundation\JsonResponse;
@@ -34,7 +34,6 @@ final class AnalyticsInjectionTest extends WebTestCase
 {
     use TemporarySettings;
 
-    private const KEYS = ['yandexMetrikaId', 'yandexMetrikaWebvisor', 'googleAnalyticsId', 'yandexVerification', 'googleVerification'];
     private const YANDEX_CODE = 'ya-code_Q7z9Kp2m';
     private const GOOGLE_CODE = 'AbCdEfGh-1234_xyz';
 
@@ -43,7 +42,7 @@ final class AnalyticsInjectionTest extends WebTestCase
 
     protected static function createKernel(array $options = []): KernelInterface
     {
-        return new TestKernel('test', $options['debug'] ?? false);
+        return new TestKernel('test', $options['debug'] ?? false, framework: $options['framework'] ?? [], itk: $options['itk'] ?? []);
     }
 
     protected function tearDown(): void
@@ -54,10 +53,6 @@ final class AnalyticsInjectionTest extends WebTestCase
                 $c->get(PageService::class)->remove($id);
             } catch (\Throwable) {
             }
-        }
-        $settings = $c->get(SettingsService::class);
-        foreach (self::KEYS as $key) {
-            $settings->set($key, null);
         }
         $this->restoreSettings();
         $c->get(PageCache::class)->clear();
@@ -79,9 +74,8 @@ final class AnalyticsInjectionTest extends WebTestCase
     /** @param array<string, mixed> $values */
     private function configure(array $values): void
     {
-        $settings = self::getContainer()->get(SettingsService::class);
         foreach ($values as $key => $value) {
-            $settings->set($key, $value);
+            $this->setting($key, $value);
         }
     }
 
@@ -117,6 +111,19 @@ final class AnalyticsInjectionTest extends WebTestCase
         return (string) $client->getResponse()->getContent();
     }
 
+    private static function assertLoader(string $html, string $metrika = '', string $ga = '', string $start = 'auto', bool $webvisor = false): void
+    {
+        $loader = (new Crawler($html))->filter('script[data-itk-analytics]');
+        self::assertCount(1, $loader, 'one loader for all configured counters');
+        self::assertSame('', $loader->attr('defer'));
+        self::assertSame($start, $loader->attr('data-start'));
+        self::assertSame($metrika, $loader->attr('data-metrika'));
+        self::assertSame($ga, $loader->attr('data-ga'));
+        self::assertSame($webvisor ? '1' : '0', $loader->attr('data-webvisor'));
+        self::assertSame('', $loader->text(), 'the loader contains no executable inline code');
+        self::assertNotSame('', $loader->attr('src'));
+    }
+
     private function signIn(KernelBrowser $client, string $name): void
     {
         $client->loginUser(self::getContainer()->get(UserManager::class)->create('test-an-' . $name . '@example.com', 'Аналитика', 'admin', 'password-for-test'), 'itk_admin');
@@ -143,11 +150,11 @@ final class AnalyticsInjectionTest extends WebTestCase
         $html = $this->body($client, '/test-an-metrika');
 
         self::assertResponseIsSuccessful();
-        self::assertSame(1, \substr_count($html, 'https://mc.yandex.ru/metrika/tag.js?id=12345678'));
-        self::assertStringContainsString('ym("12345678","init",{clickmap:true,trackLinks:true,accurateTrackBounce:true});', $html);
-        self::assertStringNotContainsString('webvisor', $html);
-        self::assertLessThan(\strpos($html, '</head>'), \strpos($html, 'mc.yandex.ru/metrika/tag.js'), 'the script is inside the head');
-        self::assertGreaterThan(\strpos($html, '<title>'), \strpos($html, 'mc.yandex.ru/metrika/tag.js'), 'after the tags of the layout');
+        self::assertLoader($html, '12345678');
+        self::assertStringNotContainsString('metrika/tag.js', $html);
+        self::assertStringNotContainsString('ym(', $html);
+        self::assertLessThan(\strpos($html, '</head>'), \strpos($html, 'data-itk-analytics'), 'the script is inside the head');
+        self::assertGreaterThan(\strpos($html, '<title>'), \strpos($html, 'data-itk-analytics'), 'after the tags of the layout');
         self::assertMatchesRegularExpression('~<body>\s*<noscript><div><img src="https://mc\.yandex\.ru/watch/12345678" style="position:absolute; left:-9999px;" alt=""></div></noscript>\s*<main>~', $html);
         self::assertSame(1, \substr_count($html, 'mc.yandex.ru/watch/12345678'));
     }
@@ -159,12 +166,11 @@ final class AnalyticsInjectionTest extends WebTestCase
         $this->publish('/test-an-wv');
         $this->configure(['yandexMetrikaId' => '12345678', 'yandexMetrikaWebvisor' => true]);
 
-        self::assertStringContainsString('accurateTrackBounce:true,webvisor:true});', $this->body($client, '/test-an-wv'));
+        self::assertLoader($this->body($client, '/test-an-wv'), '12345678', webvisor: true);
 
         $this->configure(['yandexMetrikaWebvisor' => false]);
         $html = $this->body($client, '/test-an-wv');
-        self::assertStringContainsString('ym("12345678"', $html);
-        self::assertStringNotContainsString('webvisor', $html);
+        self::assertLoader($html, '12345678', webvisor: false);
     }
 
     #[Test]
@@ -176,9 +182,10 @@ final class AnalyticsInjectionTest extends WebTestCase
 
         $html = $this->body($client, '/test-an-ga');
 
-        self::assertSame(1, \substr_count($html, '<script async src="https://www.googletagmanager.com/gtag/js?id=G-ABC123XYZ9"></script>'));
-        self::assertStringContainsString("gtag('config',\"G-ABC123XYZ9\");", $html);
-        self::assertLessThan(\strpos($html, '</head>'), \strpos($html, 'googletagmanager.com'));
+        self::assertLoader($html, ga: 'G-ABC123XYZ9');
+        self::assertStringNotContainsString('googletagmanager.com', $html);
+        self::assertStringNotContainsString('gtag(', $html);
+        self::assertLessThan(\strpos($html, '</head>'), \strpos($html, 'data-itk-analytics'));
         self::assertStringNotContainsString('mc.yandex.ru', $html, 'only the counter that is set');
         self::assertStringNotContainsString('<noscript>', $html);
     }
@@ -233,7 +240,7 @@ final class AnalyticsInjectionTest extends WebTestCase
 
         $html = $this->body($client, '/test-an-mixed');
 
-        self::assertStringContainsString('gtag/js?id=G-ABCD1234', $html);
+        self::assertStringContainsString('data-ga="G-ABCD1234"', $html);
         self::assertStringNotContainsString('mc.yandex.ru', $html);
     }
 
@@ -267,7 +274,7 @@ final class AnalyticsInjectionTest extends WebTestCase
         $sitemap = (string) $client->getResponse()->getContent();
         self::assertStringContainsString('<urlset', $sitemap);
 
-        foreach (['mc.yandex.ru', 'googletagmanager.com', 'yandex-verification', 'google-site-verification', 'mc.yandex.ru/watch'] as $mark) {
+        foreach (['data-itk-analytics', 'mc.yandex.ru', 'googletagmanager.com', 'yandex-verification', 'google-site-verification', 'mc.yandex.ru/watch'] as $mark) {
             self::assertStringNotContainsString($mark, $preview, 'preview ' . $mark);
             self::assertStringNotContainsString($mark, $shell, 'shell ' . $mark);
             self::assertStringNotContainsString($mark, $sitemap, 'sitemap ' . $mark);
@@ -276,7 +283,7 @@ final class AnalyticsInjectionTest extends WebTestCase
         self::assertSame(\substr_count($api, '12345678'), 1, 'one copy of the value, the one in the JSON');
 
         $client->request('GET', '/test-an-untouched');
-        self::assertStringContainsString('mc.yandex.ru/metrika/tag.js', (string) $client->getResponse()->getContent(), 'the live page of the same site does get them');
+        self::assertLoader((string) $client->getResponse()->getContent(), '12345678', 'G-ABCD1234');
     }
 
     /** @return iterable<string, array{string}> */
@@ -307,12 +314,110 @@ final class AnalyticsInjectionTest extends WebTestCase
     #[Test]
     public function aRouteOfTheSitesOwnControllerGetsThem(): void
     {
-        $this->client();
+        $client = $this->client();
         $this->configure(['yandexMetrikaId' => '12345678']);
 
-        $response = $this->filter(new Response('<html><head></head><body><p>x</p></body></html>', 200, ['Content-Type' => 'text/html; charset=UTF-8']), 'app_shop_cart');
+        $html = $this->body($client, '/test-analytics/controller');
 
-        self::assertStringContainsString('metrika/tag.js?id=12345678', (string) $response->getContent());
+        self::assertResponseIsSuccessful();
+        self::assertStringContainsString('Site controller fixture', $html);
+        self::assertLoader($html, '12345678');
+    }
+
+    #[Test]
+    public function manualModeExposesBothIdsWithoutAnyVendorMarkupOrNoscript(): void
+    {
+        $client = $this->client(['itk' => ['analytics' => ['start' => 'manual']]]);
+        $this->configure(['yandexMetrikaId' => '12345678', 'yandexMetrikaWebvisor' => true, 'googleAnalyticsId' => 'G-ABCD1234']);
+
+        $html = $this->body($client, '/test-analytics/controller');
+
+        self::assertResponseIsSuccessful();
+        self::assertLoader($html, '12345678', 'G-ABCD1234', 'manual', true);
+        foreach (['mc.yandex.ru', 'googletagmanager.com', '<noscript', 'ym(', 'gtag('] as $mark) {
+            self::assertStringNotContainsString($mark, $html);
+        }
+    }
+
+    /** @return iterable<string, array{string, string, string}> */
+    public static function legacyEmbeds(): iterable
+    {
+        yield 'metrika already embedded' => ['metrika', '', 'G-ABCD1234'];
+        yield 'ga already embedded' => ['ga', '12345678', ''];
+        yield 'both already embedded' => ['both', '', ''];
+    }
+
+    #[Test]
+    #[DataProvider('legacyEmbeds')]
+    public function autoOnlyPassesCountersWhichTheLegacySiteHasNotAlreadyEmbedded(string $embed, string $metrika, string $ga): void
+    {
+        $client = $this->client();
+        $this->configure(['yandexMetrikaId' => '12345678', 'googleAnalyticsId' => 'G-ABCD1234']);
+
+        $html = $this->body($client, '/test-analytics/controller/' . $embed);
+
+        self::assertResponseIsSuccessful();
+        self::assertLoader($html, $metrika, $ga);
+        self::assertSame(1, \substr_count($html, 'mc.yandex.ru/watch/12345678'), 'the kernel only adds a pixel when it runs Metrika itself');
+        self::assertSame('' === $metrika ? 1 : 0, \substr_count($html, 'ym(12345678, "init", {clickmap:true});'), 'the existing inline Metrika remains unchanged');
+        self::assertSame('' === $ga ? 1 : 0, \substr_count($html, "gtag('config','G-ABCD1234');"), 'the existing inline GA remains unchanged');
+    }
+
+    #[Test]
+    public function manualLeavesLegacySiteScriptsAndPixelIntactAndKeepsTheirIdsAvailable(): void
+    {
+        $client = $this->client(['itk' => ['analytics' => ['start' => 'manual']]]);
+        $this->configure(['yandexMetrikaId' => '12345678', 'googleAnalyticsId' => 'G-ABCD1234']);
+
+        $html = $this->body($client, '/test-analytics/controller/both');
+
+        self::assertResponseIsSuccessful();
+        self::assertLoader($html, '12345678', 'G-ABCD1234', 'manual');
+        self::assertSame(1, \substr_count($html, 'ym(12345678, "init", {clickmap:true});'));
+        self::assertSame(1, \substr_count($html, "gtag('config','G-ABCD1234');"));
+        self::assertSame(1, \substr_count($html, 'mc.yandex.ru/watch/12345678'), 'only the pixel authored by the site remains');
+    }
+
+    /** @return iterable<string, array{string, string}> */
+    public static function quotedMetrikaEmbeds(): iterable
+    {
+        yield 'single quoted ID' => ['metrika-single-quoted', "ym('12345678', 'init', {clickmap:true});"];
+        yield 'double quoted ID' => ['metrika-double-quoted', 'ym("12345678", "init", {clickmap:true});'];
+    }
+
+    #[Test]
+    #[DataProvider('quotedMetrikaEmbeds')]
+    public function autoRecognizesLegacyMetrikaWithAQuotedCounterId(string $embed, string $inline): void
+    {
+        $client = $this->client();
+        $this->configure(['yandexMetrikaId' => '12345678', 'googleAnalyticsId' => 'G-ABCD1234']);
+
+        $html = $this->body($client, '/test-analytics/controller/' . $embed);
+
+        self::assertResponseIsSuccessful();
+        self::assertLoader($html, ga: 'G-ABCD1234');
+        self::assertSame(1, \substr_count($html, $inline));
+        self::assertSame(1, \substr_count($html, 'mc.yandex.ru/watch/12345678'), 'the pre-existing pixel is not duplicated');
+    }
+
+    #[Test]
+    public function theLoaderUrlFollowsTheRequestBasePathOfASiteInstalledInASubdirectory(): void
+    {
+        $client = $this->client();
+        $this->configure(['yandexMetrikaId' => '12345678']);
+
+        $client->request('GET', '/subdir/test-analytics/controller', server: [
+            'SCRIPT_NAME' => '/subdir/index.php',
+            'SCRIPT_FILENAME' => '/tmp/itk-analytics-fixture/index.php',
+            'PHP_SELF' => '/subdir/index.php',
+        ]);
+
+        self::assertResponseIsSuccessful();
+        $html = (string) $client->getResponse()->getContent();
+        self::assertLoader($html, '12345678');
+        $src = (string) (new Crawler($html))->filter('script[data-itk-analytics]')->attr('src');
+        self::assertStringStartsWith('/subdir/bundles/itkcms/', $src);
+        self::assertStringContainsString('?', $src, 'the loader URL carries its version');
     }
 
     #[Test]
@@ -378,7 +483,9 @@ final class AnalyticsInjectionTest extends WebTestCase
 
         $response = $this->filter(new Response($own, 200, ['Content-Type' => 'text/html']));
 
-        self::assertSame($own, $response->getContent(), 'every one of the four is already there');
+        self::assertLoader((string) $response->getContent());
+        $withoutLoader = \preg_replace('~<script[^>]+data-itk-analytics[^>]*></script>\n~', '', (string) $response->getContent());
+        self::assertSame($own, $withoutLoader, 'the existing embeds, verification codes and pixel are left unchanged');
     }
 
     #[Test]
@@ -404,8 +511,8 @@ final class AnalyticsInjectionTest extends WebTestCase
 
         $html = (string) $this->filter(new Response($other, 200, ['Content-Type' => 'text/html']))->getContent();
 
-        self::assertStringContainsString('metrika/tag.js?id=12345678', $html);
-        self::assertStringContainsString('gtag/js?id=G-ABCD1234', $html);
+        self::assertStringContainsString('data-metrika="12345678"', $html);
+        self::assertStringContainsString('data-ga="G-ABCD1234"', $html);
         self::assertStringContainsString('<noscript><div><img src="https://mc.yandex.ru/watch/12345678"', $html);
     }
 
@@ -432,14 +539,13 @@ final class AnalyticsInjectionTest extends WebTestCase
         self::assertSame('HIT', $client->getResponse()->headers->get('X-ITK-Cache'));
 
         self::assertSame($first, $second);
-        self::assertSame(1, \substr_count($second, 'metrika/tag.js?id=12345678'), 'once, not once more for each time the page was served from the cache');
-        self::assertSame(1, \substr_count($second, 'gtag/js?id=G-ABCD1234'));
+        self::assertLoader($second, '12345678', 'G-ABCD1234');
         self::assertSame(1, \substr_count($second, 'yandex-verification'));
 
         $this->configure(['yandexMetrikaId' => '87654321']);
         $third = $this->body($client, '/test-an-cache');
         self::assertSame('MISS', $client->getResponse()->headers->get('X-ITK-Cache'), 'a changed counter is a new entry and a new tag');
-        self::assertStringContainsString('id=87654321', $third);
+        self::assertStringContainsString('data-metrika="87654321"', $third);
         self::assertStringNotContainsString('12345678', $third);
     }
 
@@ -454,8 +560,8 @@ final class AnalyticsInjectionTest extends WebTestCase
 
         self::assertResponseStatusCodeSame(404);
         self::assertStringContainsString('text/html', (string) $client->getResponse()->headers->get('Content-Type'));
-        self::assertStringContainsString('metrika/tag.js?id=12345678', $html);
-        self::assertStringContainsString('gtag/js?id=G-ABCD1234', $html);
+        self::assertStringContainsString('data-metrika="12345678"', $html);
+        self::assertStringContainsString('data-ga="G-ABCD1234"', $html);
     }
 
     #[Test]
@@ -468,7 +574,7 @@ final class AnalyticsInjectionTest extends WebTestCase
         $client->request('GET', '/test-an-304');
         $etag = (string) $client->getResponse()->headers->get('ETag');
         self::assertNotSame('', $etag);
-        self::assertStringContainsString('metrika', (string) $client->getResponse()->getContent());
+        self::assertLoader((string) $client->getResponse()->getContent(), '12345678');
 
         $client->request('GET', '/test-an-304', server: ['HTTP_IF_NONE_MATCH' => $etag]);
 

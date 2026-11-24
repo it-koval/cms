@@ -4,10 +4,14 @@ declare(strict_types=1);
 
 namespace Itk\Cms\Tests\Core;
 
+use Itk\Cms\Analytics\AnalyticsAsset;
 use Itk\Cms\Analytics\AnalyticsConfig;
 use Itk\Cms\Analytics\AnalyticsInjector;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpFoundation\RequestStack;
 
 /** Код подтверждения владельца и код, который выдал Яндекс Вебмастер, стоят на странице оба; тег с тем же именем и другим кодом не считается «уже есть». */
 final class AnalyticsVerificationMetaTest extends TestCase
@@ -80,5 +84,73 @@ final class AnalyticsVerificationMetaTest extends TestCase
     public function aCodeThatIsNotACodeIsDropped(): void
     {
         self::assertTrue(AnalyticsConfig::fromSettings([], '"><script>')->isEmpty());
+    }
+
+    /** @return iterable<string, array{string}> */
+    public static function startModes(): iterable
+    {
+        yield 'automatic' => ['auto'];
+        yield 'manual' => ['manual'];
+    }
+
+    #[Test]
+    #[DataProvider('startModes')]
+    public function verificationWorksWithoutAnyCounterOrLoaderInEitherStartMode(string $start): void
+    {
+        $config = AnalyticsConfig::fromSettings([
+            'yandexVerification' => self::OWNER,
+            'googleVerification' => 'google-code-1234',
+        ], self::UIN, $start);
+
+        $html = AnalyticsInjector::inject($this->page(), $config);
+
+        self::assertSame([1, 1], [$this->times($html, self::OWNER), $this->times($html, self::UIN)]);
+        self::assertSame(1, \substr_count($html, '<meta name="google-site-verification" content="google-code-1234">'));
+        self::assertStringNotContainsString('<script', $html);
+        self::assertStringNotContainsString('<noscript', $html);
+    }
+
+    #[Test]
+    #[DataProvider('startModes')]
+    public function filteringTheSameHtmlTwiceDoesNotMultiplyTheLoaderOrPixel(string $start): void
+    {
+        $config = AnalyticsConfig::fromSettings([
+            'yandexMetrikaId' => '12345678',
+            'googleAnalyticsId' => 'G-ABCD1234',
+        ], null, $start);
+        $once = AnalyticsInjector::inject($this->page(), $config);
+
+        self::assertSame($once, AnalyticsInjector::inject($once, $config));
+        self::assertSame(1, \substr_count($once, 'data-itk-analytics'));
+        self::assertSame('auto' === $start ? 1 : 0, \substr_count($once, '<noscript'));
+    }
+
+    #[Test]
+    public function autoKeepsTheLegacyNoscriptPixelWhenTheOptionalClosingHeadTagIsOmitted(): void
+    {
+        $html = '<!doctype html><html><head><title>t</title><body>x</body></html>';
+
+        $injected = AnalyticsInjector::inject($html, AnalyticsConfig::fromSettings(['yandexMetrikaId' => '12345678']));
+
+        self::assertStringContainsString("<body>\n<noscript>", $injected);
+        self::assertSame(1, \substr_count($injected, 'mc.yandex.ru/watch/12345678'));
+    }
+
+    #[Test]
+    public function theAssetUrlIsEscapedAsAnHtmlAttribute(): void
+    {
+        $base = '/site"quoted&dir';
+        $requests = new RequestStack();
+        $requests->push(Request::create('http://localhost' . $base . '/page', server: [
+            'SCRIPT_NAME' => $base . '/index.php',
+            'SCRIPT_FILENAME' => $base . '/index.php',
+            'PHP_SELF' => $base . '/index.php',
+        ]));
+        $asset = new AnalyticsAsset($requests);
+
+        $html = AnalyticsInjector::inject($this->page(), AnalyticsConfig::fromSettings(['googleAnalyticsId' => 'G-ABCD1234']), $asset);
+
+        self::assertStringContainsString('src="/site&quot;quoted&amp;dir/bundles/itkcms/analytics.js?v=', $html);
+        self::assertStringNotContainsString('src="/site"quoted&dir/', $html);
     }
 }

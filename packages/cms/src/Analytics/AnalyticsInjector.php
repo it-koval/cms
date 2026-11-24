@@ -12,14 +12,11 @@ namespace Itk\Cms\Analytics;
  */
 final class AnalyticsInjector
 {
-    /** A JSON string that is safe inside a <script> element and an HTML attribute. */
-    private const JS = \JSON_UNESCAPED_SLASHES | \JSON_HEX_TAG | \JSON_HEX_AMP | \JSON_HEX_APOS | \JSON_HEX_QUOT;
-
-    public static function inject(string $html, AnalyticsConfig $config): string
+    public static function inject(string $html, AnalyticsConfig $config, ?AnalyticsAsset $asset = null): string
     {
-        $head = self::head($html, $config);
-        $body = self::noscript($html, $config);
         $headAt = \stripos($html, '</head>');
+        $head = self::head($html, $config, $asset ?? new AnalyticsAsset());
+        $body = self::noscript($html, $config);
         $bodyAt = self::bodyEnd($html, false === $headAt ? 0 : $headAt);
 
         // the later position first, so the earlier one stays valid
@@ -33,7 +30,7 @@ final class AnalyticsInjector
         return $html;
     }
 
-    private static function head(string $html, AnalyticsConfig $config): string
+    private static function head(string $html, AnalyticsConfig $config, AnalyticsAsset $asset): string
     {
         $out = '';
         // two accounts may verify one site, so the code of the owner and the one of the CMS can differ and both stay
@@ -43,11 +40,15 @@ final class AnalyticsInjector
         if (null !== $config->googleVerification) {
             $out .= self::verification($html, 'google-site-verification', $config->googleVerification);
         }
-        if (null !== $config->metrikaId && !self::hasMetrika($html, $config->metrikaId)) {
-            $out .= self::metrika($config->metrikaId, $config->webvisor);
-        }
-        if (null !== $config->googleAnalyticsId && !self::hasGoogleAnalytics($html, $config->googleAnalyticsId)) {
-            $out .= self::gtag($config->googleAnalyticsId);
+        if ((null !== $config->metrikaId || null !== $config->googleAnalyticsId) && !self::hasLoader($html)) {
+            $auto = AnalyticsConfig::AUTO === $config->startMode();
+            $metrika = null !== $config->metrikaId && (!$auto || !self::hasMetrika($html, $config->metrikaId)) ? $config->metrikaId : '';
+            $ga = null !== $config->googleAnalyticsId && (!$auto || !self::hasGoogleAnalytics($html, $config->googleAnalyticsId)) ? $config->googleAnalyticsId : '';
+            $out .= '<script src="' . self::attr($asset->url()) . '" defer data-itk-analytics'
+                . ' data-start="' . self::attr($config->startMode()) . '"'
+                . ' data-metrika="' . self::attr($metrika) . '"'
+                . ' data-webvisor="' . self::attr($config->webvisor ? '1' : '0') . '"'
+                . ' data-ga="' . self::attr($ga) . '"></script>' . "\n";
         }
 
         return $out;
@@ -60,36 +61,16 @@ final class AnalyticsInjector
 
     private static function noscript(string $html, AnalyticsConfig $config): string
     {
-        if (null === $config->metrikaId || self::hasMetrika($html, $config->metrikaId)) {
+        if (AnalyticsConfig::AUTO !== $config->startMode() || null === $config->metrikaId || self::hasLoader($html) || self::hasMetrika($html, $config->metrikaId)) {
             return '';
         }
 
         return "\n" . '<noscript><div><img src="https://mc.yandex.ru/watch/' . self::attr($config->metrikaId) . '" style="position:absolute; left:-9999px;" alt=""></div></noscript>';
     }
 
-    private static function metrika(string $id, bool $webvisor): string
+    private static function hasLoader(string $html): bool
     {
-        $js = \json_encode($id, self::JS);
-        $src = \json_encode('https://mc.yandex.ru/metrika/tag.js?id=' . $id, self::JS);
-
-        return '<script>' . "\n"
-            . '(function(m,e,t,r,i,k,a){m[i]=m[i]||function(){(m[i].a=m[i].a||[]).push(arguments)};m[i].l=1*new Date();' . "\n"
-            . 'for(var j=0;j<document.scripts.length;j++){if(document.scripts[j].src===r){return;}}' . "\n"
-            . 'k=e.createElement(t),a=e.getElementsByTagName(t)[0],k.async=1,k.src=r,a.parentNode.insertBefore(k,a)})' . "\n"
-            . '(window,document,"script",' . $src . ',"ym");' . "\n"
-            . 'ym(' . $js . ',"init",{clickmap:true,trackLinks:true,accurateTrackBounce:true' . ($webvisor ? ',webvisor:true' : '') . '});' . "\n"
-            . '</script>' . "\n";
-    }
-
-    private static function gtag(string $id): string
-    {
-        $js = \json_encode($id, self::JS);
-
-        return '<script async src="https://www.googletagmanager.com/gtag/js?id=' . \rawurlencode($id) . '"></script>' . "\n"
-            . '<script>' . "\n"
-            . 'window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}' . "\n"
-            . "gtag('js',new Date());gtag('config'," . $js . ');' . "\n"
-            . '</script>' . "\n";
+        return 1 === \preg_match('/<script\b[^>]*\sdata-itk-analytics(?=[\s=>])[^>]*>/i', $html);
     }
 
     /** Is there a `<meta name="…" content="…">` with this very name and code? A tag with the name and another code does not count: it verifies another account. */
@@ -123,7 +104,7 @@ final class AnalyticsInjector
             return false;
         }
 
-        return 1 === \preg_match('~(?:tag\.js\?id=|\bym\(\s*|yaCounter)' . \preg_quote($id, '~') . '(?!\d)~', $html);
+        return 1 === \preg_match('~(?:tag\.js\?id=|\bym\(\s*[\'"]?|yaCounter)' . \preg_quote($id, '~') . '(?!\d)~', $html);
     }
 
     private static function hasGoogleAnalytics(string $html, string $id): bool
