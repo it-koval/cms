@@ -131,6 +131,7 @@ final class NotificationsTest extends KernelTestCase
         self::assertSame(1, $this->em->getRepository(StoredNotification::class)->count(['title' => 'Второе']));
 
         $this->expectException(\InvalidArgumentException::class);
+        // @phpstan-ignore argument.type (Verify the runtime guard for extensions without static analysis.)
         (new Registry([]))->notificationChannels(\stdClass::class);
     }
 

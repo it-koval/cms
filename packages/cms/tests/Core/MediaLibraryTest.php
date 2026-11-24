@@ -27,9 +27,6 @@ final class MediaLibraryTest extends WebTestCase
     /** @var list<string> */
     private array $fileIds = [];
 
-    /** @var list<string> */
-    private array $folderIds = [];
-
     protected function setUp(): void
     {
         $this->client = static::createClient();
@@ -67,7 +64,7 @@ final class MediaLibraryTest extends WebTestCase
     /**
      * @param array<string, mixed> $body
      *
-     * @return array<string, mixed>
+     * @return array<array-key, mixed>
      */
     private function api(string $method, string $path, array $body = [], int $status = 200): array
     {
@@ -80,10 +77,7 @@ final class MediaLibraryTest extends WebTestCase
     /** @return array<string, mixed> */
     private function folder(string $name, ?string $parentId = null): array
     {
-        $f = $this->api('POST', 'media-folders', ['name' => $name, 'parentId' => $parentId], 201);
-        $this->folderIds[] = $f['id'];
-
-        return $f;
+        return $this->api('POST', 'media-folders', ['name' => $name, 'parentId' => $parentId], 201);
     }
 
     /** A 1500 × 900 picture: red on the left half, blue on the right. */
@@ -100,7 +94,11 @@ final class MediaLibraryTest extends WebTestCase
         return $m;
     }
 
-    /** The colour of the pixel at (fx, fy) of an image served at $url, as [r, g, b]. */
+    /**
+     * The colour of the pixel at (fx, fy) of an image served at $url, as [r, g, b].
+     *
+     * @return array<array-key, mixed>
+     */
     private function pixel(string $url, float $fx, float $fy): array
     {
         $this->client->request('GET', $url);

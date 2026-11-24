@@ -291,7 +291,11 @@ final class Schema
         return ($this->templates[$template] ?? null)?->fieldList() ?? [];
     }
 
-    /** Page-level fields outside sections (title, address, SEO); keys may be dotted. */
+    /**
+     * Page-level fields outside sections (title, address, SEO); keys may be dotted.
+     *
+     * @return list<FieldInterface>
+     */
     public static function pageFields(): array
     {
         return [
@@ -302,7 +306,11 @@ final class Schema
         ];
     }
 
-    /** Templates whose cards show a date: the ones an «Автор» writes. @return list<string> */
+    /**
+     * Templates whose cards show a date: the ones an «Автор» writes.
+     *
+     * @return list<string>
+     */
     public function articleTemplates(): array
     {
         $out = [];

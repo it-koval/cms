@@ -29,6 +29,7 @@ final class MultilingualAdminApiTest extends WebTestCase
     /** @var list<string> */
     private array $ids = [];
 
+    /** @param array<string, mixed> $options */
     protected static function createKernel(array $options = []): KernelInterface
     {
         return new TestKernel('test', true, itk: ['locales' => [
@@ -58,7 +59,11 @@ final class MultilingualAdminApiTest extends WebTestCase
         parent::tearDown();
     }
 
-    /** @return array<string|int, mixed> */
+    /**
+     * @param array<string, mixed> $body
+     *
+     * @return array<string|int, mixed>
+     */
     private function api(string $method, string $path, array $body = [], int $status = 200): array
     {
         $this->client->request($method, '/admin/api/' . $path, [], [], ['CONTENT_TYPE' => 'application/json', 'HTTP_X_CSRF_TOKEN' => $this->csrf], [] === $body ? null : \json_encode($body, \JSON_THROW_ON_ERROR));

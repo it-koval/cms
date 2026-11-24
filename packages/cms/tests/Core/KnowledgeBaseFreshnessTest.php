@@ -32,6 +32,7 @@ final class KnowledgeBaseFreshnessTest extends KernelTestCase
     /** @var list<string> */
     private array $pages = [];
 
+    /** @param array<string, mixed> $options */
     protected static function createKernel(array $options = []): KernelInterface
     {
         return new TestKernel('test', true, null, '', [], [], $options['itk'] ?? ['knowledge_base' => ['enabled' => true]]);

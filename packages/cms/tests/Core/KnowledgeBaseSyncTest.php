@@ -40,6 +40,7 @@ final class KnowledgeBaseSyncTest extends KernelTestCase
     /** @var list<string> */
     private array $rules = [];
 
+    /** @param array<string, mixed> $options */
     protected static function createKernel(array $options = []): KernelInterface
     {
         return new TestKernel('test', true, null, '', [], [], $options['itk'] ?? ['knowledge_base' => ['enabled' => true]]);
@@ -83,7 +84,10 @@ final class KnowledgeBaseSyncTest extends KernelTestCase
         return self::getContainer()->get(Connection::class);
     }
 
-    /** @param list<array<string, mixed>> $sections */
+    /**
+     * @param list<array<string, mixed>> $sections
+     * @param array<array-key, mixed> $seo
+     */
     private function publish(string $url, string $title, array $sections = [], array $seo = []): string
     {
         $pages = self::getContainer()->get(PageService::class);

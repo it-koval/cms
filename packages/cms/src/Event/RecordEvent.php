@@ -13,6 +13,8 @@ use Symfony\Contracts\EventDispatcher\Event;
  * or, for a page, its template key; `kind` is 'item' (collection record) or 'page'.
  * The events named …ing come BEFORE the change and may throw Itk\Cms\Content\ContentException to cancel it; `data` of RecordCreating
  * and RecordUpdating can be changed — that is what gets stored. The resource class hook of the same moment runs after the listeners.
+ * After events carry a snapshot in `data` with `fields`, `meta`, and `status`. A publish event describes the published version.
+ * A delete event describes the record as it was before removal. Page events can also carry `liveVersions` with affected live addresses.
  */
 abstract class RecordEvent extends Event
 {

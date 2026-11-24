@@ -44,6 +44,7 @@ trait YandexWebmasterStand
     /** @var ?\Closure(): void runs on every call, before the answer */
     private ?\Closure $onCall = null;
 
+    /** @param array<string, mixed> $options */
     protected static function createKernel(array $options = []): KernelInterface
     {
         return new TestKernel('test', true, null, '', ['http_client' => ['enabled' => true]]);

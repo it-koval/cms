@@ -88,7 +88,11 @@ final class Format
         return ['items' => \array_slice($items, $offset, $limit), 'total' => $total, 'offset' => $offset, 'limit' => $limit, 'hasMore' => $offset + $limit < $total];
     }
 
-    /** @param list<array<string, mixed>> $rows change rows of ChangeDetector @return list<array<string, mixed>> */
+    /**
+     * @param list<array<string, mixed>> $rows change rows of ChangeDetector
+     *
+     * @return list<array<string, mixed>>
+     */
     public static function changes(array $rows, int $max = 20): array
     {
         $out = [];

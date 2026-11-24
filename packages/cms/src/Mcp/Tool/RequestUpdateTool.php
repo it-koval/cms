@@ -20,6 +20,7 @@ final class RequestUpdateTool extends RequestsTool
         return 'Set the work status of a request (new | in_work | closed | spam) and/or the private staff comment (≤500 characters; an empty string clears it). Needs the right to edit requests. The visitor is not notified.';
     }
 
+    /** @return array<string, mixed> */
     public function inputSchema(): array
     {
         return self::schema([

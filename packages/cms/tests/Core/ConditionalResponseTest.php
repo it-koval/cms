@@ -42,6 +42,7 @@ final class ConditionalResponseTest extends WebTestCase
     /** @var list<string> */
     private array $files = [];
 
+    /** @param array<string, mixed> $options */
     protected static function createKernel(array $options = []): KernelInterface
     {
         return new TestKernel('test', $options['debug'] ?? false, null, '', [], [], $options['itk'] ?? []);
@@ -88,7 +89,12 @@ final class ConditionalResponseTest extends WebTestCase
         return $page['id'];
     }
 
-    /** @return array{0: int, 1: string, 2: string} status, etag, body */
+    /**
+     * @param array<string, mixed> $headers
+     * @param array<array-key, mixed> $cookies
+     *
+     * @return array{0: int, 1: string, 2: string} status, etag, body
+     */
     private function get(KernelBrowser $client, string $url, array $headers = [], array $cookies = []): array
     {
         foreach ($cookies as $name => $value) {

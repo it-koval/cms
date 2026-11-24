@@ -48,7 +48,11 @@ final class SchemaOrgInjector
         return false === $at ? $html : \substr_replace($html, $tag, $at, 0);
     }
 
-    /** Is a node of this type already described by one of the types the page prints (the same type, or one of its group)? @param list<string> $present */
+    /**
+     * Is a node of this type already described by one of the types the page prints (the same type, or one of its group)?
+     *
+     * @param list<string> $present
+     */
     public static function isCovered(string $type, array $present): bool
     {
         foreach ([self::ORGANIZATION_GROUP, self::ARTICLE_GROUP] as $group) {

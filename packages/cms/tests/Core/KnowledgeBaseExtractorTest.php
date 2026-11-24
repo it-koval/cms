@@ -33,7 +33,11 @@ final class KnowledgeBaseExtractorTest extends KernelTestCase
         return new LiveSource(new Source(SourceKind::Page, 'p1', 'ru', $template, (string) ($published['title'] ?? ''), '/p'), $published, 't1');
     }
 
-    /** @return list<array{0: ?string, 1: string, 2: ?string, 3: list<string>}> section id, field, heading, paragraphs */
+    /**
+     * @param array<array-key, mixed> $blocks
+     *
+     * @return list<array{0: ?string, 1: string, 2: ?string, 3: list<string>}> section id, field, heading, paragraphs
+     */
     private static function flat(array $blocks): array
     {
         return \array_map(static fn (Block $b): array => [$b->sectionId, $b->field, $b->heading, $b->paragraphs], $blocks);

@@ -196,13 +196,23 @@ final class PageService
         return $this->changes->pageChanges($t->draft, $t->page->template, $this->liveSnapshot($t));
     }
 
-    /** The page's one H1 id (section id or null). */
+    /**
+     * The page's one H1 id (section id or null).
+     *
+     * @param array<string, mixed> $draftOrSnapshot
+     */
     public function h1Id(array $draftOrSnapshot, string $template): ?string
     {
         return $this->h1->pageH1Id($draftOrSnapshot['sections'] ?? [], $this->schema->template($template));
     }
 
-    /** Required fields that block publishing: sections' ones { sectionId, path, field, message } and the template's own { sectionId: null, scope: 'fields', … }. */
+    /**
+     * Required fields that block publishing: sections' ones { sectionId, path, field, message } and the template's own { sectionId: null, scope: 'fields', … }.
+     *
+     * @param array<string, mixed> $draft
+     *
+     * @return list<array<string, mixed>>
+     */
     public function requiredErrors(array $draft, string $template): array
     {
         $out = [];
@@ -338,7 +348,7 @@ final class PageService
     /**
      * New page, born in the main language as a draft.
      *
-     * @param array{title?: string, url?: string, parentId?: ?string, template?: string, sections?: ?array, fields?: ?array, id?: ?string, locale?: string, seo?: array} $input
+     * @param array<string, mixed> $input
      *
      * @return array<string, mixed>
      */
@@ -348,7 +358,7 @@ final class PageService
     }
 
     /**
-     * @param array{title?: string, url?: string, parentId?: ?string, template?: string, sections?: ?array, fields?: ?array, id?: ?string, locale?: string, seo?: array} $input
+     * @param array<string, mixed> $input
      *
      * @return array<string, mixed>
      */
@@ -425,6 +435,8 @@ final class PageService
      * With `$baseVersion` (the `version` of the page the editor loaded or saved last) the draft must still be that one, else 409 `conflict` and nothing is written.
      * The check and the write are one step under the lock of the page, on the copy read after the lock was taken. Without a version the save is not checked.
      *
+     * @param array<string, mixed> $data
+     *
      * @return array<string, mixed> flat page + changed
      */
     public function saveDraft(string $id, ?string $locale, array $data, ?string $baseVersion = null): array
@@ -438,6 +450,8 @@ final class PageService
 
     /**
      * List-level edit: title, url, seo, fields of that language + parentId, template (shared). No sections.
+     *
+     * @param array<string, mixed> $patch
      *
      * @return array<string, mixed>
      */
@@ -721,12 +735,16 @@ final class PageService
 
     public function record(Page $p, PageTranslation $t): Record
     {
-        $d = $t->draft;
+        return $this->recordFrom($p, $t, $t->draft);
+    }
 
-        return new Record($p->id, 'page', $p->template, $t->locale, (array) ($d['fields'] ?? []), $t->status, [
-            'title' => (string) ($d['title'] ?? ''),
-            'url' => (string) ($d['url'] ?? ''),
-            'seo' => (array) ($d['seo'] ?? []),
+    /** @param array<string, mixed> $snapshot */
+    private function recordFrom(Page $p, PageTranslation $t, array $snapshot): Record
+    {
+        return new Record($p->id, 'page', $p->template, $t->locale, (array) ($snapshot['fields'] ?? []), $t->status, [
+            'title' => (string) ($snapshot['title'] ?? ''),
+            'url' => (string) ($snapshot['url'] ?? ''),
+            'seo' => (array) ($snapshot['seo'] ?? []),
             'parentId' => $p->parentId(),
             'template' => $p->template,
         ]);
@@ -781,7 +799,11 @@ final class PageService
         return $this->flat($p, $t);
     }
 
-    /** Throws away unpublished changes of that language. */
+    /**
+     * Throws away unpublished changes of that language.
+     *
+     * @return array<string, mixed>
+     */
     public function revert(string $id, ?string $locale = null): array
     {
         $p = $this->find($id);
@@ -800,7 +822,11 @@ final class PageService
         return $this->flat($p, $t);
     }
 
-    /** «Отправить на публикацию» for a person who may edit but not publish. */
+    /**
+     * «Отправить на публикацию» for a person who may edit but not publish.
+     *
+     * @return array<string, mixed>
+     */
     public function submit(string $id, ?string $locale = null): array
     {
         $p = $this->find($id);
@@ -816,7 +842,11 @@ final class PageService
         return $this->flat($p, $t);
     }
 
-    /** «Вернуть автору»: the version stops waiting; its text stays as the author left it. */
+    /**
+     * «Вернуть автору»: the version stops waiting; its text stays as the author left it.
+     *
+     * @return array<string, mixed>
+     */
     public function returnToAuthor(string $id, ?string $locale = null): array
     {
         $p = $this->find($id);
@@ -828,7 +858,11 @@ final class PageService
         return $this->flat($p, $t);
     }
 
-    /** «Снять с публикации»: the version leaves the site and becomes a draft; the live copy is kept for republish(). */
+    /**
+     * «Снять с публикации»: the version leaves the site and becomes a draft; the live copy is kept for republish().
+     *
+     * @return array<string, mixed>
+     */
     public function unpublish(string $id, ?string $locale = null): array
     {
         $p = $this->find($id);
@@ -898,7 +932,11 @@ final class PageService
         return ['locale' => $t->locale, 'url' => (string) ($t->published['url'] ?? $t->publishedUrl), 'seo' => (array) ($t->published['seo'] ?? [])];
     }
 
-    /** Takes back unpublish(): the version is on the site again exactly as it was. */
+    /**
+     * Takes back unpublish(): the version is on the site again exactly as it was.
+     *
+     * @return array<string, mixed>
+     */
     public function republish(string $id, ?string $locale = null): array
     {
         $locale ??= $this->mainLocale;
@@ -920,7 +958,9 @@ final class PageService
         $t->publishedUrl = $url;
         $this->history->page($p, $t, Revision::PUBLISH, $was);
         $this->em->flush();
-        $this->hooks->published($this->record($p, $t), ['liveVersions' => [$this->liveAddress($t)]]); // live again: the sitemap and llms.txt caches and the hooks of the site hear it as a publish
+        $live = $this->recordFrom($p, $t, $t->published)->snapshot();
+        $live['liveVersions'] = [$this->liveAddress($t)];
+        $this->hooks->published($this->record($p, $t), $live);
 
         return $this->flat($p, $t);
     }
@@ -1240,7 +1280,11 @@ final class PageService
         return (bool) $this->schema->template($p->template)?->isRoot();
     }
 
-    /** @return array<string, mixed> */
+    /**
+     * @param array<string, mixed> $draft
+     *
+     * @return array<string, mixed>
+     */
     private function snapshot(array $draft): array
     {
         return [
@@ -1252,7 +1296,11 @@ final class PageService
         ];
     }
 
-    /** The pages table as the template guards read it: { id, parentId, template, title }. @return list<array<string, mixed>> */
+    /**
+     * The pages table as the template guards read it: { id, parentId, template, title }.
+     *
+     * @return list<array<string, mixed>>
+     */
     private function guardRows(): array
     {
         $out = [];

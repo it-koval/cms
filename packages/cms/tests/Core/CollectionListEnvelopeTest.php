@@ -29,6 +29,7 @@ final class CollectionListEnvelopeTest extends WebTestCase
     private string $key;
     private string $userId;
 
+    /** @param array<string, mixed> $options */
     protected static function createKernel(array $options = []): KernelInterface
     {
         return new TestKernel($options['environment'] ?? 'test', $options['debug'] ?? true, itk: [
@@ -57,7 +58,7 @@ final class CollectionListEnvelopeTest extends WebTestCase
                 return 'Envelope fixtures';
             }
 
-            public function subField(): ?string
+            public function subField(): string
             {
                 return 'subtitle';
             }
@@ -96,7 +97,11 @@ final class CollectionListEnvelopeTest extends WebTestCase
         return self::getContainer()->get(CollectionService::class);
     }
 
-    /** @return array<string, mixed> */
+    /**
+     * @param array<array-key, mixed> $params
+     *
+     * @return array<string, mixed>
+     */
     private function api(array $params = [], int $status = 200): array
     {
         self::getContainer()->get(EntityManagerInterface::class)->clear();

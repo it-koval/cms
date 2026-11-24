@@ -31,6 +31,7 @@ final class YandexWebmasterPagesTest extends WebTestCase
     private array $created = [];
     private KernelBrowser $client;
 
+    /** @param array<string, mixed> $options */
     protected static function createKernel(array $options = []): KernelInterface
     {
         return new TestKernel('test', false);

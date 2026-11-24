@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Itk\Cms\Tests\Core;
 
+use Doctrine\Bundle\DoctrineBundle\DataCollector\DoctrineDataCollector;
 use Doctrine\ORM\EntityManagerInterface;
 use Itk\Cms\Content\SettingsService;
 use Itk\Cms\Entity\PasswordReset;
@@ -439,7 +440,9 @@ final class PasswordRecoveryTest extends WebTestCase
         $profile = $this->client->getProfile();
         self::assertNotFalse($profile, 'the profiler is on');
         $out = [];
-        foreach ($profile->getCollector('db')->getQueries() as $queries) {
+        $collector = $profile->getCollector('db');
+        self::assertInstanceOf(DoctrineDataCollector::class, $collector);
+        foreach ($collector->getQueries() as $queries) {
             foreach ($queries as $q) {
                 if (\preg_match('/^\s*(INSERT|UPDATE|DELETE)\b/i', (string) $q['sql'])) {
                     $out[] = \trim((string) \preg_replace('/\s+/', ' ', (string) $q['sql']));

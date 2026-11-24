@@ -97,8 +97,9 @@ final class DoctrineSchemaTest extends KernelTestCase
             self::assertEquals(['telegram' => ['state' => 'sent', 'error' => null]], $channels($ids['sent']));
             self::assertEquals(['telegram' => ['state' => 'failed', 'error' => 'Chat not found']], $channels($ids['failed']));
             $entity = $this->em->find(\Itk\Cms\Entity\Request::class, $ids['failed']);
-            self::assertSame('failed', $entity?->channelState('telegram'));
-            self::assertSame('pending', $entity?->channelState('max'));
+            self::assertInstanceOf(\Itk\Cms\Entity\Request::class, $entity);
+            self::assertSame('failed', $entity->channelState('telegram'));
+            self::assertSame('pending', $entity->channelState('max'));
         } finally {
             $db->rollBack();
             $this->em->clear();

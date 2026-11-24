@@ -47,6 +47,7 @@ final class CrawlerCacheRaceTest extends KernelTestCase
         }
     }
 
+    /** @return iterable<array-key, mixed> */
     public static function generators(): iterable
     {
         yield 'sitemap mono' => [false, 'sitemap'];

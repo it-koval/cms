@@ -150,6 +150,8 @@
 'ops.health_uploads_readonly': 'The uploads folder is not writable. Media library files will not be saved.'
 'ops.health_uploads_ok': 'Files can be saved'
 'ops.health_secret_ok': 'Set'
+'ops.health_secret_2fa_unreadable': 'Some two-step sign-in keys cannot be read with the current APP_SECRET. Restore the original APP_SECRET or run itk:user:reset-2fa <email> for each affected account. Ask those users to set up two-step sign-in again.'
+'ops.health_secret_2fa_unavailable': 'Could not check two-step sign-in keys. Check the database and run the CMS migrations.'
 'ops.health_secret_empty': 'APP_SECRET is empty. Admin panel CSRF protection, encryption of two-step sign-in keys and hashing of addresses in requests depend on it. Set a long random string in .env.local (php -r "echo bin2hex(random_bytes(16));")'
 'ops.health_telegram_off': 'Telegram is not connected'
 'ops.health_telegram_off_settings': 'Telegram is connected, but sending requests is turned off in “Settings → Notifications”'

@@ -41,6 +41,7 @@ final class SiteSchemaTool extends AbstractMcpTool
         return ['readOnly' => true, 'destructive' => false, 'idempotent' => true];
     }
 
+    /** @return array<string, mixed> */
     public function inputSchema(): array
     {
         return self::schema([

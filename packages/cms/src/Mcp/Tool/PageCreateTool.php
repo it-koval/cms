@@ -45,6 +45,7 @@ final class PageCreateTool extends AbstractMcpTool
         return ['readOnly' => false, 'destructive' => false, 'idempotent' => false];
     }
 
+    /** @return array<string, mixed> */
     public function inputSchema(): array
     {
         return self::schema([

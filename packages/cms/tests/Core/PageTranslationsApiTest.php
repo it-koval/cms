@@ -50,6 +50,7 @@ final class PageTranslationsApiTest extends WebTestCase
     /** @var list<string> */
     private array $roles = [];
 
+    /** @param array<string, mixed> $options */
     protected static function createKernel(array $options = []): KernelInterface
     {
         $itk = ['main_locale' => 'ru'];
@@ -107,7 +108,11 @@ final class PageTranslationsApiTest extends WebTestCase
         $this->csrf = (string) $this->api('GET', 'me')['csrf'];
     }
 
-    /** @return array<string, mixed> */
+    /**
+     * @param array<string, mixed> $body
+     *
+     * @return array<string, mixed>
+     */
     private function api(string $method, string $path, array $body = [], int $status = 200): array
     {
         self::getContainer()->get(EntityManagerInterface::class)->clear();
@@ -118,7 +123,11 @@ final class PageTranslationsApiTest extends WebTestCase
         return (array) \json_decode($text, true, flags: \JSON_THROW_ON_ERROR);
     }
 
-    /** @return array<string, mixed> */
+    /**
+     * @param array<string, mixed> $data
+     *
+     * @return array<string, mixed>
+     */
     private function page(array $data = []): array
     {
         $page = $this->api('POST', 'pages', $data + ['title' => 'Translation source', 'url' => '/test-translations-' . \bin2hex(\random_bytes(6))], 201);

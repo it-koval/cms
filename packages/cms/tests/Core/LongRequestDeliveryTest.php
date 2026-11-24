@@ -39,6 +39,7 @@ final class LongRequestDeliveryTest extends WebTestCase
     /** @var array<string, array{bool, mixed}> */
     private array $saved = [];
 
+    /** @param array<string, mixed> $options */
     protected static function createKernel(array $options = []): KernelInterface
     {
         return new TestKernel($options['environment'] ?? 'test', $options['debug'] ?? true, null, '', [], [], ['schema_file' => __DIR__ . '/Fixture/schema_long_requests.php']);
@@ -109,12 +110,14 @@ final class LongRequestDeliveryTest extends WebTestCase
         return $this->api->texts($channel);
     }
 
+    /** @return iterable<array-key, mixed> */
     public static function channels(): iterable
     {
         yield 'Telegram' => [Request::CHANNEL_TELEGRAM];
         yield 'MAX' => [Request::CHANNEL_MAX];
     }
 
+    /** @return iterable<array-key, mixed> */
     public static function lengths(): iterable
     {
         yield 'Telegram 4000' => ['telegram', 4000, 1];
@@ -152,6 +155,7 @@ final class LongRequestDeliveryTest extends WebTestCase
         self::assertSame([$this->notifier($channel)->buildText($r)], $this->sent($channel, $r));
     }
 
+    /** @return iterable<array-key, mixed> */
     public static function textsTelegramTakesInOneMessage(): iterable
     {
         yield 'entities count as one character' => [\str_repeat("'&<>\"", 819) . '!'];
@@ -169,6 +173,7 @@ final class LongRequestDeliveryTest extends WebTestCase
         self::assertSame([$this->telegram->buildText($r)], $this->sent('telegram', $r));
     }
 
+    /** @return iterable<array-key, mixed> */
     public static function whatTelegramTrimsOrDrops(): iterable
     {
         $full = \str_repeat('ж', 4096);
@@ -188,6 +193,7 @@ final class LongRequestDeliveryTest extends WebTestCase
         self::assertSame([$this->telegram->buildText($r)], $this->sent('telegram', $r));
     }
 
+    /** @return iterable<array-key, mixed> */
     public static function charactersThatArePrinted(): iterable
     {
         foreach (['private use' => "\u{E000}", 'a glyph of Symbol' => "\u{F0B7}", 'the last plane' => "\u{10FFFD}", 'newer than PCRE' => "\u{50000}"] as $name => $char) {
@@ -205,6 +211,7 @@ final class LongRequestDeliveryTest extends WebTestCase
         self::assertSame($text, \implode('', $this->sent($channel, self::request(['items' => $text]))));
     }
 
+    /** @return iterable<array-key, mixed> */
     public static function runsTelegramTakesForNothing(): iterable
     {
         yield 'Braille blank' => ["\u{2800}"];
@@ -252,6 +259,7 @@ final class LongRequestDeliveryTest extends WebTestCase
         self::assertStringEndsWith(LongText::TOTAL . '</i>', $parts[1]);
     }
 
+    /** @return iterable<array-key, mixed> */
     public static function unusualTags(): iterable
     {
         foreach (['telegram', 'max'] as $channel) {
@@ -310,6 +318,7 @@ final class LongRequestDeliveryTest extends WebTestCase
         self::assertGreaterThanOrEqual(3.09, (\hrtime(true) - $start) / 1e9);
     }
 
+    /** @return iterable<array-key, mixed> */
     public static function longLines(): iterable
     {
         foreach (['Cyrillic' => 'ж', 'emoji' => '😀', 'ampersand' => '&', 'mixed' => "я😀&<\"'é"] as $name => $unit) {

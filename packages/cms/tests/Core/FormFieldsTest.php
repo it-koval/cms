@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Itk\Cms\Tests\Core;
 
 use Itk\Cms\Entity\User;
+use Itk\Cms\Field\FieldInterface;
 use Itk\Cms\Field\FormFields;
 use Itk\Cms\Field\Note;
 use Itk\Cms\Field\Text;
@@ -20,7 +21,11 @@ final class FormFieldsTest extends TestCase
         return Viewer::of(new User('test-form-fields@example.com', 'h', 'editor'), ['perms' => [], 'templates' => null]);
     }
 
-    /** @return list<array{key: string, section: ?string}> */
+    /**
+     * @param list<FieldInterface> $fields
+     *
+     * @return list<array{key: string, section: ?string}>
+     */
     private function shape(array $fields, ?Viewer $viewer): array
     {
         return \array_map(static fn (array $a): array => ['key' => $a['k'], 'section' => $a['section'] ?? null], FormFields::toArray($fields, $viewer));

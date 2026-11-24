@@ -31,7 +31,11 @@ final class McpPhotosTest extends KernelTestCase
         parent::tearDown();
     }
 
-    /** A page with the section, written the way the admin and old tools wrote it: files that the library does not have (any more). @return array{0: \Itk\Cms\Mcp\McpContext, 1: string, 2: array<string, mixed>} */
+    /**
+     * A page with the section, written the way the admin and old tools wrote it: files that the library does not have (any more).
+     *
+     * @return array{0: \Itk\Cms\Mcp\McpContext, 1: string, 2: array<string, mixed>}
+     */
     private function pageWithGone(): array
     {
         $user = $this->mcpUser('admin');

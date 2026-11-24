@@ -21,7 +21,11 @@ abstract class TemplateResource implements ResourceInterface
         return '';
     }
 
-    /** Page templates this one may stand under (empty = anywhere). */
+    /**
+     * Page templates this one may stand under (empty = anywhere).
+     *
+     * @return list<string>
+     */
     public function parents(): array
     {
         return [];

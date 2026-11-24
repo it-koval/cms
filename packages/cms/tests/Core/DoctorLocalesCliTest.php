@@ -28,6 +28,7 @@ final class DoctorLocalesCliTest extends KernelTestCase
     private ?EntityManagerInterface $em = null;
     private int $initialTransactionLevel = 0;
 
+    /** @param array<string, mixed> $options */
     protected static function createKernel(array $options = []): KernelInterface
     {
         return new TestKernel('test', true, itk: [

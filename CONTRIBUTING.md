@@ -4,7 +4,7 @@ English | [Русский](CONTRIBUTING.ru.md)
 
 Bug reports with steps to reproduce, fixes with a test, and documentation fixes help the most.
 
-Do not report a security problem in a public issue. Follow [SECURITY.md](SECURITY.md) instead.
+Follow the [code of conduct](CODE_OF_CONDUCT.md) when taking part. Report security problems privately as described in [SECURITY.md](SECURITY.md).
 
 ## Repository layout
 
@@ -13,56 +13,46 @@ Do not report a security problem in a public issue. Follow [SECURITY.md](SECURIT
 
 ## Set up the environment
 
-You need:
-
-- PHP 8.3 or newer with the `ctype`, `dom`, `gd`, `json`, `mbstring`, `pdo_pgsql`, and `sodium` extensions. `exif` and `intl` are optional.
-- Composer.
-- Docker for the test database, the mail catcher, and the admin panel. The admin panel runs Node 24.22.2 in a container, so you do not need Node on the host.
-
-The tests run on PostgreSQL 17 with pgvector (the `pgvector/pgvector:pg17` image) and send mail to Mailpit. Start both and install the dependencies:
+Install Docker with Compose. Run the PHP setup from the repository root. Compose starts PostgreSQL with pgvector and Mailpit.
 
 ```bash
-docker run -d --name itk-test-pg -p 127.0.0.1:33960:5432 -e POSTGRES_PASSWORD=itk-test pgvector/pgvector:pg17
-docker run -d --name itk-test-mail -p 127.0.0.1:33951:1025 -p 127.0.0.1:33952:8025 axllent/mailpit
+test_compose() {
+  docker compose --project-directory packages/cms \
+    -f packages/cms/docker/compose.yaml -f packages/cms/tests/docker/compose.ci.yaml "$@"
+}
 
-cd packages/cms
-composer install
-cd ../../admin
-docker compose run --rm node npm ci
+export ITK_CI_UID="$(id -u)" ITK_CI_GID="$(id -g)"
+test_compose up -d --wait database mailer
+test_compose build php
+test_compose run --rm --no-deps php composer install
 ```
 
 ## Run the checks
 
 ### PHP
 
-Run these commands from `packages/cms`:
+Run the checks from the repository root with the same Compose settings.
 
 ```bash
-export ITK_TEST_MAILPIT_URL=http://127.0.0.1:33952 ITK_TEST_MAILPIT_SMTP_PORT=33951
-composer test        # composer lint:sql, then recreates the itk_test database, runs the migrations and itk:install, then PHPUnit
-composer lint:sql    # fails on MySQL constructs in the SQL of the bundle (src/, migrations included)
-composer stan        # PHPStan, level 5
-composer cs          # PHP CS Fixer, check only. composer cs:fix applies the fixes.
+test_compose run --rm --no-deps php composer test
+test_compose run --rm --no-deps php composer stan
+test_compose run --rm --no-deps php composer cs
 ```
 
-By default `DATABASE_URL` is `postgresql://postgres:itk-test@127.0.0.1:33960/itk?serverVersion=17&charset=utf8`. The tests use the `itk_test` database. If you set your own `DATABASE_URL`, keep `serverVersion` in it. Without it Doctrine connects to the database that does not exist yet to detect the server version, and `doctrine:database:create` fails.
+`composer test` checks SQL, recreates the test database, and runs PHPUnit. `composer stan` checks `src` and `tests` at PHPStan level 6. `composer cs` checks formatting.
 
-Without `ITK_TEST_MAILPIT_URL` the mail tests are skipped. Other notes:
+To test one class, run `composer test:prepare` once in the PHP service, then `php vendor/bin/phpunit --filter ClassName` there. For a random run, use `composer test:run -- --order-by=random --random-order-seed=30301` after preparation. CI also uses seed `30302`.
 
-- `tests/` holds a test site (`tests/App`, the `TestKernel` kernel) and the core tests (`tests/Core`).
-- `ITK_TEST_CACHE_DIR` sets a separate cache directory of the test site for parallel runs.
-- `composer test:run -- --order-by=random` (after `composer test:prepare`) checks that the test order does not matter.
-- The tests do not need Telegram or MAX: `TestKernel` replaces the sending.
-
-CI also runs `php tests/bin/console doctrine:schema:validate --env=test` to check that the database schema matches the Doctrine mapping.
+The `tests/App` site runs the tests in `tests/Core`. For a separate test stack, use a different Compose project name. If you supply your own `DATABASE_URL`, keep `serverVersion` in it. `ITK_TEST_CACHE_DIR` can isolate the test cache. The tests stub Telegram and MAX. Mail tests need `ITK_TEST_MAILPIT_URL`.
 
 ### Admin panel
 
 Run these commands from `admin`:
 
 ```bash
-docker compose run --rm node npm audit
-docker compose run --rm node npm audit --omit=dev
+docker compose run --rm node npm ci
+docker compose run --rm node npm audit --include=dev
+docker compose run --rm node npm audit --omit=dev --audit-level=high
 docker compose run --rm node npm run lint
 docker compose run --rm node npm run check:i18n  # interface catalogs and Cyrillic in the code
 docker compose run --rm node npm test
@@ -71,7 +61,7 @@ docker compose run --rm node npm run build        # writes the build to packages
 
 `docker compose up node` starts Vite at `http://127.0.0.1:5174/bundles/itkcms/admin/`. By default the container reaches the site API at `host.docker.internal:8080`. Set `ITK_SITE_URL` to use another address. To run the admin panel without PHP, on made-up data, run `docker compose run --rm --service-ports node npm run dev:mock -- --host 0.0.0.0`.
 
-`admin/compose.yaml` mounts the repository root at `/workspace` and keeps the Linux dependencies in a named volume. The container does not use or overwrite a `node_modules` directory on the host. `npm ci` installs exactly what the lock file lists. Keep the Node version the same in `admin/compose.yaml`, `.github/workflows/ci.yml`, and `admin/.nvmrc`.
+`admin/compose.yaml` mounts the repository root at `/workspace` and keeps the Linux dependencies in a named volume. The container does not use or overwrite a `node_modules` directory on the host. `npm ci` installs exactly what the lock file lists. Keep the Node version the same in `admin/compose.yaml` and `admin/.nvmrc`.
 
 ## Commit the built admin panel
 

@@ -26,7 +26,7 @@ The current version is 0.2.2. Until 1.0.0 a minor release may change the public 
 
 - PHP 8.3 or newer with the `ctype`, `dom`, `gd`, `json`, `mbstring`, `pdo_pgsql`, and `sodium` extensions. `exif` and `intl` are optional. Use a current patch release: the site status screen warns when the PHP patch level has known security fixes missing.
 - Symfony 7.4 or 8. Symfony 8 needs PHP 8.4 or newer.
-- PostgreSQL 16 or newer with the [pgvector](https://github.com/pgvector/pgvector) extension 0.8 or newer. A core migration runs `CREATE EXTENSION vector`, so the extension is required even if you do not use the knowledge base. The `pgvector/pgvector:pg17` Docker image has it. MySQL is not supported.
+- PostgreSQL 16 or newer with the [pgvector](https://github.com/pgvector/pgvector) extension 0.8 or newer. A core migration runs `CREATE EXTENSION vector`, so the extension is required even if you do not use the knowledge base. The `pgvector/pgvector:pg17` Docker image has it.
 - Composer.
 - Node only to build the admin panel from source or to generate critical CSS.
 
@@ -89,19 +89,21 @@ Next, describe the site in `config/itk/schema.php` (page templates, sections, co
 
 This repository is a monorepo:
 
-- `packages/cms` is the Composer package `itk/cms`: the bundle, its tests, its Docker kit, and the built admin panel in `packages/cms/public/admin`. A workflow copies this directory on every push to `main` and every `v*` tag to [it-koval/cms-bundle](https://github.com/it-koval/cms-bundle), the repository that Packagist reads.
+- `packages/cms` is the Composer package `itk/cms`. It contains the bundle, its tests, its Docker kit, and the built admin panel in `packages/cms/public/admin`. A workflow copies this directory to [it-koval/cms-bundle](https://github.com/it-koval/cms-bundle) after CI passes for the same commit on `main` or a `v*` tag.
 - `admin` contains the admin panel sources (Vue 3 and Vite). `npm run build` writes the build to `packages/cms/public/admin`.
 
 ## Development
 
-To work on the bundle or the admin panel, you need PHP, Composer, and Docker. Docker runs the test database, the mail catcher, and Node for the admin panel. [CONTRIBUTING.md](CONTRIBUTING.md) lists the commands to set up the environment and run the checks.
+Use Docker Compose to work on the bundle or the admin panel. The containers run PHP, Composer, PostgreSQL, Mailpit, and Node. See the [contributor setup and checks](CONTRIBUTING.md).
 
 ## More information
 
 - [Bundle reference](packages/cms/README.md)
 - [Rules for an AI agent that builds a site](packages/cms/SITE-AGENTS.md)
 - [Contributing](CONTRIBUTING.md)
+- [Code of conduct](CODE_OF_CONDUCT.md)
 - [Security policy](SECURITY.md)
+- [Deployment and rollback](docs/DEPLOY.md)
 - [Upgrading](UPGRADE.md)
 - [Changelog](CHANGELOG.md)
 

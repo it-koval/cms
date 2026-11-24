@@ -75,14 +75,22 @@ USER www-data
 # ---------- prod ----------
 # The site is copied in. docker/Dockerfile.dockerignore keeps .git, vendor, node_modules, var, .env.local, .env.*.local, .env.local.php and the
 # secrets vault decrypt key out of it. The committed .env is copied: keep only defaults in it.
-FROM php_features AS php_prod
+FROM php_features AS php_site
 ARG CRITICAL_CSS
 RUN mv "$PHP_INI_DIR/php.ini-production" "$PHP_INI_DIR/php.ini"
 ENV APP_ENV=prod
 COPY --chown=www-data:www-data . .
 RUN set -eux; \
-    composer install --no-dev --prefer-dist --no-progress --no-scripts --classmap-authoritative; \
+    COMPOSER_ALLOW_SUPERUSER=1 composer install --no-dev --prefer-dist --no-progress --no-scripts --classmap-authoritative; \
     if [ "${CRITICAL_CSS}" = "1" ]; then npm ci --omit=dev; fi; \
-    mkdir -p var public/uploads; \
+    mkdir -p var public/uploads public/bundles/itkcms; \
+    cp -R vendor/itk/cms/public/. public/bundles/itkcms/; \
     chown -R www-data:www-data var public/uploads
+
+FROM nginxinc/nginx-unprivileged:1.28-alpine AS nginx_prod
+COPY docker/nginx/default.conf /etc/nginx/conf.d/default.conf
+COPY --from=php_site /app/public /app/public
+USER 10101:10101
+
+FROM php_site AS php_prod
 USER www-data

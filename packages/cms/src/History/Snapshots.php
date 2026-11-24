@@ -111,7 +111,11 @@ final class Snapshots
         return ['position' => $i->position, 'parentId' => $i->parentId, 'createdAt' => $i->createdAt->format(\DATE_ATOM), 'translations' => $i->translations];
     }
 
-    /** The name to show for an entry: the title of a page, the title field of a record, the name of a group or a menu. */
+    /**
+     * The name to show for an entry: the title of a page, the title field of a record, the name of a group or a menu.
+     *
+     * @param array<string, mixed> $snapshot
+     */
     public function title(string $kind, string $key, array $snapshot): string
     {
         $title = '';

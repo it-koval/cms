@@ -50,6 +50,7 @@ final class TelegramOptionalTest extends WebTestCase
     /** @var array<string, array{bool, mixed}> setting => [was it saved, its value]: put back after the test */
     private array $saved = [];
 
+    /** @param array<string, mixed> $options */
     protected static function createKernel(array $options = []): KernelInterface
     {
         return new TestKernel($options['environment'] ?? 'test', $options['debug'] ?? true, null, '', $options['framework'] ?? []);
@@ -123,7 +124,11 @@ final class TelegramOptionalTest extends WebTestCase
         );
     }
 
-    /** A transport that remembers what it was asked to send (and may refuse). */
+    /**
+     * A transport that remembers what it was asked to send (and may refuse).
+     *
+     * @return TransportInterface&object{sent: list<ChatMessage>}
+     */
     private function recorder(bool $refuse = false): TransportInterface
     {
         return new class($refuse) implements TransportInterface {

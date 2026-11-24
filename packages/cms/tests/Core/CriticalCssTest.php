@@ -50,6 +50,7 @@ final class CriticalCssTest extends WebTestCase
     private bool $domainWasSet = false;
     private mixed $domainBefore = '';
 
+    /** @param array<string, mixed> $options */
     protected static function createKernel(array $options = []): KernelInterface
     {
         return new TestKernel('test', $options['debug'] ?? false, null, '', [], [], $options['itk'] ?? self::on());
@@ -325,10 +326,21 @@ final class CriticalCssTest extends WebTestCase
         self::assertPlainLink((string) $this->visit($client, '/test-cc-off')->getContent(), false);
     }
 
-    /** @return list<GenerateCriticalCss> what was put into the critical_css transport since the last request (the in-memory queue of a test is emptied by the next one) */
+    /**
+     * The messages put in the critical_css transport since the last request.
+     *
+     * @return list<GenerateCriticalCss>
+     *
+     * @phpstan-impure
+     */
     private function queued(): array
     {
-        return \array_map(static fn (Envelope $e): object => $e->getMessage(), self::getContainer()->get('messenger.transport.critical_css')->getSent());
+        return \array_map(static function (Envelope $e): GenerateCriticalCss {
+            $message = $e->getMessage();
+            self::assertInstanceOf(GenerateCriticalCss::class, $message);
+
+            return $message;
+        }, self::getContainer()->get('messenger.transport.critical_css')->getSent());
     }
 
     /**

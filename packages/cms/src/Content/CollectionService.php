@@ -239,7 +239,11 @@ final class CollectionService
         return $this->flat($c, $i, $locale);
     }
 
-    /** Add one language to the existing record; its position, parent and singleton identity stay shared. @return array<string, mixed> */
+    /**
+     * Add one language to the existing record; its position, parent and singleton identity stay shared.
+     *
+     * @return array<string, mixed>
+     */
     public function addTranslation(string $collection, string $id, string $locale, ?string $from): array
     {
         $c = $this->collection($collection);
@@ -471,7 +475,11 @@ final class CollectionService
         return $done;
     }
 
-    /** «Снять с публикации»: the record leaves the site and becomes a draft. @return array<string, mixed> */
+    /**
+     * «Снять с публикации»: the record leaves the site and becomes a draft.
+     *
+     * @return array<string, mixed>
+     */
     public function unpublish(string $collection, string $id, ?string $locale = null): array
     {
         $c = $this->collection($collection);
@@ -857,7 +865,11 @@ final class CollectionService
         $i->translations = $all; // reassign: Doctrine tracks the JSON column by value
     }
 
-    /** @param array<string, mixed> $t @return null|array<string, mixed> */
+    /**
+     * @param array<string, mixed> $t
+     *
+     * @return array<string, mixed>|null
+     */
     private function live(array $t): ?array
     {
         return 'published' === ($t['status'] ?? '') && \is_array($t['published'] ?? null) ? $t['published'] : null;

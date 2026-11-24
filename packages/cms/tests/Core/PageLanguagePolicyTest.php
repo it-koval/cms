@@ -29,6 +29,7 @@ final class PageLanguagePolicyTest extends WebTestCase
     /** @var list<string> */
     private array $itemIds = [];
 
+    /** @param array<string, mixed> $options */
     protected static function createKernel(array $options = []): KernelInterface
     {
         $itk = ['main_locale' => 'ru'];
@@ -72,7 +73,11 @@ final class PageLanguagePolicyTest extends WebTestCase
         self::assertNotSame('', $this->csrf);
     }
 
-    /** @return array<string, mixed> */
+    /**
+     * @param array<string, mixed> $body
+     *
+     * @return array<string, mixed>
+     */
     private function api(string $method, string $path, array $body = [], int $status = 200): array
     {
         self::getContainer()->get(EntityManagerInterface::class)->clear();

@@ -15,6 +15,7 @@ trait IndexNowSettings
         restoreSettings as private restoreSettingValues;
     }
 
+    /** @param array<string, mixed> $options */
     protected static function createKernel(array $options = []): KernelInterface
     {
         return new TestKernel('test', true, null, '', ['http_client' => ['enabled' => true]]);

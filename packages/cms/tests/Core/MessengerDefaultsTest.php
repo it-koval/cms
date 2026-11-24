@@ -25,6 +25,7 @@ final class MessengerDefaultsTest extends KernelTestCase
 {
     private const CLEAN = ['messenger' => ['buses' => ['messenger.bus.default' => null]]];
 
+    /** @param array<string, mixed> $options */
     protected static function createKernel(array $options = []): KernelInterface
     {
         return new TestKernel($options['environment'] ?? 'test', $options['debug'] ?? true, null, '', $options['framework'] ?? []);
@@ -124,16 +125,17 @@ final class MessengerDefaultsTest extends KernelTestCase
     {
         $kernel = self::bootKernel(['framework' => self::CLEAN]);
         $db = self::getContainer()->get(Connection::class);
-        $db->executeStatement('DROP TABLE IF EXISTS messenger_messages');
+        $db->beginTransaction();
 
         try {
+            $db->executeStatement('DROP TABLE IF EXISTS messenger_messages');
             $install = new CommandTester((new Application($kernel))->find('itk:install'));
             self::assertSame(0, $install->execute(['--no-home' => true], ['interactive' => false]), $install->getDisplay());
 
             self::assertTrue($db->createSchemaManager()->tablesExist(['messenger_messages']), 'the table of the queue is there before the first message');
             self::assertStringContainsString('Очередь сообщений: подготовлено транспортов — 4', $install->getDisplay());
         } finally {
-            $this->transport('failed')->setup(); // the test site\'s «failed» has auto_setup=0: leave the table as the other tests expect it
+            $db->rollBack();
         }
     }
 }

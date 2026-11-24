@@ -50,6 +50,11 @@ final class I18nLocaleTest extends WebTestCase
     /** The language of the moment the answer was made: nothing can be read about it after the request. */
     private ?string $spoke = null;
 
+    private function assertResponseLocale(string $expected): void
+    {
+        self::assertSame($expected, $this->spoke);
+    }
+
     protected function setUp(): void
     {
         $this->mailerEnv();
@@ -198,10 +203,10 @@ final class I18nLocaleTest extends WebTestCase
             $this->client->request('GET', $path);
             self::assertResponseIsSuccessful();
             self::assertStringContainsString('<html lang="ru">', (string) $this->client->getResponse()->getContent());
-            self::assertSame('ru', $this->spoke);
+            $this->assertResponseLocale('ru');
         }
         $this->api('GET', 'me', null, 401);
-        self::assertSame('ru', $this->spoke);
+        $this->assertResponseLocale('ru');
     }
 
     #[Test]
@@ -210,9 +215,9 @@ final class I18nLocaleTest extends WebTestCase
         $this->signIn($this->person(Role::EDITOR, 'kk'));
 
         $this->api('PUT', 'me/locale', ['locale' => 'en'], 403, false); // the CSRF check runs before any controller
-        self::assertSame('kk', $this->spoke);
+        $this->assertResponseLocale('kk');
         $this->api('GET', 'users', null, 403); // a right the person does not have
-        self::assertSame('kk', $this->spoke);
+        $this->assertResponseLocale('kk');
     }
 
     #[Test]
@@ -355,10 +360,11 @@ final class I18nLocaleTest extends WebTestCase
         }
 
         $transport = self::getContainer()->get('messenger.transport.async');
-        $languages = [];
         $events = self::getContainer()->get('event_dispatcher');
-        $listen = function (WorkerRunningEvent $event) use (&$languages): void {
-            $languages[] = \count($this->lettersIn()) >= 3 ? $event->getWorker()->stop() : null;
+        $listen = function (WorkerRunningEvent $event): void {
+            if (\count($this->lettersIn()) >= 3) {
+                $event->getWorker()->stop();
+            }
         };
         $events->addListener(WorkerRunningEvent::class, $listen);
         (new Worker(['async' => new class($transport) implements \Symfony\Component\Messenger\Transport\Receiver\ReceiverInterface {
@@ -430,14 +436,19 @@ final class I18nLocaleTest extends WebTestCase
     {
         $locale = self::getContainer()->get(AdminLocale::class);
         self::assertSame('kk', $locale->run('kk', static fn (): string => I18n::locale()));
-        self::assertSame('ru', I18n::locale());
+        $this->assertCurrentLocale('ru');
         try {
             $locale->run('en', static function (): void {
                 throw new \RuntimeException('in the middle of a letter');
             });
         } catch (\RuntimeException) {
         }
-        self::assertSame('ru', I18n::locale());
+        $this->assertCurrentLocale('ru');
+    }
+
+    private function assertCurrentLocale(string $expected): void
+    {
+        self::assertSame($expected, I18n::locale());
     }
 
     #[Test]

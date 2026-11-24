@@ -19,7 +19,11 @@ final class SendRequestNotification
     ) {
     }
 
-    /** Messenger restores messages without the constructor, so a payload queued before `channel` existed gets its default here. */
+    /**
+     * Messenger restores messages without the constructor, so a payload queued before `channel` existed gets its default here.
+     *
+     * @param array<string, mixed> $data
+     */
     public function __unserialize(array $data): void
     {
         $this->requestId = (int) $data['requestId'];

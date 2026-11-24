@@ -65,7 +65,7 @@ abstract class AbstractApiController
      */
     protected function locale(Request $request, array $body = []): ?string
     {
-        $locale = $request->query->get('locale', $body['locale'] ?? null);
+        $locale = $request->query->has('locale') ? $request->query->get('locale') : ($body['locale'] ?? null);
         if (null === $locale || '' === $locale) {
             return null;
         }

@@ -4,9 +4,15 @@ declare(strict_types=1);
 
 namespace Itk\Cms\Tests\Core;
 
+use Doctrine\DBAL\Connection;
 use Doctrine\ORM\EntityManagerInterface;
+use Itk\Cms\Entity\User;
+use Itk\Cms\Entity\UserTwoFactor;
 use Itk\Cms\Health\AppSecretHealthCheck;
+use Itk\Cms\Health\HealthService;
+use Itk\Cms\Repository\UserTwoFactorRepository;
 use Itk\Cms\Request\RequestService;
+use Itk\Cms\Security\TwoFactor\SecretBox;
 use Itk\Cms\Tests\App\TestKernel;
 use PHPUnit\Framework\Attributes\Test;
 use Symfony\Bundle\FrameworkBundle\Console\Application;
@@ -23,6 +29,7 @@ final class EmptySecretTest extends KernelTestCase
     /** @var list<int> */
     private array $requestIds = [];
 
+    /** @param array<string, mixed> $options */
     protected static function createKernel(array $options = []): KernelInterface
     {
         return new TestKernel('test', true, null, '', $options['framework'] ?? []);
@@ -103,14 +110,57 @@ final class EmptySecretTest extends KernelTestCase
     #[Test]
     public function theHealthScreenWarnsAboutAnEmptySecret(): void
     {
+        $factors = $this->createStub(UserTwoFactorRepository::class);
+        $factors->method('enabledSecrets')->willReturn([]);
         foreach ([['', 'warn'], ['   ', 'warn'], ['0123456789abcdef', 'ok']] as [$secret, $status]) {
-            $result = (new AppSecretHealthCheck($secret))->check();
+            $check = new AppSecretHealthCheck($secret, $factors, new SecretBox($secret));
+            $result = $check->check();
 
+            self::assertSame('APP_SECRET', $check->name());
             self::assertSame($status, $result->status, \var_export($secret, true));
             if ('warn' === $status) {
                 self::assertStringContainsString('APP_SECRET пуст', $result->message);
             }
         }
-        self::assertSame('APP_SECRET', (new AppSecretHealthCheck('x'))->name());
+    }
+
+    #[Test]
+    public function theHealthReportDetectsAnEnabledSecretSealedWithAnOldKey(): void
+    {
+        $currentKey = 'new-test-app-secret';
+        $previousKey = 'old-test-app-secret';
+        $totp = 'JBSWY3DPEHPK3PXP';
+        $_SERVER['APP_SECRET'] = $_ENV['APP_SECRET'] = $currentKey;
+        self::bootKernel(['framework' => self::FROM_ENV]);
+        $container = self::getContainer();
+        $db = $container->get(Connection::class);
+        $em = $container->get(EntityManagerInterface::class);
+        $health = $container->get(HealthService::class);
+        $user = new User('secret-health@example.com', 'Secret health');
+        $sealed = (new SecretBox($previousKey))->seal($totp);
+        $factor = new UserTwoFactor($user, $sealed);
+
+        $db->beginTransaction();
+        try {
+            $em->persist($user);
+            $em->persist($factor);
+            $em->flush();
+            self::assertSame('ok', \array_column($health->report()['checks'], null, 'name')['APP_SECRET']['status'], 'a pending setup does not block sign-in');
+
+            $factor->enabledAt = new \DateTimeImmutable();
+            $em->flush();
+            $check = \array_column($health->report()['checks'], null, 'name')['APP_SECRET'];
+            self::assertSame('fail', $check['status']);
+            self::assertStringContainsString('itk:user:reset-2fa', $check['message']);
+            foreach ([$currentKey, $previousKey, $totp, $sealed, $user->email] as $privateValue) {
+                self::assertStringNotContainsString($privateValue, $check['message']);
+            }
+
+            $factor->secret = (new SecretBox($currentKey))->seal($totp);
+            $em->flush();
+            self::assertSame('ok', \array_column($health->report()['checks'], null, 'name')['APP_SECRET']['status']);
+        } finally {
+            $db->rollBack();
+        }
     }
 }

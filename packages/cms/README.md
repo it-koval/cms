@@ -46,7 +46,7 @@ Composer requires only PHP 8.3. The **Site status** screen warns when the PHP pa
 
 **pgvector is mandatory.** A core migration runs `CREATE EXTENSION IF NOT EXISTS vector` and stops with an explanation if the extension is missing or older than 0.8. The `pgvector/pgvector:pg17` image includes the extension. On another server, install it by following the [pgvector instructions](https://github.com/pgvector/pgvector#installation).
 
-**Only PostgreSQL is supported.** MySQL, MariaDB and SQLite are not supported. On another database, and on PostgreSQL older than 16, the core migration stops and creates nothing. Create the database with `UTF8` encoding and a UTF-8 locale. Case-insensitive search relies on `lower()`, which folds Cyrillic correctly only in such a locale.
+**Only PostgreSQL 16 or newer is supported.** The core migration checks the database before creating tables. Create the database with `UTF8` encoding and a UTF-8 locale. Case-insensitive search relies on `lower()`, which folds Cyrillic correctly only in such a locale.
 
 ## Installation
 
@@ -135,7 +135,11 @@ Next, describe the site structure in `config/itk/schema.php` (see [Site schema](
 
 In a project without Symfony Flex, add `Itk\Cms\ItkCmsBundle::class => ['all' => true]` to `config/bundles.php`. FrameworkBundle, TwigBundle, SecurityBundle, DoctrineBundle and DoctrineMigrationsBundle must be there too.
 
-Import the routes as in the quick start. `site.php` declares the public routes: `POST /request/{form}`, `/sitemap.xml`, `/robots.txt`, `/llms.txt`, the IndexNow key file, image copies, `POST /mcp`, `/healthz`, and the page route with priority -1000. Any site route therefore wins over the page route.
+Import the routes as in the quick start. `site.php` registers the site endpoints.
+
+- `POST /request/{form}` submits a form. `POST /mcp` serves authenticated MCP calls when the feature is enabled.
+- `GET` and `HEAD` serve `/healthz`, `/sitemap.xml`, `/robots.txt`, `/llms.txt`, the IndexNow key at `/{key}.txt`, and image variants at `{upload_url}/_v/w{width}/{path}` and `{upload_url}/_v/w{width}-r{a}x{b}/{path}`.
+- `GET` and `HEAD /{path}` serve pages. This catch-all has priority `-1000`, so site routes with the default priority match first.
 
 #### Security (`security.yaml`)
 
@@ -840,7 +844,7 @@ The second step is a one-time code from an app (TOTP per RFC 6238: SHA-1, 6 digi
 - **Mandatory for a role.** The **Require two-step sign-in** checkbox in **Settings** → **Users and roles** → **Roles** (`Role::require2fa`). A person with such a role and no factor sees only the setup dialog. Everything else returns 403 with `details.code = '2fa_enrol'`. That person cannot turn the factor off (409).
 - **Attempts.** Five wrong codes in a row lock the factor for 15 minutes (429, `details.code = '2fa_locked'`). A code works once, with a window of ±1 step.
 - **Storage.** The secret is encrypted with `sodium_crypto_secretbox` using a key from `APP_SECRET`. Recovery codes are stored as HMAC-SHA256.
-- **Changing `APP_SECRET`** makes the secrets and recovery codes unreadable. People with the factor turned on cannot sign in until their factor is reset.
+- **Changing `APP_SECRET`** makes the secrets and recovery codes unreadable. People with the factor turned on cannot sign in until their factor is reset. Site Health and `itk:doctor` report unreadable keys without showing any account details.
 - **Reset.** An administrator clicks **Settings** → **Users and roles** → **Users** → **Reset two-step sign-in** (`POST users/{id}/reset-2fa`, the **Edit** level of `set:users`, not for yourself). If nobody can sign in: `php bin/console itk:user:reset-2fa name@example.com`.
 - **API.** `GET 2fa`, `POST 2fa/setup`, `POST 2fa/enable {code}`, `POST 2fa/recovery-codes {password}`, `POST 2fa/disable {password}`. These act only on yourself and need no special permissions.
 
@@ -1556,7 +1560,7 @@ Each line is `ok`, `off`, `warning` or `ERROR`. `off` marks a module that is not
 
 ### /healthz
 
-`GET /healthz` is an open URL for a load balancer: `{"status":"ok"}` (200) or `{"status":"fail"}` (503). It checks that the database responds and that a file can be written to `upload_dir`. You cannot create a page with the URL `/healthz`.
+`GET /healthz` is a public endpoint for a load balancer. It returns `{"status":"ok"}` (200) or `{"status":"fail"}` (503). `HEAD /healthz` returns the same status without a body. The endpoint checks database connectivity and write access to `upload_dir` and reserves the `/healthz` path.
 
 ## Console commands
 
@@ -1905,16 +1909,9 @@ Node, crittr and Chrome must be in the same image as PHP: php-fpm runs the check
 
 ### Production build
 
-```bash
-docker build -f docker/Dockerfile --target php_prod --build-arg CRITICAL_CSS=1 -t mysite:1.0 .
-```
+Use `docker/compose.prod.yaml` for a production site. It builds `php_prod` with production dependencies and packages the admin files in the nginx image. PHP-FPM and the worker share the app image. The deployment runs migrations and `itk:install` as separate commands.
 
-- The `php_prod` stage installs dependencies without dev packages (`composer install --no-dev`, plus `npm ci --omit=dev` with `CRITICAL_CSS=1`) and turns on `php.ini-production`.
-- Pass `APP_SECRET`, `DATABASE_URL` and `MAILER_DSN` through the container environment, or keep them in the Symfony vault and pass only `SYMFONY_DECRYPTION_SECRET` (see [Secrets in production](#secrets-in-production-symfony-vault)). The `.env` from git goes into the image, so keep only default values in it.
-- The image has no admin files (`public/bundles`). The entrypoint puts them in place at start. Give nginx a shared volume, or run `assets:install public` in your own build stage.
-- Migrations and `itk:install` run on each `php` start. With several replicas, set `AUTO_MIGRATE=0` and run the migrations as a separate job.
-- The worker starts from the same image with `SKIP_ENTRYPOINT=1` and the worker command.
-- The kit's `compose.yaml` is meant for development. The site describes its production orchestration itself.
+Pass production secrets at runtime through the environment or the [Symfony vault](#secrets-in-production-symfony-vault). The build copies the committed `.env`, so keep only defaults in it. See the [deployment and rollback guide](https://github.com/it-koval/cms/blob/main/docs/DEPLOY.md).
 
 ### Updating the kit
 

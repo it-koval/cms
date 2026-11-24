@@ -19,6 +19,6 @@ final class PageTemplateChanged extends RecordEvent
         Viewer $viewer,
         public readonly string $from,
     ) {
-        parent::__construct($resourceKey, 'page', $record, [], $viewer);
+        parent::__construct($resourceKey, 'page', $record, $record?->snapshot() ?? [], $viewer);
     }
 }

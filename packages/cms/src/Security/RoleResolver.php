@@ -26,7 +26,13 @@ final class RoleResolver
     ) {
     }
 
-    /** Add what a set of actions needs (Публиковать / Удалять -> Править -> Смотреть), in the order of the matrix columns. @param list<string> $list @return list<string> */
+    /**
+     * Add what a set of actions needs (Публиковать / Удалять -> Править -> Смотреть), in the order of the matrix columns.
+     *
+     * @param list<string> $list
+     *
+     * @return list<string>
+     */
     public static function closeActions(array $list): array
     {
         $s = \array_flip($list);

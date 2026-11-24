@@ -53,7 +53,11 @@ trait MailSupport
         \putenv('MAILER_DSN');
     }
 
-    /** Включает «Настройки → Почта» с Mailpit. @param array<string, mixed> $override */
+    /**
+     * Включает «Настройки → Почта» с Mailpit.
+     *
+     * @param array<string, mixed> $override
+     */
     private function useMailpit(array $override = []): void
     {
         $this->requireMailpit();
@@ -82,7 +86,11 @@ trait MailSupport
         $em->createQuery("DELETE FROM Itk\\Cms\\Entity\\Setting s WHERE s.key IN ('mail', 'mailStatus', 'mailRoutes')")->execute();
     }
 
-    /** Письма, которые страница поставила в очередь. @return list<SendMail> */
+    /**
+     * Письма, которые страница поставила в очередь.
+     *
+     * @return list<SendMail>
+     */
     private function queuedMail(): array
     {
         $out = [];

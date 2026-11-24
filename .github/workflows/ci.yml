@@ -3,177 +3,192 @@ name: CI
 on:
   push:
     branches: [main]
+    tags: ['v*']
   pull_request:
   workflow_dispatch:
+  schedule:
+    - cron: '17 3 * * 1'
 
 permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.event_name == 'schedule' && 'schedule' || 'change' }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   php:
-    name: PHP ${{ matrix.php }}, Symfony ${{ matrix.symfony }}
+    name: PHP ${{ matrix.php }}, Symfony ${{ matrix.symfony }}, PostgreSQL ${{ matrix.postgres }} (${{ matrix.dependencies }})
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
         include:
-          - { php: '8.3', symfony: '7.4.*' }
-          - { php: '8.4', symfony: '7.4.*' }
-          - { php: '8.4', symfony: '8.1.*' }
-          - { php: '8.5', symfony: '8.1.*' }
-
-    services:
-      postgres:
-        image: pgvector/pgvector:pg17
-        env:
-          POSTGRES_PASSWORD: itk-test
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd="pg_isready -U postgres"
-          --health-interval=5s
-          --health-timeout=5s
-          --health-retries=20
-      mailpit:
-        image: axllent/mailpit
-        ports:
-          - 1025:1025
-          - 8025:8025
-        options: >-
-          --health-cmd="/mailpit readyz"
-          --health-interval=5s
-          --health-timeout=5s
-          --health-retries=20
+          - { php: '8.3', symfony: '7.4.*', postgres: '16', dependencies: lowest }
+          - { php: '8.3', symfony: '7.4.*', postgres: '17', dependencies: stable }
+          - { php: '8.4', symfony: '7.4.*', postgres: '17', dependencies: stable, max_bundle: true }
+          - { php: '8.4', symfony: '8.0.*', postgres: '17', dependencies: stable }
+          - { php: '8.4', symfony: '8.1.*', postgres: '17', dependencies: stable }
+          - { php: '8.5', symfony: '8.1.*', postgres: '17', dependencies: stable }
 
     env:
-      DATABASE_URL: postgresql://postgres:itk-test@127.0.0.1:5432/itk?serverVersion=17&charset=utf8
-      ITK_TEST_MAILPIT_URL: http://127.0.0.1:8025
-      ITK_TEST_MAILPIT_SMTP_PORT: '1025'
-
-    defaults:
-      run:
-        working-directory: packages/cms
+      COMPOSE_FILE: packages/cms/docker/compose.yaml:packages/cms/tests/docker/compose.ci.yaml
+      PHP_VERSION: ${{ matrix.php }}
+      ITK_CI_SYMFONY: ${{ matrix.symfony }}
+      ITK_CI_POSTGRES: ${{ matrix.postgres }}
 
     steps:
       - uses: actions/checkout@v4
 
-      - uses: shivammathur/setup-php@v2
-        with:
-          php-version: ${{ matrix.php }}
-          extensions: ctype, dom, exif, gd, json, mbstring, pdo_pgsql, sodium
-          coverage: none
-          tools: composer:v2
-
-      # symfony/flex only to pin the Symfony line through SYMFONY_REQUIRE; the bundle itself does not use it
-      - name: Install symfony/flex globally
+      - name: Match the PHP container user to the checkout
         run: |
-          composer global config --no-plugins allow-plugins.symfony/flex true
-          composer global require --no-progress --no-scripts --no-plugins symfony/flex
+          printf 'ITK_CI_UID=%s\nITK_CI_GID=%s\n' "$(id -u)" "$(id -g)" >> "$GITHUB_ENV"
 
-      # composer.lock of the bundle is not committed (a library), so this resolves the newest versions inside the pinned Symfony line
-      - name: composer install
+      - name: Start PostgreSQL and Mailpit and build PHP
+        run: |
+          docker compose --project-directory packages/cms up -d --wait database mailer
+          docker compose --project-directory packages/cms build php
+
+      # The global Flex install pins the Symfony line through SYMFONY_REQUIRE.
+      - name: Install compatible dependencies
         env:
-          SYMFONY_REQUIRE: ${{ matrix.symfony }}
-        run: composer install --no-progress --prefer-dist
+          DEPENDENCIES: ${{ matrix.dependencies }}
+        run: |
+          docker compose --project-directory packages/cms run --rm --no-deps php sh -ec '
+            composer global config --no-plugins allow-plugins.symfony/flex true
+            composer global require --no-progress --no-scripts --no-plugins symfony/flex
+            if [ "$1" = lowest ]; then set -- --prefer-lowest --prefer-stable; else set --; fi
+            composer update --no-progress --prefer-dist --no-interaction "$@"
+            composer show symfony/framework-bundle
+          ' sh "$DEPENDENCIES"
 
-      - run: composer validate --strict
+      - name: Validate package metadata and SQL
+        run: |
+          docker compose --project-directory packages/cms run --rm --no-deps php composer validate --strict
+          docker compose --project-directory packages/cms run --rm --no-deps php composer lint:sql
 
-      - name: No MySQL constructs in the SQL of the bundle
-        run: composer lint:sql
-
-      - name: composer test (database, migrations, itk:install, PHPUnit)
-        run: composer test
+      - name: PHPUnit in two reproducible random orders
+        run: |
+          for seed in 30301 30302; do
+            docker compose --project-directory packages/cms run --rm --no-deps php composer test:prepare
+            docker compose --project-directory packages/cms run --rm --no-deps php composer test:run -- --order-by=random --random-order-seed="$seed"
+          done
 
       - name: Doctrine schema is in sync with the mapping
-        run: php tests/bin/console doctrine:schema:validate --env=test
+        run: docker compose --project-directory packages/cms run --rm --no-deps php php tests/bin/console doctrine:schema:validate --env=test
 
-      - name: PHPStan
-        run: composer stan
+      - name: PHPStan and PHP CS Fixer
+        # Run both static tools at their current versions in every stable lane.
+        if: matrix.dependencies != 'lowest'
+        run: |
+          docker compose --project-directory packages/cms run --rm --no-deps php composer stan
+          docker compose --project-directory packages/cms run --rm --no-deps php composer cs
 
-      - name: PHP CS Fixer (dry run)
-        run: composer cs
+      - name: Exercise the optional MAX bundle with a stubbed transport
+        if: matrix.max_bundle == true
+        run: |
+          docker compose --project-directory packages/cms run --rm --no-deps php composer require --dev --no-progress --no-interaction yuri-kovalev/max-bot-symfony-bundle
+          docker compose --project-directory packages/cms run --rm --no-deps php composer test:prepare
+          docker compose --project-directory packages/cms run --rm --no-deps -e ITK_TEST_MAX_BUNDLE=1 php php vendor/bin/phpunit --fail-on-skipped --filter MaxOptionalBundleTest
+
+      - name: Stop the test stack
+        if: always()
+        run: docker compose --project-directory packages/cms down --remove-orphans
 
   admin:
     name: Admin (Vue)
     runs-on: ubuntu-latest
-    container: node:24.22.2-bookworm
     timeout-minutes: 10
-
-    defaults:
-      run:
-        working-directory: admin
+    env:
+      COMPOSE_FILE: admin/compose.yaml
 
     steps:
       - uses: actions/checkout@v4
 
-      - run: npm ci
+      - run: docker compose run --rm --no-deps node npm ci
 
-      - run: npm audit
+      - name: Audit production dependencies
+        run: docker compose run --rm --no-deps node npm audit --omit=dev --audit-level=high
 
-      - run: npm audit --omit=dev
+      - name: Report audit findings including dev dependencies
+        if: always()
+        continue-on-error: true
+        run: docker compose run -T --rm --no-deps node npm audit --include=dev --json > admin/npm-audit.json
 
-      - run: npm run lint
+      - name: Upload the full npm audit
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: npm-audit
+          path: admin/npm-audit.json
 
-      # the catalogues of the interface (admin/src/i18n, packages/cms/translations): the same keys and {params} in en, ru, kk, every key used and present, no Cyrillic in the code
-      - run: npm run check:i18n
+      - run: docker compose run --rm --no-deps node npm run lint
 
-      - run: npm test
+      # Match keys and parameters in en, ru and kk, and check all catalogued keys.
+      - run: docker compose run --rm --no-deps node npm run check:i18n
 
-      - run: npm run build
+      - run: docker compose run --rm --no-deps node npm test
 
-      # the built admin is committed: it must be what the sources build to. -N makes files that the build added show up in the diff
-      # the checkout belongs to the runner user, not to root of the container: without safe.directory git refuses to read it
+      - run: docker compose run --rm --no-deps node npm run build
+
       - name: The built admin matches the sources
-        working-directory: .
         run: |
-          git config --global --add safe.directory "$GITHUB_WORKSPACE"
           git add --intent-to-add packages/cms/public/admin
           git diff --exit-code packages/cms/public/admin
 
+      - name: Stop the admin test stack
+        if: always()
+        run: docker compose down --remove-orphans
+
   docker:
-    name: Docker kit
+    name: Docker kit and clean Symfony install
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
+    env:
+      COMPOSE_FILE: packages/cms/docker/compose.yaml:packages/cms/tests/docker/compose.ci.yaml
 
     steps:
       - uses: actions/checkout@v4
 
-      - uses: docker/setup-buildx-action@v3
-
-      # the context is packages/cms: the COPY paths of docker/Dockerfile start with docker/, the same as in a site root
-      - name: Build php_dev with Node and Chromium
-        uses: docker/build-push-action@v6
-        with:
-          context: packages/cms
-          file: packages/cms/docker/Dockerfile
-          target: php_dev
-          build-args: |
-            CRITICAL_CSS=1
-          load: true
-          tags: itk-docker:dev
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      - name: Smoke test inside the image
-        run: docker run --rm -v "$PWD:/repo:ro" itk-docker:dev bash /repo/packages/cms/tests/docker/smoke.sh
-
-      - name: Build php_dev without Node (the default for sites)
-        uses: docker/build-push-action@v6
-        with:
-          context: packages/cms
-          file: packages/cms/docker/Dockerfile
-          target: php_dev
-          load: true
-          tags: itk-docker:plain
-          cache-from: type=gha
-
-      - name: The default image has no Node, php-fpm and nginx configs are valid
+      - name: Match the PHP container user to the checkout
         run: |
-          docker run --rm itk-docker:plain sh -c '! command -v node'
-          docker run --rm -e SKIP_ENTRYPOINT=1 itk-docker:dev php-fpm -t
-          docker run --rm --add-host php:127.0.0.1 -v "$PWD/packages/cms/docker/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro" nginx:1.27-alpine nginx -t
+          printf 'ITK_CI_UID=%s\nITK_CI_GID=%s\n' "$(id -u)" "$(id -g)" >> "$GITHUB_ENV"
+
+      - name: Build and test php_dev with Node and Chromium
+        env:
+          CRITICAL_CSS: '1'
+        run: |
+          docker compose --project-directory packages/cms build php
+          docker compose --project-directory packages/cms run --rm --no-deps php bash tests/docker/smoke.sh
+          docker compose --project-directory packages/cms run --rm --no-deps php php-fpm -t
+
+      - name: The default dev image has no Node
+        run: |
+          docker compose --project-directory packages/cms build php
+          docker compose --project-directory packages/cms run --rm --no-deps php sh -ec '! command -v node'
+
+      - name: Create a clean Symfony site with only required packages
+        run: |
+          docker compose --project-directory packages/cms run --rm --no-deps php \
+            composer create-project 'symfony/skeleton:7.4.*' /workspace/.ci-site --no-interaction --no-progress
+          git archive --prefix=source/ HEAD:packages/cms | tar -xf - -C .ci-site
+          docker compose --project-directory packages/cms run --rm --no-deps -w /workspace/.ci-site php \
+            bash /workspace/packages/cms/tests/docker/prepare-site.sh
+
+      - name: Build php_prod and smoke-test clean installation, web, database and worker
+        run: bash packages/cms/tests/docker/prod-smoke.sh .ci-site
+
+      - name: Stop the dev test stack
+        if: always()
+        run: docker compose --project-directory packages/cms down --remove-orphans
+
+  split:
+    needs: [php, admin, docker]
+    if: >-
+      ${{ success() && github.repository == 'it-koval/cms' &&
+          (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
+          (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')) }}
+    uses: ./.github/workflows/split.yml
+    secrets:
+      CMS_BUNDLE_TOKEN: ${{ secrets.CMS_BUNDLE_TOKEN }}

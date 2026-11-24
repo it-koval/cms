@@ -108,7 +108,11 @@ final class ChangeDescriber
         return $t;
     }
 
-    /** Title of a repeater item for its collapsed header. */
+    /**
+     * Title of a repeater item for its collapsed header.
+     *
+     * @param array<string, mixed> $item
+     */
     public function repeaterTitle(FieldInterface $f, array $item, int $i): string
     {
         $templates = $f->toArray()['itemTitle'] ?? [];
@@ -141,7 +145,11 @@ final class ChangeDescriber
         return ($noun ? \mb_strtoupper(\mb_substr($noun, 0, 1)) . \mb_substr($noun, 1) : I18n::t('content.change_item_noun')) . ' ' . ($i + 1);
     }
 
-    /** The value of a sub-field as a title template shows it. A record of another collection is not looked up here (the history is written without them), so a Relation gives nothing. */
+    /**
+     * The value of a sub-field as a title template shows it. A record of another collection is not looked up here (the history is written without them), so a Relation gives nothing.
+     *
+     * @param array<string, mixed> $item
+     */
     private function itemValueText(FieldInterface $f, array $item, string $key): string
     {
         $s = $f->subField($key);

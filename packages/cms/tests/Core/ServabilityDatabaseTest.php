@@ -20,9 +20,12 @@ use Symfony\Component\HttpKernel\KernelInterface;
 
 final class ServabilityDatabaseTest extends KernelTestCase
 {
+    /** @var array<array-key, mixed> */
     private array $ids = [];
+    /** @var array<array-key, mixed> */
     private array $paths = [];
 
+    /** @param array<string, mixed> $options */
     protected static function createKernel(array $options = []): KernelInterface
     {
         return new TestKernel('test', true, itk: ['main_locale' => 'ru', 'locales' => ['ru' => ['name' => 'Russian'], 'kk' => ['name' => 'Kazakh'], 'en' => ['name' => 'English']]]);

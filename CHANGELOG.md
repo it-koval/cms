@@ -8,6 +8,8 @@ All notable changes to ITK CMS are recorded in this file. The format follows [Ke
 
 ### Added
 
+- Added the code of conduct, issue and pull request templates, and a deployment and rollback guide with a production Compose file. See [DEPLOY.md](docs/DEPLOY.md).
+- Site Health and `itk:doctor` report unreadable two-step sign-in keys and use the same GD/WebP check.
 - `itk_cms.analytics.start` selects `auto` (default) or `manual` in site configuration. The browser API `window.itkAnalytics.start()` starts all configured counters, and `start(['ga'])` selects GA. Counter keys are `metrika` and `ga`. New starts dispatch the bubbling `itk-analytics:started` event on `document` with `detail.counters`. Repeated calls without new counters emit no event.
 - Page and collection lists show translation status and open the selected version. Content editors, translated settings and menus have a language picker. The dashboard and collection counters cover all configured languages.
 - Page and record history can show one language or all languages. `GET /admin/api/history/{kind}/{id}?scope=all` paginates across languages, and restoring a revision targets its own draft.
@@ -22,6 +24,9 @@ All notable changes to ITK CMS are recorded in this file. The format follows [Ke
 
 ### Changed
 
+- Record after-events expose the committed snapshot in `data.fields`, `data.meta` and `data.status`. Publishing reports the live version. Deleting reports the snapshot captured before removal.
+- CI runs the PHP and Symfony matrix in Docker, covers PostgreSQL 16 and 17 and lowest dependencies, tests two random orders, and checks a clean Symfony install and the production Compose stack. The package split requires a successful CI run for the same commit.
+- The Composer archive no longer includes development scripts.
 - Analytics initialization uses one versioned external `defer` loader with `data-*` attributes. In `manual`, the bundle makes no provider requests or preliminary connections before `start()` and omits Metrika's `<noscript>` pixel. `auto` keeps that pixel. Verification meta tags remain available in both modes. Sites manage consent, persistence and reload after revocation, and must remove their direct analytics inserts before switching to `manual`. See [UPGRADE.md](UPGRADE.md#030).
 - `GET /admin/api/collections/{col}` always returns the paginated object `{ items, total, page, perPage, facets, metrics }`. Search, filters, status and translation selection apply before counting and pagination. Published versions with unpublished changes are included in the `draft` filter. Clients must read `items` and request further pages. See [UPGRADE.md](UPGRADE.md#030).
 - IndexNow submits the affected paths for all configured languages. Critical CSS is generated for the published versions of those languages.

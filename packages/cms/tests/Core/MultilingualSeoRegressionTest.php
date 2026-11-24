@@ -32,6 +32,7 @@ final class MultilingualSeoRegressionTest extends WebTestCase
     private string $id;
     private string $path;
 
+    /** @param array<string, mixed> $options */
     protected static function createKernel(array $options = []): KernelInterface
     {
         return new TestKernel('test', false, itk: [

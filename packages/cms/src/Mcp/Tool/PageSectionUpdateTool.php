@@ -39,6 +39,7 @@ final class PageSectionUpdateTool extends SectionTool
             . 'hidden hides or shows the section. Use page_get with section_id to see its current data first.' . self::EDITOR_NOTE;
     }
 
+    /** @return array<string, mixed> */
     public function inputSchema(): array
     {
         return self::schema(self::pageIdProperties() + [

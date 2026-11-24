@@ -34,7 +34,11 @@ final class TelegramConnection implements ResetInterface
     ) {
     }
 
-    /** Error texts of the HTTP client carry the request address, and the address carries the bot token: never show or log it. The same goes for a DSN quoted by a configuration error. */
+    /**
+     * Error texts of the HTTP client carry the request address, and the address carries the bot token: never show or log it. The same goes for a DSN quoted by a configuration error.
+     *
+     * @param list<string> $tokens
+     */
     public static function scrub(string $message, #[\SensitiveParameter] array $tokens = []): string
     {
         foreach ($tokens as $token) {

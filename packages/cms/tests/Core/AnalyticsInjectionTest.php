@@ -40,6 +40,7 @@ final class AnalyticsInjectionTest extends WebTestCase
     /** @var list<string> */
     private array $created = [];
 
+    /** @param array<string, mixed> $options */
     protected static function createKernel(array $options = []): KernelInterface
     {
         return new TestKernel('test', $options['debug'] ?? false, framework: $options['framework'] ?? [], itk: $options['itk'] ?? []);

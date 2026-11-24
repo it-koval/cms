@@ -165,7 +165,8 @@ final class UsersController extends AbstractApiController
     public function removeRole(Request $request, string $key): JsonResponse
     {
         $this->access->require(self::AREA, 'delete');
-        $moveTo = $request->query->get('moveTo', $this->body($request)['moveTo'] ?? null);
+        $body = $this->body($request);
+        $moveTo = $request->query->has('moveTo') ? $request->query->get('moveTo') : ($body['moveTo'] ?? null);
 
         return $this->json($this->admin->removeRole($key, \is_string($moveTo) && '' !== $moveTo ? $moveTo : null));
     }

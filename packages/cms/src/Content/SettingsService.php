@@ -288,13 +288,21 @@ final class SettingsService implements ResetInterface
         return \array_values($out);
     }
 
-    /** Chats from the bundle option `telegram.chat_ids` (config / ITK_TELEGRAM_CHAT_IDS): they receive the requests when Settings → Уведомления has none. @return list<string> */
+    /**
+     * Chats from the bundle option `telegram.chat_ids` (config / ITK_TELEGRAM_CHAT_IDS): they receive the requests when Settings → Уведомления has none.
+     *
+     * @return list<string>
+     */
     public function fallbackChatIds(): array
     {
         return self::splitIds($this->fallbackChatIds);
     }
 
-    /** The same for MAX: the bundle option `max.chat_ids` (config / ITK_MAX_CHAT_IDS). @return list<string> */
+    /**
+     * The same for MAX: the bundle option `max.chat_ids` (config / ITK_MAX_CHAT_IDS).
+     *
+     * @return list<string>
+     */
     public function maxFallbackChatIds(): array
     {
         return self::splitIds($this->maxFallbackChatIds);

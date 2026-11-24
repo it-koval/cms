@@ -34,6 +34,20 @@ final class ActionsTest extends ResourceKernelTestCase
     }
 
     #[Test]
+    public function anActionInTheRowMenuAndTheRecordFormGetsOneRecord(): void
+    {
+        $a = $this->trip('Алтай');
+        $schema = self::getContainer()->get(\Itk\Cms\Schema\Schema::class);
+        $action = $schema->collection('test_trips')?->action('tag');
+        self::assertNotNull($action);
+        self::assertSame(['row', 'bulk', 'form'], $action->places());
+
+        $r = $this->runner->run('test_trips', 'tag', [$a['id']], ['label' => 'Хит']);
+        self::assertTrue($r->ok);
+        self::assertSame('1: Хит x-', $r->message);
+    }
+
+    #[Test]
     public function theModalIsCheckedAgainstItsFields(): void
     {
         $a = $this->trip('Алтай');

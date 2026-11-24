@@ -84,7 +84,11 @@ final class ContentReader implements ResetInterface
         return \array_map(fn (array $r): array => $this->pageRow($r, $locale), $qb->getQuery()->getArrayResult());
     }
 
-    /** The published page with this id, or null (no such page, a draft, an unpublished one, a page without this language). @return null|array<string, mixed> */
+    /**
+     * The published page with this id, or null (no such page, a draft, an unpublished one, a page without this language).
+     *
+     * @return array<string, mixed>|null
+     */
     public function page(string $id, ?string $locale = null): ?array
     {
         $locale = $this->language($locale);

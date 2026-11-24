@@ -47,7 +47,11 @@ final class TwoFactorTest extends KernelTestCase
         return self::getContainer()->get(UserManager::class)->create($email, 'Тест 2FA', $role, self::PASSWORD);
     }
 
-    /** A person with the factor switched on: [user, secret]. */
+    /**
+     * A person with the factor switched on: [user, secret].
+     *
+     * @return array<array-key, mixed>
+     */
     private function enrolled(string $email = 'test-2fa@example.com', string $role = Role::EDITOR): array
     {
         $user = $this->user($email, $role);

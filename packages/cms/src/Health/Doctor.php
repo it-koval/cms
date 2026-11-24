@@ -66,6 +66,7 @@ final class Doctor
         private readonly string $projectDir,
         #[Autowire(param: 'itk_cms.main_locale')]
         private readonly string $mainLocale,
+        private readonly WebpHealthCheck $webp,
         private readonly ?ContentLocales $contentLocales = null,
         private readonly AnalyticsAsset $analyticsAsset = new AnalyticsAsset(),
     ) {
@@ -81,9 +82,9 @@ final class Doctor
 
         $env = I18n::t('ops.doctor_group_env');
         $add($env, I18n::t('ops.doctor_name_extensions'), $this->extensions());
-        $add($env, 'WebP', $this->images->supportsWebp() ? HealthResult::ok(I18n::t('ops.doctor_webp_ok')) : HealthResult::fail(I18n::t('ops.doctor_webp_missing')));
+        $add($env, $this->webp->name(), $this->webp->check());
         $add($env, 'AVIF', $this->images->supportsAvif() ? HealthResult::ok(I18n::t('ops.doctor_avif_ok')) : HealthResult::warn(I18n::t('ops.doctor_avif_missing')));
-        $done = [];
+        $done = [$this->webp->name() => true];
         foreach ([$this->secret, $this->uploads, $this->database] as $check) {
             $done[$check->name()] = true;
             $add($env, $check->name(), $check->check());

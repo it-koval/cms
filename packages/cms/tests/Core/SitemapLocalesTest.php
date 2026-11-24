@@ -48,6 +48,7 @@ final class SitemapLocalesTest extends WebTestCase
     /** @var list<string> */
     private array $ruleIds = [];
 
+    /** @param array<string, mixed> $options */
     protected static function createKernel(array $options = []): KernelInterface
     {
         return new TestKernel($options['environment'] ?? 'test', $options['debug'] ?? true, itk: ['main_locale' => 'ru', 'locales' => ['ru' => ['name' => 'Русский'], 'kk' => ['name' => 'Қазақша'], 'tr' => ['name' => 'Türkçe'], 'zh' => ['name' => '中文', 'html_lang' => 'zh-CN'], 'en' => ['name' => 'English']]]); // i18n-ignore: configured language names
@@ -111,6 +112,7 @@ final class SitemapLocalesTest extends WebTestCase
         }
     }
 
+    /** @return array<array-key, mixed> */
     private function fixture(): array
     {
         $url = '/test-sitemap-locales-' . \bin2hex(\random_bytes(6));

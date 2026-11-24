@@ -26,6 +26,7 @@ use Itk\Cms\Schema\Schema;
 use Itk\Cms\Security\UserManager;
 use Itk\Cms\Tests\App\FakeMaxSender;
 use Itk\Cms\Tests\App\TestKernel;
+use Itk\Cms\Tests\Core\Fixture\FailingMessageBus;
 use PHPUnit\Framework\Attributes\Test;
 use Psr\Log\NullLogger;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
@@ -53,6 +54,7 @@ final class MaxChannelTest extends WebTestCase
     private array $saved = [];
     private string $csrf = '';
 
+    /** @param array<string, mixed> $options */
     protected static function createKernel(array $options = []): KernelInterface
     {
         return new TestKernel($options['environment'] ?? 'test', $options['debug'] ?? true, null, '', [], [], $options['itk'] ?? []);
@@ -124,19 +126,6 @@ final class MaxChannelTest extends WebTestCase
     private function bell(RequestEntity $r, string $type): int
     {
         return self::getContainer()->get(EntityManagerInterface::class)->getRepository(StoredNotification::class)->count(['dedupeKey' => $type . ':' . $r->id]);
-    }
-
-    private function brokenBus(): MessageBusInterface
-    {
-        return new class implements MessageBusInterface {
-            public int $attempts = 0;
-
-            public function dispatch(object $message, array $stamps = []): Envelope
-            {
-                ++$this->attempts;
-                throw new \RuntimeException('Queue is down');
-            }
-        };
     }
 
     private function channel(MessageBusInterface $bus): MaxChannel
@@ -214,6 +203,7 @@ final class MaxChannelTest extends WebTestCase
         return (array) \json_decode((string) $client->getResponse()->getContent(), true);
     }
 
+    /** @param array<string, mixed> $options */
     private function adminClient(array $options = []): void
     {
         $client = static::createClient($options);
@@ -230,7 +220,7 @@ final class MaxChannelTest extends WebTestCase
         $this->setting('maxRoutes', ['*' => self::CHAT]);
         $this->fake(false);
         $r = $this->request();
-        $bus = $this->brokenBus();
+        $bus = new FailingMessageBus();
 
         $this->channel($bus)->send($this->newRequestNote($r));
 
@@ -246,7 +236,7 @@ final class MaxChannelTest extends WebTestCase
         $this->maxReady();
         $this->setting('maxOn', false);
         $r = $this->request();
-        $bus = $this->brokenBus();
+        $bus = new FailingMessageBus();
 
         $this->channel($bus)->send($this->newRequestNote($r));
 
@@ -265,7 +255,7 @@ final class MaxChannelTest extends WebTestCase
         $other = DriverManager::getConnection(self::getContainer()->get(EntityManagerInterface::class)->getConnection()->getParams());
         $other->executeStatement('UPDATE itk_request SET channels = ?, delivery = ? WHERE id = ?', ['{"telegram":{"state":"sent","error":null}}', 'sent', $r->id]);
         $other->close();
-        $bus = $this->brokenBus();
+        $bus = new FailingMessageBus();
 
         $this->channel($bus)->send($this->newRequestNote($r));
 
@@ -864,7 +854,9 @@ final class MaxChannelTest extends WebTestCase
         $em->createQuery('DELETE FROM Itk\Cms\Entity\User u WHERE u.email LIKE :e')->setParameter('e', 'test-max-%@example.com')->execute();
         $editor = self::getContainer()->get(UserManager::class)->create('test-max-editor@example.com', 'Тест MAX', 'editor', 'password-for-test');
         \assert($editor instanceof User);
-        static::getClient()->loginUser($editor, 'itk_admin');
+        $client = static::getClient();
+        self::assertInstanceOf(KernelBrowser::class, $client);
+        $client->loginUser($editor, 'itk_admin');
         $seen = $this->api('GET', 'settings');
         foreach (['maxOn', 'maxRoutes', 'maxFallback', 'maxReady', 'tgReady', 'tgOn', 'tgRoutes'] as $key) {
             self::assertArrayNotHasKey($key, $seen, 'an editor does not see ' . $key);
@@ -961,7 +953,9 @@ final class MaxChannelTest extends WebTestCase
         $this->adminClient();
         $editor = self::getContainer()->get(UserManager::class)->create('test-max-editor@example.com', 'Тест MAX', 'editor', 'password-for-test');
         \assert($editor instanceof User);
-        static::getClient()->loginUser($editor, 'itk_admin');
+        $client = static::getClient();
+        self::assertInstanceOf(KernelBrowser::class, $client);
+        $client->loginUser($editor, 'itk_admin');
         $this->fake();
 
         $this->api('POST', 'settings/max-test', ['chatId' => self::CHAT], 403);

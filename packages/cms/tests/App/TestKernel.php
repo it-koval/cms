@@ -10,12 +10,15 @@ use Doctrine\Bundle\MigrationsBundle\DoctrineMigrationsBundle;
 use Itk\Cms\CriticalCss\CssExtractor;
 use Itk\Cms\ItkCmsBundle;
 use Itk\Cms\KnowledgeBase\Embedding\Embedder;
+use Itk\Cms\Request\Max\MaxApiSender;
 use Itk\Cms\Request\Max\MaxSender;
+use MaxMessenger\Bot\MaxApiConfig;
 use Symfony\Bundle\FrameworkBundle\FrameworkBundle;
 use Symfony\Bundle\FrameworkBundle\Kernel\MicroKernelTrait;
 use Symfony\Bundle\SecurityBundle\SecurityBundle;
 use Symfony\Bundle\TwigBundle\TwigBundle;
 use Symfony\Component\DependencyInjection\Loader\Configurator\ContainerConfigurator;
+use Symfony\Component\HttpKernel\Bundle\BundleInterface;
 use Symfony\Component\HttpKernel\Kernel as BaseKernel;
 use Symfony\Component\Routing\Loader\Configurator\RoutingConfigurator;
 
@@ -30,6 +33,7 @@ use Symfony\Component\Routing\Loader\Configurator\RoutingConfigurator;
  * `$framework` replaces top-level blocks of the framework config of the test site (`['messenger' => […]]`: a site without transports, `['notifier' => […]]`: a site with Telegram), see the tests of the install path.
  * `$migrationPaths` is the doctrine_migrations.migrations_paths of the site (namespace => directory): a site that keeps its own migrations.
  * `$itk` replaces keys of the itk_cms config of the test site (`['strict' => false]`, `['schema_file' => …]`).
+ * `$limitForms` keeps the bundle's form rate limiter enabled for tests that exercise it.
  *
  * ITK_TEST_CACHE_DIR in the environment moves the cache of the containers out of tests/App/var/cache: runs that go on at the same time on one working tree each keep their own, like their own database.
  */
@@ -45,8 +49,18 @@ final class TestKernel extends BaseKernel
      * @param array<string, mixed> $itk keys of the itk_cms config that replace the ones of the test site
      * @param int $loginAttempts how many failed sign-ins the limiter of the admin firewall lets through (a test of the lock lowers it)
      */
-    public function __construct(string $environment, bool $debug, private readonly ?string $adminPath = null, private readonly string $routePrefix = '', private readonly array $framework = [], private readonly array $migrationPaths = [], private readonly array $itk = [], private readonly int $loginAttempts = 1000)
-    {
+    public function __construct(
+        string $environment,
+        bool $debug,
+        private readonly ?string $adminPath = null,
+        private readonly string $routePrefix = '',
+        private readonly array $framework = [],
+        private readonly array $migrationPaths = [],
+        private readonly array $itk = [],
+        private readonly int $loginAttempts = 1000,
+        private readonly bool $limitForms = false,
+        private readonly bool $databaseFaults = false,
+    ) {
         parent::__construct($environment, $debug);
     }
 
@@ -62,7 +76,9 @@ final class TestKernel extends BaseKernel
         $root = \getenv('ITK_TEST_CACHE_DIR');
         $dir = \is_string($root) && '' !== $root ? \rtrim($root, '/') . '/' . $this->getEnvironment() : parent::getCacheDir();
 
-        return null === $this->adminPath && '' === $this->routePrefix && [] === $this->framework && [] === $this->migrationPaths && [] === $this->itk && 1000 === $this->loginAttempts ? $dir : $dir . '/' . \md5($this->mount() . '|' . $this->adminPath . '|' . \serialize([$this->framework, $this->migrationPaths, $this->itk, $this->loginAttempts]));
+        $options = [$this->adminPath, $this->routePrefix, $this->framework, $this->migrationPaths, $this->itk, $this->loginAttempts, $this->limitForms, $this->databaseFaults];
+
+        return [null, '', [], [], [], 1000, false, false] === $options ? $dir : $dir . '/' . \md5(\serialize($options));
     }
 
     public function registerBundles(): iterable
@@ -73,6 +89,13 @@ final class TestKernel extends BaseKernel
         yield new DoctrineBundle();
         yield new DoctrineMigrationsBundle();
         yield new ItkCmsBundle();
+        if ('max_bundle' === $this->getEnvironment()) {
+            $bundle = 'MaxMessenger\\Bot\\Bundle\\MaxBotBundle';
+            if (!\class_exists($bundle) || !\is_a($bundle, BundleInterface::class, true)) {
+                throw new \LogicException('The optional MAX bundle is required by this test environment.');
+            }
+            yield new $bundle();
+        }
     }
 
     public function getProjectDir(): string
@@ -107,9 +130,7 @@ final class TestKernel extends BaseKernel
                     'failed' => 'doctrine://default?queue_name=failed&auto_setup=0',
                 ],
             ],
-            // the form limiter of the bundle (itk_request_form) is switched off: the tests send many requests from one address
-            'rate_limiter' => ['itk_request_form' => ['policy' => 'no_limit']],
-        ]);
+        ] + ($this->limitForms ? [] : ['rate_limiter' => ['itk_request_form' => ['policy' => 'no_limit']]]));
 
         // DoctrineBundle 3 always uses savepoints, lazy ghost objects, generated proxies and reports fields where declared, and no longer has the options for them
         $bundle2 = \version_compare((string) InstalledVersions::getVersion('doctrine/doctrine-bundle'), '3', '<');
@@ -185,13 +206,29 @@ final class TestKernel extends BaseKernel
 
         // the queries that reach the database are counted (QueryCounter::during()), for the tests that say «not one query per page»
         $services->set(QueryCounter::class)->tag('doctrine.middleware');
+        if ($this->databaseFaults) {
+            $services->set(DatabaseFaults::class)->public();
+            $services->set(DatabaseFaultMiddleware::class)->tag('doctrine.middleware');
+        }
 
         $services->set(FakeCssExtractor::class)->public();
         $services->alias(CssExtractor::class, FakeCssExtractor::class);
         $services->set(FakeEmbedder::class)->public();
         $services->alias(Embedder::class, FakeEmbedder::class);
-        $services->set(FakeMaxSender::class)->public();
-        $services->alias(MaxSender::class, FakeMaxSender::class)->public();
+        if ('max_bundle' === $this->getEnvironment()) {
+            $container->extension('max_bot', [
+                'access_token' => 'fixture-max-token',
+                'base_url' => 'https://max.example.test',
+                'connect_timeout' => 125,
+                'timeout' => 300,
+                'retry_attempts' => [],
+            ]);
+            $services->alias(MaxSender::class, MaxApiSender::class)->public();
+            $services->alias('test.max_api_config', MaxApiConfig::class)->public();
+        } else {
+            $services->set(FakeMaxSender::class)->public();
+            $services->alias(MaxSender::class, FakeMaxSender::class)->public();
+        }
     }
 
     protected function configureRoutes(RoutingConfigurator $routes): void

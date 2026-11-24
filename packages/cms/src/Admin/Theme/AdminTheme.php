@@ -39,7 +39,11 @@ final class AdminTheme
     ) {
     }
 
-    /** What the developer set (or the built-in look): { brand, accent, radius }. @return array{brand: string, accent: string, radius: int} */
+    /**
+     * What the developer set (or the built-in look): { brand, accent, radius }.
+     *
+     * @return array{brand: string, accent: string, radius: int}
+     */
     public function defaults(): array
     {
         return [
@@ -70,7 +74,11 @@ final class AdminTheme
         return null !== $this->stored();
     }
 
-    /** The look in force: the override, field by field over the defaults. @return array{brand: string, accent: string, radius: int} */
+    /**
+     * The look in force: the override, field by field over the defaults.
+     *
+     * @return array{brand: string, accent: string, radius: int}
+     */
     public function effective(): array
     {
         $theme = $this->defaults();

@@ -25,6 +25,7 @@ final class CriticalCssHealthCheckTest extends KernelTestCase
 
     private ?string $pageId = null;
 
+    /** @param array<string, mixed> $options */
     protected static function createKernel(array $options = []): KernelInterface
     {
         return new TestKernel('test', true, null, '', [], [], $options['itk'] ?? ['critical_css' => ['enabled' => true, 'stylesheets' => [self::CSS]]]);

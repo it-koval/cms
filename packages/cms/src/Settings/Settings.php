@@ -83,7 +83,11 @@ final class Settings
         return \is_array($value) && [] !== $value ? $value : $default;
     }
 
-    /** A picture setting: { src, alt }, or null while none is chosen. @return null|array{src: string, alt: string} */
+    /**
+     * A picture setting: { src, alt }, or null while none is chosen.
+     *
+     * @return array{src: string, alt: string}|null
+     */
     public function media(string $key, ?string $locale = null): ?array
     {
         $value = $this->raw($key, $locale);

@@ -81,7 +81,7 @@ final class TripsCollection extends CollectionResource
 
     public function actions(): iterable
     {
-        yield Action::make('Пометить', 'tag')->row()->bulk()->icon('tag')
+        yield Action::make('Пометить', 'tag')->row()->bulk()->form()->icon('tag')
             ->modal('Пометка', Text::make('Пометка', 'label')->required(), Number::make('Сколько', 'times'))
             ->handle(static fn (ActionContext $c): ActionResult => ActionResult::message(\sprintf('%d: %s x%s', \count($c->records()), $c->input()['label'], $c->input()['times'] ?? '-'))->reload());
         yield Action::make('Только для админа', 'secretive')->top()->permission()->requires('view')

@@ -26,22 +26,22 @@ final class ToursCollection extends CollectionResource
         return 'Поездки';
     }
 
-    public function singular(): ?string
+    public function singular(): string
     {
         return 'поездка';
     }
 
-    public function newLabel(): ?string
+    public function newLabel(): string
     {
         return 'Добавить поездку';
     }
 
-    public function icon(): ?string
+    public function icon(): string
     {
         return 'map';
     }
 
-    public function emptyState(): ?array
+    public function emptyState(): array
     {
         return ['title' => 'Поездок пока нет', 'text' => 'Добавьте первую поездку: город и даты.'];
     }
@@ -51,12 +51,12 @@ final class ToursCollection extends CollectionResource
         return ['table', 'calendar' => ['start' => 'dateStart', 'end' => 'dateEnd', 'title' => 'city']];
     }
 
-    public function titleField(): ?string
+    public function titleField(): string
     {
         return 'city';
     }
 
-    public function subField(): ?string
+    public function subField(): string
     {
         return 'dateStart';
     }

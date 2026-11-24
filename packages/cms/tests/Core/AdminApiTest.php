@@ -17,6 +17,7 @@ use Itk\Cms\Tests\Core\Fixture\TripsCollection;
 use PHPUnit\Framework\Attributes\Test;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 /** JSON API админки: схема с nav для человека, список с фильтрами, действия, скачивание, настройки пользователя (prefs), оболочка с плагинами. */
 final class AdminApiTest extends WebTestCase
@@ -308,7 +309,9 @@ final class AdminApiTest extends WebTestCase
         $this->client->request('GET', $r['download']);
         self::assertResponseIsSuccessful();
         self::assertStringContainsString('attachment; filename=trips.csv', (string) $this->client->getResponse()->headers->get('Content-Disposition'));
-        $file = $this->client->getResponse()->getFile()->getPathname();
+        $response = $this->client->getResponse();
+        self::assertInstanceOf(BinaryFileResponse::class, $response);
+        $file = $response->getFile()->getPathname();
         self::assertSame("title\nАлтай", $this->client->getInternalResponse()->getContent());
         self::assertFileDoesNotExist($file, 'delete: true removes the file after sending');
 

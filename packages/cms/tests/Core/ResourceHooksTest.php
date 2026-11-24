@@ -111,6 +111,50 @@ final class ResourceHooksTest extends ResourceKernelTestCase
     }
 
     #[Test]
+    public function collectionAfterEventsReportTheCommittedFields(): void
+    {
+        $captured = [];
+        $dispatcher = self::getContainer()->get('event_dispatcher');
+        foreach ([RecordCreated::class, RecordUpdated::class, RecordPublished::class, RecordDeleted::class] as $class) {
+            $dispatcher->addListener($class, static function (RecordEvent $event) use (&$captured): void {
+                $captured[$event::class] = $event->data;
+            });
+        }
+
+        $item = $this->trip('First');
+        $updated = $this->collections->update('test_trips', $item['id'], ['title' => 'Second']);
+        $live = $this->collections->publish('test_trips', $item['id']);
+        $this->collections->remove('test_trips', $item['id']);
+
+        self::assertSame($item['sys'], $captured[RecordCreated::class]['fields']['sys']);
+        self::assertSame($updated['title'], $captured[RecordUpdated::class]['fields']['title']);
+        self::assertSame($live['title'], $captured[RecordPublished::class]['fields']['title']);
+        self::assertSame('published', $captured[RecordPublished::class]['status']);
+        self::assertSame($captured[RecordPublished::class], $captured[RecordDeleted::class]);
+    }
+
+    #[Test]
+    public function republishingReportsTheLivePageWhileKeepingTheCurrentDraft(): void
+    {
+        $parent = $this->page('default', 'Parent', '/test-hook-snapshot-parent');
+        $page = $this->page('test_tpl', 'Live title', '/test-hook-snapshot-live', $parent['id'], ['sub' => 'live']);
+        $published = $this->pages->publish($page['id']);
+        $this->pages->unpublish($page['id']);
+        $this->pages->saveDraft($page['id'], null, ['title' => 'Draft title', 'fields' => ['sub' => 'draft']]);
+
+        $events = [];
+        self::getContainer()->get('event_dispatcher')->addListener(RecordPublished::class, static function (RecordPublished $event) use (&$events): void {
+            $events[] = $event;
+        });
+        $this->pages->republish($page['id']);
+
+        self::assertCount(1, $events);
+        self::assertSame($published['fields'], $events[0]->data['fields']);
+        self::assertSame($published['title'], $events[0]->data['meta']['title']);
+        self::assertSame('Draft title', $events[0]->record?->get('title'));
+    }
+
+    #[Test]
     public function aBeforeDeletingHookCanKeepTheRecord(): void
     {
         $item = $this->trip('protected');
@@ -311,9 +355,11 @@ final class ResourceHooksTest extends ResourceKernelTestCase
 
         TestTemplate::$log = [];
         self::assertSame(2, $this->pages->massRemove([$a['id'], $b['id']]));
-        self::assertSame('event:Mass:delete:before:2', TestTemplate::$log[0]);
-        self::assertSame('method:beforeMassDeleting:2', TestTemplate::$log[1]);
-        self::assertSame('event:Mass:delete:after:2', \end(TestTemplate::$log));
+        /** @var list<string> $log Filled synchronously by the mass removal hooks. */
+        $log = TestTemplate::$log;
+        self::assertSame('event:Mass:delete:before:2', $log[0]);
+        self::assertSame('method:beforeMassDeleting:2', $log[1]);
+        self::assertSame('event:Mass:delete:after:2', \end($log));
     }
 
     #[Test]

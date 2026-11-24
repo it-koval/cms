@@ -32,6 +32,7 @@ final class IndexNowLocalesTest extends KernelTestCase
     private array $ruleIds = [];
     private string $pathPrefix;
 
+    /** @param array<string, mixed> $options */
     protected static function createKernel(array $options = []): KernelInterface
     {
         return new TestKernel('test', true, framework: ['http_client' => ['enabled' => true]], itk: [
