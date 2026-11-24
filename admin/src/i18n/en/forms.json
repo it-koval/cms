@@ -37,6 +37,7 @@
   "forms.photos_add": "Add photo",
   "forms.relation_empty": "Nothing to choose from yet",
   "forms.relation_none": "Not selected",
+  "forms.relation_untranslated": "{title} — no translation",
   "forms.relation_gone": "Record deleted",
   "forms.repeater_removed": "Item removed",
   "forms.repeater_undo": "undo",

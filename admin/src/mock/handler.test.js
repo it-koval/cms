@@ -89,7 +89,8 @@ describe('publishing the draft revision on screen', () => {
   it.each(['page', 'item'])('refuses a stale %s and preserves its published copy', (kind) => {
     const page = kind === 'page'
     const list = page ? 'pages' : 'collections/news'
-    const row = get(list).body.find((r) => r.status === 'published')
+    const response = get(list).body
+    const row = (page ? response : response.items).find((r) => r.status === 'published')
     const record = `${list}/${row.id}`
     const draftPath = page ? `${record}/draft` : record
     const old = get(draftPath).body.published.title
@@ -126,7 +127,9 @@ describe('what the admin asks before it starts', () => {
   })
 
   it('languages, counters, prefs and the bell answer calmly', () => {
-    expect(get('languages').body).toEqual({ main: 'ru', list: [{ code: 'ru', name: 'Русский' }] })
+    expect(get('languages').body).toEqual({ main: 'ru', list: [
+      { code: 'ru', name: 'Русский' }, { code: 'kk', name: 'Қазақша' }, { code: 'tr', name: 'Türkçe' }, { code: 'zh', name: '中文' }, { code: 'en', name: 'English' },
+    ] })
     expect(get('collections').body.map((c) => c.key)).toEqual(expect.arrayContaining(['news', 'plans']))
     expect(get('prefs/list.news').body).toEqual({ value: null })
     expect(call('PUT', 'prefs/list.news', { body: { value: { sort: 'title' } } }).status).toBe(200)
@@ -211,8 +214,8 @@ describe('collections', () => {
     expect(page2.page).toBe(2)
   })
 
-  it('without envelope gives all the rows', () => {
-    expect(Array.isArray(get('collections/news').body)).toBe(true)
+  it('always returns the B2 envelope, including without an envelope flag', () => {
+    expect(get('collections/news').body).toMatchObject({ items: expect.any(Array), total: 5, page: 1, perPage: 25, facets: expect.any(Object), metrics: [] })
   })
 
   it('writes a record, publishes it, creates and deletes one', () => {
@@ -245,6 +248,203 @@ describe('collections', () => {
     const cols = [...item.cols, { id: 'c9', name: 'Новый', price: '', note: '' }]
     call('PUT', 'collections/plans/main', { body: { cols, rows: item.rows.map((r) => ({ ...r, vals: [...r.vals, false] })) } })
     expect(get('collections/plans/main').body.item.cols).toHaveLength(item.cols.length + 1)
+  })
+})
+
+describe('multilingual content demo', () => {
+  it('shows published, changed, draft and missing versions without replacing missing editor content', () => {
+    const rows = get('pages', { locale: 'kk' }).body
+    expect(rows.find((p) => p.id === 'p1')).toMatchObject({ locale: 'kk', translated: true, status: 'published', url: '/kk' })
+    expect(rows.find((p) => p.id === 'p2')).toMatchObject({ translated: true, changed: true })
+    expect(rows.find((p) => p.id === 'p3')).toMatchObject({ translated: true, status: 'draft' })
+    expect(rows.find((p) => p.id === 'p4')).toMatchObject({ translated: false, status: 'missing', version: null })
+    expect(get('pages/p4/draft', { locale: 'kk' }).body).toMatchObject({ page: null, published: null, translated: false, locale: 'kk', shell: { id: 'p4', template: 'catalog' } })
+    for (const locale of ['tr', 'zh', 'en']) expect(get('pages', { locale }).body.some((p) => p.translated)).toBe(true)
+  })
+
+  it.each(['pages/p4', 'collections/news/n5', 'collections/plans/main', 'collections/company/company-profile'])('adds a copied translation, saves and publishes only that version, then deletes it: %s', (path) => {
+    const page = path.startsWith('pages/')
+    const editor = page ? `${path}/draft` : path
+    const value = page ? 'page' : 'item'
+    const original = get(editor).body[value]
+    const added = call('POST', `${path}/translations`, { query: { locale: 'zh' }, body: { from: 'ru' } })
+    expect(added).toMatchObject({ status: 201, body: { id: original.id, locale: 'zh', translated: true, status: 'draft', title: original.title } })
+    if (page) expect(added.body.url).toBe('/zh/catalog')
+    expect(call('POST', `${path}/translations`, { query: { locale: 'zh' }, body: { from: 'ru' } })).toMatchObject({ status: 409, body: { details: { code: 'translation_exists', locale: 'zh' } } })
+    const saved = call('PUT', editor, { query: { locale: 'zh' }, body: { title: '中文标题', baseVersion: added.body.version } })
+    expect(saved).toMatchObject({ status: 200, body: { locale: 'zh', title: '中文标题' } })
+    expect(get(editor).body[value].title).toBe(original.title)
+    expect(call('POST', `${path}/publish`, { query: { locale: 'zh' }, body: { baseVersion: added.body.version } }).status).toBe(409)
+    expect(call('POST', `${path}/publish`, { query: { locale: 'zh' }, body: { baseVersion: saved.body.version } }).status).toBe(200)
+    expect(get(editor, { locale: 'zh' }).body.published.title).toBe('中文标题')
+    expect(call('DELETE', `${path}/translations/zh`)).toEqual({ status: 200, body: { ok: true } })
+    expect(get(editor, { locale: 'zh' }).body).toMatchObject({ [value]: null, published: null, translated: false })
+    expect(get(editor).body[value].title).toBe(original.title)
+    const history = get(`history/${page ? 'page' : 'item'}/${original.id}`, { scope: 'all' }).body
+    const deleted = history.items.find((r) => r.locale === 'zh')
+    expect(deleted).toMatchObject({ action: 'delete_locale', current: false })
+    expect(get(`history/revision/${deleted.id}`).body.canRestore).toBe(false)
+    const previous = history.items.find((r) => r.locale === 'zh' && r.action !== 'delete_locale')
+    expect(get(`history/revision/${previous.id}`).body.canRestore).toBe(false)
+    expect(call('POST', `history/revision/${previous.id}/restore`)).toMatchObject({ status: 422, body: { details: { code: 'no_translation', locale: 'zh' } } })
+  })
+
+  it('keeps matrix columns shared only by identity and copies their content explicitly', () => {
+    const path = 'collections/plans/main'
+    expect(get(path, { locale: 'kk' }).body.item.cols[0].name).not.toBe(get(path).body.item.cols[0].name)
+    expect(get(path, { locale: 'zh' }).body.item).toBeNull()
+    expect(call('POST', `${path}/translations`, { query: { locale: 'zh' } }).body).toMatchObject({ cols: [], rows: [], locale: 'zh' })
+    expect(call('POST', 'collections/plans', { body: {} }).status).toBe(409)
+    expect(call('POST', 'collections/company', { body: { title: 'Duplicate' } }).status).toBe(409)
+  })
+
+  it('rejects unknown languages, absent source versions and unintentional main-language deletion', () => {
+    for (const path of ['pages/p4', 'collections/news/n5']) {
+      expect(call('POST', `${path}/translations`, { body: { locale: 'zh' } }).status).toBe(422)
+      expect(call('POST', `${path}/translations`, { query: { locale: 'de' } }).status).toBe(422)
+      expect(call('POST', `${path}/translations`, { query: { locale: 'zh' }, body: { from: 'zh' } }).status).toBe(422)
+      expect(call('POST', `${path}/translations`, { query: { locale: 'zh' }, body: { from: 'tr' } })).toMatchObject({ status: 422, body: { details: { code: 'translation_source_missing' } } })
+      expect(call('DELETE', `${path}/translations/ru`).status).toBe(409)
+      expect(call('DELETE', `${path}/translations/zh`).status).toBe(404)
+    }
+    expect(get('pages', { locale: 'de' }).status).toBe(422)
+    expect(get('collections/news', { locale: 'de' }).status).toBe(422)
+  })
+
+  it('filters status and onlyTranslated before pagination; published excludes changed drafts', () => {
+    const query = { locale: 'kk', perPage: '1', page: '2' }
+    const translated = get('collections/news', { ...query, onlyTranslated: 'true' }).body
+    expect(translated.total).toBe(3)
+    expect(translated.items).toHaveLength(1)
+    expect(translated.items[0].translated).toBe(true)
+    const ids = (extra) => get('collections/news', { locale: 'kk', ...extra }).body.items.map((r) => r.id)
+    expect(ids({ status: 'published' })).toEqual(['n1'])
+    expect(ids({ status: 'draft' }).sort()).toEqual(['n2', 'n3'])
+    expect(ids({ status: 'missing' }).sort()).toEqual(['n4', 'n5'])
+    expect(get('collections/news', { locale: 'kk', status: 'missing', onlyTranslated: '1' }).body.total).toBe(0)
+    expect(get('collections/news', { locale: 'kk', onlyTranslated: 'false' }).body.total).toBe(5)
+    expect(get('collections/news', { status: 'invalid' }).status).toBe(422)
+    expect(get('collections/news', { perPage: '999' }).body.perPage).toBe(200)
+    expect(get('collections/news', { page: '99' }).body.items).toEqual([])
+    expect(get('collections/news', { locale: 'kk', filter: { status: 'published' } }).body.items.map((r) => r.id).sort()).toEqual(['n1', 'n2'])
+    expect(get('collections/news', { locale: 'kk' }).body.facets.status).toEqual({ published: 1, draft: 2, missing: 2 })
+  })
+
+  it('counts enabled language versions and carries the language in Today links', () => {
+    const news = get('collections').body.find((r) => r.key === 'news')
+    expect(news.locales).toEqual({ ru: { count: 5, unpublished: 1 }, kk: { count: 3, unpublished: 2 }, tr: { count: 1, unpublished: 0 }, zh: { count: 0, unpublished: 0 }, en: { count: 1, unpublished: 0 } })
+    expect(news.unpublished).toBe(3)
+    expect(get('collections', { locale: 'kk' }).body.find((r) => r.key === 'news').unpublished).toBe(2)
+    expect(get('collections').body.find((r) => r.key === 'plans').count).toBe(3)
+    const today = get('dashboard').body
+    expect(today.languages).toEqual(get('languages').body)
+    expect(today.locales.kk).toEqual({ pages: { count: 3, unpublished: 2 }, collections: { count: 5, unpublished: 3 } })
+    expect(today.locales.zh).toEqual({ pages: { count: 1, unpublished: 0 }, collections: { count: 0, unpublished: 0 } })
+    expect(today.unpublished.some((r) => r.locale === 'kk' && r.to.includes('?lang=kk'))).toBe(true)
+    expect(today.recent.every((r) => r.locale && r.to.includes(`?lang=${r.locale}`))).toBe(true)
+  })
+
+  it('keeps settings texts and menu items in their own language, with no fallback for ZH', () => {
+    expect(get('settings', { locale: 'kk' }).body.siteTitle).toBe('Демо компаниясы')
+    expect(get('settings', { locale: 'zh' }).body.siteTitle).toBe('')
+    expect(get('settings', { locale: 'kk' }).body.phone).toBe(get('settings').body.phone)
+    call('PATCH', 'settings', { query: { locale: 'kk' }, body: { siteTitle: 'Жаңа атау' } })
+    expect(get('settings').body.siteTitle).toBe('Демо-компания')
+    expect(get('menus', { locale: 'kk' }).body.header[0].label).toBe('Басты бет')
+    expect(get('menus').body.header[0].link.page).toBe('/')
+    expect(get('menus', { locale: 'kk' }).body.header[0].link.page).toBe('/kk')
+    expect(get('menu-areas').body).toEqual([{ key: 'header', name: 'Верхнее меню', depth: 2, snippet: expect.any(String), usedIn: [], usedInAll: false, counts: { ru: 1, kk: 1 } }])
+    expect(get('menus', { locale: 'zh' }).body.header).toEqual([])
+    call('PUT', 'menus', { query: { locale: 'zh' }, body: { header: [{ _id: 'zh1', label: '首页', link: { kind: 'page', page: '/zh' } }] } })
+    expect(get('menus', { locale: 'zh' }).body.header[0].label).toBe('首页')
+    expect(get('menu-areas').body[0].counts.zh).toBe(1)
+    expect(get('menus', { locale: 'kk' }).body.header[0].label).toBe('Басты бет')
+  })
+
+  it('returns mixed-language history, paginates it and marks the latest entry of each language', () => {
+    const path = 'history/page/p1'
+    const all = get(path, { scope: 'all', locale: 'zh' }).body
+    expect(all).toMatchObject({ items: expect.any(Array), total: expect.any(Number), limit: 50, offset: 0, keep: expect.any(Number), days: expect.any(Number) })
+    expect(new Set(all.items.map((r) => r.locale)).size).toBeGreaterThan(1)
+    expect(all.items.filter((r) => r.current && r.locale === 'kk')).toHaveLength(1)
+    expect(all.items.filter((r) => r.locale === 'kk').length).toBeGreaterThan(1)
+    expect(get(path, { locale: 'kk' }).body.items.every((r) => r.locale === 'kk')).toBe(true)
+    expect(get(path, { locale: 'kk', scope: 'other' }).body.items).toEqual(get(path, { locale: 'kk' }).body.items)
+    expect(get(path, { scope: 'all', limit: '1', offset: '1' }).body).toMatchObject({ items: [all.items[1]], total: all.total, limit: 1, offset: 1 })
+    call('PUT', 'pages/p1/draft', { query: { locale: 'kk' }, body: { title: 'Өзгертілді' } })
+    const updated = get(path, { scope: 'all' }).body.items
+    expect(updated[0]).toMatchObject({ locale: 'kk', title: 'Өзгертілді', current: true })
+    expect(updated.filter((r) => r.locale === 'kk' && r.current)).toHaveLength(1)
+    expect(updated.filter((r) => r.locale === 'ru' && r.current)).toHaveLength(1)
+  })
+
+  it('restores a KK history entry into the KK draft and keeps its published copy', () => {
+    const entry = get('history/page/p1', { locale: 'kk' }).body.items[0]
+    const live = get('pages/p1/draft', { locale: 'kk' }).body.published
+    call('PUT', 'pages/p1/draft', { query: { locale: 'kk' }, body: { title: 'Жаңа атау' } })
+    expect(call('POST', `history/revision/${entry.id}/restore`)).toMatchObject({ status: 200, body: { ok: true, kind: 'page', id: 'p1', locale: 'kk', restored: 'version' } })
+    expect(get('pages/p1/draft', { locale: 'kk' }).body.page.title).toBe(entry.title)
+    expect(get('pages/p1/draft', { locale: 'kk' }).body.published).toEqual(live)
+    expect(get('pages/p1/draft').body.page.title).toBe('Главная')
+  })
+
+  it('keeps the object permission boundary when history is requested across all languages', () => {
+    const db = makeDb()
+    db.user.perms.pages = []
+    mock = createMock(db)
+    expect(get('history/page/p1', { scope: 'all' }).status).toBe(403)
+  })
+
+  it.each(['settings/general', 'menu/header'])('keeps all-language history and restores the selected language for %s', (resource) => {
+    const [kind] = resource.split('/')
+    const path = kind === 'settings' ? 'settings' : 'menus'
+    const original = get(path, { locale: 'kk' }).body
+    const entry = get(`history/${resource}`, { scope: 'all' }).body.items.find((r) => r.locale === 'kk')
+    const body = kind === 'settings' ? { siteTitle: 'Жаңа атау' } : { header: [] }
+    call(kind === 'settings' ? 'PATCH' : 'PUT', path, { query: { locale: 'kk' }, body })
+    expect(call('POST', `history/revision/${entry.id}/restore`)).toMatchObject({ status: 200, body: { ok: true, locale: 'kk', kind, restored: 'version' } })
+    expect(get(path, { locale: 'kk' }).body).toEqual(original)
+    expect(get(`history/${resource}`, { locale: 'kk' }).body.items.every((r) => r.locale === 'kk')).toBe(true)
+  })
+
+  it.each(['pages/p3', 'collections/news/n3'])('keeps submitted KK content in the publisher queue and removes it after publish: %s', (path) => {
+    call('POST', `${path}/submit`, { query: { locale: 'kk' } })
+    const id = path.split('/').at(-1)
+    const row = get('dashboard').body.awaiting.find((r) => r.id === id && r.locale === 'kk')
+    expect(row).toMatchObject({ locale: 'kk', by: expect.any(String), at: expect.any(String), to: `${path.startsWith('pages') ? '/pages' : '/collections/news'}/${id}?lang=kk` })
+    call('POST', `${path}/publish`, { query: { locale: 'kk' } })
+    expect(get('dashboard').body.awaiting.some((r) => r.id === id && r.locale === 'kk')).toBe(false)
+  })
+
+  it('republishes the saved ZH live snapshot after unpublishing without publishing later edits', () => {
+    const original = get('pages/p1/draft', { locale: 'zh' }).body.published
+    call('PUT', 'pages/p1/draft', { query: { locale: 'zh' }, body: { title: 'Later draft' } })
+    expect(call('POST', 'pages/p1/unpublish', { query: { locale: 'zh' } }).status).toBe(200)
+    expect(get('pages/p1/draft', { locale: 'zh' }).body.published).toBeNull()
+    expect(call('POST', 'pages/p1/republish', { query: { locale: 'zh' } }).status).toBe(200)
+    expect(get('pages/p1/draft', { locale: 'zh' }).body).toMatchObject({ published: original, page: { title: 'Later draft', changed: true } })
+  })
+
+  it('links the pending matrix version directly to the matrix screen', () => {
+    const item = get('collections/plans/main', { locale: 'kk' }).body.item
+    call('PUT', 'collections/plans/main', { query: { locale: 'kk' }, body: { cols: [...item.cols, { id: 'c9', name: 'New' }] } })
+    expect(get('dashboard').body.unpublished.find((r) => r.collection === 'plans' && r.locale === 'kk').to).toBe('/collections/plans?lang=kk')
+  })
+
+  it.each(['pages/p3', 'collections/news/n3'])('puts whole objects in the trash, never translation deletions, and restores them as drafts: %s', (path) => {
+    const id = path.split('/').at(-1)
+    const kind = path.startsWith('pages') ? 'page' : 'item'
+    call('DELETE', `${path}/translations/kk`)
+    expect(get('history/trash').body).toEqual({ items: [], total: 0 })
+    call('DELETE', path)
+    const trash = get('history/trash', { kind }).body
+    expect(trash).toMatchObject({ total: 1, items: [{ kind, resourceId: id, locales: ['ru'], wasLive: true, canRestore: true, restorable: true }] })
+    expect(get(`history/${kind}/${id}`, { scope: 'all' }).body.items.every((r) => !r.current)).toBe(true)
+    const deleted = trash.items[0]
+    expect(call('POST', `history/revision/${deleted.id}/restore`)).toMatchObject({ status: 200, body: { ok: true, restored: 'trash', id } })
+    expect(get('history/trash').body).toEqual({ items: [], total: 0 })
+    const editor = path.startsWith('pages') ? `${path}/draft` : path
+    expect(get(editor).body).toMatchObject({ translated: true, published: null, [kind === 'page' ? 'page' : 'item']: { id, status: 'draft' } })
   })
 })
 

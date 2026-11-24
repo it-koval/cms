@@ -5,10 +5,14 @@ import Icon from './Icon.vue'
 import { useOverlay } from './focus.js'
 import { t } from '@/i18n/index.js'
 
-const props = defineProps({ open: { type: Boolean, default: false }, title: { type: String, default: '' }, width: { type: Number, default: 440 } })
+const props = defineProps({ open: { type: Boolean, default: false }, title: { type: String, default: '' }, width: { type: Number, default: 440 }, closeDisabled: { type: Boolean, default: false } })
 const emit = defineEmits(['update:open', 'close'])
 const el = ref(null)
-const close = () => { emit('update:open', false); emit('close') }
+const close = () => {
+  if (props.closeDisabled) return
+  emit('update:open', false)
+  emit('close')
+}
 useOverlay(el, toRef(props, 'open'), { onEsc: close })
 </script>
 
@@ -19,7 +23,7 @@ useOverlay(el, toRef(props, 'open'), { onEsc: close })
       <aside ref="el" class="drawer" role="dialog" aria-modal="true" :aria-label="title" :style="{ width: `min(${width}px, 100vw)` }">
         <header>
           <h2>{{ title }}</h2>
-          <button class="btn ghost icon" type="button" :aria-label="t('ui.close')" @click="close"><Icon name="x" /></button>
+          <button class="btn ghost icon" type="button" :disabled="closeDisabled" :aria-label="t('ui.close')" @click="close"><Icon name="x" /></button>
         </header>
         <div class="body"><slot /></div>
         <footer v-if="$slots.footer"><slot name="footer" /></footer>

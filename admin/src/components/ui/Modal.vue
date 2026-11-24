@@ -19,7 +19,7 @@ const props = defineProps({
 const emit = defineEmits(['update:open', 'close'])
 const el = ref(null)
 const close = () => { emit('update:open', false); emit('close') }
-useOverlay(el, toRef(props, 'open'), { onEsc: close, initial: props.initialFocus })
+useOverlay(el, toRef(props, 'open'), { onEsc: close, initial: props.initialFocus, top: props.top })
 </script>
 
 <template>

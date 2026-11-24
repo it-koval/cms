@@ -8,7 +8,7 @@
 // record. A record with no version in that language shows a message instead of the form (the screens for translations replace it by the «Версии ещё нет» state).
 // RIGHTS (area col:<key>): without «Править» the form is read-only (a calm line, inert form, no publish / revert / AI); without «Публиковать» the button is «Отправить на публикацию» (the version then wears «Ждёт публикации»
 // and shows up on «Сегодня» of those who may publish; they get «Вернуть автору» next to «Опубликовать»); without «Удалять» there is no delete.
-import { computed, nextTick, onMounted, ref, shallowRef, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 import { onBeforeRouteLeave, onBeforeRouteUpdate, useRoute, useRouter } from 'vue-router'
 import { api } from '@/api/index.js'
 import { app, can, refreshCounters, switchContentLocale, useLocaleGuard } from '@/stores/app.js'
@@ -72,6 +72,8 @@ const form = ref(null)
 const quiet = ref(false) // a new, never published record shows no red «required» errors until the first publish attempt
 let target = { col: '', id: '' } // the record on screen: the autosave always carries its own target
 let seq = 0
+let alive = true
+onBeforeUnmount(() => { alive = false; seq++ })
 
 // the saver hands over the version the server last named (baseVersion) and takes the new one from the answer; a refused save (the record was changed meanwhile) shows the banner that asks
 const saver = useDraftSave(async ({ col, id, data }, baseVersion) => {
@@ -94,16 +96,20 @@ async function settled() {
 }
 /** Leaving the record: the same, except that a failed save lets the person decide (the edits are lost with the screen). A conflict keeps them here, the banner asks. */
 async function mayLeave() {
+  // A successful form action may redirect while its own busy state is still set.
+  if (working.value || startBusy.value) return false
   if (await saver.flush()) return true
   if (saver.conflict.value) { toast.error(t('collections.iv_settle_first')); return false }
-  return confirm({
+  const discard = await confirm({
     title: t('settings.leave_title'), message: t('collections.leave_unsaved_text', { reason: saver.error.value || t('collections.error_word') }),
     confirmLabel: t('settings.leave_confirm'), cancelLabel: t('people.btn_stay'), danger: true,
   })
+  if (discard) saver.reset()
+  return discard
 }
 // leaving the record (another record, the list, another section) with edits that were not saved: the person stays or leaves knowingly (false = stay)
 onBeforeRouteLeave(mayLeave)
-onBeforeRouteUpdate(mayLeave)
+onBeforeRouteUpdate((to, from) => to.params.col === from.params.col && to.params.id === from.params.id ? true : mayLeave())
 /** «Показать новую версию»: the edits on screen are dropped, the record is loaded as it is now. */
 async function showNewVersion() {
   working.value = true
@@ -142,9 +148,10 @@ const runFormAction = async (a) => {
 
 /* ---------- loading ---------- */
 async function load({ silent = false, focus = false } = {}) {
+  if (!alive) return
   const c = cfg.value
   if (!c) return
-  if (c.view === 'matrix') { router.replace('/collections/' + c.key); return }
+  if (c.view === 'matrix') { router.replace({ path: '/collections/' + c.key, query: route.query, hash: route.hash }); return }
   const { col, id } = route.params
   const my = ++seq
   target = { col, id }
@@ -177,7 +184,7 @@ async function load({ silent = false, focus = false } = {}) {
 // a record just created in the list opens with ?new=1: the title is focused, the query is dropped
 function newFlag() {
   const on = !!route.query.new
-  if (on) router.replace({ path: route.path })
+  if (on) { const { new: _new, ...query } = route.query; router.replace({ path: route.path, query }) }
   return on
 }
 const carried = takeTab(route.params.col, route.params.id) // a language switch just re-mounted this screen: same tab, focus back on the language select
@@ -191,7 +198,7 @@ onMounted(async () => {
 watch(() => [route.params.col, route.params.id], async ([col, id], [oc, oi]) => {
   if (route.name !== 'collection-item' || (col === oc && id === oi)) return
   popOpen.value = false
-  await saver.flush() // the previous record is saved under its own target
+  // The route guard has already saved or explicitly discarded the previous record.
   saver.reset()
   tab.value = ''
   await load({ focus: newFlag() })
@@ -416,8 +423,8 @@ async function doDelete() {
   if (!ok) return
   working.value = true
   try {
-    saver.reset() // nothing to save for a record that is going away
     await api.collections.remove(target.col, target.id)
+    saver.reset()
     refreshCounters()
     router.replace('/collections/' + cfg.value.key)
     toast.show(t('collections.deleted'))
@@ -445,7 +452,7 @@ async function onRestored() {
   refreshCounters()
 }
 /* ---------- other languages: make a version, remove a version ---------- */
-// from: the main language = copy every field, null = a blank start (title, address, switches, dates and photos stay). Either way a DRAFT: it is not on the site until published.
+// from: the main language = copy its fields, null = schema defaults. Either way a draft, visible only after publication.
 async function startTranslation(from) {
   if (startBusy.value) return
   startBusy.value = from ? 'copy' : 'blank'
@@ -462,6 +469,7 @@ async function startTranslation(from) {
   }
 }
 async function removeVersion() {
+  if (!canDelete.value || IS_MAIN || locked.value) return
   const ok = await confirm({
     title: cap(t('collections.iv_delete_version_title', { version: verAcc(LOC) })),
     message: t(cfg.value.pageKind ? 'collections.iv_delete_version_text_page' : 'collections.iv_delete_version_text', { title: title.value, site: siteIn(LOC) }),
@@ -471,8 +479,8 @@ async function removeVersion() {
   working.value = true
   try {
     popOpen.value = false
-    saver.reset() // nothing to save for a version that is going away
     await api.collections.removeTranslation(target.col, target.id, LOC)
+    saver.reset()
     await load({ silent: true })
     refreshCounters()
     toast.show(t('collections.iv_version_deleted', { version: up(verNom(LOC)) }))
@@ -486,8 +494,8 @@ async function removeVersion() {
 // Both ways go through the guard: the edits of this version are saved under their own language and the open tab is carried over to the new screen.
 useLocaleGuard(async () => {
   popOpen.value = false
-  if (!draft.value || !translated.value) return true
   if (!(await mayLeave())) return false
+  if (!draft.value || !translated.value) return true
   carryTab(target.col, target.id, activeTab.value && activeTab.value.key)
   return true
 })
@@ -544,7 +552,7 @@ async function rejectProposal(p) {
         <div class="cl-h1">
           <h1 v-if="draft || summary">{{ headTitle }}</h1>
           <h1 v-else class="cl-h-sk">&nbsp;</h1>
-          <LanguageSelect v-if="MULTI && summary" ref="langSel" :model-value="LOC" :languages="app.languages.list" :statuses="states" :label="t('collections.iv_language')" @update:model-value="pickLang" />
+          <LanguageSelect v-if="MULTI && summary" ref="langSel" :model-value="LOC" :languages="app.languages.list" :statuses="states" :label="t('collections.iv_language')" :disabled="locked || !!startBusy" @update:model-value="pickLang" />
         </div>
       </div>
       <div v-if="!loading && !translated" class="actions"><StatusChip status="missing" :label="t('collections.state_missing')" /></div>

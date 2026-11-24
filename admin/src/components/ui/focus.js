@@ -7,17 +7,20 @@ const TEXT_FIELD = 'input:not([type=checkbox]):not([type=radio]):not([type=butto
 
 // several overlays may be open at once (a dialog over a drawer): the lock is released by the last one
 let locks = 0
+const overlays = []
 const lockPage = (on) => {
   if (typeof document === 'undefined') return
   locks = Math.max(0, locks + (on ? 1 : -1))
   document.body.classList.toggle('ov-lock', locks > 0)
 }
 
-export function useOverlay(elRef, isOpen, { onEsc, initial } = {}) {
+export function useOverlay(elRef, isOpen, { onEsc, initial, top = false } = {}) {
   let prev = null
   let locked = false
+  const overlay = { top }
+  const isTop = () => (overlays.findLast((entry) => entry.top) ?? overlays.at(-1)) === overlay
   const keydown = (e) => {
-    if (!elRef.value) return
+    if (!elRef.value || !isTop()) return
     if (e.key === 'Escape' && onEsc) { e.stopPropagation(); onEsc(); return }
     if (e.key !== 'Tab') return
     const list = [...elRef.value.querySelectorAll(FOCUSABLE)].filter((x) => x.offsetParent !== null)
@@ -27,12 +30,20 @@ export function useOverlay(elRef, isOpen, { onEsc, initial } = {}) {
     if (e.shiftKey && document.activeElement === first) { last.focus(); e.preventDefault() } else if (!e.shiftKey && document.activeElement === last) { first.focus(); e.preventDefault() }
   }
   const release = () => { if (locked) { locked = false; lockPage(false) } }
+  const remove = () => {
+    const index = overlays.indexOf(overlay)
+    if (index >= 0) overlays.splice(index, 1)
+    document.removeEventListener('keydown', keydown, true)
+    release()
+  }
   watch(isOpen, async (v) => {
     if (v) {
       prev = document.activeElement
+      overlays.push(overlay)
       document.addEventListener('keydown', keydown, true)
       if ((vp.phone || (vp.compact && vp.touch)) && !locked) { locked = true; lockPage(true) }
       await nextTick()
+      if (!isTop()) return
       const root = elRef.value
       let wanted = initial && root && root.querySelector(initial)
       // a finger: a text field that gets the focus at once brings the keyboard up over the dialog. So only an empty field is focused (a «new …» dialog, a search); the settings of something that exists open without the keyboard
@@ -41,11 +52,11 @@ export function useOverlay(elRef, isOpen, { onEsc, initial } = {}) {
       const target = wanted || first || (root && root.querySelector(FOCUSABLE))
       if (target) target.focus({ preventScroll: true })
     } else {
-      document.removeEventListener('keydown', keydown, true)
-      release()
-      if (prev && document.contains(prev)) prev.focus({ preventScroll: true })
+      const restoreFocus = isTop()
+      remove()
+      if (restoreFocus && prev && document.contains(prev)) prev.focus({ preventScroll: true })
       prev = null
     }
   }, { immediate: true })
-  onBeforeUnmount(() => { document.removeEventListener('keydown', keydown, true); release() })
+  onBeforeUnmount(remove)
 }

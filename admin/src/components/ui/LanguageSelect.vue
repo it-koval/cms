@@ -20,7 +20,7 @@ const props = defineProps({
   statuses: { type: Object, default: null },
   label: { type: String, default: () => t('ui.language') }, // aria-label of the trigger and the menu; shown above the trigger with show-label
   showLabel: { type: Boolean, default: false },
-  variant: { type: String, default: 'field' }, // 'field' (light, next to buttons) | 'rail' (compact, full width, on the cyan rail)
+  variant: { type: String, default: 'field' }, // field | rail | editor (short code on phones)
   disabled: { type: Boolean, default: false },
 })
 const emit = defineEmits(['update:modelValue'])
@@ -91,7 +91,7 @@ defineExpose({ focus: () => btn.value && btn.value.focus({ preventScroll: true }
 .ls { display: inline-flex; flex-direction: column; align-items: stretch; min-width: 0; }
 .ls-lb { font-size: var(--t-xs); color: var(--ink-2); margin-bottom: 5px; }
 .ls-btn {
-  display: inline-flex; align-items: center; gap: 8px; height: 34px; padding: 0 10px 0 12px; max-width: 100%; border: 1px solid var(--hair); border-radius: var(--r);
+  display: inline-flex; align-items: center; gap: 8px; height: 44px; padding: 0 10px 0 12px; max-width: 100%; border: 1px solid var(--hair); border-radius: var(--r);
   background: var(--sheet); box-shadow: var(--sh-1); color: var(--ink); font-size: var(--t-base); font-weight: 550; text-align: left;
   transition: background var(--dur), border-color var(--dur), color var(--dur);
 }
@@ -107,11 +107,16 @@ defineExpose({ focus: () => btn.value && btn.value.focus({ preventScroll: true }
 .ls-dot.changed { background: var(--mag); }
 .ls-dot.draft { background: transparent; border: 1.5px solid var(--mag); }
 .ls-dot.missing { background: transparent; border: 1.5px solid var(--ink-3); }
+.ls-editor { flex: none; }
+.ls-editor .ls-btn { gap: 4px; padding-inline: 6px; box-shadow: none; }
+.ls-editor .ls-btn .ls-nm { display: none; }
+.ls-editor .ls-btn .ls-tag::after { content: none; }
+.ls-editor .ls-ch { margin-left: 0; }
 
 /* on the cyan rail: compact, as wide as the rail */
 .ls.ls-rail { display: flex; }
 .ls.ls-rail .ls-lb { color: var(--rail-ink-2); }
-.ls.ls-rail .ls-btn { width: 100%; height: 32px; padding: 0 8px 0 10px; border: 0; background: var(--rail-shade); box-shadow: none; color: var(--brand-ink); font-size: var(--t-sm); font-weight: 560; }
+.ls.ls-rail .ls-btn { width: 100%; padding: 0 8px 0 10px; border: 0; background: var(--rail-shade); box-shadow: none; color: var(--brand-ink); font-size: var(--t-sm); font-weight: 560; }
 .ls.ls-rail .ls-btn:hover, .ls.ls-rail .ls-btn[aria-expanded="true"] { background: var(--rail-shade-2); color: var(--brand-ink); }
 .ls.ls-rail .ls-btn .ls-tag::after { color: var(--rail-ink-2); }
 .ls.ls-rail .ls-nm { flex: 1; }
@@ -119,10 +124,17 @@ defineExpose({ focus: () => btn.value && btn.value.focus({ preventScroll: true }
 
 /* the dropdown (a Popover): the list scrolls when there are many languages */
 .pop.ls-pop { min-width: 220px; max-height: min(50vh, 320px); overflow-y: auto; }
-.pop button.mi.ls-o { gap: 8px; }
+.pop button.mi.ls-o { gap: 8px; min-height: 44px; }
 .ls-ck { width: 16px; flex: none; display: grid; place-items: center; color: var(--brand-text); }
 .ls-o .ls-tag { min-width: 24px; color: var(--ink-2); }
 .ls-o.cur .ls-tag { color: var(--brand-text); }
 .ls-o .ls-nm { flex: 1; }
 .ls-st { display: inline-flex; align-items: center; gap: 6px; margin-left: 14px; color: var(--ink-3); font-size: var(--t-xs); font-weight: 500; white-space: nowrap; }
+@media (min-width: 768px) {
+  .ls-btn { height: 34px; }
+  .ls.ls-rail .ls-btn { height: 32px; }
+  .ls-editor .ls-btn { gap: 8px; padding-inline: 10px; }
+  .ls-editor .ls-btn .ls-nm { display: inline; }
+  .ls-editor .ls-btn .ls-tag::after { content: '·'; }
+}
 </style>

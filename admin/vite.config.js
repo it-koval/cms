@@ -1,4 +1,4 @@
-import { defineConfig, loadEnv } from 'vite'
+import { defineConfig, loadEnv, searchForWorkspaceRoot } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { fileURLToPath, URL } from 'node:url'
 import thirdPartyNotices from './build/thirdPartyNotices.js'
@@ -64,6 +64,7 @@ export default defineConfig(({ mode }) => {
     server: {
       port: 5174,
       host: '127.0.0.1',
+      fs: { allow: [searchForWorkspaceRoot(process.cwd()), fileURLToPath(new URL('../packages/cms/src/Support/slug-map.json', import.meta.url))] },
       proxy: mock ? {} : {
         [ADMIN]: toSite, // /admin/api, /admin/preview, /admin/login, /admin/logout
         '^/bundles/itkcms/(?!admin/).*': toSite, // preview.js / preview.css of the package

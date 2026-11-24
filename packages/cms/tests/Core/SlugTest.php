@@ -26,4 +26,10 @@ final class SlugTest extends TestCase
     {
         self::assertSame($expected, Slug::slugify($text, $max));
     }
+
+    #[Test]
+    public function keepsTheDefaultServerLimit(): void
+    {
+        self::assertSame(\str_repeat('q', 64), Slug::slugify(\str_repeat('Қ', 70)));
+    }
 }

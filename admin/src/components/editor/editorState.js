@@ -102,7 +102,7 @@ export function useEditorState(pageId, locale = app.locale) {
   const histN = ref(1)
   const histPending = ref(false)
   const restored = ref('') // id of a section that «вернуть» just brought back (the UI scrolls to it)
-  const busy = ref(false) // a version is being created / deleted
+  const busy = ref(false) // a version is being created, removed or reloaded
 
   /* ---------- derived ---------- */
   const sections = computed(() => (page.value ? page.value.sections : []))
@@ -215,6 +215,7 @@ export function useEditorState(pageId, locale = app.locale) {
   /* ---------- autosave ---------- */
   let saveT = null
   let dirty = false
+  let discarded = false
   let saveChain = Promise.resolve()
   let baseVersion = null // the version of the draft as the server last told it (a load, a save); each save asks to find the draft still at it
   let flying = 0 // queued or in flight, including a last save sent while the tab is closing
@@ -232,6 +233,7 @@ export function useEditorState(pageId, locale = app.locale) {
     if (tell) toast.error(t('editor.err_conflict'))
   }
   function markDirty() {
+    discarded = false
     dirty = true
     if (conflict.value) return
     save.value = 'busy'
@@ -352,7 +354,11 @@ export function useEditorState(pageId, locale = app.locale) {
   }
 
   /* ---------- load ---------- */
+  let loadSeq = 0
+  let disposed = false
   async function load() {
+    if (disposed) return
+    const my = ++loadSeq
     loading.value = true
     error.value = ''
     try {
@@ -361,6 +367,7 @@ export function useEditorState(pageId, locale = app.locale) {
         api.proposals.list({ locale }).catch(() => []),
         api.pages.list({ locale }).catch(() => []),
       ])
+      if (my !== loadSeq) return
       translated.value = d.translated
       locales.value = d.locales
       shell.value = d.shell
@@ -389,9 +396,10 @@ export function useEditorState(pageId, locale = app.locale) {
         histPending.value = false
       } else resetHist()
     } catch (e) {
+      if (my !== loadSeq) return
       error.value = (e && e.message) || t('editor.err_open_page')
     } finally {
-      loading.value = false
+      if (my === loadSeq) loading.value = false
     }
   }
 
@@ -401,7 +409,7 @@ export function useEditorState(pageId, locale = app.locale) {
 
   /** The template form edited the page's own fields: `fields` is a new object. A template with `h1` keeps the page name equal to its heading field (as the api does). */
   function updateFields(fields) {
-    if (readOnly.value) return
+    if (readOnly.value || busy.value) return
     if (!page.value) return
     page.value.fields = fields
     if (h1Key.value) page.value.title = nameOfHeading(fields[h1Key.value])
@@ -410,7 +418,7 @@ export function useEditorState(pageId, locale = app.locale) {
 
   /** The form edited a section: `data` is a new object. */
   function updateData(id, data) {
-    if (readOnly.value) return
+    if (readOnly.value || busy.value) return
     const s = secById(id)
     if (!s) return
     s.data = data
@@ -669,15 +677,23 @@ export function useEditorState(pageId, locale = app.locale) {
 
   /** The draft was changed on the server (a version returned from «История»): take it as it is now. */
   async function reloadDraft() {
-    const d = await api.pages.getDraft(pageId, locale)
-    page.value = d.page
-    takeVersion(d.page)
-    published.value = d.published
-    if (!secById(sel.value)) sel.value = sections.value.length ? sections.value[0].id : null
-    if (sb.value === 'form' && !secById(sel.value)) sb.value = 'outline'
-    resetHist()
-    save.value = 'saved'
-    rev.value++
+    if (busy.value || disposed) return
+    const my = ++loadSeq
+    busy.value = true
+    try {
+      const d = await api.pages.getDraft(pageId, locale)
+      if (my !== loadSeq || disposed) return
+      page.value = d.page
+      takeVersion(d.page)
+      published.value = d.published
+      if (!secById(sel.value)) sel.value = sections.value.length ? sections.value[0].id : null
+      if (sb.value === 'form' && !secById(sel.value)) sb.value = 'outline'
+      resetHist()
+      save.value = 'saved'
+      rev.value++
+    } finally {
+      busy.value = false
+    }
   }
 
   /** Title, address, parent, SEO from «Настройки страницы». Throws ApiError (for example «Страница с таким адресом уже есть»). */
@@ -735,10 +751,10 @@ export function useEditorState(pageId, locale = app.locale) {
       saveT = null
       clearTimeout(histT)
       histT = null
-      dirty = false // what waits in the autosave dies with the version
-      failure = null
       await saveChain
       await api.pages.removeTranslation(pageId, locale)
+      dirty = false
+      failure = null
       conflict.value = null // the version the person had to choose about is gone
       histCache.delete(cacheKey)
       await load()
@@ -762,11 +778,25 @@ export function useEditorState(pageId, locale = app.locale) {
     // A user who stays can continue with the same queue and version.
     if (!flying && !conflict.value) queueSave(true)
   }
+  function discardPending() {
+    discarded = true
+    clearTimeout(saveT)
+    clearTimeout(histT)
+    saveT = histT = null
+    dirty = false
+    failure = null
+    unchecked = false
+    decisions.clear()
+    histCache.delete(cacheKey)
+  }
   function dispose() {
-    if (page.value && isMulti()) { pushHist(); parkHist(cacheKey, hist) }
+    disposed = true
+    loadSeq++
     clearTimeout(histT)
     clearTimeout(saveT)
     if (delToast) toast.dismiss(delToast)
+    if (discarded) return
+    if (page.value && isMulti()) { pushHist(); parkHist(cacheKey, hist) }
     // proposals first, then the page: the saved copy is the one that counts
     commitProposals().then(() => {}, () => {})
     flush()
@@ -777,7 +807,7 @@ export function useEditorState(pageId, locale = app.locale) {
     denied, readOnly, canPublish, canDelete, awaiting, returned, tplKey,
     sections, pageTitle, template, h1Id, hasH1, tplFields, hasFields, canAdd, listing, h1Key, tplErrors, tplInfo, pubById, liveProps, curSec, info, changes, errors, status, canUndo, canRedo,
     pubOf, indexOf, secById,
-    load, touch, flush, flushAll, pushHist, saveNow, dispose,
+    load, touch, flush, flushAll, pushHist, saveNow, discardPending, dispose,
     updateData, updateFields, addSection, moveSec, reorder, dupSec, delSec, toggleHide,
     stepHist, acceptProposal, rejectProposal, acceptAll,
     publish, submit, returnToAuthor, revertAll, reloadDraft, showNewVersion, keepMine, saveMeta, createVersion, removeVersion,

@@ -48,20 +48,43 @@ class RevisionRepository extends ServiceEntityRepository
     }
 
     /** @return list<Revision> newest first */
-    public function history(string $kind, string $id, string $locale, int $limit, int $offset = 0): array
+    public function history(string $kind, string $id, ?string $locale, int $limit, int $offset = 0): array
     {
-        return $this->createQueryBuilder('r')
-            ->where('r.kind = :k AND r.resourceId = :i AND r.locale = :l')
-            ->setParameter('k', $kind)->setParameter('i', $id)->setParameter('l', $locale)
-            ->orderBy('r.id', 'DESC')->setFirstResult($offset)->setMaxResults($limit)->getQuery()->getResult();
+        $qb = $this->createQueryBuilder('r')
+            ->where('r.kind = :k AND r.resourceId = :i')
+            ->setParameter('k', $kind)->setParameter('i', $id)
+            ->orderBy('r.id', 'DESC')->setFirstResult($offset)->setMaxResults($limit);
+        if (null !== $locale) {
+            $qb->andWhere('r.locale = :l')->setParameter('l', $locale);
+        }
+
+        return $qb->getQuery()->getResult();
     }
 
-    public function countOf(string $kind, string $id, string $locale): int
+    public function countOf(string $kind, string $id, ?string $locale): int
     {
-        return (int) $this->createQueryBuilder('r')->select('COUNT(r.id)')
-            ->where('r.kind = :k AND r.resourceId = :i AND r.locale = :l')
-            ->setParameter('k', $kind)->setParameter('i', $id)->setParameter('l', $locale)
-            ->getQuery()->getSingleScalarResult();
+        $qb = $this->createQueryBuilder('r')->select('COUNT(r.id)')
+            ->where('r.kind = :k AND r.resourceId = :i')
+            ->setParameter('k', $kind)->setParameter('i', $id);
+        if (null !== $locale) {
+            $qb->andWhere('r.locale = :l')->setParameter('l', $locale);
+        }
+
+        return (int) $qb->getQuery()->getSingleScalarResult();
+    }
+
+    /** @return array<string, int> The current revision id of each language, independent of the requested history page. */
+    public function latestIds(string $kind, string $id): array
+    {
+        $rows = $this->createQueryBuilder('r')->select('r.locale AS locale, MAX(r.id) AS id')
+            ->where('r.kind = :k AND r.resourceId = :i')->setParameter('k', $kind)->setParameter('i', $id)
+            ->groupBy('r.locale')->getQuery()->getArrayResult();
+        $out = [];
+        foreach ($rows as $row) {
+            $out[(string) $row['locale']] = (int) $row['id'];
+        }
+
+        return $out;
     }
 
     /** Is there anything recorded for the object, in any language? */

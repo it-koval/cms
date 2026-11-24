@@ -804,7 +804,8 @@ A permission is a pair of an area and an action. Actions: `view` (**View**), `ed
 | `set:<group>` | A settings group, including `set:site` and `set:analytics` |
 | `set:menus`, `set:redirects`, `set:seo` | Menus, redirects, SEO rules, `robots.txt` and `llms.txt` |
 | `set:notifications`, `set:mail`, `set:bots` | Notification recipients, mail server, bot tokens |
-| `set:theme`, `set:languages`, `set:users`, `set:mcp` | Admin appearance, content languages configured in `itk_cms.locales` (a management screen is planned), users and roles, AI assistants |
+| `set:theme`, `set:users`, `set:mcp` | Admin appearance, users and roles, AI assistants |
+| `set:languages` | Reserved permission. The site developer sets the available languages in `itk_cms.locales`. |
 | `templates` | Viewing templates |
 | `dev` | The **For developers** section: **Site status** |
 | `action:<collection>:<action>` | Running an action with `permission()` |
@@ -1655,6 +1656,12 @@ itk_cms:
 - On a site with multiple configured languages, addresses for the main language have no language prefix. Other versions use `/{code}`. For example, the Kazakh home page uses `/kk`, and other Kazakh pages use paths such as `/kk/about`. The server checks the language prefix when creating a translation, changing its address (including a restore that changes the address), and publishing. Saving other fields without changing the address remains possible for legacy pages with an incompatible prefix.
 
 Inject `Itk\Cms\I18n\ContentLocales` to read the site's language codes, display names, path prefixes and metadata.
+
+#### Editing translations in the admin
+
+- In **Pages** or a collection list, select the language next to a page or record to open that version. A missing version offers **Copy from…** and **Start with a blank page** or **Start with an empty record**. Both create a draft that you can edit and publish in that language. On narrow screens, the language and its status may appear in a single picker.
+- Use the language picker in an editor, in the translatable **Settings**, or in **Settings → Menus**. An unset translation opens empty. Fields marked **Same for all languages** have one shared value. Save settings and menus with **Save**.
+- In a page or record editor, open **History** and select **This language** or **All languages**. Each revision shows its language. Restoring a revision updates that language’s draft. Publish it when it is ready to go live.
 
 #### Public pages and forms
 

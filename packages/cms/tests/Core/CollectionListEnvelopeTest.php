@@ -316,6 +316,24 @@ final class CollectionListEnvelopeTest extends WebTestCase
     }
 
     #[Test]
+    public function statusFacetsMatchUnpublishedChangesAndMissingTranslationFilters(): void
+    {
+        $this->item(['ru' => $this->translation('Main only')]);
+        $this->item(['ru' => $this->translation('Draft'), 'kk' => $this->translation('Draft KK')], 1);
+        $this->item(['ru' => $this->translation('Changed'), 'kk' => $this->translation('Changed KK', 2)], 2);
+        $this->item(['ru' => $this->translation('Live'), 'kk' => $this->translation('Live KK', 1)], 3);
+        self::getContainer()->get(EntityManagerInterface::class)->flush();
+        $facets = $this->api(['locale' => 'kk'])['facets']['status'];
+        self::assertSame(2, $facets['draft']);
+        self::assertSame(1, $facets['published']);
+        self::assertSame(1, $facets['missing']);
+        foreach ($facets as $status => $count) {
+            self::assertSame($count, $this->api(['locale' => 'kk', 'status' => $status])['total']);
+        }
+        self::assertSame(2, $this->api(['locale' => 'kk', 'filter' => ['status' => 'published']])['total'], 'Legacy raw stored-status filtering remains available.');
+    }
+
+    #[Test]
     public function readingASingletonCreatesItsRecordAndKeepsTheMatrixRowShape(): void
     {
         $id = Uuid::v7()->toRfc4122();

@@ -1,13 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { saveDraft, publish, getDraft } = vi.hoisted(() => ({ saveDraft: vi.fn(), publish: vi.fn(), getDraft: vi.fn() }))
+const { saveDraft, publish, getDraft, createTranslation, removeTranslation } = vi.hoisted(() => ({ saveDraft: vi.fn(), publish: vi.fn(), getDraft: vi.fn(), createTranslation: vi.fn(), removeTranslation: vi.fn() }))
 
 vi.mock('@/api/index.js', async () => {
   const http = await vi.importActual('@/api/http.js')
   return {
     api: {
       pages: {
-        getDraft, publish, list: async () => [], submit: vi.fn(), returnToAuthor: vi.fn(), revert: vi.fn(),
+        getDraft, publish, createTranslation, removeTranslation, list: async () => [], submit: vi.fn(), returnToAuthor: vi.fn(), revert: vi.fn(),
         saveDraft: (id, locale, data, baseVersion) => saveDraft(id, locale, data, baseVersion),
       },
       proposals: { list: async () => [], accept: async () => ({}), reject: async () => ({}) },
@@ -39,6 +39,16 @@ beforeEach(() => {
 afterEach(() => { vi.unstubAllGlobals() })
 
 describe('page editor: a failed save is not a saved one', () => {
+  it('does not retry a rejected autosave after the user discards it and leaves', async () => {
+    const ed = await openEditor()
+    saveDraft.mockRejectedValueOnce(new ApiError('Сервер недоступен', 503))
+    ed.updateData('s1', { body: 'discarded' })
+    await expect(ed.flushAll()).rejects.toMatchObject({ code: 'save_failed' })
+    ed.discardPending()
+    ed.dispose()
+    await ed.flush()
+    expect(saveDraft).toHaveBeenCalledTimes(1)
+  })
   it('flush resolves false while the save fails and true once it goes through', async () => {
     const ed = await openEditor()
     saveDraft.mockRejectedValueOnce(new ApiError('Сервер недоступен', 503))
@@ -210,5 +220,73 @@ describe('page editor: keepalive only for a closing tab and only when the body f
     const e = { preventDefault: vi.fn() }
     ed.saveNow(e)
     expect(e.preventDefault).toHaveBeenCalled()
+  })
+})
+
+describe('page language drafts and asynchronous loads', () => {
+  it('creates a copied or blank translation under the requested language', async () => {
+    for (const from of ['ru', null]) {
+      getDraft.mockResolvedValueOnce({ translated: false, locales: { ru: { title: 'Оригинал' } }, shell: { id: 'p1' }, page: null, published: null })
+      const ed = useEditorState('p1', 'kk')
+      await ed.load()
+      expect(ed.translated).toBe(false)
+      createTranslation.mockResolvedValueOnce({})
+      getDraft.mockResolvedValueOnce({ translated: true, locales: {}, shell: { id: 'p1' }, page: draft(), published: null })
+      expect(await ed.createVersion(from)).toBe(true)
+      expect(createTranslation).toHaveBeenLastCalledWith('p1', 'kk', { from })
+      expect(ed.status).toBe('draft')
+      ed.dispose()
+    }
+  })
+
+  it('keeps edited content and the pending save after translation deletion fails', async () => {
+    const ed = await openEditor()
+    ed.updateData('s1', { body: 'Мои правки' })
+    removeTranslation.mockRejectedValueOnce(new Error('offline'))
+    expect(await ed.removeVersion()).toBe(false)
+    expect(ed.page.sections[0].data.body).toBe('Мои правки')
+    expect(await ed.flush()).toBe(true)
+    expect(saveDraft).toHaveBeenCalledWith('p1', 'ru', expect.objectContaining({ sections: [expect.objectContaining({ data: { body: 'Мои правки' } })] }), 'v1')
+    ed.dispose()
+  })
+
+  it('keeps a newer load when an older language draft response arrives later', async () => {
+    const ed = await openEditor()
+    let finish
+    getDraft.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve }))
+    const old = ed.load()
+    getDraft.mockResolvedValueOnce({ translated: true, locales: {}, shell: { id: 'p1' }, page: { ...draft(), title: 'Новая' }, published: null })
+    await ed.load()
+    finish({ translated: true, locales: {}, shell: { id: 'p1' }, page: { ...draft(), title: 'Старая' }, published: null })
+    await old
+    expect(ed.page.title).toBe('Новая')
+    ed.dispose()
+  })
+
+  it('does not apply an outstanding history reload after the editor is disposed', async () => {
+    const ed = await openEditor()
+    let finish
+    getDraft.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve }))
+    const restore = ed.reloadDraft()
+    ed.dispose()
+    finish({ page: { ...draft(), title: 'Из истории' }, published: null })
+    await restore
+    expect(ed.page.title).toBe('Страница')
+  })
+
+  it('locks the editor during a history draft reload and saves subsequent edits with the restored version', async () => {
+    const ed = await openEditor()
+    let finish
+    getDraft.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve }))
+    const reload = ed.reloadDraft()
+    expect(ed.busy).toBe(true)
+    ed.updateData('s1', { body: 'blocked while reloading' })
+    expect(ed.page.sections[0].data.body).toBe('a')
+    finish({ page: { ...draft(), version: 'v9' }, published: null })
+    await reload
+    expect(ed.busy).toBe(false)
+    ed.updateData('s1', { body: 'new edit' })
+    expect(await ed.flush()).toBe(true)
+    expect(saveDraft.mock.lastCall[3]).toBe('v9')
   })
 })

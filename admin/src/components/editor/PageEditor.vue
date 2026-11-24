@@ -38,6 +38,7 @@ const sidebar = ref(null)
 const preview = ref(null)
 const previewOpen = ref(false)
 const settingsOpen = ref(false)
+const settingsModal = ref(null)
 /** The marker the server puts on the template's own fields (data-sec="@page"). */
 const PAGE_SEC = '@page'
 
@@ -274,7 +275,7 @@ watch(() => ed.loading, async (v) => {
 /* ---------- keyboard ---------- */
 const TEXT_ENTRY = 'textarea,input:not([type=checkbox]):not([type=radio]):not([type=button]):not([type=submit]):not([type=range]),[contenteditable="true"]'
 function onKey(e) {
-  if (ed.loading || ed.error || !ed.page || previewOpen.value || settingsOpen.value) return
+  if (ed.loading || ed.busy || ed.error || !ed.page || previewOpen.value || settingsOpen.value) return
   const k = (e.key || '').toLowerCase()
   if ((e.metaKey || e.ctrlKey) && !e.altKey && ['z', 'я', 'y', 'н'].includes(k)) { // i18n-ignore: the keys of undo / redo on the Russian layout too
     if (ed.readOnly) return
@@ -304,7 +305,11 @@ onBeforeUnmount(() => {
   toast.dismissOwner('editor') // «название и адрес» of the «версия создана» toast opens THIS editor's settings
   ed.dispose()
 })
-defineExpose({ flushAll: () => ed.flushAll() })
+defineExpose({
+  flushAll: () => ed.flushAll(),
+  canLeave: () => !ed.busy && (settingsModal.value?.mayLeave() ?? true),
+  discardPending: () => ed.discardPending(),
+})
 
 const hint = computed(() => (vp.phone ? t('editor.hint_phone') : t('editor.hint')))
 // the hint gives way to the notes above it (read-only, waits for publication, sent back)
@@ -342,7 +347,7 @@ const showHint = computed(() => !(ed.readOnly || ed.awaiting || (ed.returned && 
     </div>
 
     <div
-      v-else id="editor" class="editor" :data-dev="ed.device" :data-sb="ed.sb || 'off'" :data-pane="vp.phone ? ed.pane : undefined" :data-full="ed.sb && ed.sbFull ? '' : undefined"
+      v-else id="editor" class="editor" :inert="ed.busy || undefined" :aria-busy="ed.busy" :data-dev="ed.device" :data-sb="ed.sb || 'off'" :data-pane="vp.phone ? ed.pane : undefined" :data-full="ed.sb && ed.sbFull ? '' : undefined"
     >
       <EditorTopBar />
       <!-- above the sidebar and the page, not on the page: the form on the phone and the sidebar on the whole screen hide the page, and the person who is typing there has to see this -->
@@ -380,7 +385,7 @@ const showHint = computed(() => !(ed.readOnly || ed.awaiting || (ed.returned && 
       </div>
 
       <FullPreview v-if="previewOpen" :page="ed.page" @close="previewOpen = false" />
-      <PageSettingsModal v-model:open="settingsOpen" />
+      <PageSettingsModal ref="settingsModal" v-model:open="settingsOpen" />
     </div>
   </div>
 </template>

@@ -16,8 +16,8 @@ export function pageRules(page) {
 }
 
 /**
- * The home page of a NON-main language cannot be deleted (or taken off the site) while other pages of that language are published: its address
- * (/en) would stop working while /en/about-us stays live. `pages` = rows of api.pages.list (their `locales[code].published` tells what is on the site).
+ * A non-main home translation cannot be deleted while other versions of that language are published.
+ * Taking it off the site remains allowed. `pages` = rows of api.pages.list.
  */
 export function homeVersionHeld(pages, page, locale) {
   if (!isRootPage(page)) return false

@@ -17,8 +17,8 @@ use Itk\Cms\Schema\Collection;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 
 /**
- * The database searches, filters and sorts the JSON translations. For top-level draft and published statuses, the row
- * determines whether there are unpublished changes. Those results are counted and paginated after the PHP status filter.
+ * The database searches, filters and sorts the JSON translations. Top-level draft and published statuses use
+ * the content service to detect unpublished changes before counting and pagination.
  *
  *   run($collection, ['q' => 'моск', 'filter' => ['status' => 'published', 'date' => ['from' => '2026-11-01']], 'sort' => '-date', 'page' => 2, 'perPage' => 50], 'ru')
  *   → { items, total, page, perPage, facets, metrics }
@@ -68,25 +68,23 @@ final class CollectionQuery
         $total = $filterByRowStatus ? null : (int) (clone $qb)->select('COUNT(i.id)')->getQuery()->getSingleScalarResult();
         $this->order($qb, $c, $locale, $this->sorts($c, (string) ($params['sort'] ?? '')));
         $toRow = fn (CollectionItem $i): array => $this->collections->row($c, $i, $locale);
-        $matchedRows = null;
+        $matchedItems = null;
         if (null === $total) {
-            $matchedRows = [];
+            $matchedItems = [];
             foreach ($qb->getQuery()->getResult() as $item) {
-                $row = $toRow($item);
-                $isDraft = 'draft' === $row['status'] || $row['changed'];
-                if ($row['translated'] && $isDraft === ('draft' === $status)) {
-                    $matchedRows[] = $row;
+                if ($status === $this->collections->versionStatus($c, $item, $locale)) {
+                    $matchedItems[] = $item;
                 }
             }
-            $total = \count($matchedRows);
+            $total = \count($matchedItems);
         }
 
         $items = [];
         if ($total > 0 && $page - 1 <= \intdiv($total - 1, $perPage)) {
             $offset = ($page - 1) * $perPage;
-            $items = null !== $matchedRows
-                ? \array_slice($matchedRows, $offset, $perPage)
-                : \array_map($toRow, $qb->setFirstResult($offset)->setMaxResults($perPage)->getQuery()->getResult());
+            $items = \array_map($toRow, null !== $matchedItems
+                ? \array_slice($matchedItems, $offset, $perPage)
+                : $qb->setFirstResult($offset)->setMaxResults($perPage)->getQuery()->getResult());
         }
 
         return [
@@ -295,6 +293,13 @@ final class CollectionQuery
     {
         $out = [];
         foreach ($kinds as $key => $kind) {
+            if ('status' === $key) {
+                foreach ($this->items->findByCollection($c->key()) as $item) {
+                    $status = $this->collections->versionStatus($c, $item, $locale);
+                    $out['status'][$status] = ($out['status'][$status] ?? 0) + 1;
+                }
+                continue;
+            }
             if (!\in_array($kind, [FilterKind::Select, FilterKind::Multi, FilterKind::Toggle], true)) {
                 continue;
             }

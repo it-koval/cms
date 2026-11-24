@@ -1,4 +1,5 @@
 {
+  "settings.menu_pages_load_failed": "Осы тілдегі беттерді жүктеу мүмкін болмады.",
   "settings.retry": "Қайталау",
   "settings.delete": "Жою",
   "settings.save": "Сақтау",

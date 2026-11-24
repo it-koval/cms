@@ -1,8 +1,7 @@
 <script setup>
 // The state of a record that has no version in the content language: what that means for the site and two ways to start (the look is the shared ui/VersionChoice).
 //   <MissingVersion :cfg="cfg" :locale="'en'" :busy="''" @copy @blank />
-// «Скопировать с русского» copies every field incl. photos into a DRAFT of the new language; «Начать с пустой записи» keeps only what is the same in every language
-// (title, address, switches, selects, dates, photos) and leaves the texts empty. The options matrix has only the first: an empty table would have no rows to translate.
+// Copy starts a draft from the source language; a blank draft uses the schema defaults, including for a matrix.
 import { computed } from 'vue'
 import { app } from '@/stores/app.js'
 import VersionChoice from '@/components/ui/VersionChoice.vue'
@@ -21,7 +20,7 @@ const matrix = computed(() => props.cfg.view === 'matrix')
 const linked = computed(() => !!props.cfg.pageKind) // a product / an article has its own page: its version appears together with the record's
 const options = computed(() => [
   { id: 'copy', icon: 'copy', lead: true, label: cap(t('collections.mv_copy_from', { lang: fromLang(main.value) })), hint: matrix.value ? matrixWords(props.cfg).copyHint : t('collections.mv_copy_hint') },
-  ...(matrix.value ? [] : [{ id: 'blank', icon: 'doc', label: t('collections.mv_blank'), hint: t('collections.mv_blank_hint') }]),
+  { id: 'blank', icon: 'doc', label: t('collections.mv_blank'), hint: t('collections.mv_blank_hint') },
 ])
 </script>
 
