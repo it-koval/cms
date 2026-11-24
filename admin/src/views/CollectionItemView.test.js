@@ -3,8 +3,8 @@ import { createApp, h, nextTick, reactive, ssrContextKey } from 'vue'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import View from './CollectionItemView.vue'
 
-const mocks = vi.hoisted(() => ({ get: vi.fn(), createTranslation: vi.fn(), removeTranslation: vi.fn(), remove: vi.fn(), update: vi.fn(), confirm: vi.fn(), can: vi.fn(), guard: null, leave: null, routeUpdate: null, route: null, app: null, cfg: null }))
-vi.mock('vue-router', () => ({ useRoute: () => mocks.route, useRouter: () => ({ replace: vi.fn() }), onBeforeRouteLeave: (fn) => { mocks.leave = fn }, onBeforeRouteUpdate: (fn) => { mocks.routeUpdate = fn } }))
+const mocks = vi.hoisted(() => ({ get: vi.fn(), createTranslation: vi.fn(), removeTranslation: vi.fn(), remove: vi.fn(), update: vi.fn(), confirm: vi.fn(), can: vi.fn(), replace: vi.fn(), actionBusy: { value: false }, guard: null, leave: null, routeUpdate: null, route: null, app: null, cfg: null }))
+vi.mock('vue-router', () => ({ useRoute: () => mocks.route, useRouter: () => ({ replace: mocks.replace }), onBeforeRouteLeave: (fn) => { mocks.leave = fn }, onBeforeRouteUpdate: (fn) => { mocks.routeUpdate = fn } }))
 vi.mock('@/api/index.js', () => ({ api: { collections: mocks, proposals: { list: async () => [] } }, isConflict: () => false, whileClosing: (fn) => fn() }))
 vi.mock('@/stores/app.js', async () => {
   const { reactive } = await import('vue')
@@ -12,7 +12,7 @@ vi.mock('@/stores/app.js', async () => {
   return { app: mocks.app, can: (...args) => mocks.can(...args), refreshCounters: vi.fn(), switchContentLocale: vi.fn(), useLocaleGuard: (fn) => { mocks.guard = fn } }
 })
 vi.mock('@/schema/collections.js', () => ({ getCollectionConfig: () => mocks.cfg }))
-vi.mock('@/components/collections/actions/useActions.js', () => ({ useActions: () => ({ at: () => [], busy: { value: false }, dialog: { busy: false } }) }))
+vi.mock('@/components/collections/actions/useActions.js', () => ({ useActions: () => ({ at: () => [], busy: mocks.actionBusy, dialog: { busy: false } }) }))
 vi.mock('@/components/ui/useConfirm.js', () => ({ useConfirm: () => mocks.confirm }))
 vi.mock('@/components/ui/useToast.js', () => ({ useToast: () => ({ show: vi.fn(), error: vi.fn() }) }))
 
@@ -31,6 +31,7 @@ async function mount() {
 }
 beforeEach(() => {
   vi.clearAllMocks()
+  mocks.actionBusy.value = false
   mocks.route = reactive({ name: 'collection-item', params: { col: 'team', id: 'one' }, query: {}, path: '/collections/team/one' })
   Object.assign(mocks.app, { locale: 'kk', languages: { main: 'ru', list: [{ code: 'ru' }, { code: 'kk' }, { code: 'zh' }] }, user: null })
   mocks.cfg = { key: 'team', title: 'Команда', titleField: 'title', tabs: [{ key: 'main', fields: [{ k: 'title', t: 'text', label: 'Название' }] }] }
@@ -108,4 +109,29 @@ it('keeps translation deletion behind the delete permission, including singleton
   expect(state.canDelete).toBe(false)
   await state.removeVersion()
   expect(mocks.removeTranslation).not.toHaveBeenCalled()
+})
+
+it('allows a form action to redirect, including to another locale, while the action finishes', async () => {
+  mocks.actionBusy.value = 'go-to-page'
+  await mount()
+  expect(await mocks.leave()).toBe(true)
+  expect(await mocks.guard('zh')).toBe(true)
+})
+
+it('clears a rejected autosave when leaving without saving', async () => {
+  await mount()
+  state.saver.schedule({ col: 'team', id: 'one', data: { title: 'Discard me' } })
+  mocks.update.mockRejectedValueOnce(new Error('offline'))
+  expect(await mocks.guard('zh')).toBe(true)
+  expect(state.saver.hasPending()).toBe(false)
+  expect(await state.saver.flush()).toBe(true)
+  expect(mocks.update).toHaveBeenCalledTimes(1)
+})
+
+it('redirects old matrix item links and preserves an explicit language', async () => {
+  mocks.cfg.view = 'matrix'
+  mocks.route.query = { lang: 'kk' }
+  mocks.route.hash = '#details'
+  await mount()
+  expect(mocks.replace).toHaveBeenCalledWith({ path: '/collections/team', query: { lang: 'kk' }, hash: '#details' })
 })

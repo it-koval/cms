@@ -7,6 +7,9 @@ namespace Itk\Cms\Tests\Core;
 use Doctrine\ORM\EntityManagerInterface;
 use Itk\Cms\Content\CollectionService;
 use Itk\Cms\Content\PageService;
+use Itk\Cms\Entity\Revision;
+use Itk\Cms\Entity\Role;
+use Itk\Cms\Entity\User;
 use Itk\Cms\Field\Text;
 use Itk\Cms\Resource\ResourceRegistry;
 use Itk\Cms\Resource\SettingsResource;
@@ -14,6 +17,7 @@ use Itk\Cms\Security\UserManager;
 use Itk\Cms\Tests\App\QueryCounter;
 use Itk\Cms\Tests\App\TestKernel;
 use Itk\Cms\Tests\Core\Fixture\TripsCollection;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
@@ -27,15 +31,22 @@ final class HistoryTranslationsApiTest extends WebTestCase
     private string $userId;
     private string $settingsKey;
     /** @var list<string> */
+    private array $roleKeys = [];
+    /** @var list<string> */
     private array $ids = [];
     /** @var list<string> */
     private array $itemIds = [];
 
     protected static function createKernel(array $options = []): KernelInterface
     {
+        $locales = ['ru' => ['name' => 'Русский'], 'kk' => ['name' => 'Қазақша'], 'en' => ['name' => 'English']]; // i18n-ignore: configured language names
+        if ($options['archiveKk'] ?? false) {
+            unset($locales['kk']);
+        }
+
         return new TestKernel($options['environment'] ?? 'test', $options['debug'] ?? true, itk: [
             'main_locale' => 'ru',
-            'locales' => ['ru' => ['name' => 'Русский'], 'kk' => ['name' => 'Қазақша'], 'en' => ['name' => 'English']], // i18n-ignore: configured language names
+            'locales' => $locales,
         ]);
     }
 
@@ -63,6 +74,7 @@ final class HistoryTranslationsApiTest extends WebTestCase
         $em->createQuery('DELETE FROM Itk\Cms\Entity\MenuArea a WHERE a.key IN (:ids)')->setParameter('ids', $this->ids ?: ['-'])->execute();
         $em->createQuery('DELETE FROM Itk\Cms\Entity\Setting s WHERE s.key = :key')->setParameter('key', $this->settingsKey)->execute();
         $em->createQuery('DELETE FROM Itk\Cms\Entity\User u WHERE u.id = :id')->setParameter('id', $this->userId)->execute();
+        $em->createQuery('DELETE FROM Itk\Cms\Entity\Role r WHERE r.key IN (:keys)')->setParameter('keys', $this->roleKeys ?: ['-'])->execute();
         parent::tearDown();
     }
 
@@ -182,6 +194,138 @@ final class HistoryTranslationsApiTest extends WebTestCase
             self::assertSame(4, $all['total']);
             self::assertSame(2, $this->api('GET', 'history/' . $kind . '/' . $id . '?locale=kk')['total']);
         }
+    }
+
+    public static function contentKinds(): iterable
+    {
+        yield 'page' => ['page'];
+        yield 'item' => ['item'];
+    }
+
+    /** @return array{string, string, int} id, route, KK revision */
+    private function translatedObject(string $kind): array
+    {
+        if ('page' === $kind) {
+            $object = $this->api('POST', 'pages', ['title' => 'Acceptance history', 'url' => '/test-history-acceptance-' . \bin2hex(\random_bytes(6))], 201);
+            $this->ids[] = $object['id'];
+            $path = 'pages/' . $object['id'];
+        } else {
+            $object = $this->api('POST', 'collections/test_trips', ['title' => 'Acceptance history'], 201);
+            $this->itemIds[] = $object['id'];
+            $path = 'collections/test_trips/' . $object['id'];
+        }
+        $this->api('POST', $path . '/translations?locale=kk', ['from' => 'ru'], 201);
+        $revision = $this->api('GET', 'history/' . $kind . '/' . $object['id'] . '?locale=kk')['items'][0]['id'];
+
+        return [$object['id'], $path, $revision];
+    }
+
+    #[Test]
+    #[DataProvider('contentKinds')]
+    public function removedTranslationsCannotRestoreTheirEarlierRevisions(string $kind): void
+    {
+        [, $path, $revision] = $this->translatedObject($kind);
+        $this->api('DELETE', $path . '/translations/kk');
+        $entry = $this->api('GET', 'history/revision/' . $revision);
+        self::assertFalse($entry['canRestore'] ?? true);
+        self::assertFalse($entry['current']);
+        $error = $this->api('POST', 'history/revision/' . $revision . '/restore', [], 422);
+        self::assertSame(['code' => 'no_translation', 'locale' => 'kk'], $error['details']);
+    }
+
+    #[Test]
+    #[DataProvider('contentKinds')]
+    public function wholeObjectDeletionLeavesNoCurrentLanguageRevision(string $kind): void
+    {
+        [$id, $path, $revision] = $this->translatedObject($kind);
+        $this->api('DELETE', $path);
+        $all = $this->api('GET', 'history/' . $kind . '/' . $id . '?scope=all');
+        self::assertNotContains(true, \array_column($all['items'], 'current'));
+        $entry = $this->api('GET', 'history/revision/' . $revision);
+        self::assertFalse($entry['current']);
+        self::assertFalse($entry['canRestore'] ?? true);
+        $this->api('POST', 'history/revision/' . $all['items'][0]['id'] . '/restore');
+        self::assertTrue($this->api('GET', 'history/' . $kind . '/' . $id . '?locale=kk')['items'][0]['current']);
+    }
+
+    #[Test]
+    #[DataProvider('contentKinds')]
+    public function archivedLanguageRevisionsRemainReadableButCannotWriteDrafts(string $kind): void
+    {
+        [$id, , $revision] = $this->translatedObject($kind);
+        if ('page' === $kind) {
+            self::getContainer()->get(PageService::class)->saveDraft($id, 'kk', ['title' => 'Retained draft']);
+        } else {
+            self::getContainer()->get(CollectionService::class)->update('test_trips', $id, ['title' => 'Retained draft'], 'kk');
+        }
+        self::ensureKernelShutdown();
+        $this->client = static::createClient(['archiveKk' => true]);
+        $this->client->disableReboot();
+        self::getContainer()->get(ResourceRegistry::class)->add(new TripsCollection());
+        $em = self::getContainer()->get(EntityManagerInterface::class);
+        $this->client->loginUser($em->find(User::class, $this->userId), 'itk_admin');
+        $this->csrf = $this->api('GET', 'me')['csrf'];
+
+        $entry = $this->api('GET', 'history/revision/' . $revision);
+        self::assertSame('kk', $entry['locale']);
+        self::assertFalse($entry['canRestore'] ?? true);
+        $this->api('POST', 'history/revision/' . $revision . '/restore', [], 422);
+        $draft = 'page' === $kind
+            ? self::getContainer()->get(PageService::class)->find($id)->translation('kk')->draft
+            : $em->find(\Itk\Cms\Entity\CollectionItem::class, $id)->translations['kk']['draft'];
+        self::assertSame('Retained draft', $draft['title']);
+    }
+
+    #[Test]
+    public function deletedPageHistoryUsesABoundedNumberOfDatabaseQueries(): void
+    {
+        [$id, $path] = $this->translatedObject('page');
+        $em = self::getContainer()->get(EntityManagerInterface::class);
+        for ($n = 0; $n < 30; ++$n) {
+            // Retained audit fixtures model independent edits (without autosave merging).
+            $revision = new Revision('page', $id, 'default', 0 === $n % 2 ? 'ru' : 'kk', Revision::EDIT);
+            $revision->snapshot = ['template' => 'default', 'draft' => ['title' => 'Retained ' . $n]];
+            $em->persist($revision);
+        }
+        $em->flush();
+        $this->api('DELETE', $path);
+        $em->clear();
+        $queries = QueryCounter::during(function () use ($id): void {
+            self::assertCount(30, $this->api('GET', 'history/page/' . $id . '?scope=all&limit=30')['items']);
+        });
+        $historyQueries = \array_filter($queries, static fn (string $q): bool => \str_contains($q, 'itk_revision') || \str_contains($q, 'itk_page'));
+        self::assertLessThanOrEqual(10, \count($historyQueries), 'Deleted-page template and history lookups must be shared across rows.');
+    }
+
+    #[Test]
+    public function deletedPageHistoryStillChecksBothHistoricalAndLastTemplates(): void
+    {
+        [$id, $path, $oldRevision] = $this->translatedObject('page');
+        self::getContainer()->get(PageService::class)->update($id, null, ['template' => 'blog', 'title' => 'Current template']);
+        $this->api('DELETE', $path);
+        $em = self::getContainer()->get(EntityManagerInterface::class);
+        $role = new Role('test_history_' . \bin2hex(\random_bytes(6)), 'Scoped history viewer');
+        $this->roleKeys[] = $role->key;
+        $role->perms = ['pages' => ['view']];
+        $role->templates = ['blog'];
+        $em->persist($role);
+        $user = $em->find(User::class, $this->userId);
+        $user->role = $role->key;
+        $em->flush();
+        $this->client->loginUser($user, 'itk_admin');
+
+        $all = $this->api('GET', 'history/page/' . $id . '?scope=all');
+        $old = \array_column($all['items'], null, 'id')[$oldRevision];
+        self::assertSame('', $old['title']);
+        self::assertSame([], $old['summary']);
+        $this->api('GET', 'history/revision/' . $oldRevision, [], 403);
+        $em->clear();
+        $role = $em->find(Role::class, $role->key);
+        $role->templates = ['default'];
+        $em->flush();
+        $user = $em->find(User::class, $this->userId);
+        $this->client->loginUser($user, 'itk_admin');
+        $this->api('GET', 'history/page/' . $id . '?scope=all', [], 403);
     }
 }
 

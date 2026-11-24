@@ -38,18 +38,23 @@ const MAIN = app.languages.main
 
 const rows = ref([]) // pages of the site (flat rows of the content language)
 const ready = ref(false)
+const pagesFailed = ref(false)
 const mainMenus = ref(null) // the saved menus of the main language, for «Скопировать …» (only when another language is open)
 
-onMounted(async () => {
-  const [list, main] = await Promise.allSettled([
-    can('pages') ? api.pages.list({ locale: LOC }) : null,
-    isMain(LOC) ? null : api.settings.getMenus(MAIN),
-  ])
-  if (list.status === 'fulfilled' && list.value) {
-    rows.value = list.value
+async function loadPages() {
+  if (!can('pages')) return
+  pagesFailed.value = false
+  try {
+    rows.value = await api.pages.list({ locale: LOC })
     ready.value = true
+  } catch {
+    pagesFailed.value = true
   }
-  if (main.status === 'fulfilled') mainMenus.value = main.value
+}
+
+onMounted(() => {
+  loadPages()
+  if (!isMain(LOC)) api.settings.getMenus(MAIN).then((menus) => { mainMenus.value = menus }).catch(() => {})
 })
 
 const pages = computed(() => rows.value.filter((p) => p.translated).map((p) => ({ value: p.url, label: p.title, draft: p.status !== 'published' })))
@@ -133,7 +138,10 @@ async function copySnippet(a) {
 const usedText = (a) => (a.usedInAll ? t('settings.area_used_all') : t('settings.area_used_some', { templates: a.usedIn.map((tpl) => tpl.name).join(', ') }))
 
 /* ---- «Скопировать из меню на русском» ---- */
-const canCopy = (key) => !isMain(LOC) && !list(key).length && ((mainMenus.value || {})[key] || []).length > 0
+const sourceItems = (key) => mainMenus.value?.[key] || []
+const pointsToPage = (item) => item.link?.kind === 'page'
+const needsPageMap = (key) => sourceItems(key).some((item) => pointsToPage(item) || item.children?.some(pointsToPage))
+const canCopy = (key) => !isMain(LOC) && !list(key).length && sourceItems(key).length > 0 && (ready.value || !needsPageMap(key))
 // the page of this language that is the translation of the main language's page at `url` ('' when it has none yet)
 function mapPage(url) {
   const r = rows.value.find((x) => x.locales && x.locales[MAIN] && x.locales[MAIN].url === url)
@@ -146,7 +154,8 @@ function copyItem(it) {
   return out
 }
 function copyFromMain(key) {
-  const items = (((mainMenus.value || {})[key]) || []).map(copyItem)
+  if (!canCopy(key)) return
+  const items = sourceItems(key).map(copyItem)
   setList(key, items)
   const gaps = items.reduce((n, it) => n + (it.link.kind === 'page' && !it.link.page ? 1 : 0) + (it.children || []).filter((c) => c.link.kind === 'page' && !c.link.page).length, 0)
   toast.show(gaps ? t('settings.menu_copied_gaps', { count: gaps }) : t('settings.menu_copied'))
@@ -158,6 +167,10 @@ function copyFromMain(key) {
     <div class="ar-intro">
       <p>{{ t('settings.menus_intro') }}</p>
       <button type="button" class="btn" @click="openDialog()"><Icon name="plus" size="s16" />{{ t('settings.menus_add_area') }}</button>
+    </div>
+    <div v-if="pagesFailed" class="alert err-a mn-page-load" role="alert">
+      <span>{{ t('settings.menu_pages_load_failed') }}</span>
+      <button type="button" class="btn sm" @click="loadPages">{{ t('settings.retry') }}</button>
     </div>
 
     <section v-for="a in areas" :key="a.key" class="sheet set-sec">
@@ -214,6 +227,7 @@ function copyFromMain(key) {
 .mn-add{margin:6px 0 10px}
 .mn-empty{display:flex;gap:8px;align-items:center;color:var(--ink-2);font-size:var(--t-sm);padding:10px 12px;border:1px dashed var(--ctl);border-radius:var(--r)}
 .mn-copy{margin-left:auto}
+.mn-page-load{margin-bottom:12px;flex-wrap:wrap}
 .mn-chg{display:inline-flex;align-items:center;gap:6px;font-size:var(--t-xs);font-weight:620;color:var(--accent-text-d)}
 .ar-intro{display:flex;align-items:center;gap:16px;margin-bottom:14px}
 .ar-intro p{flex:1;color:var(--ink-2);font-size:var(--t-sm);line-height:1.5;max-width:64ch}

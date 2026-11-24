@@ -1,4 +1,5 @@
 {
+  "settings.menu_pages_load_failed": "Не удалось загрузить страницы на этом языке.",
   "settings.retry": "Повторить",
   "settings.delete": "Удалить",
   "settings.save": "Сохранить",

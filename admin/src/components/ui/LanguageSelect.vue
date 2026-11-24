@@ -20,7 +20,7 @@ const props = defineProps({
   statuses: { type: Object, default: null },
   label: { type: String, default: () => t('ui.language') }, // aria-label of the trigger and the menu; shown above the trigger with show-label
   showLabel: { type: Boolean, default: false },
-  variant: { type: String, default: 'field' }, // 'field' (light, next to buttons) | 'rail' (compact, full width, on the cyan rail)
+  variant: { type: String, default: 'field' }, // field | rail | editor (short code on phones)
   disabled: { type: Boolean, default: false },
 })
 const emit = defineEmits(['update:modelValue'])
@@ -107,6 +107,11 @@ defineExpose({ focus: () => btn.value && btn.value.focus({ preventScroll: true }
 .ls-dot.changed { background: var(--mag); }
 .ls-dot.draft { background: transparent; border: 1.5px solid var(--mag); }
 .ls-dot.missing { background: transparent; border: 1.5px solid var(--ink-3); }
+.ls-editor { flex: none; }
+.ls-editor .ls-btn { gap: 4px; padding-inline: 6px; box-shadow: none; }
+.ls-editor .ls-btn .ls-nm { display: none; }
+.ls-editor .ls-btn .ls-tag::after { content: none; }
+.ls-editor .ls-ch { margin-left: 0; }
 
 /* on the cyan rail: compact, as wide as the rail */
 .ls.ls-rail { display: flex; }
@@ -128,5 +133,8 @@ defineExpose({ focus: () => btn.value && btn.value.focus({ preventScroll: true }
 @media (min-width: 768px) {
   .ls-btn { height: 34px; }
   .ls.ls-rail .ls-btn { height: 32px; }
+  .ls-editor .ls-btn { gap: 8px; padding-inline: 10px; }
+  .ls-editor .ls-btn .ls-nm { display: inline; }
+  .ls-editor .ls-btn .ls-tag::after { content: '·'; }
 }
 </style>

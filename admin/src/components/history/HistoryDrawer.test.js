@@ -143,3 +143,26 @@ it('updates the open language after restore and ignores completion after the lan
   expect(mocks.notice).toHaveBeenCalledTimes(1)
   expect(mocks.list.mock.lastCall[2]).toMatchObject({ locale: 'ru' })
 })
+
+it('refreshes the current editor after a sent restore even when the drawer was closed', async () => {
+  const entry = { ...revision('edit'), locale: 'ru' }
+  mocks.list.mockResolvedValue({ items: [entry], total: 1, keep: 100 })
+  mocks.entry.mockResolvedValue(entry)
+  mocks.confirm.mockResolvedValue(true)
+  let complete
+  mocks.restore.mockImplementation(() => new Promise((resolve) => { complete = resolve }))
+  const onRestored = vi.fn()
+  const props = mountDrawer({ locale: 'ru', onRestored })
+  await settle()
+  box.querySelector('.hd-row').click()
+  await settle()
+  box.querySelector('.btn.primary').click()
+  await settle()
+  props.open = false
+  await settle()
+  complete({ locale: 'ru' })
+  await settle()
+  expect(onRestored).toHaveBeenCalledExactlyOnceWith({ locale: 'ru' })
+  expect(mocks.notice).toHaveBeenCalledTimes(1)
+  expect(mocks.list).toHaveBeenCalledTimes(1)
+})

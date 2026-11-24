@@ -225,7 +225,7 @@ const m = computed(() => {
     deleteLabel: lng ? t('pages.delete_whole') : t('pages.delete'),
     settingsOff: miss,
     deleteOff: home || kids > 0,
-    note: home ? (held ? homeHeldText(app.locale) : t('pages.home_locked_note'))
+    note: home ? (held ? homeHeldText(app.locale) : isMain(app.locale) ? t('pages.home_locked_note') : '')
       : kids > 0 ? t('pages.delete_has_children', { count: kids })
         : miss ? t('pages.version_missing_note', { version: cap(versionNone(app.locale)) }) : '',
   }
@@ -372,7 +372,12 @@ async function onTreeMove(ev) {
 async function toggleListed(p, ev) {
   const val = ev.target.checked
   const sw = listSwitch.value
-  const set = async (v) => { await api.pages.saveDraft(p.id, app.locale, { fields: { ...p.fields, [sw.key]: v } }); await load() }
+  const { id } = p
+  const locale = app.locale
+  const set = async (v) => {
+    await api.pages.saveDraft(id, locale, { fields: { [sw.key]: v } })
+    if (app.locale === locale) await load()
+  }
   try {
     await set(val)
     toast.show(toggleNote(p.title, sw.label, val), {
@@ -391,9 +396,14 @@ async function toggleListed(p, ev) {
       <div v-if="flatT && loaded && !loadError">
         <router-link class="back" to="/pages"><Icon name="chevL" size="s14" />{{ t('pages.all_pages') }}</router-link>
         <h1>{{ flatTitle }}</h1>
-        <p class="sub">{{ flatSub }}</p>
+        <p class="sub page-intro-full">{{ flatSub }}</p>
+        <p class="sub page-intro-compact">{{ multi ? namesNote() : words.sub(ofTemplate.length, flatT.name) }}</p>
       </div>
-      <div v-else><h1>{{ t('pages.title') }}</h1><p class="sub">{{ loaded && !loadError ? subtitle : t('pages.subtitle_default') }}</p></div>
+      <div v-else>
+        <h1>{{ t('pages.title') }}</h1>
+        <p class="sub page-intro-full">{{ loaded && !loadError ? subtitle : t('pages.subtitle_default') }}</p>
+        <p class="sub page-intro-compact">{{ loaded && !loadError && multi ? namesNote() : t('pages.subtitle_default') }}</p>
+      </div>
       <div class="actions">
         <button v-if="flatT && loaded && canAddFlat" class="btn primary" type="button" :disabled="!addChoice || !addChoice.ok" :title="addChoice && !addChoice.ok ? addChoice.reason : undefined" @click="openNew(null, flatT.key)"><Icon name="plus" size="s16" />{{ words.add }}</button>
         <router-link v-if="!arrange" class="btn" :to="flatT ? { path: '/trash', query: { kind: 'page', key: flatT.key } } : '/trash'"><Icon name="trash" size="s16" />{{ t('pages.trash') }}</router-link>
@@ -558,6 +568,16 @@ async function toggleListed(p, ev) {
 </template>
 
 <style scoped>
+.page-h { gap: 8px; }
+.page-intro-full { display: none; }
+.page-intro-compact { display: block; font-size: var(--t-sm); line-height: 1.35; }
+.page-h .actions { gap: 8px; }
+.page-h .actions .btn.primary { order: -1; }
+@media (min-width: 768px) {
+  .page-intro-full { display: block; }
+  .page-intro-compact { display: none; }
+  .page-h .actions .btn.primary { order: initial; }
+}
 .page-h .sub{max-width:74ch}
 .pages-t th,.pages-t td{padding-left:10px;padding-right:10px}
 .pages-t th:first-child,.pages-t td:first-child{padding-left:14px}

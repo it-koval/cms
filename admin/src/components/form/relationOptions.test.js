@@ -20,7 +20,7 @@ it('caches translated relation choices separately for collection and language', 
   expect(relationOptions('authors')).toEqual([])
   await settle()
   expect(relationOptions('authors')).toEqual([['authors', 'kk']])
-  expect(mocks.list).toHaveBeenCalledWith('authors', { locale: 'kk', onlyTranslated: true })
+  expect(mocks.list).toHaveBeenCalledWith('authors', { locale: 'kk', onlyTranslated: false })
   mocks.app.locale = 'ru'
   expect(relationOptions('authors')).toEqual([['authors', 'ru']])
   expect(mocks.list).toHaveBeenCalledTimes(2)

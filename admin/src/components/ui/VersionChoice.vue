@@ -38,14 +38,14 @@ const emit = defineEmits(['pick'])
 </template>
 
 <style scoped>
-.vc { max-width: 640px; margin-inline: auto; padding: 30px 32px 22px; text-align: center; display: flex; flex-direction: column; align-items: center; }
+.vc { width: 100%; max-width: 640px; min-width: 0; box-sizing: border-box; margin-inline: auto; padding: 16px 12px 14px; text-align: center; display: flex; flex-direction: column; align-items: center; overflow-wrap: anywhere; }
 .vc-ill { width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; background: var(--cy-50); color: var(--brand-text); margin-bottom: 12px; }
 .vc-t { font-size: var(--t-md); font-weight: 650; line-height: 1.25; margin: 0; }
 .vc-s { margin: 6px 0 0; color: var(--ink-2); max-width: 52ch; line-height: 1.45; }
-.vc-opts { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; width: 100%; margin-top: 20px; text-align: left; }
+.vc-opts { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; width: 100%; min-width: 0; margin-top: 12px; text-align: left; }
 .vc-opts.one { grid-template-columns: minmax(0, 1fr); max-width: 320px; }
 .vc-o {
-  display: flex; gap: 10px; align-items: flex-start; padding: 14px; border: 1px solid var(--ctl); border-radius: var(--r); background: #fff;
+  display: flex; gap: 10px; align-items: flex-start; min-width: 0; min-height: 44px; padding: 10px; border: 1px solid var(--ctl); border-radius: var(--r); background: #fff;
   text-align: left; color: var(--ink); transition: border-color var(--dur), background var(--dur), box-shadow var(--dur);
 }
 .vc-o:hover:not([disabled]) { border-color: var(--cy); background: var(--cy-50); }
@@ -57,7 +57,13 @@ const emit = defineEmits(['pick'])
 .vc-o.lead .ico { background: var(--cy); color: var(--brand-ink); }
 .vc-o .tx { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .vc-o b { font-weight: 620; line-height: 1.25; }
-.vc-o small { font-size: var(--t-xs); color: var(--ink-2); line-height: 1.4; }
+.vc-o small { font-size: var(--t-xs); color: var(--ink-2); line-height: 1.4; overflow-wrap: anywhere; }
 .vc-n { display: flex; gap: 8px; align-items: flex-start; margin: 16px 0 0; font-size: var(--t-sm); color: var(--ink-2); line-height: 1.45; text-align: left; }
 .vc-n .ic { margin-top: 2px; color: var(--ink-3); flex: none; }
+@media (min-width: 768px) {
+  .vc { padding: 30px 32px 22px; }
+  .vc-opts { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 20px; }
+  .vc-opts.one { grid-template-columns: minmax(0, 1fr); }
+  .vc-o { padding: 14px; }
+}
 </style>

@@ -39,6 +39,16 @@ beforeEach(() => {
 afterEach(() => { vi.unstubAllGlobals() })
 
 describe('page editor: a failed save is not a saved one', () => {
+  it('does not retry a rejected autosave after the user discards it and leaves', async () => {
+    const ed = await openEditor()
+    saveDraft.mockRejectedValueOnce(new ApiError('Сервер недоступен', 503))
+    ed.updateData('s1', { body: 'discarded' })
+    await expect(ed.flushAll()).rejects.toMatchObject({ code: 'save_failed' })
+    ed.discardPending()
+    ed.dispose()
+    await ed.flush()
+    expect(saveDraft).toHaveBeenCalledTimes(1)
+  })
   it('flush resolves false while the save fails and true once it goes through', async () => {
     const ed = await openEditor()
     saveDraft.mockRejectedValueOnce(new ApiError('Сервер недоступен', 503))
@@ -262,5 +272,21 @@ describe('page language drafts and asynchronous loads', () => {
     finish({ page: { ...draft(), title: 'Из истории' }, published: null })
     await restore
     expect(ed.page.title).toBe('Страница')
+  })
+
+  it('locks the editor during a history draft reload and saves subsequent edits with the restored version', async () => {
+    const ed = await openEditor()
+    let finish
+    getDraft.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve }))
+    const reload = ed.reloadDraft()
+    expect(ed.busy).toBe(true)
+    ed.updateData('s1', { body: 'blocked while reloading' })
+    expect(ed.page.sections[0].data.body).toBe('a')
+    finish({ page: { ...draft(), version: 'v9' }, published: null })
+    await reload
+    expect(ed.busy).toBe(false)
+    ed.updateData('s1', { body: 'new edit' })
+    expect(await ed.flush()).toBe(true)
+    expect(saveDraft.mock.lastCall[3]).toBe('v9')
   })
 })

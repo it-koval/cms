@@ -132,11 +132,12 @@ async function openHistory() {
 }
 /** A version came back from the history: the editor takes the new draft. */
 async function onRestored() {
-  histOpen.value = false
   try {
     await ed.reloadDraft()
   } catch (e) {
     toast.error((e && e.message) || t('editor.err_refresh_page'))
+  } finally {
+    histOpen.value = false
   }
 }
 async function giveBack() {
@@ -178,7 +179,6 @@ async function giveBack() {
     </div>
 
     <div v-if="ed.page && vp.phone" class="ed-r">
-      <button ref="moreBtn" type="button" class="btn icon" aria-haspopup="menu" :aria-expanded="moreOpen" :aria-label="t('editor.more_label')" @click="moreOpen = !moreOpen"><Icon name="more" size="s20" /></button>
       <button
         v-if="!ed.readOnly" id="pubBtn" ref="pubBtn" type="button" class="btn primary" aria-haspopup="dialog" :aria-expanded="pubOpen" :disabled="!n || (submitMode && !!ed.awaiting)"
         :aria-label="!submitMode ? t('editor.publish') : ed.awaiting ? t('editor.state_awaiting') : t('editor.submit')" @click="openPublish"
@@ -193,6 +193,7 @@ async function giveBack() {
         <button type="button" class="ibtn" :aria-label="t('editor.undo')" :disabled="!ed.canUndo" @click="ui.step(-1)"><Icon name="undo" /></button>
         <button type="button" class="ibtn" :aria-label="t('editor.redo')" :disabled="!ed.canRedo" @click="ui.step(1)"><Icon name="redo" /></button>
       </div>
+      <button ref="moreBtn" type="button" class="btn icon" aria-haspopup="menu" :aria-expanded="moreOpen" :aria-label="t('editor.more_label')" @click="moreOpen = !moreOpen"><Icon name="more" size="s20" /></button>
     </div>
 
     <div v-if="ed.page && !vp.phone" class="ed-r">
@@ -245,6 +246,15 @@ async function giveBack() {
 </template>
 
 <style scoped>
+.ed-top .ed-l { gap: 2px; }
+.ed-top .pg-sw { flex: 1 1 0; min-width: 0; max-width: none; padding-inline: 4px; }
+.ed-top .pg-t { flex: 1; }
+.ed-top .ed-r .btn.primary { padding-inline: 10px; }
+@media (min-width: 768px) {
+  .ed-top .ed-l { gap: 8px; }
+  .ed-top .pg-sw { flex: 0 1 auto; max-width: 300px; padding-inline: 10px 8px; }
+  .ed-top .pg-t { flex: initial; }
+}
 .pg-t { display: flex; flex-direction: column; align-items: flex-start; min-width: 0; line-height: 1.2; }
 .pg-t b { max-width: 100%; } /* the name shrinks with the bar (a flex-start column would keep its full text width and run under the buttons) */
 .pg-sub { display: inline-flex; align-items: center; gap: 5px; max-width: 100%; font-size: var(--t-xs); font-weight: 450; letter-spacing: 0; color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

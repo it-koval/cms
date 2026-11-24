@@ -129,6 +129,8 @@ final class MultilingualAdminApiTest extends WebTestCase
         self::assertSame(['count' => 1, 'unpublished' => 0], $counts['locales']['ru']);
         self::assertSame(['count' => 1, 'unpublished' => 1], $counts['locales']['kk']);
         self::assertSame(1, $counts['unpublished']);
+        $row = \array_values(\array_filter($this->api('GET', 'dashboard')['unpublished'], static fn (array $r): bool => $r['id'] === $id && 'kk' === $r['locale']))[0];
+        self::assertSame('/collections/test_trips?lang=kk', $row['to']);
     }
 
     #[Test]

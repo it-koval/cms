@@ -11,6 +11,7 @@ use Itk\Cms\Content\MenuService;
 use Itk\Cms\Content\PageService;
 use Itk\Cms\Content\SettingsService;
 use Itk\Cms\Entity\Revision;
+use Itk\Cms\I18n\ContentLocales;
 use Itk\Cms\I18n\I18n;
 use Itk\Cms\Repository\CollectionItemRepository;
 use Itk\Cms\Repository\MenuAreaRepository;
@@ -28,6 +29,7 @@ use Symfony\Component\Security\Core\Exception\AccessDeniedException;
 final class HistoryAdmin
 {
     public const MAX_PER_PAGE = 200;
+    private readonly ContentLocales $locales;
 
     public function __construct(
         private readonly RevisionRepository $revisions,
@@ -43,7 +45,9 @@ final class HistoryAdmin
         private readonly Schema $schema,
         private readonly FieldAccess $fields,
         private readonly Access $access,
+        ?ContentLocales $locales = null,
     ) {
+        $this->locales = $locales ?? new ContentLocales($schema->mainLocale());
     }
 
     /**
@@ -61,9 +65,14 @@ final class HistoryAdmin
 
         $rows = $this->revisions->history($kind, $id, $locale, $limit, $offset);
         $latest = $this->revisions->latestIds($kind, $id);
+        $existing = match ($kind) {
+            Revision::PAGE => $this->pageRepo->find($id)?->translations->getKeys() ?? [],
+            Revision::ITEM => \array_keys($this->items->find($id)->translations ?? []),
+            default => null,
+        };
 
         return [
-            'items' => \array_map(fn (Revision $r): array => $this->present($r) + ['current' => !\in_array($r->action, [Revision::DELETE, Revision::DELETE_TRANSLATION], true) && ($latest[$r->locale] ?? null) === $r->id], $rows),
+            'items' => \array_map(fn (Revision $r): array => $this->present($r, $key) + ['current' => !\in_array($r->action, [Revision::DELETE, Revision::DELETE_TRANSLATION], true) && (null === $existing || \in_array($r->locale, $existing, true)) && ($latest[$r->locale] ?? null) === $r->id], $rows),
             'total' => $this->revisions->countOf($kind, $id, $locale),
             'limit' => $limit,
             'offset' => $offset,
@@ -80,8 +89,9 @@ final class HistoryAdmin
     public function entry(int $id): array
     {
         $r = $this->get($id);
-        $this->needRevision($r, 'view');
-        $out = $this->present($r);
+        $key = $this->keyOf($r->kind, $r->resourceId);
+        $this->needRevision($r, 'view', $key);
+        $out = $this->present($r, $key);
         $out['against'] = [];
         $out['current'] = false;
         $out['inTrash'] = false;
@@ -96,12 +106,13 @@ final class HistoryAdmin
 
             return $out;
         }
-        $latest = $this->revisions->latest($r->kind, $r->resourceId, $r->locale);
-        $out['current'] = null !== $latest && $latest->id === $r->id;
         $now = $this->now($r);
+        $latest = $this->revisions->latest($r->kind, $r->resourceId, $r->locale);
+        $out['current'] = null !== $now && null !== $latest && $latest->id === $r->id;
+        $out['canRestore'] = null !== $now && (!$this->locales->isConfigured() || $this->locales->has($r->locale)) && $this->mayRevision($r, 'edit', $key);
         if (null !== $now) {
             $rows = $this->snapshots->diff($r->kind, $r->resourceKey, $r->snapshot, $now);
-            $out['against'] = $this->visibleRows($r, $this->snapshots->cut($rows));
+            $out['against'] = $this->visibleRows($r, $this->snapshots->cut($rows), $key);
             $out['same'] = [] === $rows;
         }
 
@@ -134,6 +145,11 @@ final class HistoryAdmin
             }
 
             return $base + ['restored' => 'trash'];
+        }
+
+        $this->locales->assertUsable($r->locale);
+        if (\in_array($r->kind, [Revision::PAGE, Revision::ITEM], true) && null === $this->now($r)) {
+            throw ContentException::invalid(I18n::t('content.no_version'), ['code' => 'no_translation', 'locale' => $r->locale]);
         }
 
         match ($r->kind) {
@@ -241,27 +257,27 @@ final class HistoryAdmin
      *
      * @return list<string>
      */
-    private function keysOf(Revision $r): array
+    private function keysOf(Revision $r, ?string $currentPageKey = null): array
     {
         if (Revision::PAGE !== $r->kind) {
             return [$r->resourceKey];
         }
-        $now = $this->pageRepo->find($r->resourceId)->template ?? $this->revisions->lastOf(Revision::PAGE, $r->resourceId)->resourceKey ?? null; // a deleted page: the template it had last
+        $now = $currentPageKey ?? $this->pageRepo->find($r->resourceId)->template ?? $this->revisions->lastOf(Revision::PAGE, $r->resourceId)->resourceKey ?? null; // a deleted page: the template it had last
         $held = $r->snapshot['template'] ?? null; // what the entry holds (an entry merged across a template change before it was split kept the older key)
 
         return \array_values(\array_unique(\array_filter([$r->resourceKey, $now, \is_string($held) ? $held : null], static fn (?string $k): bool => null !== $k && '' !== $k)));
     }
 
-    private function needRevision(Revision $r, string $action): void
+    private function needRevision(Revision $r, string $action, ?string $currentPageKey = null): void
     {
-        foreach ($this->keysOf($r) as $key) {
+        foreach ($this->keysOf($r, $currentPageKey) as $key) {
             $this->need($r->kind, $key, $action);
         }
     }
 
-    private function mayRevision(Revision $r, string $action): bool
+    private function mayRevision(Revision $r, string $action, ?string $currentPageKey = null): bool
     {
-        foreach ($this->keysOf($r) as $key) {
+        foreach ($this->keysOf($r, $currentPageKey) as $key) {
             if (!$this->may($r->kind, $key, $action)) {
                 return false;
             }
@@ -317,9 +333,9 @@ final class HistoryAdmin
     }
 
     /** @return array<string, mixed> */
-    private function present(Revision $r): array
+    private function present(Revision $r, ?string $currentPageKey = null): array
     {
-        $canView = $this->mayRevision($r, 'view');
+        $canView = $this->mayRevision($r, 'view', $currentPageKey);
 
         return [
             'id' => $r->id,
@@ -333,7 +349,7 @@ final class HistoryAdmin
             'via' => $r->via,
             'viaName' => $r->viaName,
             'title' => $canView ? $this->visibleTitle($r) : '',
-            'summary' => $canView ? $this->visibleRows($r, $r->summary) : [],
+            'summary' => $canView ? $this->visibleRows($r, $r->summary, $currentPageKey) : [],
             'baseline' => $r->isBaseline(),
             'createdAt' => $r->createdAt->format(\DATE_ATOM),
             'updatedAt' => $r->updatedAt->format(\DATE_ATOM),
@@ -362,10 +378,10 @@ final class HistoryAdmin
      *
      * @return list<array<string, mixed>>
      */
-    private function visibleRows(Revision $r, array $rows): array
+    private function visibleRows(Revision $r, array $rows, ?string $currentPageKey = null): array
     {
         $lists = match ($r->kind) {
-            Revision::PAGE => \array_map(fn (string $k): array => $this->schema->template($k)?->fieldList() ?? [], $this->keysOf($r)),
+            Revision::PAGE => \array_map(fn (string $k): array => $this->schema->template($k)?->fieldList() ?? [], $this->keysOf($r, $currentPageKey)),
             Revision::ITEM => [$this->schema->collection($r->resourceKey)?->fieldList() ?? []],
             Revision::SETTINGS => [($this->schema->settingsGroups()[$r->resourceKey] ?? null)?->fieldList() ?? []],
             default => [[]],

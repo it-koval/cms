@@ -3,18 +3,19 @@ import { createApp, h, nextTick, ssrContextKey } from 'vue'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import View from './PagesView.vue'
 import { setLanguages } from '@/utils/locales.js'
+import { t } from '@/i18n/index.js'
 
-const mocks = vi.hoisted(() => ({ app: null, list: vi.fn(), push: vi.fn(), replace: vi.fn(), removeTranslation: vi.fn(), confirm: vi.fn() }))
+const mocks = vi.hoisted(() => ({ app: null, list: vi.fn(), push: vi.fn(), replace: vi.fn(), removeTranslation: vi.fn(), saveDraft: vi.fn(), confirm: vi.fn(), toast: vi.fn(), template: '', toggle: null }))
 vi.mock('@/stores/app.js', async () => {
   mocks.app = (await import('vue')).reactive({ locale: 'kk', languages: { main: 'ru', list: [{ code: 'ru' }, { code: 'kk' }] }, siteInfo: { domain: 'test' }, user: null })
   return { app: mocks.app, can: () => true }
 })
-vi.mock('vue-router', () => ({ useRoute: () => ({ query: {} }), useRouter: () => ({ push: mocks.push, replace: mocks.replace }) }))
-vi.mock('@/api/index.js', () => ({ api: { pages: { list: mocks.list, removeTranslation: mocks.removeTranslation } }, isConflict: () => false }))
+vi.mock('vue-router', () => ({ useRoute: () => ({ query: { template: mocks.template } }), useRouter: () => ({ push: mocks.push, replace: mocks.replace }) }))
+vi.mock('@/api/index.js', () => ({ api: { pages: { list: mocks.list, removeTranslation: mocks.removeTranslation, saveDraft: mocks.saveDraft } }, isConflict: () => false }))
 vi.mock('@/components/ui/useConfirm.js', () => ({ useConfirm: () => mocks.confirm }))
-vi.mock('@/components/ui/useToast.js', () => ({ useToast: () => ({ show: vi.fn(), error: vi.fn() }) }))
-vi.mock('@/components/pages/pageTemplateRules.js', () => ({ hasFlatList: () => false, flatWords: () => ({}), isLeafPage: () => false, isRootPage: (p) => p.template === 'home', newPageChoices: () => [] }))
-vi.mock('@/schema/templates.js', () => ({ canPlace: () => true, getTemplate: () => null, listingSwitch: () => null, templateName: () => '', templatesFor: () => [] }))
+vi.mock('@/components/ui/useToast.js', () => ({ useToast: () => ({ show: mocks.toast, error: vi.fn() }) }))
+vi.mock('@/components/pages/pageTemplateRules.js', () => ({ hasFlatList: (tpl) => !!tpl, flatWords: () => ({}), isLeafPage: () => false, isRootPage: (p) => p.template === 'home', newPageChoices: () => [] }))
+vi.mock('@/schema/templates.js', () => ({ canPlace: () => true, getTemplate: (key) => key ? { key } : null, listingSwitch: () => mocks.toggle, templateName: () => '', templatesFor: () => [] }))
 
 let mounted, state
 const settle = async () => { await Promise.resolve(); await nextTick(); await Promise.resolve(); await nextTick() }
@@ -30,6 +31,8 @@ async function mount() {
 beforeEach(() => {
   vi.clearAllMocks()
   sessionStorage.clear()
+  mocks.template = ''
+  mocks.toggle = null
   mocks.app.locale = 'kk'
   setLanguages(mocks.app.languages)
   mocks.list.mockResolvedValue([row('home', 'home'), row('child')])
@@ -71,4 +74,26 @@ it('does not open the current page language while the native version selector is
   await mount()
   state.onRow(row(), { target: document.createElement('select') })
   expect(mocks.push).not.toHaveBeenCalled()
+})
+
+it('does not claim that a secondary home cannot be unpublished', async () => {
+  mocks.list.mockResolvedValue([row('home', 'home')])
+  await mount()
+  state.menuRow = state.allPages[0]
+  expect(state.m.unpublish).toBe(true)
+  expect(state.m.note).not.toBe(t('pages.home_locked_note'))
+  mocks.app.locale = 'ru'
+  expect(state.m.note).toBe(t('pages.home_locked_note'))
+})
+
+it('undoes a page toggle in its original language and patches only that field', async () => {
+  mocks.template = 'product'
+  mocks.toggle = { key: 'listed', label: 'Visible' }
+  await mount()
+  await state.toggleListed({ ...row('product'), fields: { listed: true, color: 'black' } }, { target: { checked: false } })
+  mocks.app.locale = 'zh'
+  await mocks.toast.mock.lastCall[1].undo()
+  expect(mocks.saveDraft.mock.calls).toEqual([
+    ['product', 'kk', { fields: { listed: false } }], ['product', 'kk', { fields: { listed: true } }],
+  ])
 })

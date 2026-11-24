@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Itk\Cms\Tests\Core;
 
 use Doctrine\ORM\EntityManagerInterface;
+use Itk\Cms\Content\CollectionService;
 use Itk\Cms\Content\PageService;
 use Itk\Cms\Entity\Page;
 use Itk\Cms\Entity\PageTranslation;
@@ -25,6 +26,8 @@ final class PageLanguagePolicyTest extends WebTestCase
     private string $userId = '';
     /** @var list<string> */
     private array $pageIds = [];
+    /** @var list<string> */
+    private array $itemIds = [];
 
     protected static function createKernel(array $options = []): KernelInterface
     {
@@ -51,6 +54,8 @@ final class PageLanguagePolicyTest extends WebTestCase
             $ids = [] === $this->pageIds ? ['-'] : $this->pageIds;
             $em->createQuery('DELETE FROM Itk\Cms\Entity\Page p WHERE p.id IN (:ids)')->setParameter('ids', $ids)->execute();
             $em->createQuery('DELETE FROM Itk\Cms\Entity\Revision r WHERE r.resourceId IN (:ids)')->setParameter('ids', $ids)->execute();
+            $em->createQuery('DELETE FROM Itk\Cms\Entity\CollectionItem i WHERE i.id IN (:ids)')->setParameter('ids', $this->itemIds ?: ['-'])->execute();
+            $em->createQuery('DELETE FROM Itk\Cms\Entity\Revision r WHERE r.resourceId IN (:ids)')->setParameter('ids', $this->itemIds ?: ['-'])->execute();
             $em->createQuery('DELETE FROM Itk\Cms\Entity\User u WHERE u.id = :id')->setParameter('id', $this->userId)->execute();
         }
         parent::tearDown();
@@ -112,6 +117,30 @@ final class PageLanguagePolicyTest extends WebTestCase
         ]];
         self::assertSame($expected, $this->api('GET', 'languages'));
         self::assertSame($expected, $this->api('GET', 'dashboard')['languages']);
+    }
+
+    #[Test]
+    public function dashboardWithoutALanguageListKeepsLegacyTranslationWorkVisible(): void
+    {
+        $this->start(false);
+        $page = $this->page();
+        $this->addTranslation($page['id'], 'en', '/test-legacy-dashboard-' . \bin2hex(\random_bytes(6)));
+        $pages = self::getContainer()->get(PageService::class);
+        $pages->publish($page['id'], 'en');
+        $pages->saveDraft($page['id'], 'en', ['title' => 'Legacy EN changed']);
+        $pages->submit($page['id'], 'en');
+        $collections = self::getContainer()->get(CollectionService::class);
+        $item = $collections->create('tours', ['city' => 'Legacy EN', 'dateStart' => '2026-11-25', 'dateEnd' => '2026-11-26'], 'en');
+        $this->itemIds[] = $item['id'];
+        $collections->submit('tours', $item['id'], 'en');
+        $dashboard = $this->api('GET', 'dashboard');
+        foreach ([$page['id'], $item['id']] as $id) {
+            $rows = \array_values(\array_filter($dashboard['unpublished'], static fn (array $r): bool => $r['id'] === $id && 'en' === $r['locale']));
+            self::assertCount(1, $rows);
+            self::assertContains($id, \array_column($dashboard['awaiting'], 'id'));
+        }
+        self::assertContains('en', \array_column($dashboard['recent'], 'locale'));
+        self::assertSame(['ru'], \array_keys($dashboard['locales']));
     }
 
     #[Test]

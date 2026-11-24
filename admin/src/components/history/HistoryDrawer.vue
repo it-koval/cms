@@ -42,6 +42,7 @@ const openBusy = ref(0) // id of the entry being opened
 const restoring = ref(false)
 let seq = 0
 let context = 0
+let resource = 0
 
 async function load({ append = false } = {}) {
   if (append && more.value) return
@@ -67,7 +68,6 @@ function invalidate() {
   ++context
   opened.value = null
   openBusy.value = 0
-  restoring.value = false
   more.value = false
 }
 
@@ -78,12 +78,16 @@ function changeScope(next) {
   load()
 }
 
-watch([() => props.open, () => props.kind, () => props.resourceId, () => props.locale], ([open]) => {
+watch([() => props.open, () => props.kind, () => props.resourceId, () => props.locale], ([open, kind, id, locale], previous) => {
+  if (kind !== previous[1] || id !== previous[2] || locale !== previous[3]) {
+    ++resource
+    restoring.value = false
+  }
   invalidate()
   scope.value = undefined
   if (open) load()
 }, { immediate: true })
-onBeforeUnmount(invalidate)
+onBeforeUnmount(() => { ++resource; invalidate() })
 
 async function show(e) {
   if (openBusy.value) return
@@ -112,6 +116,7 @@ async function restore() {
   const o = opened.value
   if (!o || !restorable.value || restoring.value) return
   const here = context
+  const target = resource
   restoring.value = true
   try {
     const message = t(`ui.history_restore_msg_${subject.value}`, { when: fmtDT(o.updatedAt) })
@@ -123,7 +128,7 @@ async function restore() {
     })
     if (!ok || here !== context) return
     const r = await api.history.restore(o.id)
-    if (here !== context) return
+    if (target !== resource) return
     const restoredLocale = r.locale || locale
     if (multi.value && restoredLocale && restoredLocale !== props.locale) {
       toast.show(t('ui.history_restored_elsewhere', { lang: langName(restoredLocale) }))
@@ -131,18 +136,20 @@ async function restore() {
       toast.show(t('ui.history_restored'))
       emit('restored', r)
     }
-    opened.value = null
-    await load()
+    if (props.open) {
+      opened.value = null
+      await load()
+    }
   } catch (e) {
-    if (here === context) toast.error(e.message || t('ui.history_restore_failed'))
+    if (target === resource) toast.error(e.message || t('ui.history_restore_failed'))
   } finally {
-    if (here === context) restoring.value = false
+    if (target === resource) restoring.value = false
   }
 }
 </script>
 
 <template>
-  <Drawer :open="open" :title="opened ? actionLabel(opened) : t('ui.history_title')" :width="480" @update:open="emit('update:open', $event)">
+  <Drawer :open="open" :title="opened ? actionLabel(opened) : t('ui.history_title')" :width="480" :close-disabled="restoring" @update:open="emit('update:open', $event)">
     <div v-if="multi" class="hd-scope" role="group" :aria-label="t('ui.language')">
       <button type="button" class="btn" :disabled="restoring" :aria-pressed="!scope" @click="changeScope(undefined)">{{ t('ui.history_this_language') }}</button>
       <button type="button" class="btn" :disabled="restoring" data-history-scope="all" :aria-pressed="scope === 'all'" @click="changeScope('all')">{{ t('ui.history_all_languages') }}</button>

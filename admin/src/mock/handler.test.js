@@ -284,6 +284,9 @@ describe('multilingual content demo', () => {
     const deleted = history.items.find((r) => r.locale === 'zh')
     expect(deleted).toMatchObject({ action: 'delete_locale', current: false })
     expect(get(`history/revision/${deleted.id}`).body.canRestore).toBe(false)
+    const previous = history.items.find((r) => r.locale === 'zh' && r.action !== 'delete_locale')
+    expect(get(`history/revision/${previous.id}`).body.canRestore).toBe(false)
+    expect(call('POST', `history/revision/${previous.id}/restore`)).toMatchObject({ status: 422, body: { details: { code: 'no_translation', locale: 'zh' } } })
   })
 
   it('keeps matrix columns shared only by identity and copies their content explicitly', () => {
@@ -324,6 +327,7 @@ describe('multilingual content demo', () => {
     expect(get('collections/news', { perPage: '999' }).body.perPage).toBe(200)
     expect(get('collections/news', { page: '99' }).body.items).toEqual([])
     expect(get('collections/news', { locale: 'kk', filter: { status: 'published' } }).body.items.map((r) => r.id).sort()).toEqual(['n1', 'n2'])
+    expect(get('collections/news', { locale: 'kk' }).body.facets.status).toEqual({ published: 1, draft: 2, missing: 2 })
   })
 
   it('counts enabled language versions and carries the language in Today links', () => {
@@ -401,6 +405,46 @@ describe('multilingual content demo', () => {
     expect(call('POST', `history/revision/${entry.id}/restore`)).toMatchObject({ status: 200, body: { ok: true, locale: 'kk', kind, restored: 'version' } })
     expect(get(path, { locale: 'kk' }).body).toEqual(original)
     expect(get(`history/${resource}`, { locale: 'kk' }).body.items.every((r) => r.locale === 'kk')).toBe(true)
+  })
+
+  it.each(['pages/p3', 'collections/news/n3'])('keeps submitted KK content in the publisher queue and removes it after publish: %s', (path) => {
+    call('POST', `${path}/submit`, { query: { locale: 'kk' } })
+    const id = path.split('/').at(-1)
+    const row = get('dashboard').body.awaiting.find((r) => r.id === id && r.locale === 'kk')
+    expect(row).toMatchObject({ locale: 'kk', by: expect.any(String), at: expect.any(String), to: `${path.startsWith('pages') ? '/pages' : '/collections/news'}/${id}?lang=kk` })
+    call('POST', `${path}/publish`, { query: { locale: 'kk' } })
+    expect(get('dashboard').body.awaiting.some((r) => r.id === id && r.locale === 'kk')).toBe(false)
+  })
+
+  it('republishes the saved ZH live snapshot after unpublishing without publishing later edits', () => {
+    const original = get('pages/p1/draft', { locale: 'zh' }).body.published
+    call('PUT', 'pages/p1/draft', { query: { locale: 'zh' }, body: { title: 'Later draft' } })
+    expect(call('POST', 'pages/p1/unpublish', { query: { locale: 'zh' } }).status).toBe(200)
+    expect(get('pages/p1/draft', { locale: 'zh' }).body.published).toBeNull()
+    expect(call('POST', 'pages/p1/republish', { query: { locale: 'zh' } }).status).toBe(200)
+    expect(get('pages/p1/draft', { locale: 'zh' }).body).toMatchObject({ published: original, page: { title: 'Later draft', changed: true } })
+  })
+
+  it('links the pending matrix version directly to the matrix screen', () => {
+    const item = get('collections/plans/main', { locale: 'kk' }).body.item
+    call('PUT', 'collections/plans/main', { query: { locale: 'kk' }, body: { cols: [...item.cols, { id: 'c9', name: 'New' }] } })
+    expect(get('dashboard').body.unpublished.find((r) => r.collection === 'plans' && r.locale === 'kk').to).toBe('/collections/plans?lang=kk')
+  })
+
+  it.each(['pages/p3', 'collections/news/n3'])('puts whole objects in the trash, never translation deletions, and restores them as drafts: %s', (path) => {
+    const id = path.split('/').at(-1)
+    const kind = path.startsWith('pages') ? 'page' : 'item'
+    call('DELETE', `${path}/translations/kk`)
+    expect(get('history/trash').body).toEqual({ items: [], total: 0 })
+    call('DELETE', path)
+    const trash = get('history/trash', { kind }).body
+    expect(trash).toMatchObject({ total: 1, items: [{ kind, resourceId: id, locales: ['ru'], wasLive: true, canRestore: true, restorable: true }] })
+    expect(get(`history/${kind}/${id}`, { scope: 'all' }).body.items.every((r) => !r.current)).toBe(true)
+    const deleted = trash.items[0]
+    expect(call('POST', `history/revision/${deleted.id}/restore`)).toMatchObject({ status: 200, body: { ok: true, restored: 'trash', id } })
+    expect(get('history/trash').body).toEqual({ items: [], total: 0 })
+    const editor = path.startsWith('pages') ? `${path}/draft` : path
+    expect(get(editor).body).toMatchObject({ translated: true, published: null, [kind === 'page' ? 'page' : 'item']: { id, status: 'draft' } })
   })
 })
 

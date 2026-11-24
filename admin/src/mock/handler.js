@@ -47,7 +47,7 @@ const SEO_FILES_DEFAULT = {
 
 const PAGE_KEYS = ['title', 'url', 'seo', 'sections', 'fields', 'parentId', 'template']
 const PAGE_EDIT = ['title', 'url', 'seo', 'fields', 'parentId', 'template']
-const RECORD_META = ['id', 'status', 'updatedAt', 'version', 'awaiting', 'returned', 'published', 'translations', 'pos']
+const RECORD_META = ['id', 'status', 'updatedAt', 'version', 'awaiting', 'returned', 'published', 'lastPublished', 'translations', 'pos']
 const LOCALE = 'ru'
 
 export function createMock(db = makeDb()) {
@@ -58,7 +58,7 @@ export function createMock(db = makeDb()) {
   const codes = LANGUAGES.list.map((l) => l.code)
   const versions = (r) => ({ [LOCALE]: r, ...r.translations })
   const version = (r, locale) => locale === LOCALE ? r : r.translations?.[locale]
-  const strip = (r) => Object.fromEntries(Object.entries(r).filter(([k]) => k !== 'translations' && k !== 'published' && k !== 'pos'))
+  const strip = (r) => Object.fromEntries(Object.entries(r).filter(([k]) => !['translations', 'published', 'lastPublished', 'pos'].includes(k)))
   const noTranslation = (locale) => fail(404, 'Перевода на этот язык нет', { code: 'no_translation', locale })
   const invalidLocale = () => fail(422, 'Выберите язык из списка')
   const localeOf = (query, body = {}) => query.locale ?? body.locale ?? LOCALE
@@ -107,6 +107,7 @@ export function createMock(db = makeDb()) {
   let historySeq = 0
   const revisions = []
   const revisionSnapshots = new Map()
+  const deletedObjects = new Map()
   const recordHistory = (kind, r, locale, action, key = '') => {
     const v = version(r, locale)
     if (!v) return
@@ -114,6 +115,10 @@ export function createMock(db = makeDb()) {
     const at = now()
     revisions.unshift({ id, kind, resourceId: r.id, key, locale, action, userId: db.user.id, userName: db.user.name, via: 'admin', viaName: '', title: v.title || cfgOf(key)?.title || '', summary: [], baseline: false, createdAt: at, updatedAt: at })
     revisionSnapshots.set(id, copy(strip(v)))
+  }
+  const recordDeletion = (kind, r, key) => {
+    recordHistory(kind, r, LOCALE, 'delete', key)
+    deletedObjects.set(historySeq, { kind, key, record: copy(r) })
   }
   db.pages.forEach((p) => Object.keys(versions(p)).forEach((locale) => recordHistory('page', p, locale, 'create', p.template)))
   db.schema.collections.forEach((cfg) => db.collections[cfg.key].records.forEach((r) => Object.keys(versions(r)).forEach((locale) => recordHistory('item', r, locale, 'create', cfg.key))))
@@ -200,6 +205,7 @@ export function createMock(db = makeDb()) {
     if (action === 'draft' && method === 'GET') return ok({ page: t ? flatPage(p, locale) : null, published: snapshot(p, locale), changes: [], locale, translated: !!t, locales: summaries(p, pageSummary), shell: { id: p.id, parentId: p.parentId, template: p.template } })
     if (!action && method === 'DELETE') {
       const gone = new Set(withKids(id))
+      db.pages.filter((x) => gone.has(x.id)).forEach((x) => recordDeletion('page', x, x.template))
       db.pages = db.pages.filter((x) => !gone.has(x.id))
       return none()
     }
@@ -216,7 +222,14 @@ export function createMock(db = makeDb()) {
     if (method === 'POST' && extra === undefined) {
       if (action === 'publish') { t.published = copy(Object.fromEntries(PAGE_KEYS.map((k) => [k, t[k]]))); t.awaiting = null; t.returned = null; t.updatedAt = now() }
       else if (action === 'revert') { if (t.published) PAGE_KEYS.forEach((k) => { t[k] = copy(t.published[k]) }); bump(t) }
-      else if (action === 'unpublish') { t.published = null; bump(t) }
+      else if (action === 'unpublish') {
+        if (!t.published || (p.template === 'home' && locale === LOCALE)) return fail(409, 'Эту версию нельзя снять с публикации')
+        t.lastPublished = copy(t.published); t.published = null; bump(t)
+      }
+      else if (action === 'republish' || action === 'undo-unpublish') {
+        if (t.published || !t.lastPublished) return fail(409, 'Нет снятой с публикации версии')
+        t.published = copy(t.lastPublished); delete t.lastPublished; bump(t)
+      }
       else if (action === 'submit') { t.awaiting = by(); bump(t) }
       else if (action === 'return') { t.awaiting = null; bump(t) }
       else return NOT_HERE()
@@ -274,7 +287,10 @@ export function createMock(db = makeDb()) {
         const perPage = Math.max(1, Math.min(200, Math.trunc(Number(query.perPage)) || cfg.perPage || 25))
         const page = Math.max(1, Math.trunc(Number(query.page)) || 1)
         const facets = {}
-        allRows.filter((r) => r.translated).forEach((r) => { facets.status ||= {}; facets.status[r.status] = (facets.status[r.status] || 0) + 1 })
+        allRows.forEach((r) => {
+          const status = !r.translated ? 'missing' : r.status === 'draft' || r.changed ? 'draft' : 'published'
+          facets.status ||= {}; facets.status[status] = (facets.status[status] || 0) + 1
+        })
         return ok({ items: rows.slice((page - 1) * perPage, page * perPage), total: rows.length, page, perPage, facets, metrics: [] })
       }
       if (method === 'POST') {
@@ -294,7 +310,7 @@ export function createMock(db = makeDb()) {
     const t = version(r, locale)
     if (!action) {
       if (method === 'GET') return ok({ item: t ? flatRecord(cfg, r, locale) : null, published: publishedRecord(r, locale), changes: [], locale, translated: !!t, locales: summaries(r, (v) => recSummary(cfg, v)) })
-      if (method === 'DELETE') { store.records = recs.filter((x) => x.id !== id); return none() }
+      if (method === 'DELETE') { recordDeletion('item', r, key); store.records = recs.filter((x) => x.id !== id); return none() }
     }
     if (!t) return noTranslation(locale)
     if (((!action && ['PUT', 'PATCH'].includes(method)) || (action === 'publish' && method === 'POST')) && body.baseVersion && body.baseVersion !== t.version) return fail(409, 'Запись изменили, пока она была открыта', { code: 'conflict', current: { version: t.version, ...by(), via: 'admin', viaName: '' } })
@@ -343,24 +359,58 @@ export function createMock(db = makeDb()) {
       if (!codes.includes(locale)) continue
       ++locales[locale].collections.count
       if (!t.published || recDiff(t).length) ++locales[locale].collections.unpublished
-      if (!t.published || recDiff(t).length) unpublished.push({ kind: 'item', collection: cfg.key, id: r.id, locale, title: String(t[cfg.titleField] || cfg.title), pageKind: cfg.title, to: `/collections/${cfg.key}/${r.id}?lang=${locale}`, changes: recDiff(t).length, draft: !t.published, updatedAt: t.updatedAt, migrated: false, awaiting: t.awaiting })
-      if (t.published) recent.push({ label: String(t[cfg.titleField] || cfg.title), to: `/collections/${cfg.key}/${r.id}?lang=${locale}`, at: t.updatedAt, locale })
+      const to = `/collections/${cfg.key}${cfg.view === 'matrix' ? '' : `/${r.id}`}?lang=${locale}`
+      if (!t.published || recDiff(t).length) unpublished.push({ kind: 'item', collection: cfg.key, id: r.id, locale, title: String(t[cfg.titleField] || cfg.title), pageKind: cfg.title, to, changes: recDiff(t).length, draft: !t.published, updatedAt: t.updatedAt, migrated: false, awaiting: t.awaiting })
+      if (t.published) recent.push({ label: String(t[cfg.titleField] || cfg.title), to, at: t.updatedAt, locale })
     }
     const newest = (a, b) => String(b.updatedAt || b.at).localeCompare(String(a.updatedAt || a.at))
-    return { newRequests: [], failedCount: 0, unpublished: unpublished.sort(newest), awaiting: [], proposals: [], recent: recent.sort(newest).slice(0, 8), languages: copy(LANGUAGES), locales }
+    return { newRequests: [], failedCount: 0, unpublished: unpublished.sort(newest), awaiting: unpublished.filter((r) => r.awaiting).map((r) => ({ ...r, by: r.awaiting.by, at: r.awaiting.at })), proposals: [], recent: recent.sort(newest).slice(0, 8), languages: copy(LANGUAGES), locales }
   }
 
   function history(method, rest, query) {
     const [kind, id, action] = rest
     const can = (r, right = 'view') => (db.user.perms[r.kind === 'page' ? 'pages' : r.kind === 'item' ? `col:${r.key}` : r.kind === 'menu' ? 'set:menus' : `set:${r.key}`] || []).includes(right) && (r.kind !== 'page' || !db.user.templates || db.user.templates.includes(r.key))
-    const present = (r) => ({ ...copy(r), current: !['delete', 'delete_locale'].includes(r.action) && !revisions.some((other) => other.kind === r.kind && other.resourceId === r.resourceId && other.locale === r.locale && other.id > r.id) })
+    const present = (r) => ({ ...copy(r), current: !['delete', 'delete_locale'].includes(r.action) && ![...deletedObjects.values()].some((v) => v.kind === r.kind && v.record.id === r.resourceId) && !revisions.some((other) => other.kind === r.kind && other.resourceId === r.resourceId && other.locale === r.locale && other.id > r.id) })
+    if (kind === 'trash' && method === 'GET') {
+      if (query.kind && !['page', 'item'].includes(query.kind)) return fail(422, 'Выберите страницы или записи')
+      const items = revisions.filter((r) => deletedObjects.has(r.id) && can(r) && (!query.kind || r.kind === query.kind) && (!query.key || r.key === query.key)).map((r) => {
+        const gone = deletedObjects.get(r.id).record
+        return { id: r.id, kind: r.kind, resourceId: r.resourceId, key: r.key, keyTitle: r.kind === 'page' ? db.schema.templates.find((t) => t.key === r.key)?.name || r.key : cfgOf(r.key)?.title || r.key,
+          title: r.title, userId: r.userId, userName: r.userName, deletedAt: r.createdAt, locales: Object.keys(versions(gone)), wasLive: Object.values(versions(gone)).some((v) => !!v.published), canRestore: can(r, 'edit'), restorable: true }
+      })
+      return ok({ items, total: items.length })
+    }
     if (kind === 'revision') {
       const r = revisions.find((v) => v.id === Number(id))
       if (!r) return fail(404, 'Такой версии нет')
       if (!can(r, action === 'restore' ? 'edit' : 'view')) return fail(403, 'Нет доступа')
-      if (method === 'GET') return ok({ ...present(r), against: [], inTrash: false, ...(r.action === 'delete_locale' ? { canRestore: false } : {}) })
+      if (method === 'GET') {
+        const object = r.kind === 'page' ? findPage(r.resourceId) : r.kind === 'item' ? db.collections[r.key]?.records.find((v) => v.id === r.resourceId) : r.kind === 'settings' ? settingsState(r.resourceId, r.locale) : menuState(r.resourceId, r.locale)
+        const exists = object && (!['page', 'item'].includes(r.kind) || version(object, r.locale))
+        return ok({ ...present(r), against: [], inTrash: deletedObjects.has(r.id), canRestore: r.action !== 'delete_locale' && can(r, 'edit') && (r.action === 'delete' ? deletedObjects.has(r.id) : !!exists && validLocale(r.locale)) })
+      }
       if (method === 'POST' && action === 'restore') {
         if (r.action === 'delete_locale') return fail(409, 'Удалённый перевод нельзя восстановить этой операцией')
+        if (r.action === 'delete') {
+          const gone = deletedObjects.get(r.id)
+          if (!gone) return fail(409, 'Этот объект уже восстановлен')
+          const object = copy(gone.record)
+          if (r.kind === 'page') {
+            if (findPage(object.id)) return fail(409, 'Страница уже существует')
+            if (object.parentId && !findPage(object.parentId)) object.parentId = null
+            db.pages.push(object)
+          } else {
+            const store = db.collections[r.key]
+            if (!store || store.records.some((v) => v.id === object.id)) return fail(409, 'Запись уже существует')
+            store.records.push(object)
+          }
+          deletedObjects.delete(r.id)
+          Object.entries(versions(object)).forEach(([locale, t]) => {
+            t.published = null; delete t.lastPublished; t.awaiting = null; t.returned = null; bump(t)
+            recordHistory(r.kind, object, locale, 'restore', r.key)
+          })
+          return ok({ ok: true, kind: r.kind, id: r.resourceId, key: r.key, locale: r.locale, restored: 'trash' })
+        }
         if (r.kind === 'settings' || r.kind === 'menu') {
           const snapshot = revisionSnapshots.get(r.id)
           if (r.kind === 'menu') { db.menus[r.locale] ||= {}; db.menus[r.locale][r.resourceId] = copy(snapshot.items) }
@@ -372,7 +422,7 @@ export function createMock(db = makeDb()) {
           return ok({ ok: true, kind: r.kind, id: r.resourceId, key: r.key, locale: r.locale, restored: 'version' })
         }
         const object = r.kind === 'page' ? findPage(r.resourceId) : db.collections[r.key]?.records.find((v) => v.id === r.resourceId)
-        if (!object || !version(object, r.locale)) return noTranslation(r.locale)
+        if (!object || !version(object, r.locale)) return fail(422, 'Перевода на этот язык нет', { code: 'no_translation', locale: r.locale })
         const t = version(object, r.locale)
         Object.entries(revisionSnapshots.get(r.id)).forEach(([k, v]) => { if (![...RECORD_META, 'parentId', 'template'].includes(k)) t[k] = copy(v) })
         bump(t)
@@ -384,7 +434,7 @@ export function createMock(db = makeDb()) {
     if (!['page', 'item', 'settings', 'menu'].includes(kind) || method !== 'GET') return NOT_HERE()
     const object = kind === 'page' ? findPage(id) : kind === 'settings' ? settingsState(id, query.locale || LOCALE) : kind === 'menu' ? menuState(id, query.locale || LOCALE) : db.schema.collections.flatMap((c) => db.collections[c.key].records).find((r) => r.id === id)
     const all = revisions.filter((r) => r.kind === kind && r.resourceId === id)
-    if (!object || !all.length) return fail(404, 'Такого объекта нет')
+    if (!object && !all.length) return fail(404, 'Такого объекта нет')
     if (!can(all[0])) return fail(403, 'Нет доступа')
     const rows = all.filter((r) => query.scope === 'all' || r.locale === (query.locale || LOCALE))
     const limit = Math.max(1, Math.min(200, Math.trunc(Number(query.limit ?? 50)) || 1))

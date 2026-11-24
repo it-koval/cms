@@ -37,6 +37,7 @@
   "forms.photos_add": "Добавить фото",
   "forms.relation_empty": "Выбирать пока не из чего",
   "forms.relation_none": "Не выбрано",
+  "forms.relation_untranslated": "{title} — нет перевода",
   "forms.relation_gone": "Запись удалена",
   "forms.repeater_removed": "Элемент удалён",
   "forms.repeater_undo": "вернуть",

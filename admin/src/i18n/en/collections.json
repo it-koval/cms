@@ -179,6 +179,7 @@
   "collections.cl_reorder_note_multi": "Drag the cards or use the arrows. {note} The order is the same for all languages.",
   "collections.cl_reorder_note_hidden": "Drag the cards or use the arrows. {note} The order is the same for all languages. Records without a translation are not visible {site}, but their place is kept.",
   "collections.cl_cancel": "Cancel",
+  "collections.cl_order_leave_message": "The order has not been saved. Leave without saving it?",
   "collections.cl_reorder_save": "Save the order",
   "collections.cl_selected_region": "Selected records",
   "collections.cl_selected": "Selected: {count}",

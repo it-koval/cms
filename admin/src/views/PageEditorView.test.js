@@ -22,7 +22,7 @@ beforeEach(() => {
   mounted.provide(ssrContextKey, { modules: new Set() })
   mounted.mount(document.createElement('div'))
   state = mounted._instance.subTree.component.setupState
-  state.editor = { flushAll: mocks.flush }
+  state.editor = { flushAll: mocks.flush, canLeave: () => true }
 })
 afterEach(() => mounted.unmount())
 
@@ -50,4 +50,22 @@ it('follows only committed language changes without an asynchronous rollback rac
   await nextTick()
   expect(state.shown).toBe('zh')
   expect(mocks.flush).not.toHaveBeenCalled()
+})
+
+it('waits for page settings protection before navigating or flushing the page', async () => {
+  const canLeave = vi.fn().mockResolvedValue(false)
+  state.editor = { flushAll: mocks.flush, canLeave }
+  expect(await mocks.guard('kk')).toBe(false)
+  expect(mocks.flush).not.toHaveBeenCalled()
+})
+
+it('discards queued page edits only after confirmed exit without saving', async () => {
+  const discardPending = vi.fn()
+  state.editor = { flushAll: mocks.flush, canLeave: () => true, discardPending }
+  mocks.flush.mockRejectedValue({ code: 'save_failed', reason: 'offline' })
+  mocks.confirm.mockResolvedValueOnce(false).mockResolvedValueOnce(true)
+  expect(await mocks.leave()).toBe(false)
+  expect(discardPending).not.toHaveBeenCalled()
+  expect(await mocks.leave()).toBe(true)
+  expect(discardPending).toHaveBeenCalledTimes(1)
 })

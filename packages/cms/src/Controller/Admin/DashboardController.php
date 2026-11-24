@@ -63,15 +63,19 @@ final class DashboardController extends AbstractApiController
             }
             $kind = $this->schema->template($p->template)?->title() ?? $p->template;
             foreach ($p->translations as $locale => $t) {
-                if (!$this->contentLocales->has((string) $locale)) {
+                if ($this->contentLocales->isConfigured() && !$this->contentLocales->has((string) $locale)) {
                     continue;
                 }
-                ++$locales[$locale]['pages']['count'];
+                if (isset($locales[$locale])) {
+                    ++$locales[$locale]['pages']['count'];
+                }
                 $title = (string) ($t->draft['title'] ?? '');
                 $n = $this->pageService->changeCount($t);
                 $to = '/pages/' . $p->id . $languageQuery((string) $locale);
                 if (PageTranslation::DRAFT === $t->status || $n > 0) {
-                    ++$locales[$locale]['pages']['unpublished'];
+                    if (isset($locales[$locale])) {
+                        ++$locales[$locale]['pages']['unpublished'];
+                    }
                     $row = [
                         'kind' => 'page', 'id' => $p->id, 'locale' => (string) $locale, 'title' => $title, 'pageKind' => $kind, 'template' => $p->template,
                         'draft' => PageTranslation::DRAFT === $t->status, 'changes' => $n, 'updatedAt' => $this->pageService->iso($t->updatedAt),
@@ -94,14 +98,18 @@ final class DashboardController extends AbstractApiController
             }
             foreach ($this->items->findByCollection($c->key()) as $i) {
                 foreach ($this->collections->summary($c, $i) as $locale => $s) {
-                    if (null === $s || !$this->contentLocales->has((string) $locale)) {
+                    if (null === $s || ($this->contentLocales->isConfigured() && !$this->contentLocales->has((string) $locale))) {
                         continue;
                     }
-                    ++$locales[$locale]['collections']['count'];
+                    if (isset($locales[$locale])) {
+                        ++$locales[$locale]['collections']['count'];
+                    }
                     $title = '' !== (string) $s['title'] ? (string) $s['title'] : $c->title();
-                    $to = '/collections/' . $c->key() . '/' . $i->id . $languageQuery((string) $locale);
+                    $to = '/collections/' . $c->key() . ('matrix' === $c->viewName() ? '' : '/' . $i->id) . $languageQuery((string) $locale);
                     if ('draft' === $s['status'] || $s['changes'] > 0) {
-                        ++$locales[$locale]['collections']['unpublished'];
+                        if (isset($locales[$locale])) {
+                            ++$locales[$locale]['collections']['unpublished'];
+                        }
                         $row = [
                             'kind' => 'item', 'collection' => $c->key(), 'id' => $i->id, 'locale' => (string) $locale, 'title' => $title, 'pageKind' => $c->title(),
                             'draft' => 'draft' === $s['status'], 'changes' => $s['changes'], 'updatedAt' => $s['updatedAt'], 'awaiting' => $s['awaiting'], 'to' => $to,

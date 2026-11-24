@@ -1,4 +1,5 @@
 {
+  "editor.settings_leave_message": "The page settings have unsaved changes.",
   "editor.preview_dialog": "Page preview",
   "editor.preview_heading": "Preview · {title}",
   "editor.preview_draft_sections": {

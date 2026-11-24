@@ -68,6 +68,16 @@ it('retains the table when autosave fails and the language switch is declined', 
   expect(state.saver.hasPending()).toBe(true)
 })
 
+it('does not retry a failed autosave after leaving without saving', async () => {
+  await mount()
+  state.saver.schedule({ data: { cols: [], rows: [] } })
+  mocks.update.mockRejectedValueOnce(new Error('offline'))
+  expect(await mocks.guard('zh')).toBe(true)
+  expect(state.saver.hasPending()).toBe(false)
+  expect(await state.saver.flush()).toBe(true)
+  expect(mocks.update).toHaveBeenCalledTimes(1)
+})
+
 it('ignores an earlier table load that completes after a newer one', async () => {
   await mount()
   let finish

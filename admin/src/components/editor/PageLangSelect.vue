@@ -39,6 +39,6 @@ let refocus = false // module level: survives the re-creation of the editor
 
 <template>
   <LanguageSelect
-    v-if="isMulti()" ref="sel" :model-value="ed.locale" :languages="app.languages.list" :statuses="statuses" :label="t('editor.lang_select')" :disabled="ed.busy" @update:model-value="pick"
+    v-if="isMulti()" ref="sel" variant="editor" :model-value="ed.locale" :languages="app.languages.list" :statuses="statuses" :label="t('editor.lang_select')" :disabled="ed.busy" @update:model-value="pick"
   />
 </template>

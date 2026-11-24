@@ -172,6 +172,7 @@
   "collections.cl_reorder_note_multi": "Карточкаларды сүйреңіз немесе көрсеткілерді пайдаланыңыз. {note} Рет барлық тілге ортақ.",
   "collections.cl_reorder_note_hidden": "Карточкаларды сүйреңіз немесе көрсеткілерді пайдаланыңыз. {note} Рет барлық тілге ортақ. Аудармасы жоқ жазбалар {site} көрінбейді, бірақ олардың орны сақталады.",
   "collections.cl_cancel": "Бас тарту",
+  "collections.cl_order_leave_message": "Жаңа рет сақталмады. Ретті сақтамай шығу керек пе?",
   "collections.cl_reorder_save": "Ретті сақтау",
   "collections.cl_selected_region": "Таңдалған жазбалар",
   "collections.cl_selected": "Таңдалды: {count}",

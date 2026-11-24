@@ -19,6 +19,11 @@ const mocks = vi.hoisted(() => ({ get: vi.fn(), update: vi.fn(), getMenus: vi.fn
 vi.mock('@/api/index.js', () => ({ api: { site: { currentSiteSync: () => ({}) }, pages: { list: mocks.list }, settings: mocks, requests: { forms: mocks.forms } } }))
 vi.mock('@/components/ui/useConfirm.js', () => ({ useConfirm: () => mocks.confirm }))
 vi.mock('@/components/ui/Icon.vue', () => ({ default: { render: () => null } }))
+// The picker owned by MenusEditor is the only page request under test.
+vi.mock('@/components/form/usePageOptions.js', async () => {
+  const { ref } = await import('vue')
+  return { usePageOptions: () => ref([]) }
+})
 vi.mock('@/components/ui/LanguageSelect.vue', () => ({ default: {
   props: ['modelValue', 'languages', 'label'], emits: ['update:modelValue'],
   render() { return h('select', { 'aria-label': this.label, value: this.modelValue, onChange: (event) => this.$emit('update:modelValue', event.target.value) }, this.languages.map((l) => h('option', { value: l.code }, l.name))) },
@@ -144,4 +149,24 @@ it('switches menus and their page choices together and leaves missing menu versi
   expect(box.querySelector('.menu-value')).toBeNull()
   expect(box.querySelector('.mn-empty').textContent).toContain(t('settings.menu_empty'))
   expect(mocks.list).toHaveBeenCalledWith({ locale: 'zh' })
+})
+
+it('offers retry instead of copying menu page links without the language page list', async () => {
+  mocks.list.mockRejectedValueOnce(new Error('Pages unavailable'))
+  await mountSettings('/settings/menus?lang=zh')
+  await vi.waitFor(() => expect(mocks.list).toHaveBeenCalledWith({ locale: 'zh' }))
+  expect(box.querySelector('.mn-copy')).toBeNull()
+  const retry = box.querySelector('.mn-page-load button')
+  expect(retry).toBeTruthy()
+  retry.click()
+  await vi.waitFor(() => expect(box.querySelector('.mn-copy')).toBeTruthy())
+  expect(mocks.list).toHaveBeenCalledTimes(2)
+})
+
+it('only copies menus with page links when the editor can read pages', async () => {
+  delete app.user.perms.pages
+  await mountSettings('/settings/menus?lang=zh')
+  expect(mocks.list).not.toHaveBeenCalled()
+  expect(box.querySelector('.mn-copy')).toBeNull()
+  expect(box.querySelector('.mn-page-load')).toBeNull()
 })

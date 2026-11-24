@@ -37,6 +37,7 @@
   "forms.photos_add": "Фото қосу",
   "forms.relation_empty": "Таңдауға әзірге ештеңе жоқ",
   "forms.relation_none": "Таңдалмаған",
+  "forms.relation_untranslated": "{title} — аудармасы жоқ",
   "forms.relation_gone": "Жазба жойылған",
   "forms.repeater_removed": "Элемент жойылды",
   "forms.repeater_undo": "қайтару",

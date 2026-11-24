@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { compile, createApp, h, nextTick, ssrContextKey } from 'vue'
+import { compile, createApp, h, ssrContextKey } from 'vue'
 import { compileScript, parse } from '@vue/compiler-sfc'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import PageChips from './LangChips.vue'
@@ -38,28 +38,13 @@ it('gives every page language a direct version link and an accessible missing st
   expect(links.map((a) => a.getAttribute('href'))).toEqual(['ru', 'kk', 'tr', 'zh', 'en'].map((code) => `/pages/one?lang=${code}`))
   expect(links[1].classList.contains('missing')).toBe(true)
   expect(links[1].getAttribute('aria-label')).toBeTruthy()
-  expect(host.querySelector('select').options).toHaveLength(6)
+  expect(host.querySelector('select')).toBeNull()
 })
 
-it('opens the chosen page version from the compact native selector, including the current language', async () => {
-  mount(PageChips, { page: row, to: '/pages/one' })
-  const select = host.querySelector('select')
-  select.value = 'ru'
-  select.dispatchEvent(new Event('change'))
-  await nextTick()
-  expect(mocks.push).toHaveBeenCalledWith('/pages/one?lang=ru')
-  expect(select.value).toBe('')
-})
-
-it('links collection language chips and the mobile selector to the same record version', async () => {
+it('keeps every collection version one click away, including on the narrow layout', () => {
   mount(CollectionChips, { cfg: { key: 'team', titleField: 'title', tabs: [] }, row })
-  expect(host.querySelector('a.missing').getAttribute('href')).toBe('/collections/team/one?lang=kk')
-  const select = host.querySelector('select')
-  select.value = 'zh'
-  select.dispatchEvent(new Event('change'))
-  await nextTick()
-  expect(mocks.push).toHaveBeenCalledWith('/collections/team/one?lang=zh')
-  expect(select.getAttribute('aria-label')).toContain('Название')
+  expect([...host.querySelectorAll('a')].map((a) => a.getAttribute('href'))).toEqual(['ru', 'kk', 'tr', 'zh', 'en'].map((code) => `/collections/team/one?lang=${code}`))
+  expect(host.querySelector('select')).toBeNull()
 })
 
 it('keeps collection version statuses readable without navigation controls during card reordering', () => {

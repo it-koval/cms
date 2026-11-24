@@ -20,10 +20,10 @@
 // RIGHTS (area col:<key>): without «Править» there is no «Добавить», «Изменить порядок», «Дублировать» and the switch is off; without «Удалять» the row menu has no «Удалить»;
 // a version that waits for publication wears a «Ждёт публикации» chip. Actions the person may not run are not sent by the server at all.
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { onBeforeRouteLeave, onBeforeRouteUpdate, useRouter } from 'vue-router'
 import { api } from '@/api/index.js'
 import { PREVIEW, thumbUrl } from '@/utils/media.js'
-import { app, can, refreshCounters } from '@/stores/app.js'
+import { app, can, refreshCounters, useLocaleGuard } from '@/stores/app.js'
 import Icon from '@/components/ui/Icon.vue'
 import Popover from '@/components/ui/Popover.vue'
 import StatusChip from '@/components/ui/StatusChip.vue'
@@ -54,6 +54,8 @@ import { cap, onLang, siteIn, toLang, up, verAcc } from '@/utils/langWords.js'
 import { t } from '@/i18n/index.js'
 
 const props = defineProps({ cfg: { type: Object, required: true } })
+const LOC = app.locale
+const COL = props.cfg.key
 const router = useRouter()
 const confirm = useConfirm()
 const toast = useToast()
@@ -101,8 +103,10 @@ const rows = ref([])
 const total = ref(0)
 const facets = ref({})
 const metrics = ref([])
-const wholeTotal = ref((app.collections.find((c) => c.key === props.cfg.key) || {}).count || 0) // all records of the collection, whatever the filters
-const translatedCount = ref((app.collections.find((c) => c.key === props.cfg.key) || {}).locales?.[app.locale]?.count || 0) // records that have a version in the language on screen
+const counter = computed(() => app.collections.find((c) => c.key === COL))
+const unfilteredTotal = ref(0)
+const wholeTotal = computed(() => counter.value?.count ?? unfilteredTotal.value)
+const translatedCount = computed(() => counter.value?.locales?.[LOC]?.count ?? Object.entries(facets.value.status || {}).filter(([status]) => status !== 'missing').reduce((n, [, count]) => n + count, 0))
 const loaded = ref(false)
 const refreshing = ref(false)
 const adding = ref(false)
@@ -114,23 +118,24 @@ onBeforeUnmount(() => { alive = false; clearTimeout(debounce); window.removeEven
 const nFilters = computed(() => activeCount(filter.value))
 const filtered = computed(() => !!q.value.trim() || nFilters.value > 0)
 
-// every record that matches (up to 2000) for the views that have no pages; the tree wants the order of the site
+// every record that matches for the views that have no pages; the tree wants the order of the site
 async function queryAll(base) {
   const params = { ...base, page: 1, perPage: 200, ...(view.value === 'tree' ? { sort: 'position' } : {}) }
   const first = await api.collections.query(props.cfg.key, params)
   let items = first.items
-  for (let p = 2; items.length < first.total && p <= 10; p++) {
+  for (let p = 2; items.length < first.total; p++) {
     const more = await api.collections.query(props.cfg.key, { ...params, page: p })
-    if (!more.items.length) break
+    if (!more.items.length) throw new Error(t('collections.cl_load_failed'))
     items = items.concat(more.items)
   }
   return { ...first, items, page: 1, perPage: Math.max(1, items.length) }
 }
 async function load() {
+  if (!alive) return
   const my = ++seq
   refreshing.value = true
   try {
-    const base = { ...ls.params(), locale: app.locale }
+    const base = { ...ls.params(), locale: LOC }
     const res = wide.value ? await queryAll(base) : await api.collections.query(props.cfg.key, base)
     if (!alive || my !== seq) return
     // a page that no longer exists (records were deleted, the filter narrowed): the last one
@@ -140,10 +145,7 @@ async function load() {
     total.value = res.total
     facets.value = res.facets || {}
     metrics.value = res.metrics || []
-    if (!filtered.value) wholeTotal.value = res.total
-    const languageCounts = (app.collections.find((c) => c.key === props.cfg.key) || {}).locales?.[app.locale]
-    if (languageCounts) translatedCount.value = languageCounts.count
-    else if (!filtered.value) translatedCount.value = Object.entries(facets.value.status || {}).filter(([status]) => status !== 'missing').reduce((a, [, n]) => a + n, 0)
+    if (!filtered.value) unfilteredTotal.value = res.total
     // the ticks of rows that are gone (deleted, filtered out and not on this page) are dropped
     if (selected.value.size && res.total === 0) selected.value = new Set()
     loaded.value = true
@@ -311,7 +313,7 @@ const toggleName = computed(() => toggleLabelOf(props.cfg))
 async function toggle(r, ev) {
   const field = props.cfg.toggleField
   const val = ev.target.checked
-  const patch = async (v) => { await api.collections.update(props.cfg.key, r.id, { [field]: v }, app.locale); await load(); refreshCounters() }
+  const patch = async (v) => { await api.collections.update(COL, r.id, { [field]: v }, LOC); await load(); refreshCounters() }
   try {
     await patch(val)
     toast.show(toggleNote(titleOf(props.cfg, r), toggleName.value, val), {
@@ -337,7 +339,7 @@ async function patchRow(r, patch, done) {
   rows.value = rows.value.map((x) => (x.id === r.id ? { ...x, ...patch } : x))
   wideBusy.value = true
   try {
-    await api.collections.update(props.cfg.key, r.id, patch, app.locale)
+    await api.collections.update(COL, r.id, patch, LOC)
     await load()
     refreshCounters()
     const live = r.status === 'published'
@@ -393,6 +395,15 @@ const orderable = computed(() => !!props.cfg.sortable && isCards.value && loaded
 const canReorder = computed(() => canEdit.value && canPublish.value && orderable.value)
 const cards = computed(() => (reorder.on ? reorder.list : rows.value))
 const dirty = computed(() => reorder.list.some((r, i) => r.id !== reorder.start[i]))
+let pendingOrder = null
+async function mayLeaveOrder() {
+  if (pendingOrder) await pendingOrder
+  if (!dirty.value) return true
+  return confirm({ title: t('settings.leave_title'), message: t('collections.cl_order_leave_message'), confirmLabel: t('settings.leave_confirm'), cancelLabel: t('settings.stay'), danger: true })
+}
+useLocaleGuard(mayLeaveOrder)
+onBeforeRouteLeave(mayLeaveOrder)
+onBeforeRouteUpdate((to, from) => to.params.col === from.params.col ? true : mayLeaveOrder())
 const gridEl = ref(null)
 const reorderBtn = ref(null)
 const reorderNote = computed(() => {
@@ -406,7 +417,7 @@ async function startReorder() {
   if (reorder.on || reorder.busy || !canReorder.value) return
   reorder.busy = true
   try {
-    const all = await api.collections.list(props.cfg.key, { locale: app.locale }) // the whole list, whatever the search and the filter were
+    const all = await api.collections.list(props.cfg.key, { locale: LOC }) // the whole list, whatever the search and the filter were
     if (!alive) return
     if (all.length < 2) { load(); return }
     menu.value = { ...menu.value, open: false }
@@ -433,8 +444,12 @@ const cancelReorder = () => { if (reorder.on && !reorder.saving) leaveReorder(re
 function onKey(e) {
   if (e.key === 'Escape' && reorder.on && !reorder.saving && !reorder.dragId && !e.defaultPrevented) cancelReorder()
 }
-async function saveReorder() {
-  if (!reorder.on || !dirty.value || reorder.saving) return
+function saveReorder() {
+  if (!reorder.on || !dirty.value || reorder.saving) return pendingOrder
+  pendingOrder = commitOrder().finally(() => { pendingOrder = null })
+  return pendingOrder
+}
+async function commitOrder() {
   const prev = [...reorder.start]
   reorder.saving = true
   try {
@@ -453,7 +468,7 @@ async function restoreOrder(ids) {
     await api.collections.reorder(props.cfg.key, ids)
     if (reorder.on) {
       // the undo came while a new reorder mode is open: drop that mode (its starting order is stale now) and show the restored list
-      const all = await api.collections.list(props.cfg.key, { locale: app.locale })
+      const all = await api.collections.list(props.cfg.key, { locale: LOC })
       if (!alive) return
       leaveReorder(all)
     } else {

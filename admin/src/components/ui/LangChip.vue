@@ -33,12 +33,13 @@ defineProps({
 .lc-dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; flex: none; box-sizing: border-box; }
 .lc.published { background: var(--green-50); color: var(--green); }
 .lc.draft, .lc.changed { background: var(--mag-50); color: var(--accent-text-d); }
-.lc.draft .lc-dot, .lc.changed .lc-dot { background: var(--mag); }
+.lc.draft .lc-dot { background: transparent; border: 1.5px solid var(--mag); }
+.lc.changed .lc-dot { background: var(--mag); }
 .lc.missing { background: transparent; color: var(--ink-3); box-shadow: inset 0 0 0 1px var(--ctl); }
 .lc.missing .lc-tag { color: var(--ink-2); }
 .lc.missing .lc-dot { background: transparent; box-shadow: inset 0 0 0 1.5px currentColor; }
 .lc.link:hover { box-shadow: 0 0 0 2px var(--cy-100); text-decoration: none; }
 .lc.link.missing:hover { box-shadow: inset 0 0 0 1px var(--cy), 0 0 0 2px var(--cy-100); color: var(--brand-text-d); }
 .lc.link:focus-visible { outline: 2px solid var(--cy); outline-offset: 2px; }
-.lc.link { min-height: 44px; box-sizing: border-box; }
+.lc.link { min-width: 44px; min-height: 44px; box-sizing: border-box; }
 </style>

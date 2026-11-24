@@ -1,4 +1,5 @@
 {
+  "settings.menu_pages_load_failed": "Could not load the pages in this language.",
   "settings.retry": "Try again",
   "settings.delete": "Delete",
   "settings.save": "Save",

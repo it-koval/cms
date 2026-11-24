@@ -96,13 +96,16 @@ async function settled() {
 }
 /** Leaving the record: the same, except that a failed save lets the person decide (the edits are lost with the screen). A conflict keeps them here, the banner asks. */
 async function mayLeave() {
-  if (locked.value || startBusy.value) return false
+  // A successful form action may redirect while its own busy state is still set.
+  if (working.value || startBusy.value) return false
   if (await saver.flush()) return true
   if (saver.conflict.value) { toast.error(t('collections.iv_settle_first')); return false }
-  return confirm({
+  const discard = await confirm({
     title: t('settings.leave_title'), message: t('collections.leave_unsaved_text', { reason: saver.error.value || t('collections.error_word') }),
     confirmLabel: t('settings.leave_confirm'), cancelLabel: t('people.btn_stay'), danger: true,
   })
+  if (discard) saver.reset()
+  return discard
 }
 // leaving the record (another record, the list, another section) with edits that were not saved: the person stays or leaves knowingly (false = stay)
 onBeforeRouteLeave(mayLeave)
@@ -148,7 +151,7 @@ async function load({ silent = false, focus = false } = {}) {
   if (!alive) return
   const c = cfg.value
   if (!c) return
-  if (c.view === 'matrix') { router.replace('/collections/' + c.key); return }
+  if (c.view === 'matrix') { router.replace({ path: '/collections/' + c.key, query: route.query, hash: route.hash }); return }
   const { col, id } = route.params
   const my = ++seq
   target = { col, id }
@@ -491,9 +494,8 @@ async function removeVersion() {
 // Both ways go through the guard: the edits of this version are saved under their own language and the open tab is carried over to the new screen.
 useLocaleGuard(async () => {
   popOpen.value = false
-  if (locked.value || startBusy.value) return false
-  if (!draft.value || !translated.value) return true
   if (!(await mayLeave())) return false
+  if (!draft.value || !translated.value) return true
   carryTab(target.col, target.id, activeTab.value && activeTab.value.key)
   return true
 })

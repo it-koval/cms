@@ -1,4 +1,5 @@
 {
+  "editor.settings_leave_message": "Бет баптауларында сақталмаған өзгерістер бар.",
   "editor.preview_dialog": "Бетті алдын ала қарау",
   "editor.preview_heading": "Алдын ала қарау · {title}",
   "editor.preview_draft_sections": {

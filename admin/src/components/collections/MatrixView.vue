@@ -91,10 +91,12 @@ async function mayLeave() {
   if (working.value || startBusy.value) return false
   if (await saver.flush()) return true
   if (saver.conflict.value) { toast.error(t('collections.mx_settle_first')); return false }
-  return confirm({
+  const discard = await confirm({
     title: t('settings.leave_title'), message: t('collections.leave_unsaved_text', { reason: saver.error.value || t('collections.error_word') }),
     confirmLabel: t('settings.leave_confirm'), cancelLabel: t('people.btn_stay'), danger: true,
   })
+  if (discard) saver.reset()
+  return discard
 }
 // leaving the table (the list, another section) with edits that were not saved: the person stays or leaves knowingly (false = stay)
 onBeforeRouteLeave(mayLeave)

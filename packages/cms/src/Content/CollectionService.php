@@ -128,17 +128,28 @@ final class CollectionService
     {
         $out = ['count' => 0, 'unpublished' => 0];
         foreach ($items as $item) {
-            $t = $item->translations[$locale] ?? null;
-            if (null === $t) {
+            $status = $this->versionStatus($c, $item, $locale);
+            if ('missing' === $status) {
                 continue;
             }
             ++$out['count'];
-            if ('draft' === ($t['status'] ?? 'draft') || $this->countChanges($c, $t) > 0) {
+            if ('draft' === $status) {
                 ++$out['unpublished'];
             }
         }
 
         return $out;
+    }
+
+    /** Admin status for counts and filtering. A live version with pending changes is counted as a draft. @internal */
+    public function versionStatus(Collection $c, CollectionItem $item, string $locale): string
+    {
+        $t = $item->translations[$locale] ?? null;
+        if (null === $t) {
+            return 'missing';
+        }
+
+        return 'draft' === ($t['status'] ?? 'draft') || $this->countChanges($c, $t) > 0 ? 'draft' : 'published';
     }
 
     /**
