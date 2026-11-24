@@ -8,7 +8,7 @@ use Itk\Cms\I18n\I18n;
 use Itk\Cms\Schema\Key;
 
 /**
- * One field of a collection the generator is asked to write. `column` is where the value comes from when rows are imported.
+ * One field of a collection the generator is asked to write. `column` is the original field or table column name.
  *
  * @internal
  */

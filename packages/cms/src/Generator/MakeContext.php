@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Itk\Cms\Generator;
 
 use Itk\Cms\Resource\CollectionResource;
-use Itk\Cms\Resource\ResourceInterface;
 use Itk\Cms\Resource\ResourceRegistry;
 use Itk\Cms\Resource\SectionResource;
 use Itk\Cms\Resource\SettingsResource;
@@ -34,12 +33,6 @@ final class MakeContext
         #[Autowire(param: 'itk_cms.schema_file')]
         private readonly string $schemaFile,
     ) {
-    }
-
-    /** Makes a class known to the schema in this run (the container does not know a file that was written a second ago). */
-    public function addResource(ResourceInterface $resource): void
-    {
-        $this->resources->add($resource);
     }
 
     /**

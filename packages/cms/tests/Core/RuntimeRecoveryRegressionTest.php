@@ -7,9 +7,7 @@ namespace Itk\Cms\Tests\Core;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\Exception\ConnectionException;
 use Doctrine\DBAL\Exception\RetryableException;
-use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\Persistence\ManagerRegistry;
-use Itk\Cms\Content\CollectionImporter;
 use Itk\Cms\Content\CollectionQuery;
 use Itk\Cms\Content\CollectionService;
 use Itk\Cms\Field\Image;
@@ -20,7 +18,6 @@ use Itk\Cms\KnowledgeBase\Indexer;
 use Itk\Cms\KnowledgeBase\Model\Outcome;
 use Itk\Cms\KnowledgeBase\Model\SourceKind;
 use Itk\Cms\KnowledgeBase\Model\SourceRef;
-use Itk\Cms\Repository\CollectionItemRepository;
 use Itk\Cms\Resource\CollectionResource;
 use Itk\Cms\Resource\Context;
 use Itk\Cms\Resource\Metric;
@@ -120,55 +117,6 @@ final class RuntimeRecoveryRegressionTest extends KernelTestCase
         $db->executeStatement('DELETE FROM itk_collection_item WHERE collection_key = ?', [$this->key]);
         $db->executeStatement('DELETE FROM itk_revision WHERE resource_key = ?', [$this->key]);
         parent::tearDown();
-    }
-
-    /** @return iterable<array-key, mixed> */
-    public static function badRows(): iterable
-    {
-        yield 'PostgreSQL jsonb NUL rejection' => [['title' => "bad\0row"]];
-        yield 'DBAL invalid UTF-8 conversion' => [['title' => "bad\xFFrow"]];
-        yield 'raw conversion failure' => [['image' => new \stdClass()]];
-        yield 'infinite numeric string' => [['seats' => '1e999']];
-        yield 'NaN float' => [['seats' => \NAN]];
-    }
-
-    /** @param array<string, mixed> $bad */
-    #[Test]
-    #[DataProvider('badRows')]
-    public function anInvalidRowIsReportedAndTheSameInjectedServicesKeepWorking(array $bad): void
-    {
-        $c = self::getContainer();
-        $service = $c->get(CollectionService::class);
-        $repo = $c->get(CollectionItemRepository::class);
-        $em = $c->get(EntityManagerInterface::class);
-        $importer = $c->get(CollectionImporter::class);
-        $repo->findByCollection($this->key); // initialize the repository before resetManager()
-        $result = $importer->import($this->key, [['good-before', ['title' => 'Before']], ['bad-row', $bad], ['good-after', ['title' => 'After']]], 'test:' . $this->key);
-        self::assertSame(2, $result->created);
-        self::assertCount(1, $result->failed);
-        self::assertStringContainsString('2 (bad-row)', $result->failed[0]);
-        self::assertTrue($em->isOpen(), 'the injected manager must follow the registry reset');
-        self::assertCount(2, $repo->findByCollection($this->key), 'an already initialized repository must use the reset manager');
-        self::assertSame(['Before', 'After'], \array_column($service->list($this->key), 'title'));
-        $again = $importer->import($this->key, [['good-after', ['title' => 'Updated']]], 'test:' . $this->key);
-        self::assertSame([0, 1, []], [$again->created, $again->updated, $again->failed]);
-    }
-
-    #[Test]
-    public function aDryRunReportsConversionAndNonFiniteNumbersWithoutWriting(): void
-    {
-        $c = self::getContainer();
-        $result = $c->get(CollectionImporter::class)->import($this->key, [
-            ['before', ['title' => 'Before']],
-            ['infinite', ['seats' => '1e999']],
-            ['conversion', ['image' => new \stdClass()]],
-            ['after', ['title' => 'After']],
-        ], 'test:' . $this->key, dryRun: true);
-        self::assertSame(2, $result->created);
-        self::assertCount(2, $result->failed);
-        self::assertStringContainsString('2 (infinite)', $result->failed[0]);
-        self::assertStringContainsString('3 (conversion)', $result->failed[1]);
-        self::assertSame(0, (int) $c->get(Connection::class)->fetchOne('SELECT COUNT(*) FROM itk_collection_item WHERE collection_key = ?', [$this->key]));
     }
 
     #[Test]

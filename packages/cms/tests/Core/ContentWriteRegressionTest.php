@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Itk\Cms\Tests\Core;
 
 use Doctrine\ORM\EntityManagerInterface;
-use Itk\Cms\Content\CollectionImporter;
 use Itk\Cms\Content\ContentException;
 use Itk\Cms\Entity\Page;
 use Itk\Cms\Entity\PageTranslation;
@@ -37,19 +36,23 @@ final class ContentWriteRegressionTest extends ResourceKernelTestCase
     }
 
     #[Test]
-    public function rejectedImportRowDoesNotCloseTheManagerOrLoseFollowingRows(): void
+    public function aRejectedCollectionWriteLeavesTheManagerUsable(): void
     {
         self::getContainer()->get('event_dispatcher')->addListener(RecordCreating::class, static function (RecordCreating $e): void {
             if ('test_trips' === $e->resourceKey && 'Reject' === ($e->data['title'] ?? '')) {
-                throw ContentException::invalid('Rejected test row');
+                throw ContentException::invalid('Rejected test write');
             }
         });
-        $r = self::getContainer()->get(CollectionImporter::class)->import('test_trips', [['good1', ['title' => 'First']], ['bad', ['title' => 'Reject']], ['good2', ['title' => 'Last']]], 'test:' . $this->suffix);
-        self::assertSame(2, $r->created);
-        self::assertCount(1, $r->failed);
-        self::assertStringContainsString('bad', $r->failed[0]);
-        self::assertCount(2, $this->collections->list('test_trips'));
+        $this->trip('First');
+        try {
+            $this->trip('Reject');
+            self::fail('Rejected write was accepted');
+        } catch (ContentException $e) {
+            self::assertSame('Rejected test write', $e->getMessage());
+        }
         self::assertTrue(self::getContainer()->get(EntityManagerInterface::class)->isOpen());
+        $this->trip('Last');
+        self::assertSame(['First', 'Last'], \array_column($this->collections->list('test_trips'), 'title'));
     }
 
     #[Test]

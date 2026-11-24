@@ -82,6 +82,12 @@ For later updates of sites already running the kit, see [DEPLOY → Roll back](d
 
 Remove `->feature('ai')` from the site's schema builder chain, usually in `config/itk/schema.php`. The editor's AI suggestions panel and its configuration flag were removed.
 
+#### Collection row import
+
+Previously, `itk:make:collection --import` created collection records from source rows and `--publish` published them immediately. Version 0.3.0 removes both options and ignores the JSON field `rows`. Class generation from a table or a JSON description still works. Move old site records with your own script or SQL when migrating the database dump.
+
+Previously imported records remain in the database and can be edited like any other collection record. The core no longer reads `meta.sourceId` and `meta.source` for these records.
+
 #### Twig functions
 
 Update the following Twig function calls in site templates and bundle overrides.

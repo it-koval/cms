@@ -14,8 +14,6 @@
 'content.settings_max_chat_ids_check': 'Проверьте ID чатов MAX'
 'content.settings_mail_limit': 'Для одной формы — не больше 10 адресов'
 'content.settings_mail_invalid': 'Проверьте адреса: «{email}» не похож на адрес почты'
-'content.import_collection_unknown': 'Коллекции «{collection}» нет в схеме: класс ещё не подхвачен (cache:clear) или ключ другой.'
-'content.import_row_failed': 'строка {row}: {message}'
 'content.change_name_page': 'Страница'
 'content.change_new_section': 'Новая секция'
 'content.change_section_hidden': 'Скрыта на сайте'

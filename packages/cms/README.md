@@ -6,7 +6,7 @@ English | [Русский](README.ru.md)
 
 A site describes its structure in PHP (the `config/itk/schema.php` file or resource classes) and renders it with its own Twig templates. The bundle knows nothing about a specific site. The built admin panel ships inside the package, so the site does not need Node.
 
-Version 0.2.2, MIT license. Source code: [github.com/it-koval/cms](https://github.com/it-koval/cms).
+Version 0.3.0, MIT license. Source code: [github.com/it-koval/cms](https://github.com/it-koval/cms).
 
 ## Contents
 
@@ -344,7 +344,7 @@ A collection is a list of records with fields: reviews, tours, staff. Records ar
 | `singular()`, `newLabel()`, `icon()`, `describe()`, `emptyState()` | Labels and the icon in the admin panel |
 | `menu(...)`, `visibleWhen(fn)` | The place in the admin menu and visibility, see [Admin menu](#admin-menu) |
 
-Use a business field such as `stage` for a kanban column. Collection fields cannot use metadata keys from `Collection::RESERVED_KEYS`. Admin, PHP, MCP and collection imports share value validation. A custom field can implement `Itk\Cms\Field\ValueValidatingFieldInterface` and return translated errors from `validationErrors()`.
+Use a business field such as `stage` for a kanban column. Collection fields cannot use metadata keys from `Collection::RESERVED_KEYS`. Admin, PHP and MCP share value validation. A custom field can implement `Itk\Cms\Field\ValueValidatingFieldInterface` and return translated errors from `validationErrors()`.
 
 ### Menus
 
@@ -1834,10 +1834,10 @@ The commands create a ready class in the site and, where needed, a Twig or JS st
 
 ```
 php bin/console itk:make:collection --from=form.json
-php bin/console itk:make:collection --from=table:table_name [--import] [--publish] [--map=…]
+php bin/console itk:make:collection --from=table:table_name [--map=…]
 ```
 
-The JSON description: `{"key": "tours", "title": "Tours", "singular": "tour", "icon": "map", "fields": [{"key": "city", "label": "City", "type": "text", "required": true, "max": 80}], "rows": [{"id": 1, "city": "Perm"}]}`. Types: `text`, `textarea`, `description`, `headline`, `article`, `number`, `toggle`, `select` (with `"options"`), `date`, `datetime`, `image`, `photos`, `link`. `rows` are needed only for `--import`. Add a repeater or a relation to the class by hand.
+The command accepts a JSON description such as `{"key": "tours", "title": "Tours", "singular": "tour", "icon": "map", "fields": [{"key": "city", "label": "City", "type": "text", "required": true, "max": 80}]}`. Supported types are `text`, `textarea`, `description`, `headline`, `article`, `number`, `toggle`, `select` (with `"options"`), `date`, `datetime`, `image`, `photos` and `link`. Add a repeater or a relation to the class by hand.
 
 From a PostgreSQL table, the columns become fields. Write a table in another schema as `table:schema.table`. `--connection=name` sets another Doctrine connection.
 
@@ -1852,10 +1852,11 @@ From a PostgreSQL table, the columns become fields. Write a table in another sch
 | `time` | `Text` |
 | an enum type (`CREATE TYPE … AS ENUM`) | `Select` |
 
-- Other types are skipped with an explanation. `NOT NULL` without a default gives `required()`. The label comes from the column comment or the name. The primary key does not become a field.
+- Other types are skipped with an explanation. `NOT NULL` without a default gives `required()`. The label comes from the column comment or the name. A single-column primary key is skipped by default.
 - `--map=column:field[:type],…` renames a column or changes its type. `column:-` skips the column.
-- `--strip-prefix=old_` drops the start of the table name when the key is chosen. `--id=column` sets the row key if there is no primary key or it is composite.
-- `--import` moves the rows into records as drafts, with the usual checks and hooks. A repeat run updates its own records instead of creating new ones. `--publish` publishes the records right away. A row without a required field stays a draft and goes into the report.
+- `--strip-prefix=old_` drops the start of the table name when the key is chosen. `--id=column` omits the specified identifier column from the generated fields.
+
+Move records from the old site with your own script when migrating the database dump.
 
 ## Docker
 

@@ -46,7 +46,6 @@ return static function (ContainerConfigurator $container): void {
             '../src/Resource/{Action,ActionContext,ActionResult,Context,Metric,Record,ResourceApplier,ResourceHooks}.php',
             '../src/Extension/NavItem.php',
             '../src/Generator/{GeneratedFile,FieldSpec,CollectionSpec,Naming}.php',
-            '../src/Content/ImportResult.php',
             '../src/Security/Viewer.php',
             '../src/Schema/{Field,Key,Template,SectionType,Collection,MenuAreaDef,SettingsGroup,FormDef,Schema,SchemaBuilder,CoreSchema}.php',
             '../src/Security/Permission.php',
