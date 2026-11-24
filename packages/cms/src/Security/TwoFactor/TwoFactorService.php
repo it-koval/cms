@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Itk\Cms\Security\TwoFactor;
 
+use Doctrine\DBAL\LockMode;
 use Doctrine\ORM\EntityManagerInterface;
 use Itk\Cms\Content\ContentException;
 use Itk\Cms\Entity\User;
@@ -12,8 +13,10 @@ use Itk\Cms\I18n\I18n;
 use Itk\Cms\Repository\RoleRepository;
 use Itk\Cms\Repository\UserTwoFactorRepository;
 use Psr\Clock\ClockInterface;
+use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\HttpFoundation\Session\SessionInterface;
 use Symfony\Component\PasswordHasher\Hasher\UserPasswordHasherInterface;
+use Symfony\Component\RateLimiter\RateLimiterFactoryInterface;
 
 /**
  * The second sign-in factor: a one-time code from an authenticator app (TOTP, Totp) or one of ten recovery codes.
@@ -45,6 +48,8 @@ final class TwoFactorService
         private readonly SecretBox $box,
         private readonly UserPasswordHasherInterface $hasher,
         private readonly ?ClockInterface $clock = null,
+        #[Autowire(service: 'limiter.itk_two_factor')]
+        private readonly ?RateLimiterFactoryInterface $attempts = null,
     ) {
     }
 
@@ -104,6 +109,42 @@ final class TwoFactorService
         $session->remove(self::SESSION_KEY);
     }
 
+    /** @return array{secret: string, uri: string} */
+    public function startSetup(User $user, string $issuer): array
+    {
+        return $this->withLock($user, fn (): array => $this->doStartSetup($user, $issuer), false);
+    }
+
+    /** @return list<string> */
+    public function enable(User $user, #[\SensitiveParameter] string $code): array
+    {
+        return $this->withLock($user, fn (): array => $this->doEnable($user, $code));
+    }
+
+    public function disable(User $user, #[\SensitiveParameter] string $password): void
+    {
+        $this->withLock($user, fn () => $this->doDisable($user, $password));
+    }
+
+    /** @return list<string> */
+    public function regenerateRecoveryCodes(User $user, #[\SensitiveParameter] string $password): array
+    {
+        return $this->withLock($user, fn (): array => $this->doRegenerateRecoveryCodes($user, $password));
+    }
+
+    public function reset(User $user): bool
+    {
+        $reset = $this->withLock($user, fn (): bool => $this->doReset($user), false);
+        $this->attempts?->create($user->id)->reset();
+
+        return $reset;
+    }
+
+    public function verify(User $user, #[\SensitiveParameter] string $input): bool
+    {
+        return $this->withLock($user, fn (): bool => $this->doVerify($user, $input));
+    }
+
     /* ---------- setup ---------- */
 
     /**
@@ -111,7 +152,7 @@ final class TwoFactorService
      *
      * @return array{secret: string, uri: string}
      */
-    public function startSetup(User $user, string $issuer): array
+    private function doStartSetup(User $user, string $issuer): array
     {
         $row = $this->rows->ofUser($user);
         if (null !== $row && $row->isEnabled()) {
@@ -133,7 +174,7 @@ final class TwoFactorService
      *
      * @return list<string> the recovery codes, in plain text: this is the only time they are shown
      */
-    public function enable(User $user, string $code): array
+    private function doEnable(User $user, #[\SensitiveParameter] string $code): array
     {
         $row = $this->rows->ofUser($user);
         if (null === $row || $row->isEnabled()) {
@@ -154,7 +195,7 @@ final class TwoFactorService
     }
 
     /** Switches the second factor off. Asks for the password; refused where the role demands the factor. */
-    public function disable(User $user, string $password): void
+    private function doDisable(User $user, #[\SensitiveParameter] string $password): void
     {
         $row = $this->rows->ofUser($user);
         if (null === $row) {
@@ -180,7 +221,7 @@ final class TwoFactorService
      *
      * @return list<string>
      */
-    public function regenerateRecoveryCodes(User $user, string $password): array
+    private function doRegenerateRecoveryCodes(User $user, #[\SensitiveParameter] string $password): array
     {
         $row = $this->rows->ofUser($user);
         if (null === $row || !$row->isEnabled()) {
@@ -195,7 +236,7 @@ final class TwoFactorService
     }
 
     /** An administrator takes the second factor away from a person (a lost phone and no recovery codes): he sets it up again at the next sign-in. */
-    public function reset(User $user): bool
+    private function doReset(User $user): bool
     {
         $row = $this->rows->ofUser($user);
         if (null === $row) {
@@ -213,7 +254,7 @@ final class TwoFactorService
      * Checks what the person typed on the code page: a code from the app, or a recovery code (which is spent).
      * A wrong answer counts toward the lock; a locked factor answers 429 even to a right code.
      */
-    public function verify(User $user, string $input): bool
+    private function doVerify(User $user, #[\SensitiveParameter] string $input): bool
     {
         $row = $this->rows->ofUser($user);
         if (null === $row || !$row->isEnabled()) {
@@ -258,7 +299,57 @@ final class TwoFactorService
 
     /* ---------- internals ---------- */
 
-    private function checkTotp(UserTwoFactor $row, string $code): ?int
+    /**
+     * Serialize all factor changes on the parent user, including setup before a factor row exists.
+     * Expected validation errors are committed: a wrong code must retain its failure count.
+     *
+     * @template T
+     *
+     * @param callable(): T $operation
+     *
+     * @return T
+     */
+    private function withLock(User $user, callable $operation, bool $limited = true): mixed
+    {
+        $connection = $this->em->getConnection();
+        $connection->beginTransaction();
+        $failure = null;
+        try {
+            $managed = $this->em->find(User::class, $user->id);
+            if (null === $managed) {
+                throw ContentException::notFound(I18n::t('http.user_removed'));
+            }
+            $this->em->lock($managed, LockMode::PESSIMISTIC_WRITE);
+            $row = $this->rows->ofUser($managed);
+            if (null !== $row) {
+                $this->em->refresh($row, LockMode::PESSIMISTIC_WRITE);
+            }
+            try {
+                if ($limited && null !== $this->attempts && !$this->attempts->create($user->id)->consume()->isAccepted()) {
+                    throw new ContentException($this->lockedMessage(), 429, ['code' => '2fa_locked', 'seconds' => self::LOCK_MINUTES * 60]);
+                }
+                $result = $operation();
+                if ($limited && false !== $result) {
+                    $this->attempts?->create($user->id)->reset();
+                }
+            } catch (ContentException $error) {
+                $failure = $error;
+                $result = null;
+            }
+            $connection->commit();
+        } catch (\Throwable $error) {
+            $connection->rollBack();
+
+            throw $error;
+        }
+        if (null !== $failure) {
+            throw $failure;
+        }
+
+        return $result;
+    }
+
+    private function checkTotp(UserTwoFactor $row, #[\SensitiveParameter] string $code): ?int
     {
         $secret = $this->box->open($row->secret);
         if (null === $secret) {
@@ -268,7 +359,7 @@ final class TwoFactorService
         return Totp::verify($secret, $code, $this->now()->getTimestamp(), $row->lastStep);
     }
 
-    private function useRecoveryCode(UserTwoFactor $row, string $input): bool
+    private function useRecoveryCode(UserTwoFactor $row, #[\SensitiveParameter] string $input): bool
     {
         $normal = self::normalizeRecoveryCode($input);
         if (self::RECOVERY_LENGTH !== \strlen($normal)) {
@@ -309,12 +400,12 @@ final class TwoFactorService
         return $codes;
     }
 
-    public static function normalizeRecoveryCode(string $input): string
+    public static function normalizeRecoveryCode(#[\SensitiveParameter] string $input): string
     {
         return \preg_replace('/[^a-z0-9]/', '', \strtolower($input)) ?? '';
     }
 
-    private function checkPassword(User $user, UserTwoFactor $row, string $password): void
+    private function checkPassword(User $user, UserTwoFactor $row, #[\SensitiveParameter] string $password): void
     {
         if ('' === $password || !$this->hasher->isPasswordValid($user, $password)) {
             $this->fail($row, I18n::t('http.password_wrong'));

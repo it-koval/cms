@@ -5,7 +5,7 @@
 //        disk: [{ key, label, free, total, usedPct, status }],    versions: { php, symfony, itk, itkReference },
 //        updates: { enabled, current, latest, hasUpdate, checkedAt, message },  checks: [{ name, status, message }] }
 //   retry(id) / remove(id)   POST health/messenger/:id/retry|delete  a failed message goes back to its queue / is dropped   → { ok }
-//   resendRequest(id)        POST health/requests/:id/resend        every channel that failed gets the request again → { ok, delivery: 'sent'|'failed'|'pending', error, channels }
+//   resendRequest(id)        POST health/requests/:id/resend        every channel that failed gets the request again → { ok, delivery: 'sent'|'failed'|'pending', error, channels, queuedChannels }; HTTP 202 when queued
 //   refreshUpdates()         POST health/updates/refresh            → { ok, updates }
 //   clearPageCache()         POST health/page-cache/clear           → { ok }  every page kept by the page cache is forgotten (500 { error } when the cache refused)
 import { http } from './http.js'

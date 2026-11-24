@@ -61,6 +61,13 @@ This section lists the manual steps a release needs, newest first.
 
 ### 0.3.0
 
+- Add `->forAuthors()` to custom article templates that Authors should edit. The built-in `blog_article` already sets it.
+- Set `itk_cms.public_url` for password and invitation links, or configure `framework.trusted_hosts` for the web flow. Clear legacy rendered password messages from live and failed queues. Ask for fresh links for old pending deliveries.
+- Set STARTTLS or SSL/TLS for saved SMTP credentials. Existing passwords on unencrypted SMTP stay saved while delivery is disabled until the settings are corrected.
+- Public forms default to a 256 KiB body limit and a 1,000-character limit on fields lacking `max()`. Set explicit field limits and coordinate `itk_cms.requests.max_body` with PHP and the reverse proxy. The form client must display field errors and handle HTTP 413.
+- A request resend API client must handle HTTP 202 and `queuedChannels` as confirmation of queuing. The default async transport retries request delivery at 60, 120 and 240 seconds. Site transport settings take precedence.
+- Pass an explicit `Viewer` to `MediaService::usage()` and to `present()` with usage enabled. Add `PublicFieldInterface` to custom fields that can be indexed and implement `isPublic()`.
+- For automatic administrator setup in the Docker kit, mount the `itk_admin_password` secret in `php` or use the interactive installer. Retire the old `ADMIN_PASSWORD` environment variable. Critical CSS workers need a non-root account and a working Chrome sandbox.
 - `GET /admin/api/collections/{col}` now always returns `{ items, total, page, perPage, facets, metrics }`. The old flat array response is removed, including for requests without query parameters. Read `response.items` and fetch all required pages using `page`, `perPage` and `total`. The default page size is 50 unless configured otherwise, with a maximum of 200. `envelope` is accepted for compatibility.
 - `Mcp\AbstractMcpTool::locale()` is now non-static. Both `self::locale($args)` and `$this->locale($args)` work inside instance methods. Move calls from a static context into an instance method. If a site subclass overrides `locale()` as `static`, remove `static` from the override; otherwise PHP rejects the class.
 - Opting into `itk_cms.locales` trims and lowercases `main_locale` and restricts it to a listed code of 2 or 3 lowercase letters. Without `locales`, the existing value is preserved. If an existing site has a nonstandard main code such as `RU`, ` ru ` or `pt-BR`, choose the intended supported code and manually migrate stored language values and JSON keys before enabling `locales`. Changing configuration alone does not migrate content. Region metadata belongs in `html_lang` / `og_locale`.

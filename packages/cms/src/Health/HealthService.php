@@ -86,16 +86,18 @@ final class HealthService
     }
 
     /**
-     * Sends a request whose delivery failed to its messengers again, right now: to the one asked for, else to each that failed.
+     * Sends a failed request to its messengers again, queueing a channel above 20 formatted parts: to the one asked for, else to each that failed.
      *
-     * @return array{delivery: string, error: string, channels: list<array{channel: string, state: string, error: ?string}>}
+     * @return array{delivery: string, queuedChannels: list<string>, error: string, channels: list<array{channel: string, state: string, error: ?string}>}
      */
     public function resendRequest(string $id, ?string $channel = null): array
     {
-        $r = $this->requests->resend($id, $channel);
+        $result = $this->requests->resendResult($id, $channel);
+        $r = $result['request'];
 
         return [
             'delivery' => $r->delivery,
+            'queuedChannels' => $result['queuedChannels'],
             'error' => MessengerMonitor::scrub((string) $r->deliveryError),
             'channels' => \array_map(static fn (array $c): array => [...$c, 'error' => null === $c['error'] ? null : MessengerMonitor::scrub($c['error'])], $this->requests->channels($r)),
         ];

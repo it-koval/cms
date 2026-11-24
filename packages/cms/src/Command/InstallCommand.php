@@ -36,6 +36,8 @@ use Symfony\Contracts\Service\ServiceProviderInterface;
 #[AsCommand(name: 'itk:install', description: 'ops.cmd_install_description')]
 final class InstallCommand extends Command
 {
+    private const MAX_PASSWORD_FILE_BYTES = 4096;
+
     public function __construct(
         private readonly RoleSeeder $roles,
         private readonly MenuService $menus,
@@ -60,6 +62,7 @@ final class InstallCommand extends Command
             ->addOption('email', null, InputOption::VALUE_REQUIRED, I18n::t('ops.install_email_option'))
             ->addOption('name', null, InputOption::VALUE_REQUIRED, I18n::t('ops.install_name_option'))
             ->addOption('password', null, InputOption::VALUE_REQUIRED, I18n::t('ops.install_password_option'))
+            ->addOption('password-file', null, InputOption::VALUE_REQUIRED, I18n::t('ops.install_password_file_option'))
             ->addOption('site-name', null, InputOption::VALUE_REQUIRED, I18n::t('ops.install_site_name_option'))
             ->addOption('domain', null, InputOption::VALUE_REQUIRED, I18n::t('ops.install_domain_option'))
             ->addOption('no-home', null, InputOption::VALUE_NONE, I18n::t('ops.install_no_home_option'));
@@ -110,7 +113,18 @@ final class InstallCommand extends Command
 
             return Command::SUCCESS;
         }
-        $password = $input->getOption('password') ?: (\getenv('ITK_ADMIN_PASSWORD') ?: null);
+        $passwordFile = $input->getOption('password-file');
+        if (\is_string($passwordFile)) {
+            $raw = \is_file($passwordFile) ? @\file_get_contents($passwordFile, false, null, 0, self::MAX_PASSWORD_FILE_BYTES + 1) : false;
+            $password = false === $raw ? '' : \rtrim($raw, "\r\n");
+            if (false === $raw || \strlen($raw) > self::MAX_PASSWORD_FILE_BYTES || '' === $password) {
+                $io->error(I18n::t('ops.install_password_file_invalid'));
+
+                return Command::FAILURE;
+            }
+        } else {
+            $password = $input->getOption('password') ?: (\getenv('ITK_ADMIN_PASSWORD') ?: null);
+        }
         if (!$password && $input->isInteractive()) {
             $q = (new Question(I18n::t('ops.install_password_question')))->setHidden(true)->setHiddenFallback(false);
             $password = $io->askQuestion($q);

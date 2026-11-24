@@ -25,6 +25,7 @@ final class HtmlSanitizer
     private const BLOCK = ['p', 'div', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'blockquote', 'pre', 'section', 'article'];
     /** Tags that start a new line inside a table cell (a cell holds inline text only). */
     private const CELL_BLOCK = ['ul', 'ol', 'li', 'table', 'thead', 'tbody', 'tfoot', 'tr', 'td', 'th', 'caption'];
+    private const URL_CONTROLS = '~[\x00-\x1F\x7F]~';
     private const SAFE_HREF = '~^(https?://|mailto:|tel:|/(?![/\\\\])|#)~i';
     private const SAFE_SRC = '~^(assets/[^"\'<>\s]+|/(?![/\\\\])[^"\'<>\s]+|https?://[^"\'<>\s]+|data:image/(png|jpe?g|webp|gif|avif);base64,[A-Za-z0-9+/=]+)$~i';
 
@@ -335,7 +336,7 @@ final class HtmlSanitizer
                     return '<hr>';
                 case 'img':
                     $src = \trim($node->getAttribute('src'));
-                    if (!\preg_match(self::SAFE_SRC, $src)) {
+                    if (\preg_match(self::URL_CONTROLS, $src) || !\preg_match(self::SAFE_SRC, $src)) {
                         return '';
                     }
 
@@ -366,7 +367,7 @@ final class HtmlSanitizer
                 return '' !== $kids ? "<em>$kids</em>" : '';
             case 'a':
                 $href = \trim($node->getAttribute('href'));
-                if (!\preg_match(self::SAFE_HREF, $href)) {
+                if (\preg_match(self::URL_CONTROLS, $href) || !\preg_match(self::SAFE_HREF, $href)) {
                     return $kids;
                 }
                 $ext = (bool) \preg_match('~^https?:~i', $href);

@@ -18,9 +18,9 @@ final class SecretScrubProcessorTest extends TestCase
     private const TOKEN = 'bot123456:AAFakeToken_x-y';
 
     /** @param array<string, mixed> $context */
-    private function process(array $context, string $message = 'ошибка'): LogRecord
+    private function process(array $context, string $message = 'ошибка', array $extra = []): LogRecord
     {
-        return (new SecretScrubProcessor())(new LogRecord(new \DateTimeImmutable(), 'app', Level::Error, $message, $context));
+        return (new SecretScrubProcessor())(new LogRecord(new \DateTimeImmutable(), 'app', Level::Error, $message, $context, extra: $extra));
     }
 
     private function line(LogRecord $record): string
@@ -71,6 +71,29 @@ final class SecretScrubProcessorTest extends TestCase
         $e = $record->context['exception'];
         self::assertInstanceOf(\Throwable::class, $e->getPrevious());
         self::assertStringNotContainsString('AAFakeToken', (string) $e->getPrevious()?->getPrevious()?->getMessage());
+    }
+
+    #[Test]
+    public function encodedTokensAndDsnCredentialsAreHiddenAtAllBoundaries(): void
+    {
+        $text = 'GET https://api.telegram.org/bot123456%3aAAFakeToken_x-y/getMe smtp://fixture-user:fixture-password@example.test';
+        $record = $this->process(['exception' => new \RuntimeException($text), 'nested' => [$text]], $text, ['transport' => $text]);
+        foreach ([$this->line($record), \Itk\Cms\Health\MessengerMonitor::scrub($text), \Itk\Cms\Request\TelegramConnection::scrub($text)] as $safe) {
+            self::assertStringNotContainsString('AAFakeToken', $safe);
+            self::assertStringNotContainsString('fixture-password', $safe);
+            self::assertStringContainsString('bot***', $safe);
+        }
+        self::assertInstanceOf(ScrubbedThrowable::class, $record->context['exception']);
+    }
+
+    #[Test]
+    public function knownSecretRepresentationsUseTheSamePolicy(): void
+    {
+        $token = 'fixture:Token/with space+plus';
+        $variants = [$token, \rawurlencode($token), \urlencode($token), \base64_encode($token), \substr(\json_encode($token), 1, -1), \str_replace('%3A', '%3a', \rawurlencode($token))];
+        foreach ($variants as $variant) {
+            self::assertSame('error ***', \Itk\Cms\Request\TelegramConnection::scrub('error ' . $variant, [$token]));
+        }
     }
 
     #[Test]

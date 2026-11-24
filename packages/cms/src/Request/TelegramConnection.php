@@ -37,14 +37,7 @@ final class TelegramConnection implements ResetInterface
     /** Error texts of the HTTP client carry the request address, and the address carries the bot token: never show or log it. The same goes for a DSN quoted by a configuration error. */
     public static function scrub(string $message, #[\SensitiveParameter] array $tokens = []): string
     {
-        foreach ($tokens as $token) {
-            if ('' !== $token) {
-                $message = \str_replace([$token, \rawurlencode($token)], '***', $message);
-            }
-        }
-        $message = (string) \preg_replace('~bot\d+(?::|%3A)[A-Za-z0-9_-]+~i', 'bot***', $message);
-
-        return (string) \preg_replace('~([a-z][a-z0-9+.-]*://)[^\s"\'@/]*@~i', '$1***@', $message);
+        return \Itk\Cms\Logging\SecretScrubber::scrub($message, $tokens);
     }
 
     public function scrubError(string $message): string

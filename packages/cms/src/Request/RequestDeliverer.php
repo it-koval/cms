@@ -63,6 +63,14 @@ final class RequestDeliverer
         });
     }
 
+    /** Count the formatted parts in the same locale and channel as the eventual delivery. */
+    public function partCount(Request $request, string $channel, bool $resend): int
+    {
+        $notifier = Request::CHANNEL_MAX === $channel ? $this->max : $this->telegram;
+
+        return $this->locale->runDefault(static fn (): int => \count($notifier->parts($request, $resend)->texts));
+    }
+
     /** A queue failure may race with a worker for the same request, just like a messenger failure. */
     public static function recordQueueFailure(EntityManagerInterface $em, EventDispatcherInterface $events, int $requestId, string $channel, string $error): void
     {

@@ -111,7 +111,7 @@ final class Doctor
         $schema = $this->lint->run();
         $add(I18n::t('ops.doctor_group_schema'), I18n::t('ops.doctor_name_schema'), [] === $schema['errors'] ? HealthResult::ok(I18n::t('ops.doctor_schema_ok')) : HealthResult::fail(\implode('; ', $schema['errors'])));
         if ([] !== $schema['warnings']) {
-            $add(I18n::t('ops.doctor_group_schema'), I18n::t('ops.doctor_name_templates'), HealthResult::warn(\implode('; ', $schema['warnings'])));
+            $add(I18n::t('ops.doctor_group_schema'), I18n::t('ops.doctor_name_schema_warnings'), HealthResult::warn(\implode('; ', $schema['warnings'])));
         }
 
         return $lines;

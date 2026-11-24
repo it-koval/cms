@@ -16,7 +16,7 @@ use Symfony\Component\Routing\Attribute\Route;
  * Requests (заявки). Item: see RequestService::present() (id, dt, locale, form, place, phone, name, city, note, st 'delivered'|'failed', work 'new'|'progress'|'closed'|'spam', comment, log).
  *   GET requests?status=&form=&q=&period=&from=&to=&locale=   newest first. status: a work status or 'failed'. form: the form key or its title
  *   GET requests/counts { total, new, failed }     GET requests/forms ['Заявка на звонок', …]     GET requests/{id}
- *   PATCH requests/{id} { work?, comment? } item   POST requests/{id}/resend { channel? } item (delivery tried again right now: to the messenger 'telegram' | 'max' asked for, else to each one that failed). Item: channels [{channel, state 'pending'|'sent'|'failed', error}].
+ *   PATCH requests/{id} { work?, comment? } item   POST requests/{id}/resend { channel? } item (up to 20 formatted parts synchronously; longer deliveries return 202 + queuedChannels: to the messenger 'telegram' | 'max' asked for, else to each one that failed). Item: channels [{channel, state 'pending'|'sent'|'failed', error}].
  *
  * @internal
  */
@@ -90,6 +90,8 @@ final class RequestsController extends AbstractApiController
     {
         $this->access->require('requests', 'edit');
 
-        return $this->json($this->requests->card($this->requests->resend($id, $this->deliveryChannel($request))));
+        $result = $this->requests->resendResult($id, $this->deliveryChannel($request));
+
+        return $this->json($this->requests->card($result['request']) + ['queuedChannels' => $result['queuedChannels']], [] !== $result['queuedChannels'] ? 202 : 200);
     }
 }

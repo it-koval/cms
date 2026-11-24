@@ -47,6 +47,7 @@ final class ActionsController extends AbstractApiController
     #[Route('/resources/{resource}/actions/{action}', name: 'run', requirements: ['resource' => '[A-Za-z0-9_\-]+', 'action' => '[a-z0-9][a-z0-9_\-]*'], methods: ['POST'])]
     public function run(Request $request, string $resource, string $action): Response
     {
+        $this->access->user() ?? throw new AccessDeniedException(I18n::t('http.sign_in_required'));
         $body = $this->body($request);
         $input = $body['input'] ?? [];
         if (!\is_array($input)) {

@@ -20,8 +20,9 @@ use Symfony\Component\Messenger\MessageBusInterface;
 /** Requests (заявки): accepting them from the site forms, the staff's work on them, delivery to the messengers (Telegram, MAX). */
 final class RequestService
 {
-    /** A field without max() keeps this many characters and one more, the rest is dropped. */
+    /** The effective character limit for a field without max(). */
     public const MAX_LENGTH = 1000;
+    public const MAX_FIELDS = 1000;
 
     public function __construct(
         private readonly EntityManagerInterface $em,
@@ -49,6 +50,7 @@ final class RequestService
      */
     public function submit(string $form, array $input, array $meta = []): Request
     {
+        self::validateInput($input);
         $def = $this->schema->form($form) ?? throw ContentException::notFound(I18n::t('http.request_no_form'));
         if (!$this->settings->acceptsRequests()) {
             throw ContentException::forbidden(I18n::t('http.request_intake_off'));
@@ -64,8 +66,9 @@ final class RequestService
                 continue;
             }
             if (!$empty && \is_string($value)) {
-                if (null !== $f->maxLength() && \mb_strlen($value) > $f->maxLength()) {
-                    $errors[$f->key()] = I18n::t('http.request_field_too_long', ['label' => $f->label(), 'count' => $f->maxLength()]);
+                $max = $f->maxLength() ?? self::MAX_LENGTH;
+                if (\mb_strlen($value) > $max) {
+                    $errors[$f->key()] = I18n::t('http.request_field_too_long', ['label' => $f->label(), 'count' => $max]);
                     continue;
                 }
                 if (null !== $f->regex() && !self::matches($f->regex(), $value)) {
@@ -173,7 +176,7 @@ final class RequestService
     }
 
     /**
-     * Sends the request again, right now (the admin shows the result): to the messenger asked for, else to every messenger that failed,
+     * Sends the request again (up to 20 parts now; longer messages are queued): to the messenger asked for, else to every messenger that failed,
      * else (none failed) to every messenger that is on.
      * A messenger asked for by name is sent «again» only after a failure. One that never got the request (the «Отправить в MAX» button)
      * gets a first send, with no «delivered again» line, and is skipped if a worker delivered it after the drawer was opened.
@@ -182,16 +185,32 @@ final class RequestService
      */
     public function resend(int|string $id, ?string $channel = null): Request
     {
+        return $this->resendResult($id, $channel)['request'];
+    }
+
+    /** @return array{request: Request, queuedChannels: list<string>} */
+    public function resendResult(int|string $id, ?string $channel = null): array
+    {
         $r = $this->find($id);
         if (null !== $channel && !isset(Request::CHANNELS[$channel])) {
             throw ContentException::invalid(I18n::t('http.request_bad_channel'));
         }
+        $queued = [];
         foreach (null !== $channel ? [$channel] : $this->channelsToResend($r) as $one) {
             $again = null === $channel || Request::DELIVERY_FAILED === $r->channelState($one);
-            $this->deliverer->deliver((int) $r->id, $one, $again);
+            if ($this->deliverer->partCount($r, $one, $again) > 20) {
+                try {
+                    $this->bus->dispatch(new SendRequestNotification((int) $r->id, $again, $one));
+                } catch (\Throwable) {
+                    throw new ContentException(I18n::t('http.request_queue_failed'), 502);
+                }
+                $queued[] = $one;
+            } else {
+                $this->deliverer->deliver((int) $r->id, $one, $again);
+            }
         }
 
-        return $r;
+        return ['request' => $r, 'queuedChannels' => $queued];
     }
 
     /** @return list<string> */
@@ -357,6 +376,21 @@ final class RequestService
     private function work(string $w): string
     {
         return 'progress' === $w ? Request::WORK_IN_WORK : $w;
+    }
+
+    /** Shared by HTTP and direct callers; nested values are never silently discarded.
+     * @param array<string, mixed> $input
+     */
+    public static function validateInput(array $input): void
+    {
+        if (\count($input) > self::MAX_FIELDS) {
+            throw ContentException::invalid(I18n::t('http.request_bad_input'));
+        }
+        foreach ($input as $value) {
+            if (null !== $value && !\is_scalar($value)) {
+                throw ContentException::invalid(I18n::t('http.request_bad_input'));
+            }
+        }
     }
 
     private function clean(FieldInterface $f, mixed $raw): string|bool|null

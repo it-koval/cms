@@ -79,7 +79,7 @@ final class MailSettings
      *
      * @return array<string, mixed> view()
      */
-    public function save(array $input): array
+    public function save(#[\SensitiveParameter] array $input): array
     {
         $s = $this->stored();
         $errors = [];
@@ -132,6 +132,10 @@ final class MailSettings
             }
         }
 
+        if (!MailConfig::canSendCredentials($encryption, '' !== $sealed)) {
+            $errors['encryption'] = I18n::t('http.mail_password_requires_tls');
+        }
+
         $moved = \strtolower($host) !== \strtolower(\trim((string) ($s['host'] ?? ''))) || $username !== (string) ($s['username'] ?? '');
         if ($moved && '' !== $sealed && !(\is_string($password) && '' !== $password) && !isset($errors['password'])) {
             $errors['password'] = I18n::t('http.mail_server_changed');
@@ -173,7 +177,7 @@ final class MailSettings
     }
 
     /** @param array<string, mixed> $s */
-    private function password(array $s): string
+    private function password(#[\SensitiveParameter] array $s): string
     {
         $sealed = (string) ($s['password'] ?? '');
 

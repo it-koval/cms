@@ -90,7 +90,7 @@ final class MaxNotifier implements ChannelNotifier
             return ChannelOutcome::pending();
         }
 
-        $parts = MessageParts::max($this->buildText($r, $resend));
+        $parts = $this->parts($r, $resend);
         $errors = [];
         foreach ($chats as $chat) {
             foreach ($parts->texts as $i => $text) {
@@ -155,6 +155,12 @@ final class MaxNotifier implements ChannelNotifier
     public function buildText(Request $r, bool $resend = false): string
     {
         return RequestText::build($this->schema, $r, $resend, self::escape(...));
+    }
+
+    /** The exact formatter used by delivery and by the synchronous resend limit. */
+    public function parts(Request $r, bool $resend = false): MessageParts
+    {
+        return MessageParts::max($this->buildText($r, $resend));
     }
 
     /** MAX takes &, <, > and " as named entities; HtmlSanitizer::escape writes the apostrophe as a numeric entity, and MAX may show those as they are. */

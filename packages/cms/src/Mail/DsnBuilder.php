@@ -4,18 +4,21 @@ declare(strict_types=1);
 
 namespace Itk\Cms\Mail;
 
+use Itk\Cms\Logging\SecretScrubber;
+
 /**
  * The settings of «Почта» as a Symfony Mailer DSN. Login and password are percent-encoded, so «@», «:», «/», «#», «%» and spaces in them cannot change the meaning of the address.
- *   none      smtp://login:pass@host:25?auto_tls=false   no encryption at all
+ *   none      smtp://host:25?auto_tls=false              no encryption, no password
  *   ssl       smtps://login:pass@host:465                the connection is encrypted from the first byte (SSL/TLS)
  *   starttls  smtp://login:pass@host:587?require_tls=1   starts plain and upgrades to TLS; no letter goes out if the server cannot.
  */
 final class DsnBuilder
 {
-    private const MIN_CLEANED = 4;
-
     public static function build(MailConfig $c): string
     {
+        if (!$c->hasSafeCredentials()) {
+            throw new \InvalidArgumentException('SMTP authentication with a password requires TLS.');
+        }
         $auth = '';
         if ('' !== $c->username) {
             $auth = \rawurlencode($c->username) . ('' !== $c->password ? ':' . \rawurlencode($c->password) : '') . '@';
@@ -35,23 +38,8 @@ final class DsnBuilder
      *
      * @param list<string> $secrets
      */
-    public static function clean(string $text, array $secrets): string
+    public static function clean(string $text, #[\SensitiveParameter] array $secrets): string
     {
-        $forms = [];
-        foreach ($secrets as $secret) {
-            if ('' === $secret) {
-                continue;
-            }
-            foreach ([$secret, \rawurlencode($secret), \urlencode($secret), \base64_encode($secret), \htmlspecialchars($secret)] as $form) {
-                if (\strlen($form) >= self::MIN_CLEANED) { // a login or password of one or two signs would garble the whole text, and it would not reveal much anyway
-                    $forms[$form] = true;
-                }
-            }
-        }
-        // the longest first: a short password must not break a longer form of another
-        $forms = \array_keys($forms);
-        \usort($forms, static fn (string $a, string $b): int => \strlen($b) <=> \strlen($a));
-
-        return \str_replace($forms, '***', $text);
+        return SecretScrubber::scrub($text, $secrets, minLength: 4); // short usernames in free text would hide ordinary words
     }
 }

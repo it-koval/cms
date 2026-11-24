@@ -82,6 +82,7 @@
 'http.mail_ready_settings': 'Почта настроена через «Настройки → Почта»'
 'http.mail_server_changed': 'Сервер изменился — введите пароль заново'
 'http.mail_encryption_choose': 'Выберите, как защищено соединение'
+'http.mail_password_requires_tls': 'Выберите STARTTLS или SSL/TLS перед сохранением пароля SMTP.'
 'http.mail_port_invalid': 'Порт — число от 1 до 65535, например 587'
 'http.mail_host_invalid': 'Адрес сервера — имя вроде smtp.example.com, без http:// и пробелов'
 'http.mail_username_invalid': 'Логин не длиннее 255 знаков, без переводов строки'
@@ -143,7 +144,6 @@
 'http.request_bad_channel': 'Неизвестный мессенджер'
 'http.no_such_user': 'Пользователя «{email}» нет.'
 'http.user_removed': 'Пользователь удалён.'
-'http.account_closed': 'Доступ закрыт. Обратитесь к администратору сайта.'
 'http.no_role': 'Без роли'
 'http.password_locked': 'Слишком много попыток. Подождите 15 минут и попробуйте снова'
 'http.password_current_wrong': 'Текущий пароль не подошёл'
@@ -261,3 +261,7 @@
 'http.telegram_problem_token': 'Задайте токен Telegram в «Настройки → Боты мессенджеров»'
 'http.max_problem_client': 'Для отправки в MAX установите yuri-kovalev/max-bot-symfony-bundle'
 'http.max_problem_token': 'Задайте токен MAX в «Настройки → Боты мессенджеров»'
+
+'http.request_body_too_large': 'Форма слишком большая. Сократите её и отправьте снова.'
+'http.request_bad_input': 'Передайте поля формы как текст, числа или значения да/нет.'
+'http.request_queue_failed': 'Не удалось поставить заявку в очередь. Попробуйте отправить её снова.'

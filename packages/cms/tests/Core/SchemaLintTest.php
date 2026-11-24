@@ -67,4 +67,17 @@ final class SchemaLintTest extends KernelTestCase
 
         self::assertNotNull(self::getContainer()->get(\Itk\Cms\Schema\Schema::class)->section('ghost'), 'in prod the schema is not checked on every request: itk:schema:lint does it');
     }
+
+    #[Test]
+    public function aFormWithoutMaxWarnsWithoutFailingLint(): void
+    {
+        self::bootKernel(['itk' => ['schema_file' => __DIR__ . '/Fixture/schema_f1_input.php']]);
+        $tester = $this->lint();
+        self::assertSame(0, $tester->getStatusCode());
+        self::assertStringContainsString('f1_input', $tester->getDisplay());
+        self::assertStringContainsString('1000', $tester->getDisplay());
+        $warnings = self::getContainer()->get(\Itk\Cms\Schema\SchemaLint::class)->run()['warnings'];
+        self::assertTrue((bool) \array_filter($warnings, static fn (string $warning): bool => \str_contains($warning, 'f1_input') && \str_contains($warning, 'text')));
+        self::assertFalse((bool) \array_filter($warnings, static fn (string $warning): bool => \str_contains($warning, 'f1_input') && (\str_contains($warning, 'explicit') || \str_contains($warning, 'consent'))));
+    }
 }

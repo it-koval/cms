@@ -8,6 +8,7 @@ use Doctrine\Migrations\Version\Comparator;
 use Itk\Cms\Admin\Theme\AdminTheme;
 use Itk\Cms\Admin\Theme\Color;
 use Itk\Cms\Content\PageService;
+use Itk\Cms\Controller\Site\RequestSubmitController;
 use Itk\Cms\Doctrine\JsonFirstValue;
 use Itk\Cms\Doctrine\JsonGet;
 use Itk\Cms\Doctrine\JsonNumber;
@@ -19,6 +20,7 @@ use Itk\Cms\I18n\ContentLocales;
 use Itk\Cms\I18n\I18n;
 use Itk\Cms\Mail\PublicUrl;
 use Itk\Cms\Media\ImageVariants;
+use Itk\Cms\Request\RequestRetryStrategy;
 use Symfony\Component\Config\Definition\Configurator\DefinitionConfigurator;
 use Symfony\Component\Config\Definition\Exception\InvalidConfigurationException;
 use Symfony\Component\Console\Command\LazyCommand;
@@ -340,6 +342,15 @@ final class ItkCmsBundle extends AbstractBundle
                 ->scalarNode('upload_dir')->defaultValue('%kernel.project_dir%/public/uploads/media')->end()
                 ->scalarNode('upload_url')->defaultValue('/uploads/media')->end()
                 ->integerNode('max_upload_mb')->defaultValue(20)->min(1)->end()
+                ->arrayNode('requests')
+                    ->addDefaultsIfNotSet()
+                    ->children()
+                        ->integerNode('max_body')
+                            ->info('Largest public form submission body, in bytes')
+                            ->defaultValue(RequestSubmitController::DEFAULT_MAX_BODY)->min(1)->max(\PHP_INT_MAX - 1)
+                        ->end()
+                    ->end()
+                ->end()
                 ->arrayNode('images')
                     ->info('Resized WebP variants of uploaded images: /uploads/media/_v/w{width}/Y/m/name.webp, made on the first request and kept as static files')
                     ->addDefaultsIfNotSet()
@@ -493,6 +504,7 @@ final class ItkCmsBundle extends AbstractBundle
         $parameters->set('itk_cms.upload_dir', $config['upload_dir']);
         $parameters->set('itk_cms.upload_url', $config['upload_url']);
         $parameters->set('itk_cms.max_upload_mb', $config['max_upload_mb']);
+        $parameters->set('itk_cms.requests.max_body', $config['requests']['max_body']);
         $widths = \array_values(\array_unique(\array_map('intval', $config['images']['widths'])));
         \sort($widths);
         $parameters->set('itk_cms.images.widths', $widths);
@@ -603,6 +615,11 @@ final class ItkCmsBundle extends AbstractBundle
                         'limit' => 5,
                         'interval' => '15 minutes',
                     ],
+                    'itk_two_factor' => [
+                        'policy' => 'fixed_window',
+                        'limit' => 5,
+                        'interval' => '15 minutes',
+                    ],
                     // «Забыли пароль?»: ten asks an hour from one visitor, three letters an hour to one address, ten wrong links in 15 minutes from one visitor
                     'itk_password_reset_ip' => [
                         'policy' => 'sliding_window',
@@ -649,6 +666,7 @@ final class ItkCmsBundle extends AbstractBundle
                         'Itk\\Cms\\Media\\GenerateImageVariants' => 'async',
                         'Itk\\Cms\\Mail\\SendMail' => 'async',
                         'Itk\\Cms\\Security\\RequestPasswordLink' => 'async',
+                        'Itk\\Cms\\Security\\DeliverPasswordLink' => 'async',
                         'Itk\\Cms\\IndexNow\\Model\\PingIndexNow' => 'async',
                         'Itk\\Cms\\CriticalCss\\Model\\GenerateCriticalCss' => 'critical_css',
                         'Itk\\Cms\\KnowledgeBase\\Model\\SyncKnowledge' => 'knowledge_base',
@@ -682,7 +700,10 @@ final class ItkCmsBundle extends AbstractBundle
 
         $out = [];
         if (!isset($transports['async'])) {
-            $out['transports']['async'] = 'doctrine://default';
+            $out['transports']['async'] = [
+                'dsn' => 'doctrine://default',
+                'retry_strategy' => ['service' => RequestRetryStrategy::class],
+            ];
         }
         if (!isset($transports['critical_css'])) {
             $out['transports']['critical_css'] = 'doctrine://default?queue_name=critical_css';

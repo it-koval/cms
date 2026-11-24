@@ -74,6 +74,7 @@ final class LongRequestDeliveryTest extends WebTestCase
                 $settings->set($key, $value);
             }
         }
+        $em->createQuery("DELETE FROM Itk\\Cms\\Entity\\User u WHERE u.email = 'test-f1-resend@example.com'")->execute();
         parent::tearDown();
     }
 
@@ -485,5 +486,157 @@ final class LongRequestDeliveryTest extends WebTestCase
         self::assertTrue($outcome->isFailed());
         self::assertStringStartsWith(self::CHATS[$channel] . ': ', (string) $outcome->error);
         self::assertStringNotContainsString('часть', (string) $outcome->error);
+    }
+
+    #[Test]
+    #[DataProvider('f1ResendSizes')]
+    public function f1ResendUsesTheSelectedChannelActualParts(string $channel, int $parts): void
+    {
+        $limit = 'telegram' === $channel ? 4096 : 4000;
+        $r = self::request(['items' => \str_repeat('x', $limit * ($parts - 1) - 100)], 'long_f1_resend');
+        $r->markChannel($channel, Request::DELIVERY_FAILED, 'earlier test refusal');
+        self::assertCount($parts, $this->notifier($channel)->parts($r, true)->texts, 'the actual resend formatter defines the boundary');
+        $em = self::getContainer()->get(EntityManagerInterface::class);
+        $em->persist($r);
+        $em->flush();
+        $queued = [];
+        $middleware = new class($queued) implements \Symfony\Component\Messenger\Middleware\MiddlewareInterface {
+            public function __construct(public array &$queued)
+            {
+            }
+
+            public function handle(\Symfony\Component\Messenger\Envelope $envelope, \Symfony\Component\Messenger\Middleware\StackInterface $stack): \Symfony\Component\Messenger\Envelope
+            {
+                $this->queued[] = $envelope->getMessage();
+
+                return $envelope;
+            }
+        };
+        $service = $this->f1Service(new \Symfony\Component\Messenger\MessageBus([$middleware]));
+        $result = $service->resendResult((int) $r->id, $channel);
+        self::assertSame($parts > 20 ? [$channel] : [], $result['queuedChannels']);
+        if ($parts > 20) {
+            self::assertCount(1, $queued);
+            self::assertSame($channel, $queued[0]->channel);
+            self::assertSame((int) $r->id, $queued[0]->requestId);
+            self::assertSame([], $this->api->texts($channel), 'HTTP did not deliver');
+            (new \Itk\Cms\Request\SendRequestNotificationHandler(new RequestDeliverer($em, $this->telegram, $this->max, self::getContainer()->get(AdminLocale::class))))($queued[0]);
+        }
+        self::assertCount($parts, $this->api->texts($channel));
+        self::assertSame(Request::DELIVERY_SENT, $r->channelState($channel));
+    }
+
+    public static function f1ResendSizes(): iterable
+    {
+        foreach (['telegram', 'max'] as $channel) {
+            foreach ([20, 21] as $parts) {
+                yield $channel . $parts => [$channel, $parts];
+            }
+        }
+    }
+
+    private function f1Service(\Symfony\Component\Messenger\MessageBusInterface $bus): \Itk\Cms\Request\RequestService
+    {
+        $c = self::getContainer();
+
+        return new \Itk\Cms\Request\RequestService(
+            $c->get(EntityManagerInterface::class),
+            $c->get(\Itk\Cms\Repository\RequestRepository::class),
+            $c->get(Schema::class),
+            $c->get(SettingsService::class),
+            $this->telegram,
+            $this->max,
+            new RequestDeliverer($c->get(EntityManagerInterface::class), $this->telegram, $this->max, $c->get(AdminLocale::class)),
+            $c->get(\Itk\Cms\Notification\NotifierInterface::class),
+            $bus,
+            'f1-secret',
+            'ru',
+        );
+    }
+
+    #[Test]
+    public function f1FailedQueueDispatchCannotReportAcceptance(): void
+    {
+        $r = self::request(['items' => \str_repeat('x', 85000)], 'long_f1_resend');
+        $em = self::getContainer()->get(EntityManagerInterface::class);
+        $em->persist($r);
+        $em->flush();
+        $bus = $this->createMock(\Symfony\Component\Messenger\MessageBusInterface::class);
+        $bus->expects(self::once())->method('dispatch')->willThrowException(new \RuntimeException('unavailable'));
+        try {
+            $this->f1Service($bus)->resendResult((int) $r->id, 'telegram');
+            self::fail('a rejected dispatch must not report queued');
+        } catch (\Itk\Cms\Content\ContentException $e) {
+            self::assertSame(502, $e->status());
+            self::assertSame(Request::DELIVERY_PENDING, $r->delivery);
+            self::assertSame([], $this->api->texts('telegram'));
+        }
+    }
+
+    public static function f1HttpCases(): iterable
+    {
+        yield '20 stays synchronous' => [20, false, 200];
+        yield '21 accepted in queue' => [21, false, 202];
+        yield 'queue rejected' => [21, true, 502];
+        yield 'health synchronous' => [20, false, 200, true];
+        yield 'health queued' => [21, false, 202, true];
+        yield 'health queue rejected' => [21, true, 502, true];
+    }
+
+    #[Test]
+    #[DataProvider('f1HttpCases')]
+    public function f1HttpResendSeparatesQueueAcceptanceFromDelivery(int $parts, bool $reject, int $status, bool $health = false): void
+    {
+        $client = static::getClient();
+        $client->disableReboot();
+        $c = self::getContainer();
+        $r = self::request(['items' => \str_repeat('x', 4096 * ($parts - 1) - 100)], 'long_f1_resend');
+        $r->markChannel('telegram', Request::DELIVERY_FAILED, 'earlier test refusal');
+        self::assertCount($parts, $this->telegram->parts($r, true)->texts, 'the actual resend formatter defines the boundary');
+        $em = $c->get(EntityManagerInterface::class);
+        $em->persist($r);
+        $em->flush();
+        $bus = $this->createMock(\Symfony\Component\Messenger\MessageBusInterface::class);
+        if ($parts > 20) {
+            $expectation = $bus->expects(self::once())->method('dispatch');
+            if ($reject) {
+                $expectation->willThrowException(new \RuntimeException('test queue refusal'));
+            } else {
+                $expectation->willReturnCallback(static fn ($message) => new \Symfony\Component\Messenger\Envelope($message));
+            }
+        } else {
+            $bus->expects(self::never())->method('dispatch');
+        }
+        $c->set(\Itk\Cms\Request\RequestService::class, $this->f1Service($bus));
+        $admin = $c->get(\Itk\Cms\Security\UserManager::class)->create('test-f1-resend@example.com', 'F1 resend', 'admin', 'f1-harmless-password');
+        $client->loginUser($admin, 'itk_admin');
+        $client->request('GET', '/admin');
+        \preg_match('/"csrf":"([a-f0-9]+)"/', (string) $client->getResponse()->getContent(), $match);
+        $client->jsonRequest('POST', '/admin/api/' . ($health ? 'health/requests/' : 'requests/') . $r->id . '/resend', ['channel' => 'telegram'], ['HTTP_X_CSRF_TOKEN' => $match[1]]);
+        self::assertSame($status, $client->getResponse()->getStatusCode());
+        $out = \json_decode((string) $client->getResponse()->getContent(), true);
+        if (!$reject) {
+            self::assertSame($parts > 20 ? ['telegram'] : [], $out['queuedChannels']);
+        }
+        self::assertCount($parts > 20 ? 0 : 20, $this->api->texts('telegram'));
+    }
+
+    #[Test]
+    #[DataProvider('channels')]
+    public function f1ResendCountsEscapedPartsOnlyInTheChosenChannel(string $channel): void
+    {
+        $r = self::request(['items' => \str_repeat('&', 16400)], 'long_f1_resend');
+        $em = self::getContainer()->get(EntityManagerInterface::class);
+        $em->persist($r);
+        $em->flush();
+        $bus = $this->createMock(\Symfony\Component\Messenger\MessageBusInterface::class);
+        if ('max' === $channel) {
+            $bus->expects(self::once())->method('dispatch')->willReturnCallback(static fn ($message) => new \Symfony\Component\Messenger\Envelope($message));
+        } else {
+            $bus->expects(self::never())->method('dispatch');
+        }
+        $out = $this->f1Service($bus)->resendResult((int) $r->id, $channel);
+        self::assertSame('max' === $channel ? ['max'] : [], $out['queuedChannels']);
+        self::assertCount('max' === $channel ? 0 : 5, $this->api->texts($channel));
     }
 }

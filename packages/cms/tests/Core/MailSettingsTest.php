@@ -104,14 +104,15 @@ final class MailSettingsTest extends WebTestCase
     #[Test]
     public function aSecretIsCutOutOfAnyTextInEveryForm(): void
     {
-        $text = 'AUTH failed for ' . self::SECRET . ' / ' . \rawurlencode(self::SECRET) . ' / ' . \base64_encode(self::SECRET);
+        $lowercaseEscape = \str_replace('%3A', '%3a', \rawurlencode(self::SECRET));
+        $text = 'AUTH failed for ' . self::SECRET . ' / ' . \rawurlencode(self::SECRET) . ' / ' . \base64_encode(self::SECRET) . ' / ' . $lowercaseEscape;
 
         $clean = DsnBuilder::clean($text, [self::SECRET, '']);
 
         self::assertStringNotContainsString(self::SECRET, $clean);
         self::assertStringNotContainsString(\rawurlencode(self::SECRET), $clean);
         self::assertStringNotContainsString(\base64_encode(self::SECRET), $clean);
-        self::assertSame('AUTH failed for *** / *** / ***', $clean);
+        self::assertSame('AUTH failed for *** / *** / *** / ***', $clean);
     }
 
     #[Test]
@@ -253,7 +254,7 @@ final class MailSettingsTest extends WebTestCase
         $this->signIn();
         // nobody listens on port 1: the connection is refused, the login and password are in the DSN
         $this->api('PUT', 'settings/mail', [
-            'enabled' => true, 'host' => '127.0.0.1', 'port' => 1, 'encryption' => 'none', 'username' => 'robot', 'password' => self::SECRET, 'fromAddress' => 'test-site@example.com',
+            'enabled' => true, 'host' => '127.0.0.1', 'port' => 1, 'encryption' => 'starttls', 'username' => 'robot', 'password' => self::SECRET, 'fromAddress' => 'test-site@example.com',
         ]);
 
         $fail = $this->api('POST', 'settings/mail-test', ['to' => 'test-mail-test@example.com'], 502);
@@ -299,6 +300,27 @@ final class MailSettingsTest extends WebTestCase
 
         self::assertFalse($state['configured']);
         self::assertFalse($state['envFallback']);
+    }
+
+    #[Test]
+    public function anExistingUnencryptedSmtpPasswordIsReportedAndCannotBeUsed(): void
+    {
+        $this->signIn(email: 'test-f1-mail-' . \bin2hex(\random_bytes(8)) . '@example.com');
+        $this->api('PUT', 'settings/mail', [
+            'enabled' => true, 'host' => 'smtp.example.test', 'encryption' => 'starttls',
+            'username' => 'fixture', 'password' => self::SECRET, 'fromAddress' => 'site@example.test',
+        ]);
+        $em = self::getContainer()->get(EntityManagerInterface::class);
+        $row = $em->find(Setting::class, ['key' => MailSettings::KEY, 'locale' => Setting::ALL]);
+        $row->value['encryption'] = 'none'; // simulate the setting written by the previous version
+        $em->flush();
+
+        $state = $this->api('GET', 'settings/mail');
+        self::assertTrue($state['passwordSet']);
+        self::assertFalse($state['configured']);
+        self::assertStringContainsString('STARTTLS', $state['problem']);
+        $this->api('POST', 'settings/mail-test', ['to' => 'never-sent@example.test'], 422);
+        self::assertTrue($this->api('PUT', 'settings/mail', ['encryption' => 'starttls'])['configured']);
     }
 
     #[Test]

@@ -1,0 +1,97 @@
+[
+  {
+    "name": "'https://example.test/path?x=1&y=2'",
+    "html": "<p><a href=\"https://example.test/path?x=1&amp;y=2\">link</a></p>",
+    "expected": "<p><a href=\"https://example.test/path?x=1&amp;y=2\" target=\"_blank\" rel=\"noopener noreferrer\">link</a></p>"
+  },
+  {
+    "name": "'http://example.test'",
+    "html": "<p><a href=\"http://example.test\">link</a></p>",
+    "expected": "<p><a href=\"http://example.test\" target=\"_blank\" rel=\"noopener noreferrer\">link</a></p>"
+  },
+  {
+    "name": "'mailto:a@example.test'",
+    "html": "<p><a href=\"mailto:a@example.test\">link</a></p>",
+    "expected": "<p><a href=\"mailto:a@example.test\">link</a></p>"
+  },
+  {
+    "name": "'tel:+10000000000'",
+    "html": "<p><a href=\"tel:+10000000000\">link</a></p>",
+    "expected": "<p><a href=\"tel:+10000000000\">link</a></p>"
+  },
+  {
+    "name": "'/catalog'",
+    "html": "<p><a href=\"/catalog\">link</a></p>",
+    "expected": "<p><a href=\"/catalog\">link</a></p>"
+  },
+  {
+    "name": "'#part'",
+    "html": "<p><a href=\"#part\">link</a></p>",
+    "expected": "<p><a href=\"#part\">link</a></p>"
+  },
+  {
+    "name": "'//example.test'",
+    "html": "<p><a href=\"//example.test\">link</a></p>",
+    "expected": "<p>link</p>"
+  },
+  {
+    "name": "'/\\\\example.test'",
+    "html": "<p><a href=\"/\\example.test\">link</a></p>",
+    "expected": "<p>link</p>"
+  },
+  {
+    "name": "'/\\t/catalog'",
+    "html": "<p><a href=\"/\t/catalog\">link</a></p>",
+    "expected": "<p>link</p>"
+  },
+  {
+    "name": "'/\\n/catalog'",
+    "html": "<p><a href=\"/\n/catalog\">link</a></p>",
+    "expected": "<p>link</p>"
+  },
+  {
+    "name": "'https://exam\\rple.test'",
+    "html": "<p><a href=\"https://exam\rple.test\">link</a></p>",
+    "expected": "<p>link</p>"
+  },
+  {
+    "name": "'mailto:a\\x7f@example.test'",
+    "html": "<p><a href=\"mailto:a@example.test\">link</a></p>",
+    "expected": "<p>link</p>"
+  },
+  {
+    "name": "'javascript:noop'",
+    "html": "<p><a href=\"javascript:noop\">link</a></p>",
+    "expected": "<p>link</p>"
+  },
+  {
+    "name": "'data:text/plain,hello'",
+    "html": "<p><a href=\"data:text/plain,hello\">link</a></p>",
+    "expected": "<p>link</p>"
+  },
+  {
+    "name": "encoded tab",
+    "html": "<p><a href=\"/&#9;/catalog\">link</a></p>",
+    "expected": "<p>link</p>"
+  },
+  {
+    "name": "image protocol relative",
+    "html": "<img src=\"//example.test/photo.png\" alt=\"photo\">",
+    "expected": ""
+  },
+  {
+    "name": "image backslash host",
+    "html": "<img src=\"/\\example.test/photo.png\" alt=\"photo\">",
+    "expected": ""
+  },
+  {
+    "name": "image local",
+    "html": "<img src=\"/photo.png\" alt=\"photo\">",
+    "expected": "<img src=\"/photo.png\" alt=\"photo\">"
+  },
+  {
+    "name": "image control character",
+    "html": "<img src=\"/photo.png\" alt=\"photo\">",
+    "expected": ""
+  }
+]

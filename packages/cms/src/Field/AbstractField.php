@@ -14,7 +14,7 @@ use Itk\Cms\Security\Viewer;
  * (admin/src/utils/fields.js): { k, t, label, max?, req?, help?, rows?, rich?, article?, opts?, sub?, … }
  * + { list: { show, sortable, width }, filter: { kind, options }|null, detail }.
  */
-abstract class AbstractField implements FieldInterface
+abstract class AbstractField implements PublicFieldInterface
 {
     /**
      * The field as the admin receives it (short keys of the admin shape: k, t, label, req, help, …); toArray() starts from it.
@@ -445,8 +445,6 @@ abstract class AbstractField implements FieldInterface
 
     /**
      * Is the field for everybody (no canSee())? The knowledge base indexes only such fields, so that every chunk is text any viewer may read.
-     *
-     * @internal
      */
     public function isPublic(): bool
     {

@@ -13,6 +13,7 @@ use Itk\Cms\Field\FieldInterface;
 use Itk\Cms\Field\Headline;
 use Itk\Cms\Field\Image;
 use Itk\Cms\Field\Photos;
+use Itk\Cms\Field\PublicFieldInterface;
 use Itk\Cms\Field\Repeater;
 use Itk\Cms\Field\Select;
 use Itk\Cms\Field\Text;
@@ -28,7 +29,7 @@ use Itk\Cms\Schema\Schema;
  * What is never indexed, so that every chunk is public and no consumer needs to filter by viewer:
  *   the draft (only LiveSource::$published reaches here), hidden sections, section types the schema does not know (the renderer skips them),
  *   raw() fields (embed codes, scripts), Note, the variant() select, Number, Toggle, Date, DateTime, Link, Relation,
- *   and any field with canSee() (AbstractField::isPublic() false).
+ *   and fields without an explicit public-visibility contract or with isPublic() false.
  *
  * @internal
  */
@@ -228,7 +229,7 @@ final class Extractor
      */
     private function contribution(FieldInterface $f, mixed $value): array|string|null
     {
-        if ($f->isNote() || $f->isRaw() || ($f instanceof AbstractField && !$f->isPublic())) {
+        if ($f->isNote() || $f->isRaw() || !$f instanceof PublicFieldInterface || !$f->isPublic()) {
             return null;
         }
 
@@ -240,7 +241,18 @@ final class Extractor
             $f instanceof Image => self::line(\is_array($value) ? ($value['alt'] ?? null) : null),
             $f instanceof Photos => self::alts($value),
             $f instanceof Repeater => 'repeater',
-            default => null,
+            // Custom implementations opt into the public contract and one of the supported text formats.
+            // Core classes keep their explicit policy above (Date, for example, also has wire type "text").
+            default => $f instanceof AbstractField ? null : match ($f->type()) {
+                'text' => self::line($value),
+                'headline' => 'heading',
+                'textarea' => $f->isRich() ? 'runs' : self::line($value),
+                'select' => $this->choice($f, $value),
+                'image' => self::line(\is_array($value) ? ($value['alt'] ?? null) : null),
+                'photos' => self::alts($value),
+                'repeater' => 'repeater',
+                default => null,
+            },
         };
     }
 

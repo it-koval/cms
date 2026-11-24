@@ -8,6 +8,7 @@ All notable changes to ITK CMS are recorded in this file. The format follows [Ke
 
 ### Added
 
+- `itk_cms.requests.max_body` sets the byte limit for public form submissions. `itk:install --password-file` reads the first administrator password from a mounted secret.
 - Multilingual SEO emits reciprocal `hreflang` links, including `x-default` for an indexable main version. Published pages use their own canonical URL when none is set. The sitemap covers every indexable language version, and `llms.txt` groups pages by language. Both generated files refresh after committed page changes and revalidate with content ETags.
 - `itk:doctor` checks language prefixes, home pages, missing translations in settings and menus, and overrides of generated crawler files.
 - Public routes serve published language versions at addresses such as `/kk/about`.
@@ -19,6 +20,9 @@ All notable changes to ITK CMS are recorded in this file. The format follows [Ke
 
 ### Changed
 
+- Forms use a 1,000-character limit for fields without `max()`. Schema lint and Site status report those fields. MCP `request_get` reads up to 6,000 characters of each form value.
+- The default async transport retries request delivery after 60, 120 and 240 seconds. A manual resend of more than 20 parts per channel is queued and the admin panel confirms it.
+- Page templates grant Author access via `forAuthors()`. Media usage calls require a `Viewer`. Custom fields may opt into knowledge-base extraction via `PublicFieldInterface`.
 - `GET /admin/api/collections/{col}` always returns the paginated object `{ items, total, page, perPage, facets, metrics }`. Search, filters, status and translation selection apply before counting and pagination. Published versions with unpublished changes are included in the `draft` filter. Clients must read `items` and request further pages. See [UPGRADE.md](UPGRADE.md#030).
 - IndexNow submits the affected paths for all configured languages. Critical CSS is generated for the published versions of those languages.
 - Publishing or removing a translation refreshes the cached HTML and ETag of the other versions of the same page.
@@ -29,6 +33,18 @@ All notable changes to ITK CMS are recorded in this file. The format follows [Ke
 - The admin API uses a shared language check and returns `422` for a code outside an explicitly configured list.
 - On sites with several configured languages, page versions use their language's address prefix. The main language's addresses cannot start with another configured language's path segment.
 - PHP and the admin editor transliterate Kazakh letters when generating slugs.
+
+### Fixed
+
+- Malformed or nested JSON in public forms returns a validation error. Oversized submissions return HTTP 413 before decoding.
+- An existing SMTP setting with a password and disabled encryption reports how to restore mail delivery.
+
+### Security
+
+- Collection actions require sign-in and permission. Blocking a user revokes their next admin request, and sign-in failures use the same public message. Two-step sign-in serializes verification and limits attempts per person.
+- Password links use a configured or trusted site address. Queue jobs no longer carry rendered password links. The worker revokes each failed attempt's link.
+- SMTP passwords require TLS. Sensitive parameters and transport errors use credential redaction. The Docker kit reads the administrator password from a mounted file.
+- PHP and the admin editor reject control characters in HTML URLs. Critical CSS runs Chrome in its sandbox and restricts connections to the local render server. The search embedding cache is bounded.
 
 ## [0.2.2] - 2026-11-22
 

@@ -82,6 +82,7 @@
 'http.mail_ready_settings': 'Mail is set up via “Settings → Mail”'
 'http.mail_server_changed': 'The server has changed: enter the password again'
 'http.mail_encryption_choose': 'Choose how the connection is secured'
+'http.mail_password_requires_tls': 'Choose STARTTLS or SSL/TLS before saving an SMTP password.'
 'http.mail_port_invalid': 'The port is a number from 1 to 65535, for example 587'
 'http.mail_host_invalid': 'The server address is a name like smtp.example.com, without http:// or spaces'
 'http.mail_username_invalid': 'The login is at most 255 characters, with no line breaks'
@@ -143,7 +144,6 @@
 'http.request_bad_channel': 'Unknown messenger'
 'http.no_such_user': 'There is no user “{email}”.'
 'http.user_removed': 'The user was deleted.'
-'http.account_closed': 'Your access is blocked. Contact the site administrator.'
 'http.no_role': 'No role'
 'http.password_locked': 'Too many attempts. Wait 15 minutes and try again'
 'http.password_current_wrong': 'The current password was not accepted'
@@ -261,3 +261,7 @@
 'http.telegram_problem_token': 'Set a Telegram token in Settings → Messenger bots'
 'http.max_problem_client': 'Install yuri-kovalev/max-bot-symfony-bundle to send to MAX'
 'http.max_problem_token': 'Set a MAX token in Settings → Messenger bots'
+
+'http.request_body_too_large': 'The form is too large. Shorten it and send it again.'
+'http.request_bad_input': 'Send form fields as text, numbers or yes/no values.'
+'http.request_queue_failed': 'The request could not be queued. Try sending it again.'

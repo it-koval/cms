@@ -24,6 +24,10 @@ final class SendMailHandler
 
     public function __invoke(SendMail $mail): void
     {
+        // Pre-0.3 queued password letters contain raw tokens. They are superseded by delivery jobs.
+        if (\in_array($mail->kind, [SendMail::RESET, SendMail::INVITE], true)) {
+            return;
+        }
         $this->mailer->deliver($mail);
         if (SendMail::REQUEST === $mail->kind && null !== $mail->ref) {
             try {

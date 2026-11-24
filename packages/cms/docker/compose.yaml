@@ -8,10 +8,9 @@ x-php-env: &php-env
   MAILER_DSN: smtp://mailer:1025
   MESSENGER_TRANSPORT_DSN: doctrine://default?auto_setup=0
   DEFAULT_URI: http://localhost:${HTTP_PORT:-8080}
-  # the first administrator is created by itk:install at php start when both are set;
+  # the first administrator is created at php start when this address and the secret below are set;
   # otherwise: docker compose exec php bin/console itk:install --email=you@example.com
   ADMIN_EMAIL: ${ADMIN_EMAIL:-}
-  ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
   SITE_NAME: ${SITE_NAME:-}
   SITE_DOMAIN: ${SITE_DOMAIN:-}
   # Symfony Flex must not add its own Docker files to the site (it would duplicate `database` in compose.yaml)
@@ -33,6 +32,9 @@ services:
   php:
     build: *php-build
     environment: *php-env
+    # Optional: enable this and the top-level secrets block to create the first administrator at startup.
+    # secrets:
+    #   - itk_admin_password
     volumes:
       - ./:/app
       # To develop the bundle itself, mount a local checkout of it-koval/cms: uncomment the three lines marked "bundle",
@@ -102,3 +104,7 @@ services:
 
 volumes:
   postgres_data:
+
+# secrets:
+#   itk_admin_password:
+#     file: ${ITK_ADMIN_PASSWORD_FILE:?Set ITK_ADMIN_PASSWORD_FILE to the path of the administrator password file}

@@ -205,7 +205,7 @@ final class MessengerMonitor
     /** Error texts are shown on the screen: the bot token of a Telegram address never goes there, and a long trace is cut. */
     public static function scrub(string $text): string
     {
-        $text = \preg_replace('~bot\d+:[A-Za-z0-9_-]+~', 'bot***', $text) ?? $text;
+        $text = \Itk\Cms\Logging\SecretScrubber::scrub($text);
 
         return \mb_strlen($text) > 400 ? \mb_substr($text, 0, 400) . '…' : $text;
     }

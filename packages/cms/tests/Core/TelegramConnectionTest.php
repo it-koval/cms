@@ -37,6 +37,19 @@ use Symfony\Component\Process\Process;
 final class TelegramConnectionTest extends TestCase
 {
     private ?Setting $row = null;
+    private ?Process $process = null;
+
+    protected function tearDown(): void
+    {
+        try {
+            if (null !== $this->process && $this->process->isRunning()) {
+                $this->process->stop(1);
+            }
+        } finally {
+            $this->process = null;
+            parent::tearDown();
+        }
+    }
 
     private function bots(): BotSettings
     {
@@ -263,7 +276,7 @@ final class TelegramConnectionTest extends TestCase
             }
             echo 'disconnected';
             PHP;
-        $process = new Process([\PHP_BINARY, '-r', $script, \dirname(__DIR__, 2) . '/vendor/autoload.php']);
+        $process = $this->process = new Process([\PHP_BINARY, '-r', $script, \dirname(__DIR__, 2) . '/vendor/autoload.php'], timeout: 25);
         $process->mustRun();
 
         self::assertSame('disconnected', $process->getOutput());

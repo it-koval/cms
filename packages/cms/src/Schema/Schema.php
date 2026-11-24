@@ -302,12 +302,12 @@ final class Schema
         ];
     }
 
-    /** Templates whose cards show a date: the ones an «Автор» writes. @return list<string> */
+    /** Templates explicitly available to the built-in Author role. @return list<string> */
     public function articleTemplates(): array
     {
         $out = [];
         foreach ($this->templates as $t) {
-            if (isset(($t->cardRule() ?? [])['date'])) {
+            if ($t->allowsAuthors()) {
                 $out[] = $t->key();
             }
         }

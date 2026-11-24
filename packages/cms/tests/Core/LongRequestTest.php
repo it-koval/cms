@@ -125,19 +125,38 @@ final class LongRequestTest extends WebTestCase
         $this->assertTooLong(['remark' => \str_repeat('п', 121)], 'remark', 120);
     }
 
-    public static function valuesWithoutALimit(): iterable
+    public static function f1DefaultLimitCharacters(): iterable
     {
-        yield '1000 stays' => [1000, 1000];
-        yield '1001 stays' => [1001, 1001];
-        yield '1002 is cut' => [1002, 1001];
-        yield '100000 is cut' => [100000, 1001];
+        foreach (['б', 'қ', '字', '😀'] as $char) {
+            yield $char => [$char];
+        }
     }
 
     #[Test]
-    #[DataProvider('valuesWithoutALimit')]
-    public function aFieldWithoutALimitStillKeeps1001CharactersWithoutAnError(int $sent, int $kept): void
+    #[DataProvider('f1DefaultLimitCharacters')]
+    public function aFieldWithoutMaxAcceptsExactly1000Characters(string $char): void
     {
-        $this->assertSaved(['free' => \str_repeat('б', $sent)], 'free', \str_repeat('б', $kept));
+        $this->assertSaved(['free' => \str_repeat($char, 1000)], 'free', \str_repeat($char, 1000));
+    }
+
+    #[Test]
+    #[DataProvider('f1DefaultLimitCharacters')]
+    public function aFieldWithoutMaxRefuses1001Characters(string $char): void
+    {
+        $this->assertTooLong(['free' => \str_repeat($char, 1001)], 'free', 1000);
+    }
+
+    public static function f1DefaultOvershoots(): iterable
+    {
+        yield '1002' => [1002];
+        yield '100000' => [100000];
+    }
+
+    #[Test]
+    #[DataProvider('f1DefaultOvershoots')]
+    public function aFieldWithoutMaxRefusesValuesPreviouslyCutSilently(int $length): void
+    {
+        $this->assertTooLong(['free' => \str_repeat('б', $length)], 'free', 1000);
     }
 
     public static function valuesThatAreMeasuredAfterCleaning(): iterable

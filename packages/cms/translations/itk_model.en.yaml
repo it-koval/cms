@@ -171,3 +171,5 @@
 'model.label_updatedat': 'Updated'
 'model.area_bots': 'Messenger bots'
 'model.area_bots_hint': 'View shows the connection status. Edit changes and removes bot tokens.'
+
+'model.lint_request_field_limit': 'Form «{form}», field «{field}»: max() is not set; values longer than {count} characters will be refused. Set an explicit max().'

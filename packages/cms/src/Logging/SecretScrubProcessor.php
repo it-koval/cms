@@ -16,8 +16,6 @@ use Monolog\Processor\ProcessorInterface;
  */
 final class SecretScrubProcessor implements ProcessorInterface
 {
-    private const PATTERN = '~bot\d+:[A-Za-z0-9_-]+~';
-
     public function __invoke(LogRecord $record): LogRecord
     {
         return $record->with(
@@ -29,7 +27,7 @@ final class SecretScrubProcessor implements ProcessorInterface
 
     private function scrubString(string $s): string
     {
-        return \preg_replace(self::PATTERN, 'bot***', $s) ?? $s;
+        return SecretScrubber::scrub($s);
     }
 
     /**
@@ -74,7 +72,7 @@ final class SecretScrubProcessor implements ProcessorInterface
     private function carriesSecret(\Throwable $e): bool
     {
         for ($i = 0; null !== $e && $i < 20; $e = $e->getPrevious(), ++$i) {
-            if (1 === \preg_match(self::PATTERN, $e->getMessage()) || 1 === \preg_match(self::PATTERN, (string) $e)) {
+            if ($e->getMessage() !== SecretScrubber::scrub($e->getMessage()) || (string) $e !== SecretScrubber::scrub((string) $e)) {
                 return true;
             }
         }

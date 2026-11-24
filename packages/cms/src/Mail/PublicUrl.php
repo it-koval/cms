@@ -44,13 +44,7 @@ final class PublicUrl
      */
     public function base(): ?string
     {
-        $base = \trim((string) $this->configured);
-        if ('' !== $base && !self::isValid($base)) {
-            throw new \UnexpectedValueException(I18n::t('http.mail_public_url_invalid', ['value' => $base]));
-        }
-        if ('' === $base && [] !== Request::getTrustedHosts()) {
-            $base = $this->requests->getMainRequest()?->getSchemeAndHttpHost() ?? '';
-        }
+        $base = $this->trustedBase() ?? '';
         if ('' === $base) {
             $domain = \trim((string) $this->settings->get('domain', null, ''));
             if ('' !== $domain) {
@@ -62,6 +56,24 @@ final class PublicUrl
         }
 
         return '' === $base ? null : \rtrim($base, '/');
+    }
+
+    /** Password and invitation links use configuration or a host checked by Symfony, never editable settings or debug fallbacks. */
+    public function trustedBase(): ?string
+    {
+        $base = \trim((string) $this->configured);
+        if ('' !== $base) {
+            if (!self::isValid($base)) {
+                throw new \UnexpectedValueException(I18n::t('http.mail_public_url_invalid', ['value' => $base]));
+            }
+
+            return \rtrim($base, '/');
+        }
+        if ([] !== Request::getTrustedHosts()) {
+            return $this->requests->getMainRequest()?->getSchemeAndHttpHost();
+        }
+
+        return null;
     }
 
     /**

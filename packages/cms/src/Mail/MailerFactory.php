@@ -40,7 +40,7 @@ final class MailerFactory
             return null;
         }
         if ($c->hasServer()) {
-            return new MailRoute(DsnBuilder::build($c), MailRoute::SETTINGS, $from, [$c->password, $c->username]);
+            return $c->hasSafeCredentials() ? new MailRoute(DsnBuilder::build($c), MailRoute::SETTINGS, $from, [$c->password, $c->username]) : null;
         }
         $env = $this->envDsn();
         if (null !== $env) {
@@ -74,6 +74,9 @@ final class MailerFactory
             return null;
         }
         $c = $this->settings->config();
+        if ($c->hasServer() && !$c->hasSafeCredentials()) {
+            return I18n::t('http.mail_password_requires_tls');
+        }
         if (null === $this->sender($c)) {
             return I18n::t('http.mail_problem_sender');
         }

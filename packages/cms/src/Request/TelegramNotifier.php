@@ -96,7 +96,7 @@ final class TelegramNotifier implements ChannelNotifier
             return ChannelOutcome::pending();
         }
 
-        $parts = MessageParts::telegram($this->buildText($r, $resend));
+        $parts = $this->parts($r, $resend);
         $errors = [];
         foreach ($chats as $chat) {
             foreach ($parts->texts as $i => $text) {
@@ -164,6 +164,12 @@ final class TelegramNotifier implements ChannelNotifier
     public function buildText(Request $r, bool $resend = false): string
     {
         return RequestText::build($this->schema, $r, $resend, HtmlSanitizer::escape(...));
+    }
+
+    /** The exact formatter used by delivery and by the synchronous resend limit. */
+    public function parts(Request $r, bool $resend = false): MessageParts
+    {
+        return MessageParts::telegram($this->buildText($r, $resend));
     }
 
     private function fail(Request $r, string $error): bool

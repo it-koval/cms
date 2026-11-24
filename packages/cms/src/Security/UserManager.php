@@ -31,7 +31,7 @@ final class UserManager
     ) {
     }
 
-    public function create(string $email, string $name, string $roleKey = Role::EDITOR, ?string $password = null, string $status = User::ACTIVE): User
+    public function create(string $email, string $name, string $roleKey = Role::EDITOR, #[\SensitiveParameter] ?string $password = null, string $status = User::ACTIVE): User
     {
         $email = \mb_strtolower(\trim($email));
         $details = [];
@@ -64,7 +64,7 @@ final class UserManager
     }
 
     /** @throws ContentException when the password is too short or too long to accept */
-    public static function checkPasswordPolicy(string $password, string $field = 'password'): void
+    public static function checkPasswordPolicy(#[\SensitiveParameter] string $password, string $field = 'password'): void
     {
         $length = \mb_strlen($password);
         $message = $length < self::MIN_PASSWORD_LENGTH
@@ -79,7 +79,7 @@ final class UserManager
      * Every way of setting a password goes through here (profile, an administrator, the console, a link of a letter). The unused links of the person (reset, invitation) die with the old
      * password: nobody who got an old letter can set another one afterwards.
      */
-    public function setPassword(User $user, string $password): void
+    public function setPassword(User $user, #[\SensitiveParameter] string $password): void
     {
         if (\mb_strlen($password) < 8) {
             throw ContentException::invalid(I18n::t('http.password_min', ['length' => 8]));

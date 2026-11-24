@@ -3,10 +3,10 @@
 // PHP has rendered every page and prepared the source CSS; this script only measures. It never fetches the live site: a server on
 // 127.0.0.1 answers each page's HTML at the page's own path and every other path from public/, and crittr measures that.
 
-import { existsSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { createServer } from 'node:http';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const EX_USAGE = 64;
 const EX_UNAVAILABLE = 69;
@@ -130,11 +130,23 @@ async function loadLibraries(projectDir) {
     }
 }
 
-function startServer(publicDir) {
+export function startServer(publicDir) {
     const root = path.resolve(publicDir);
     let current = null;
+    let origin;
     const server = createServer((req, res) => {
-        const url = new URL(req.url ?? '/', 'http://127.0.0.1');
+        // Chrome uses this server as its only proxy. Never forward a request: serve the render origin from memory or public/.
+        let url;
+        try {
+            url = new URL(req.url ?? '/', origin);
+        } catch {
+            res.writeHead(400).end();
+            return;
+        }
+        if (url.origin !== origin || url.username || url.password) {
+            res.writeHead(403).end();
+            return;
+        }
         let pathname;
         try {
             pathname = decodeURIComponent(url.pathname);
@@ -158,12 +170,15 @@ function startServer(publicDir) {
         res.writeHead(200, { 'Content-Type': CONTENT_TYPES[path.extname(file).toLowerCase()] ?? 'application/octet-stream' });
         res.end(req.method === 'HEAD' ? undefined : readFileSync(file));
     });
+    server.on('connect', (_req, socket) => socket.end('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n'));
+    server.on('upgrade', (_req, socket) => socket.destroy());
 
     return new Promise((resolve, reject) => {
         server.on('error', reject);
         server.listen(0, '127.0.0.1', () => {
+            origin = `http://127.0.0.1:${server.address().port}`;
             resolve({
-                origin: `http://127.0.0.1:${server.address().port}`,
+                origin,
                 setPage(page) {
                     current = page;
                 },
@@ -177,16 +192,23 @@ function startServer(publicDir) {
 
 /**
  * One browser for the whole batch (crittr takes it as puppeteer.browser and then does not close it). pipe: true instead of a websocket,
- * so Chrome loses its parent and leaves when this process dies hard; the same sandbox flags crittr uses (Docker, root).
+ * so Chrome loses its parent and leaves when this process dies hard. Remove Chromium's implicit loopback proxy bypass as well.
  */
-async function launchBrowser(puppeteer, chrome) {
+export async function launchBrowser(puppeteer, chrome, origin) {
     try {
         return await puppeteer.launch({
             headless: true,
             pipe: true,
             executablePath: chrome ?? undefined,
-            acceptInsecureCerts: true,
-            args: ['--disable-setuid-sandbox', '--no-sandbox', '--ignore-certificate-errors', '--disable-dev-shm-usage'],
+            acceptInsecureCerts: false,
+            args: [
+                '--disable-dev-shm-usage',
+                `--proxy-server=${origin}`,
+                '--proxy-bypass-list=<-loopback>',
+                '--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1',
+                '--disable-quic',
+                '--force-webrtc-ip-handling-policy=disable_non_proxied_udp',
+            ],
         });
     } catch (e) {
         fail(EX_UNAVAILABLE, `not installed: Chrome did not start: ${describe(e)}`);
@@ -201,7 +223,7 @@ async function main() {
     const input = readInput();
     const { crittr, puppeteer } = await loadLibraries(input.projectDir);
     const server = await startServer(input.publicDir);
-    const browser = await launchBrowser(puppeteer, input.chrome);
+    const browser = await launchBrowser(puppeteer, input.chrome, server.origin);
 
     let stopping = false;
     const stop = async (code) => {
@@ -254,4 +276,6 @@ async function main() {
     await stop(0);
 }
 
-main().catch((e) => fail(EX_SOFTWARE, describe(e)));
+if (process.argv[1] && fileURLToPath(import.meta.url) === realpathSync(process.argv[1])) {
+    main().catch((e) => fail(EX_SOFTWARE, describe(e)));
+}

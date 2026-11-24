@@ -41,6 +41,14 @@ final class SchemaLint
             }
         }
 
+        foreach ($schema->forms() as $key => $form) {
+            foreach ($form->fieldList() as $field) {
+                if ('toggle' !== $field->type() && null === $field->maxLength()) {
+                    $warnings[] = I18n::t('model.lint_request_field_limit', ['form' => $key, 'field' => $field->key(), 'count' => \Itk\Cms\Request\RequestService::MAX_LENGTH]);
+                }
+            }
+        }
+
         return ['errors' => $errors, 'warnings' => $warnings];
     }
 }

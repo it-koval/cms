@@ -233,7 +233,7 @@ Run the worker under supervisor or systemd: `php bin/console messenger:consume a
 
 1. Configure the bundle in `config/packages/itk_cms.yaml`. All options are optional. The full list is in [Configuration reference](#configuration-reference).
 2. Run `php bin/console doctrine:migrations:migrate`. The bundle registers its own migrations, `Itk\Cms\Migrations`.
-3. Run `php bin/console itk:install --email=you@example.com --site-name="My site" --domain=example.com`. The command is safe to run again. It creates the built-in roles, the menu areas from the schema, the default settings, the queue table (for transports that can set themselves up, such as `doctrine://`), the home page and the first administrator. The command asks for the password. You can also pass it with `--password` or the `ITK_ADMIN_PASSWORD` variable. `--name` sets the administrator's name, `--no-home` skips the home page.
+3. Run `php bin/console itk:install --email=you@example.com --site-name="My site" --domain=example.com`. The command is safe to run again. It creates the built-in roles, the menu areas from the schema, the default settings, the queue table, the home page and the first administrator. It asks for the password with hidden input. For automation, pass a readable file with `--password-file`. `--name` sets the administrator's name. `--no-home` skips the home page.
 4. Run `php bin/console assets:install`. The admin files become available at `/bundles/itkcms/admin/`. Flex does this on `composer install` and `composer update`.
 5. Run `doctrine:schema:validate` and `doctrine:migrations:diff` only after `itk:install`. `itk:install` creates the `messenger_messages` table. Before that step, `validate` reports a mismatch, and `diff` writes the creation of that table into the site's migration.
 
@@ -815,7 +815,7 @@ Built-in roles:
 |---|---|
 | `admin` (**Administrator**) | All areas |
 | `editor` (**Editor**) | Pages and collections in full, the media library in full, viewing requests |
-| `author` (**Author**) | Viewing and editing pages of article templates (templates with `card(date: …)`), viewing and editing the media library |
+| `author` (**Author**) | Viewing and editing pages from templates marked with `forAuthors()`, viewing and editing the media library |
 | `requests` (**Requests**) | Viewing and editing requests |
 
 Symfony gives every signed-in person the `ROLE_ITK_USER` role. In code, `Itk\Cms\Security\Access` and `PermissionVoter` (the `itk` attribute) check permissions.
@@ -828,7 +828,7 @@ Symfony gives every signed-in person the `ROLE_ITK_USER` role. In code, `Itk\Cms
 - All unused links of a person expire when the person's password is set in any way, their e-mail changes, or they are blocked.
 - **Console.** `php bin/console itk:user:password name@example.com` asks for the password with hidden input. `--password=…` leaves the password in the shell history.
 
-Links in e-mails are built from the trusted site address (`Mail\PublicUrl`) in this order: the `itk_cms.public_url` option; the request address, if `framework.trusted_hosts` is set; the **Site address** setting (`domain`, `https://` by default); the request address as is, only in debug. The raw `Host` header is not used in production. Without a trusted address no link is created: **Forgot your password?** writes an error to the log, and invitation and reset return a one-time password. In production, set `public_url` or `trusted_hosts`, because anyone with the `set:site` permission can change the **Site address** setting.
+Password and invitation links use `itk_cms.public_url` first. The fallback is the request address checked by `framework.trusted_hosts`. Without a trusted address, **Forgot your password?** records a configuration error, and admin invitation and reset return a one-time password. The **Site address** setting still supplies ordinary site links.
 
 ### Two-step sign-in
 
@@ -837,7 +837,7 @@ The second step is a one-time code from an app (TOTP per RFC 6238: SHA-1, 6 digi
 - **Turning it on.** **My profile** → **Two-step sign-in**: a QR code and a key for manual entry, confirmation with the first code, 10 recovery codes. The codes are shown once, and each works once. Turning it off and getting new recovery codes require the password.
 - **Sign-in.** After the password, `/admin/login/otp` opens. Until the code is entered, only this page and sign-out work in the admin panel.
 - **Mandatory for a role.** The **Require two-step sign-in** checkbox in **Settings** → **Users and roles** → **Roles** (`Role::require2fa`). A person with such a role and no factor sees only the setup dialog. Everything else returns 403 with `details.code = '2fa_enrol'`. That person cannot turn the factor off (409).
-- **Attempts.** Five wrong codes in a row lock the factor for 15 minutes (429, `details.code = '2fa_locked'`). A code works once, with a window of ±1 step.
+- **Attempts.** Five wrong codes in a row lock the factor for 15 minutes (429, `details.code = '2fa_locked'`). A per-user limiter (`framework.rate_limiter.itk_two_factor`) also counts attempts. A code works once, with a window of ±1 step.
 - **Storage.** The secret is encrypted with `sodium_crypto_secretbox` using a key from `APP_SECRET`. Recovery codes are stored as HMAC-SHA256.
 - **Changing `APP_SECRET`** makes the secrets and recovery codes unreadable. People with the factor turned on cannot sign in until their factor is reset.
 - **Reset.** An administrator clicks **Settings** → **Users and roles** → **Users** → **Reset two-step sign-in** (`POST users/{id}/reset-2fa`, the **Edit** level of `set:users`, not for yourself). If nobody can sign in: `php bin/console itk:user:reset-2fa name@example.com`.
@@ -1040,11 +1040,15 @@ A form is described in the schema: `$s->form('call', 'Call request')->fields(...
 
 The site sends the form to `POST /request/{form}`. The hidden `itk_hp` field (a trap for bots) must be empty. The response is `{"success": true}` or `{"success": false, "message": "…", "errors": {...}}`. The limit is 10 requests in 15 minutes from one address (`framework.rate_limiter.itk_request_form`, the site can override it).
 
+The request body limit is 256 KiB by default (`itk_cms.requests.max_body`, in bytes). Larger submissions return HTTP 413. JSON accepts one object with up to 1,000 scalar or null values. Malformed JSON and nested values return HTTP 422. For multipart forms, set the reverse proxy body limit to the same value and keep PHP `post_max_size` at or above it so PHP can parse accepted submissions.
+
 The request is saved and appears in the **Requests** section (the `requests` area). Then the `request.new` notification goes to the channels: the admin bell, Telegram, MAX and e-mail. A request has its own status for each messenger (`channels`). The overall `delivery` status is `failed` if the request did not reach at least one messenger, otherwise `sent` if it reached at least one. A messenger that is not connected leaves the status at `pending`, which is not a failure. To retry undelivered requests, use the button in the admin panel or `php bin/console itk:requests:resend`. The request JSON also has `sendable`: the messengers that never got the request and can take it now (connected, on, with a chat for the form). The request drawer shows **Send to MAX** or **Send to Telegram** for each of them and calls `POST requests/{id}/resend {channel}`.
 
-**Long fields.** The length of a value is counted in characters after trimming and removing tags. A line break from a browser form counts as two (`\r\n`). A value longer than the `max()` of its field is refused with an error for that field, and no request is created. A field without `max()` keeps the first 1001 characters without an error, so set `max()` on every field that can be long. Only an HTML tag is removed: a lowercase element name with attributes such as `name="value"`, `name='value'` or `name=value`. Any other `<` is text and gets a space after it (`<500` is saved as `< 500`), so a value never holds the start of a tag. The space counts towards `max()`. The request card and the e-mail show the whole value. The bell shows one short line. The MCP tool `request_get` shows up to 500 characters of each value under `data` and 2000 of `message`, and marks a cut with `…`.
+**Long fields.** The length of a value is counted in characters after trimming and removing tags. A browser form line break (`\r\n`) counts as two characters. Each field defaults to `max(1000)`. A longer value returns HTTP 422 with a field error. `itk:schema:lint` and **Site status** flag fields without an explicit `max()`. Only HTML tags are removed. Other occurrences of `<` get a following space (for example, `<500` becomes `< 500`), which counts towards `max()`. The request card and e-mail show the whole value. The bell shows one short line. MCP `request_get` shows up to 6,000 characters per form value and marks a cut with `…`.
 
-A text too long for one message (4096 characters in Telegram after reading the HTML, 4000 characters of HTML in MAX) is sent as several messages in order, cut at line breaks. The worker waits 1 second between them, and 3.1 seconds in Telegram when there are more than 20 (a group takes 20 a minute). The pause is counted within one request: several long requests in a row can still exceed that limit, then send the undelivered ones again a minute later. **Send again** in the admin panel waits the same way. With more than 20 messages the page can time out while the delivery goes on, so open the request again before you press the button a second time. If one of them is refused, the following ones are not sent to that chat, the request is marked as not delivered, and the error names the part. A retry sends every message from the first to every chat of that messenger, so a chat may show some of them twice.
+A text too long for one message is split at line breaks. Telegram allows 4,096 visible characters. MAX allows 4,000 HTML characters. Parts go out in order with a one-second pause, or 3.1 seconds for Telegram deliveries of more than 20 parts. A resend of up to 20 parts per channel runs in the request. If a channel needs more than 20 parts, the worker sends them and the API returns HTTP 202 with `queuedChannels` after the queue accepts the job. The admin panel shows **Queued**.
+
+A rejected part stops that chat's delivery and the error shows which part failed. The next attempt starts from the first part for each chat, so some messages may appear twice. The built-in `async` transport retries request delivery after 60, 120 and 240 seconds, then moves it to the failure transport. Transport settings supplied by the site take precedence.
 
 The **Requests** screen has a **Board** view with the columns **New**, **In progress** and **Closed**.
 
@@ -1116,9 +1120,9 @@ The sender address comes from **Settings** → **Mail**. With only `MAILER_DSN` 
 - `GET {admin}/api/settings/mail` returns the fields, `passwordSet`, `configured`, `source` (`settings`, `env`, `none`), `problem` and `last` (the result of the last sending).
 - `PUT {admin}/api/settings/mail` saves the settings.
 - `POST {admin}/api/settings/mail-test {to?}` sends a test e-mail right away, without the queue. The server's refusal reason comes in the response (502). At most 10 e-mails per hour per person (429).
-- `ssl` uses `smtps://`, `starttls` requires TLS, and `none` turns it off. The SMTP dialog is not logged.
+- `ssl` uses `smtps://` and `starttls` requires TLS. Choose either when saving a password. `none` is available for servers without a password. The SMTP dialog is excluded from logs.
 
-**Errors.** An e-mail that was not sent after all retries stays in the failure transport, and a `mail.failed` notification comes to the bell. An e-mail with a "set a password" link is stored there whole, link included. Clean the failure transport (`messenger:failed:remove`) and do not give outsiders access to it.
+**Errors.** A delivery that exhausts its retries stays in the failure transport. Password and invitation deliveries store a job. The worker creates its one-time link for each attempt and revokes it when the attempt fails. A failed request e-mail also raises a `mail.failed` notification.
 
 **Request e-mails.** **Settings** → **Notifications** → **Emails about new requests** (`mailRoutes`, the `set:notifications` area): comma-separated addresses for all forms and a separate list for each form, up to 10 addresses. Each address gets an e-mail with the form fields and a link to the request.
 
@@ -1174,6 +1178,8 @@ Add `itk:knowledge-base:sync` to the deploy script. The command queues only what
 
 **What is indexed.** Pages from the sitemap (published, without `noindex`) and published collection records, except `exclude_templates` and `exclude_collections`. From each version, the text a visitor sees is taken: the title, the SEO description, the template fields, the visible sections in order. `Text`, `Textarea`, `Headline`, `Description` and `Article` give text. `Select` gives "label: option", `Image` and `Photos` give `alt`, and each `Repeater` row gives a separate block. `Number`, `Toggle`, `Date`, `Link`, `Relation`, `Note`, and `variant()`, `raw()` and `canSee()` fields are not indexed.
 
+Custom fields contribute when they implement `PublicFieldInterface`, report public visibility and provide a supported field type. Search vectors use up to 256 cache slots with a 24-hour lifetime. A slot collision replaces the previous entry.
+
 **Chunks.** The blocks of one section are combined into chunks of about 1200 characters, at most 2000. A chunk does not cross a section boundary, so a hit has an exact `sectionId`. The page title and the block heading are sent to the embedder before the chunk text.
 
 **Updates.** An embedding is built only for text that is not yet in the index. The worker collects up to 32 messages into one API request. An unpublished page disappears from the results right away. A draft autosave triggers nothing. The index catches up with a publication within a minute, because the Doctrine transport polls the queues every `check_delayed_interval` (60 seconds). A separate `messenger:consume knowledge_base` worker is faster.
@@ -1228,6 +1234,8 @@ The rendered HTML of a published page is cached, and a repeat view is served wit
 The rules the first screen needs go straight into `<head>`, and the full stylesheet loads without blocking rendering. [crittr](https://github.com/philipp-winterle/crittr) extracts the rules in the worker after each publication. It is off by default.
 
 **How to turn it on.** You need Node 22 or newer and Chrome or Chromium on the server.
+
+Run Chrome as a non-root user with its sandbox available. The browser verifies TLS and can fetch only the local render server. Serve critical assets from the site's `public/` directory. External resources are unavailable during extraction.
 
 1. In the project root, run `npm install crittr`. Puppeteer downloads Chrome for the user who ran the command. To use the system Chrome, set the `chrome` option.
 2. Turn on the option and list the stylesheets:
@@ -1450,7 +1458,7 @@ Each line is `ok`, `off`, `warning` or `ERROR`. `off` marks a module that is not
 
 | Command | What it does |
 |---|---|
-| `itk:install` | Prepares the site: roles, menu areas, default settings, the queue table, the home page, the first administrator. Options `--email`, `--password`, `--name`, `--site-name`, `--domain`, `--no-home` |
+| `itk:install` | Prepares site roles, menus, settings, the message queue, the home page and the first administrator. Options include `--email`, `--password-file`, `--name`, `--site-name`, `--domain` and `--no-home` |
 | `itk:doctor [--ci]` | Checks the site |
 | `itk:schema:lint` | Checks the schema and the Twig templates |
 | `itk:user:password <email> [--password=]` | Sets a password |
@@ -1481,6 +1489,7 @@ All options are set in `config/packages/itk_cms.yaml` and are optional.
 | `admin_locales` | `[en, ru, kk]` | The languages a person chooses from |
 | `admin_path` | `/admin` | The admin path. The format is checked at startup |
 | `public_url` | `null` | The site address for links in e-mails, for example `https://example.com`. `%env(PUBLIC_URL)%` works |
+| `requests.max_body` | `262144` | Public form submission body limit in bytes |
 | `strict` | `null` (as `kernel.debug`) | Strict template mode |
 | `blog` | `true` | `false` removes the blog templates |
 | `security_headers` | `true` | Security headers on public routes |
@@ -1730,11 +1739,11 @@ The host needs only Docker.
    | `COMPOSE_PROJECT_NAME` | the directory name | The project name. Each site has its own |
    | `PHP_VERSION` | `8.4` | The PHP version |
    | `CRITICAL_CSS` | `0` | `1` adds Node 22 and Chromium to the image |
-   | `ADMIN_EMAIL`, `ADMIN_PASSWORD` | empty | If both are set, the administrator is created at start |
+   | `ADMIN_EMAIL` | empty | First administrator e-mail for automatic setup with a mounted secret |
    | `SITE_NAME`, `SITE_DOMAIN` | empty | The name and domain for `itk:install` |
    | `UID`, `GID` | `1000` | The container user. On Linux, set your own values in `.env` (`id -u`, `id -g`) |
 
-   Do not write the administrator password into `.env`: it would end up in git and in the `php_prod` image. Pass it once from the shell, or create the administrator in step 6.
+   For automatic setup, uncomment the `itk_admin_password` secret blocks in `compose.yaml`. Set `ITK_ADMIN_PASSWORD_FILE` to the path of a password file outside the project and readable by the container user. Compose mounts it at `/run/secrets/itk_admin_password` in `php`.
 
 5. Start:
 
@@ -1745,7 +1754,7 @@ The host needs only Docker.
 
    To turn off migrations and `itk:install` at start, set `AUTO_MIGRATE: "0"` in the `environment` of the `php` service.
 
-6. Create the administrator if you did not set `ADMIN_EMAIL` and `ADMIN_PASSWORD`:
+6. Use the interactive installer if the automatic setup was skipped.
 
    ```bash
    docker compose exec php bin/console itk:install --email=you@example.com --site-name="My site" --domain=example.com

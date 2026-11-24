@@ -21,6 +21,7 @@ final class Viewer
     private function __construct(
         private readonly ?User $user,
         private readonly array $rights,
+        private readonly bool $system = false,
     ) {
     }
 
@@ -35,12 +36,18 @@ final class Viewer
     /** No person: code is running on its own. Everything is allowed. */
     public static function system(): self
     {
+        return new self(null, ['perms' => [], 'templates' => null], true);
+    }
+
+    /** No signed-in person at an HTTP entry point: no permissions. */
+    public static function anonymous(): self
+    {
         return new self(null, ['perms' => [], 'templates' => null]);
     }
 
     public function isSystem(): bool
     {
-        return null === $this->user;
+        return $this->system;
     }
 
     public function user(): ?User
@@ -71,7 +78,7 @@ final class Viewer
 
     public function can(string $area, string $action = 'view', ?string $template = null): bool
     {
-        return null === $this->user || RoleResolver::allows($this->rights, $area, $action, $template);
+        return $this->system || RoleResolver::allows($this->rights, $area, $action, $template);
     }
 
     /**

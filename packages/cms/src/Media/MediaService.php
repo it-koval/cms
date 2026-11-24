@@ -190,10 +190,11 @@ final class MediaService
 
     /**
      * Where the file is used: pages, collection records and settings that contain its address.
+     * An explicit audience is required; trusted background code may pass Viewer::system().
      *
      * @return list<array{label: string, to: string}>
      */
-    public function usage(MediaFile $m, ?Viewer $viewer = null): array
+    public function usage(MediaFile $m, Viewer $viewer): array
     {
         $like = '%' . \addcslashes($m->path, '%_\\') . '%';
         $out = [];
@@ -204,19 +205,17 @@ final class MediaService
         );
         foreach ($rows as $r) {
             $template = (string) $r['template'];
-            if (null !== $viewer && !$viewer->can('pages', 'view', $template)) {
+            if (!$viewer->can('pages', 'view', $template)) {
                 continue;
             }
             $draft = (array) \json_decode((string) $r['draft'], true);
-            if (null !== $viewer) {
-                $published = (array) \json_decode((string) $r['published'], true);
-                $versions = [];
-                foreach ([$draft, $published] as $version) {
-                    $versions[] = FieldAccess::pageOutputFor($this->schema, $template, $version, $viewer);
-                }
-                if (!self::containsPath($versions, $m->path)) {
-                    continue;
-                }
+            $published = (array) \json_decode((string) $r['published'], true);
+            $versions = [];
+            foreach ([$draft, $published] as $version) {
+                $versions[] = FieldAccess::pageOutputFor($this->schema, $template, $version, $viewer);
+            }
+            if (!self::containsPath($versions, $m->path)) {
+                continue;
             }
             $out[] = ['label' => I18n::t('http.media_used_page', ['title' => $draft['title'] ?? '']), 'to' => '/pages/' . $r['page_id']];
         }
@@ -224,25 +223,23 @@ final class MediaService
         foreach ($rows as $r) {
             $c = $this->schema->collection((string) $r['collection_key']);
             $tr = \json_decode((string) $r['tr'], true) ?: [];
-            if (null !== $viewer) {
-                if (null === $c || !$viewer->can('col:' . $c->key()) || !$c->isVisibleTo($viewer)) {
-                    continue;
-                }
-                foreach ($tr as $locale => $version) {
-                    foreach (['draft', 'published'] as $state) {
-                        $tr[$locale][$state] = FieldAccess::outputFor($c->fieldList(), (array) ($version[$state] ?? []), $viewer);
-                    }
-                }
-                if (!self::containsPath($tr, $m->path)) {
-                    continue;
+            if (null === $c || !$viewer->can('col:' . $c->key()) || !$c->isVisibleTo($viewer)) {
+                continue;
+            }
+            foreach ($tr as $locale => $version) {
+                foreach (['draft', 'published'] as $state) {
+                    $tr[$locale][$state] = FieldAccess::outputFor($c->fieldList(), (array) ($version[$state] ?? []), $viewer);
                 }
             }
+            if (!self::containsPath($tr, $m->path)) {
+                continue;
+            }
             $first = \reset($tr) ?: [];
-            $name = null !== $c ? (string) ($first['draft'][$c->titleFieldKey()] ?? '') : '';
-            $out[] = ['label' => ($c?->title() ?? $r['collection_key']) . ('' !== $name ? ' · ' . $name : ''), 'to' => '/collections/' . $r['collection_key'] . '/' . $r['id']];
+            $name = (string) ($first['draft'][$c->titleFieldKey()] ?? '');
+            $out[] = ['label' => $c->title() . ('' !== $name ? ' · ' . $name : ''), 'to' => '/collections/' . $r['collection_key'] . '/' . $r['id']];
         }
         $keys = $this->db->fetchFirstColumn('SELECT DISTINCT setting_key FROM itk_setting WHERE setting_value::text LIKE :p', ['p' => $like]);
-        if ([] !== $keys && (null === $viewer || $this->maySeeSetting($keys, $viewer))) {
+        if ([] !== $keys && $this->maySeeSetting($keys, $viewer)) {
             $out[] = ['label' => I18n::t('http.media_used_settings'), 'to' => '/settings'];
         }
 
@@ -279,6 +276,10 @@ final class MediaService
      */
     public function present(MediaFile $m, bool $withUsage = false, ?Viewer $viewer = null): array
     {
+        if ($withUsage && null === $viewer) {
+            throw new \InvalidArgumentException('Media usage requires an explicit Viewer.');
+        }
+
         return [
             'id' => $m->id,
             'name' => $m->title,
