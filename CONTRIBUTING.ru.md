@@ -25,7 +25,7 @@ make up
 
 ## Запуск проверок
 
-Запустите проверки из корня репозитория:
+Запустите проверки из корня репозитория.
 
 ```bash
 make test
@@ -34,19 +34,25 @@ make audit
 make admin-build
 ```
 
+`make test` запускает `test-php` и `test-admin`. `make lint` запускает `validate`, `lint-php` и `lint-admin`.
+
 ### PHP
 
-`make test` вызывает `composer test`. Эта команда проверяет SQL, пересоздаёт тестовую базу и запускает PHPUnit. `make lint` проверяет пакет Composer, запускает PHPStan уровня 6 для `src` и `tests` и проверяет форматирование PHP.
+`make test-php` вызывает `composer test`. Эта команда проверяет SQL, пересоздаёт тестовую базу и запускает PHPUnit. `make validate` проверяет пакет Composer и SQL. `make lint-php` запускает PHPStan уровня 6 для `src` и `tests` и проверяет форматирование PHP.
 
-Для проверки одного класса запустите стенд через `make up` и откройте оболочку PHP через `make sh`. В ней один раз выполните `composer test:prepare`, затем `php vendor/bin/phpunit --filter ClassName`. Для случайного порядка после подготовки выполните `composer test:run -- --order-by=random --random-order-seed=30301`. CI также использует seed `30302`.
+`make test-random` запускает тесты в случайном порядке с начальными значениями `30301` и `30302`, как в CI. Их можно задать через `SEEDS`, например `make test-random SEEDS=30301`. Запустите `make schema` после `make test-random` или `make test-php`, чтобы проверить схему подготовленной базы.
+
+Для проверки одного класса запустите стенд через `make up` и откройте оболочку PHP через `make sh`. В ней один раз выполните `composer test:prepare`, затем `php vendor/bin/phpunit --filter ClassName`.
 
 Тесты из `tests/Core` используют сайт в `tests/App`. Для отдельного тестового стенда выполните `COMPOSE_PROJECT_NAME=itkcms-alt make test`. Сначала соберите образ PHP с тем же именем проекта. Если основной стенд запущен, укажите свободные порты в `DB_PORT` и `MAILPIT_PORT`.
 
 Если задаёте собственный `DATABASE_URL` в оболочке PHP, сохраните в нём `serverVersion`. Для отдельного кэша задайте там же `ITK_TEST_CACHE_DIR`. Тесты подменяют Telegram и MAX. Почтовым тестам нужен `ITK_TEST_MAILPIT_URL`.
 
+Цели `make ci-deps` и `make test-max` предназначены только для CI. Они меняют зависимости Composer. Для локального запуска используйте отдельную копию репозитория и задайте `CI=1`.
+
 ### Админка
 
-`make test` также запускает Vitest. `make lint` запускает ESLint, сверяет каталоги интерфейса и проверяет код на кириллицу. `make audit` проверяет зависимости npm. `make admin-build` записывает сборку в `packages/cms/public/admin`.
+`make test-admin` запускает Vitest. `make lint-admin` запускает ESLint, сверяет каталоги интерфейса и проверяет код на кириллицу. `make audit` проверяет зависимости npm. `make admin-build` записывает сборку в `packages/cms/public/admin`. `make admin-build-check` пересобирает админку и проверяет отличия от индекса Git, включая новые файлы.
 
 `make admin-dev` запускает Vite на `http://127.0.0.1:18023/bundles/itkcms/admin/`. По умолчанию контейнер обращается к API сайта по адресу `host.docker.internal:8080`. Другой адрес задаётся переменной `ITK_SITE_URL`.
 
@@ -59,6 +65,10 @@ docker compose -f admin/compose.yaml run --rm --service-ports node npm run dev:m
 Откройте `http://127.0.0.1:18023/bundles/itkcms/admin/`.
 
 `admin/compose.yaml` монтирует корень репозитория в `/workspace` и хранит Linux-зависимости в отдельном named volume. Контейнер не использует и не перезаписывает `node_modules` хоста. `npm ci` ставит ровно то, что записано в lock-файле. Версия Node в `admin/compose.yaml` и `admin/.nvmrc` должна совпадать.
+
+### Комплект Docker
+
+`CRITICAL_CSS=1 make smoke-dev` собирает и проверяет образ для разработки. Запустите `make site-clean`, чтобы подготовить чистый сайт Symfony. Затем запустите `make smoke-prod`, чтобы собрать и проверить production-комплект на этом сайте. Для этих проверок нужна сеть.
 
 ## Коммитьте собранную админку
 
