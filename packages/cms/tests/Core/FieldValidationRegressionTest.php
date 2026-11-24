@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Itk\Cms\Tests\Core;
 
 use Doctrine\ORM\EntityManagerInterface;
-use Itk\Cms\Content\CollectionImporter;
 use Itk\Cms\Content\ContentException;
 use Itk\Cms\Content\FieldValues;
 use Itk\Cms\Field\AbstractField;
@@ -60,7 +59,7 @@ final class FieldValidationRegressionTest extends ResourceKernelTestCase
     }
 
     #[Test]
-    public function allContentEntryPointsRejectTheSameInvalidFieldValues(): void
+    public function collectionCreateAndUpdateRejectInvalidFieldValues(): void
     {
         foreach ([['state', 'other'], ['title', \str_repeat('я', 61)], ['start', 'tomorrow'], ['start', '2026-02-30']] as [$key, $value]) {
             $data = ['title' => 'Valid', $key => $value];
@@ -70,9 +69,6 @@ final class FieldValidationRegressionTest extends ResourceKernelTestCase
             } catch (ContentException $e) {
                 self::assertSame(422, $e->status());
             }
-            $result = self::getContainer()->get(CollectionImporter::class)->import('test_trips', [['invalid-' . $key, $data]], 'test:validation');
-            self::assertSame(0, $result->created, $key);
-            self::assertCount(1, $result->failed, $key);
         }
         $item = $this->trip('Valid');
         try {

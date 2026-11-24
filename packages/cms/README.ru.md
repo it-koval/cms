@@ -6,7 +6,7 @@
 
 Сайт описывает свою структуру в PHP (файл `config/itk/schema.php` или классы-ресурсы) и выводит её своими Twig-шаблонами. Бандл не знает ничего о конкретном сайте. Собранная админка лежит в пакете, поэтому сайту не нужен Node.
 
-Версия 0.2.2, лицензия MIT. Исходный код: [github.com/it-koval/cms](https://github.com/it-koval/cms).
+Версия 0.3.0, лицензия MIT. Исходный код: [github.com/it-koval/cms](https://github.com/it-koval/cms).
 
 ## Содержание
 
@@ -344,7 +344,7 @@ return static function (SchemaBuilder $s): void {
 | `singular()`, `newLabel()`, `icon()`, `describe()`, `emptyState()` | Подписи и значок в админке |
 | `menu(...)`, `visibleWhen(fn)` | Место в меню админки и видимость, раздел [Меню админки](#меню-админки) |
 
-Для колонки канбана используйте поле вроде `stage`. Поля коллекций не могут использовать ключи метаданных из `Collection::RESERVED_KEYS`. Админка, PHP, MCP и импорт коллекций проверяют значения одинаково. Свой тип поля может реализовать `Itk\Cms\Field\ValueValidatingFieldInterface` и вернуть переведённые ошибки из `validationErrors()`.
+Для колонки канбана используйте поле вроде `stage`. Поля коллекций не могут использовать ключи метаданных из `Collection::RESERVED_KEYS`. Админка, PHP и MCP проверяют значения одинаково. Свой тип поля может реализовать `Itk\Cms\Field\ValueValidatingFieldInterface` и вернуть переведённые ошибки из `validationErrors()`.
 
 ### Меню
 
@@ -1834,10 +1834,10 @@ final class ToursExtension implements ItkExtensionInterface
 
 ```
 php bin/console itk:make:collection --from=form.json
-php bin/console itk:make:collection --from=table:table_name [--import] [--publish] [--map=…]
+php bin/console itk:make:collection --from=table:table_name [--map=…]
 ```
 
-Описание JSON: `{"key": "tours", "title": "Tours", "singular": "tour", "icon": "map", "fields": [{"key": "city", "label": "City", "type": "text", "required": true, "max": 80}], "rows": [{"id": 1, "city": "Perm"}]}`. Типы: `text`, `textarea`, `description`, `headline`, `article`, `number`, `toggle`, `select` (с `"options"`), `date`, `datetime`, `image`, `photos`, `link`. `rows` нужны только для `--import`. Повторитель и связь дописывают в классе вручную.
+Команда принимает описание в формате JSON, например `{"key": "tours", "title": "Tours", "singular": "tour", "icon": "map", "fields": [{"key": "city", "label": "City", "type": "text", "required": true, "max": 80}]}`. Поддерживаются типы `text`, `textarea`, `description`, `headline`, `article`, `number`, `toggle`, `select` (с `"options"`), `date`, `datetime`, `image`, `photos` и `link`. Повторитель и связь добавьте в класс вручную.
 
 Из таблицы PostgreSQL колонки становятся полями. Таблица в другой схеме пишется как `table:схема.таблица`, другое соединение Doctrine задаёт `--connection=имя`.
 
@@ -1852,10 +1852,11 @@ php bin/console itk:make:collection --from=table:table_name [--import] [--publis
 | `time` | `Text` |
 | тип-перечисление (`CREATE TYPE … AS ENUM`) | `Select` |
 
-- Остальные типы пропускаются с пояснением. `NOT NULL` без значения по умолчанию даёт `required()`. Подпись берётся из комментария колонки или из имени. Первичный ключ в поля не попадает.
+- Остальные типы пропускаются с пояснением. `NOT NULL` без значения по умолчанию даёт `required()`. Подпись берётся из комментария колонки или из имени. Первичный ключ из одной колонки пропускается по умолчанию.
 - `--map=колонка:поле[:тип],…` переименовывает колонку или меняет тип. `колонка:-` пропускает колонку.
-- `--strip-prefix=old_` отбрасывает начало имени таблицы при выборе ключа. `--id=column` задаёт ключ строки, если первичного ключа нет или он составной.
-- `--import` переносит строки в записи черновиками, с обычными проверками и хуками. Повторный запуск обновляет свои записи, а не создаёт новые. `--publish` публикует записи сразу. Строка без обязательного поля остаётся черновиком и попадает в отчёт.
+- `--strip-prefix=old_` отбрасывает начало имени таблицы при выборе ключа. `--id=column` исключает указанную колонку идентификатора из полей класса.
+
+Переносите записи старого сайта своим скриптом вместе с дампом базы.
 
 ## Docker
 

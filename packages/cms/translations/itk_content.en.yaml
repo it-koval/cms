@@ -14,8 +14,6 @@
 'content.settings_max_chat_ids_check': 'Check the MAX chat IDs'
 'content.settings_mail_limit': 'No more than 10 addresses per form'
 'content.settings_mail_invalid': 'Check the addresses: “{email}” does not look like an email address'
-'content.import_collection_unknown': 'Collection “{collection}” is not in the schema: the class is not picked up yet (cache:clear) or the key is different.'
-'content.import_row_failed': 'row {row}: {message}'
 'content.change_name_page': 'Page'
 'content.change_new_section': 'New section'
 'content.change_section_hidden': 'Hidden on the site'

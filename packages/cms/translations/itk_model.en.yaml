@@ -143,7 +143,6 @@
 'model.gen_column_skipped': 'column “{column}” is skipped (--map)'
 'model.gen_column_type_skipped': 'column “{column}” ({type}) is skipped: the generator does not make this field type'
 'model.gen_table_no_fields': 'Could not build any fields from the table “{table}”.'
-'model.gen_table_no_primary': 'The table “{table}” has no single primary key column: give it in --id=column, so that a second run updates the records instead of duplicating them.'
 'model.gen_table_name_invalid': 'The table name “{table}” is not valid: Latin letters, digits, “_”, and database.table if needed.'
 'model.label_name': 'Name'
 'model.label_title': 'Title'

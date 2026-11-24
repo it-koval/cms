@@ -146,7 +146,7 @@ final class OpsF2Test extends KernelTestCase
         $db->executeStatement('CREATE TABLE ' . $table . ' (id INTEGER PRIMARY KEY, city TEXT, region TEXT)');
         try {
             $make = new \Itk\Cms\Generator\MakeContext(new \Itk\Cms\Generator\ProjectLayout($this->dir), new \Itk\Cms\Generator\SkeletonRenderer(), new \Itk\Cms\Generator\FileWriter(), $c->get(\Itk\Cms\Resource\ResourceRegistry::class), $this->dir . '/schema.php');
-            $command = new \Itk\Cms\Command\MakeCollectionCommand($make, new \Itk\Cms\Generator\CollectionClassBuilder(new \Itk\Cms\Generator\SkeletonRenderer()), new \Itk\Cms\Generator\CollectionSpecReader(), new \Itk\Cms\Generator\TableReader(), $c->get('doctrine'), $c);
+            $command = new \Itk\Cms\Command\MakeCollectionCommand($make, new \Itk\Cms\Generator\CollectionClassBuilder(new \Itk\Cms\Generator\SkeletonRenderer()), new \Itk\Cms\Generator\CollectionSpecReader(), new \Itk\Cms\Generator\TableReader(), $c->get('doctrine'));
             foreach (['city:bad.key', 'city:same,region:same'] as $map) {
                 $tester = new CommandTester($command);
                 self::assertSame(2, $tester->execute(['key' => 'f2_table', '--from' => 'table:' . $table, '--map' => $map], ['interactive' => false]), $tester->getDisplay());

@@ -17,7 +17,7 @@ final class CollectionSpec
     /**
      * @param list<FieldSpec> $fields
      * @param array<string, mixed>|null $source {kind: 'table'|'json', name: string, idColumn?: string}
-     * @param list<string> $notes columns left out and why
+     * @param list<string> $notes notices about ignored input
      */
     public function __construct(
         public readonly string $key,

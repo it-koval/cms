@@ -1,7 +1,7 @@
 {
   "name": "itk-cms-admin",
   "private": true,
-  "version": "0.2.2",
+  "version": "0.3.0",
   "type": "module",
   "description": "ITK CMS — админка (Vue 3 + Vite): тонкий клиент к /admin/api",
   "license": "MIT",

@@ -4,7 +4,7 @@ English | [Русский](README.ru.md)
 
 ITK CMS is a Symfony bundle that adds a content management system and an editor admin panel to a PHP site. You describe the site structure in PHP and write Twig templates. Editors build pages from sections, preview drafts, and publish them in the admin panel. The bundle stores its content in PostgreSQL and ships the admin panel prebuilt, so a site does not need Node.
 
-The current version is 0.2.2. Until 1.0.0 a minor release may change the public API. [API.md](packages/cms/API.md) defines its boundary. [UPGRADE.md](UPGRADE.md) describes the compatibility policy and migration steps.
+The current version is 0.3.0. Until 1.0.0 a minor release may change the public API. [API.md](packages/cms/API.md) defines its boundary. [UPGRADE.md](UPGRADE.md) describes the compatibility policy and migration steps.
 
 ## Features
 

@@ -143,7 +143,6 @@
 'model.gen_column_skipped': 'колонка «{column}» пропущена (--map)'
 'model.gen_column_type_skipped': 'колонка «{column}» ({type}) пропущена: такой тип поля генератор не делает'
 'model.gen_table_no_fields': 'Из таблицы «{table}» не получилось ни одного поля.'
-'model.gen_table_no_primary': 'У таблицы «{table}» нет одной колонки-первичного ключа: укажите её в --id=колонка, чтобы повторный запуск обновлял записи, а не дублировал.'
 'model.gen_table_name_invalid': 'Имя таблицы «{table}» не подходит: латиница, цифры, «_», при необходимости база.таблица.'
 'model.label_name': 'Название'
 'model.label_title': 'Заголовок'

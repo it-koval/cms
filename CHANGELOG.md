@@ -4,7 +4,7 @@ English | [Русский](CHANGELOG.ru.md)
 
 All notable changes to ITK CMS are recorded in this file. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html). The [public API reference](packages/cms/API.md) defines the supported integration points.
 
-## [Unreleased] — 0.3.0
+## [0.3.0] - 2026-11-25
 
 ### Breaking changes
 
@@ -19,11 +19,13 @@ All notable changes to ITK CMS are recorded in this file. The format follows [Ke
 - Public form JSON must be a flat object of up to 1000 scalar or null values. Arrays and nested objects return HTTP 422. The acceptance switch is controlled by the system notifications setting `itk:forms`. A site field named `forms` keeps its own value.
 - The Photos editor adds `{src, alt}` objects. Existing URL strings remain valid. Site templates must support both shapes before editors add photos. See [UPGRADE](UPGRADE.md#other-changes).
 - Removed the AI suggestions editor panel and the schema option `feature('ai')`. Update the site schema as described in [UPGRADE.md](UPGRADE.md#ai-suggestions).
+- Row import in `itk:make:collection` was removed along with `--import` and `--publish`. The command ignores the JSON field `rows` and still generates a class from a table or a description. Move old site records with your own script when migrating the database dump. See [UPGRADE](UPGRADE.md#collection-row-import).
 - The 0.3.0 database migrations are incompatible with 0.2.2 and include irreversible changes. A rollback requires the pre-upgrade database and uploads with the original matching deployment. See [UPGRADE](UPGRADE.md#rollback-to-022).
 - Outstanding account links expire. Sites must configure `itk_cms.public_url`, clear legacy account mail jobs and request fresh links. Integrations starting a new request resend use `RequestQueue::enqueue(..., resend: true)` instead of dispatching a legacy `SendRequestNotification` directly. See [UPGRADE](UPGRADE.md#other-changes).
 
 ### Added
 
+- Use `make` to start the development stack and run CI checks locally (`make help`). The stack uses ports 18020–18023 on `127.0.0.1` by default. See [CONTRIBUTING](CONTRIBUTING.md).
 - `itk:requests:recover` triggers recovery of request delivery jobs and events. After checking a Telegram/MAX chat, `itk:requests:resolve <request> <telegram|max> <recipient> <sent|rejected>` records the result. `itk:requests:resend <request> --channel=<telegram|max>` continues delivery. For SMTP, use `itk:requests:mail:resolve <request> <recipient> <sent|rejected>` and, after a confirmed refusal, `itk:requests:resend <request> --channel=mail --recipient=<address>`. These mail recovery commands work without a failure transport. Mail resolution also prints the retry command when it finds a matching failed envelope.
 - Added the code of conduct, issue and pull request templates, and a deployment and rollback guide with a production Compose file. See [DEPLOY.md](docs/DEPLOY.md).
 - Site Health and `itk:doctor` report unreadable two-step sign-in keys and use the same GD/WebP check.
@@ -84,7 +86,7 @@ All notable changes to ITK CMS are recorded in this file. The format follows [Ke
 - Site status lists form fields that lack an explicit limit. Long request retries retain per-channel outcomes across reloads and release failed channels for another retry.
 - Malformed JSON in public forms returns a validation error. Oversized submissions return HTTP 413 before decoding.
 - An existing SMTP setting with a password and disabled encryption reports how to restore mail delivery.
-- Collection imports continue after invalid rows. Republish hooks receive the published snapshot. Page edits share title and URL validation, normalize SEO fields and detect cycles at any depth. Bulk deletion handles children first.
+- Republish hooks receive the published snapshot. Page edits share title and URL validation, normalize SEO fields and detect cycles at any depth. Bulk deletion handles children first.
 - Telegram and MAX retain accepted parts per recipient and keep the saved text through retries of an unfinished operation, including after a channel is disabled and re-enabled. A part left in `sending` waits for operator resolution. Retries skip accepted parts and can retry confirmed refusals. A manual retry after a complete refusal starts a new operation with fresh text.
 - Telegram classifies delivery using the original POST. A 2xx response confirms acceptance only with `ok: true` and `result.message_id`. HTTP 4xx other than 408 and proven failures before sending are definite refusals. A 2xx with no valid confirmation, 408, 5xx and a lost response after sending remain uncertain. A later listener error cannot change the outcome of the original POST. An incompatible HTTP client decorator is refused before sending as a definite failure.
 - SMTP request mail keeps per-recipient acceptance checkpoints. An uncertain recipient stays blocked until operator resolution. Old aggregate mail warnings remain open because 0.2.2 did not persist the complete historical recipient list. After verifying every historical destination, an operator can explicitly close an old aggregate warning with `itk:requests:mail:resolve <request> --legacy-checked`. Use historical delivery records to verify that list.
@@ -258,6 +260,7 @@ The first public release.
 - A Docker kit in `docker/`: PHP-FPM, nginx, a queue worker, PostgreSQL 17 with pgvector, and Mailpit, with development and production stages.
 - Rules for an AI agent that builds a site on the bundle (`SITE-AGENTS.md`).
 
+[0.3.0]: https://github.com/it-koval/cms/releases/tag/v0.3.0
 [0.2.2]: https://github.com/it-koval/cms/releases/tag/v0.2.2
 [0.2.1]: https://github.com/it-koval/cms/releases/tag/v0.2.1
 [0.2.0]: https://github.com/it-koval/cms/releases/tag/v0.2.0

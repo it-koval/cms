@@ -14,8 +14,6 @@
 'content.settings_max_chat_ids_check': 'MAX чаттарының ID-ларын тексеріңіз'
 'content.settings_mail_limit': 'Бір пішін үшін 10 мекенжайдан артық болмауы керек'
 'content.settings_mail_invalid': 'Мекенжайларды тексеріңіз: «{email}» пошта мекенжайына ұқсамайды'
-'content.import_collection_unknown': '«{collection}» коллекциясы схемада жоқ: класс әлі қосылмаған (cache:clear) немесе кілт басқа.'
-'content.import_row_failed': 'жол {row}: {message}'
 'content.change_name_page': 'Бет'
 'content.change_new_section': 'Жаңа секция'
 'content.change_section_hidden': 'Сайтта жасырылған'
