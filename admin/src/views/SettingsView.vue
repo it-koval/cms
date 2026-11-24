@@ -43,6 +43,7 @@ import { rebaseSettings } from '@/components/settings/rebaseSettings.js'
 import { useToast } from '@/components/ui/useToast.js'
 import { useConfirm } from '@/components/ui/useConfirm.js'
 import { t } from '@/i18n/index.js'
+import { previewField, resolvePreviewPath } from '@/components/editor/previewTarget.js'
 
 const route = useRoute()
 const router = useRouter()
@@ -77,6 +78,7 @@ const savedMenus = ref(null)
 const draftMenus = ref(null)
 const menuAreas = ref([])
 const forms = ref([])
+const settingsForms = ref([])
 
 const READ_ONLY = ['tgFallback', 'tgReady', 'maxFallback', 'mailReady', 'maxReady'] // yes / no answers of the server, never sent back
 
@@ -202,9 +204,14 @@ function discard() {
 
 /* ---- navigation: items, segments, links to the cards of «Основное» ---- */
 const smooth = () => (window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth')
-function goItem(key) {
+async function goItem(key) {
   if (key === item.value && (key !== 'general' || !(target.value && target.value.group))) return
-  router.push({ name: 'settings', params: { tab: key } }).then(() => window.scrollTo({ top: 0 }))
+  const failure = await router.push({ name: 'settings', params: { tab: key } })
+  if (!failure) window.scrollTo({ top: 0 })
+}
+async function selectItem(event) {
+  const select = event.currentTarget
+  try { await goItem(select.value) } finally { select.value = item.value }
 }
 function goSegment(key) { if (key !== segment.value) router.push({ name: 'settings', params: { tab: SEGMENT_TAB[key] } }) }
 
@@ -261,6 +268,18 @@ async function reveal(k) {
   const control = el.matches('input,textarea,select,button,[tabindex]') ? el : box.querySelector('input,textarea,select,button')
   if (control) control.focus({ preventScroll: true })
 }
+
+watch([loading, () => route.query.field, () => route.query.rows], async ([busy, path, rows]) => {
+  const field = previewField(getSettingsFields(), path)
+  if (busy || loadError.value || !field || !can('set:' + groupOfKey(field.k), 'view')) return
+  const currentPath = resolvePreviewPath(getSettingsFields(), draftSettings.value, path, rows)
+  if (!currentPath) { toast.show(t('editor.preview_item_unavailable')); return }
+  if (item.value !== 'general') await router.push({ name: 'settings', params: { tab: 'general' }, query: route.query })
+  await nextTick()
+  for (const form of settingsForms.value) {
+    if (await form.focusField(currentPath)) break
+  }
+})
 
 /* ---- save ---- */
 let savePromise = null
@@ -363,9 +382,9 @@ useLocaleGuard(() => confirmUnsaved(true))
         </nav>
         <div class="snav-sel">
           <label class="sr" for="set-sel">{{ t('settings.section_label') }}</label>
-          <select id="set-sel" @change="goItem($event.target.value)">
+          <select id="set-sel" :value="item" @change="selectItem">
             <optgroup v-for="n in navGroups" :key="n.heading" :label="n.heading">
-              <option v-for="i in n.items" :key="i.key" :value="i.key" :selected="item === i.key">{{ i.label }}{{ counts[i.key] ? ` (${counts[i.key]})` : '' }}</option>
+              <option v-for="i in n.items" :key="i.key" :value="i.key">{{ i.label }}{{ counts[i.key] ? ` (${counts[i.key]})` : '' }}</option>
             </optgroup>
           </select>
         </div>
@@ -384,7 +403,7 @@ useLocaleGuard(() => confirmUnsaved(true))
                 </button>
               </nav>
               <SettingsFormTab
-                v-for="c in cards" :key="c.key" :sections="c.sections" :data="draftSettings" :changed="c.changed" :errors="errors" :marks="isMulti()" :locale="LOC"
+                v-for="c in cards" :key="c.key" ref="settingsForms" :sections="c.sections" :data="draftSettings" :changed="c.changed" :errors="errors" :marks="isMulti()" :locale="LOC"
                 :readonly="!c.editable" @set="setField" @revert="revertField"
               />
               <div v-if="!cards.length" class="sheet set-load">{{ t('settings.none_available') }}</div>

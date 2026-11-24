@@ -68,6 +68,23 @@ it('reads the entire wide view beyond 2000 rows', async () => {
   expect(mocks.query).toHaveBeenCalledTimes(11)
 })
 
+it.each([
+  [{ type: 'calendar', start: 'date' }, [{ id: '199' }]],
+  [{ type: 'kanban', groupBy: 'state' }, []],
+  [{ type: 'tree' }, [{ id: '199' }]],
+])('reports an incomplete $0.type when the later page repeats a row or runs out', async (view, later) => {
+  const items = Array.from({ length: 200 }, (_, id) => ({ id: String(id) }))
+  mocks.query.mockImplementation(async (_col, { page }) => ({
+    items: page === 1 ? items : later,
+    total: 201, page, perPage: 200,
+  }))
+  await mount({ ...cfg, view: view.type, views: [view], tree: view.type === 'tree' })
+  expect(state.rows).toHaveLength(200)
+  expect(state.incomplete).toBe(true)
+  if (view.type === 'tree') expect(state.treeOff).toBe(true)
+  expect(mocks.query).toHaveBeenCalledTimes(2)
+})
+
 it.each(['toggle', 'calendar', 'kanban'])('keeps %s undo bound to the original collection language after navigation', async (action) => {
   await mount({ ...cfg, toggleField: 'visible' })
   const row = { id: 'one', title: 'KK title', translated: true, visible: false, date: '2026-11-01', state: 'old' }
@@ -140,4 +157,22 @@ it('leaves the compact language selector in control instead of opening the row o
   await mount()
   state.onRow({ target: document.createElement('select') }, { id: 'one' })
   expect(mocks.push).not.toHaveBeenCalled()
+})
+
+
+it('keeps a load error distinct from an empty successful collection and allows retry', async () => {
+  mocks.query.mockRejectedValueOnce(new Error('Server unavailable'))
+  await mount()
+  expect(state.loadError).toBe('Server unavailable')
+  mocks.query.mockResolvedValueOnce({ ...envelope(), total: 0 })
+  await state.load()
+  expect(state.loadError).toBe('')
+  expect(state.total).toBe(0)
+})
+
+it('blocks tree moves when a returned record has an unloaded parent', async () => {
+  mocks.query.mockResolvedValueOnce({ ...envelope([{ id: 'child', parentId: 'unloaded' }]), total: 1 })
+  await mount({ ...cfg, view: 'tree', tree: true })
+  expect(state.treeIncomplete).toBe(true)
+  expect(state.treeOff).toBe(true)
 })

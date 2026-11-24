@@ -108,6 +108,7 @@ const unfilteredTotal = ref(0)
 const wholeTotal = computed(() => counter.value?.count ?? unfilteredTotal.value)
 const translatedCount = computed(() => counter.value?.locales?.[LOC]?.count ?? Object.entries(facets.value.status || {}).filter(([status]) => status !== 'missing').reduce((n, [, count]) => n + count, 0))
 const loaded = ref(false)
+const loadError = ref('')
 const refreshing = ref(false)
 const adding = ref(false)
 let seq = 0
@@ -122,13 +123,16 @@ const filtered = computed(() => !!q.value.trim() || nFilters.value > 0)
 async function queryAll(base) {
   const params = { ...base, page: 1, perPage: 200, ...(view.value === 'tree' ? { sort: 'position' } : {}) }
   const first = await api.collections.query(props.cfg.key, params)
-  let items = first.items
-  for (let p = 2; items.length < first.total; p++) {
+  const records = new Map(first.items.map((row) => [row.id, row]))
+  const pages = Math.ceil(first.total / first.perPage)
+  let total = first.total
+  for (let p = 2; p <= pages; p++) {
     const more = await api.collections.query(props.cfg.key, { ...params, page: p })
-    if (!more.items.length) throw new Error(t('collections.cl_load_failed'))
-    items = items.concat(more.items)
+    total = Math.max(total, more.total)
+    if (!more.items.length) break
+    for (const row of more.items) records.set(row.id, row)
   }
-  return { ...first, items, page: 1, perPage: Math.max(1, items.length) }
+  return { ...first, items: [...records.values()], total, page: 1, perPage: Math.max(1, records.size) }
 }
 async function load() {
   if (!alive) return
@@ -141,6 +145,7 @@ async function load() {
     // a page that no longer exists (records were deleted, the filter narrowed): the last one
     const last = Math.max(1, Math.ceil(res.total / res.perPage))
     if (res.page > last && res.total > 0) { page.value = last; return }
+    loadError.value = ''
     rows.value = res.items
     total.value = res.total
     facets.value = res.facets || {}
@@ -151,7 +156,6 @@ async function load() {
     loaded.value = true
   } catch (e) {
     if (!alive || my !== seq) return
-    loaded.value = true
     // a saved filter or sort the server no longer accepts (the schema changed): start clean instead of failing every visit
     if (e.status === 422 && (nFilters.value || sort.value)) {
       toast.error(t('collections.cl_filters_stale'))
@@ -159,7 +163,8 @@ async function load() {
       ls.state.sort = ''
       return
     }
-    toast.error(e.message || t('collections.cl_load_failed'))
+    loaded.value = true
+    loadError.value = e.message || t('collections.cl_load_failed')
   } finally {
     if (alive && my === seq) refreshing.value = false
   }
@@ -367,8 +372,14 @@ function kanMove({ item, to }) {
 }
 
 const treeNodes = computed(() => T.nest(rows.value))
-const treeOff = computed(() => !canEdit.value || filtered.value || wideBusy.value)
+const incomplete = computed(() => wide.value && rows.value.length < total.value)
+const treeIncomplete = computed(() => {
+  const ids = new Set(rows.value.map((row) => row.id))
+  return incomplete.value || rows.value.some((row) => row.parentId && !ids.has(row.parentId))
+})
+const treeOff = computed(() => !canEdit.value || filtered.value || wideBusy.value || treeIncomplete.value || !!loadError.value)
 async function treeMove(ev) {
+  if (treeOff.value) return
   const before = treeNodes.value
   wideBusy.value = true
   try {
@@ -600,7 +611,7 @@ const runRow = (a) => { const r = menu.value.row; menu.value.open = false; if (r
       <div v-if="!loaded" class="cl-pad"><Skeleton :rows="6" /></div>
 
       <!-- nothing in the collection yet -->
-      <EmptyState v-else-if="!total && !filtered" :icon="cfg.icon" :title="cfg.empty.title" :text="canEdit ? cfg.empty.text : t('collections.cl_no_records')">
+      <EmptyState v-else-if="!loadError && !total && !filtered" :icon="cfg.icon" :title="cfg.empty.title" :text="canEdit ? cfg.empty.text : t('collections.cl_no_records')">
         <button v-if="canEdit" type="button" :class="['btn primary', { loading: adding }]" @click="add()"><Icon name="plus" size="s16" />{{ cfg.newLabel }}</button>
         <p v-if="MULTI && canEdit" class="cl-addnote c">{{ addNote }}</p>
       </EmptyState>
@@ -632,12 +643,16 @@ const runRow = (a) => { const r = menu.value.row; menu.value.open = false; if (r
           <span v-else-if="orderable && L.orderHint" class="grow">{{ L.orderHint }}</span>
         </div>
 
+        <div v-if="loadError" class="cl-pad alert err-a" role="alert"><Icon name="alert" size="s16" /><span>{{ loadError }}</span><button type="button" class="btn" :disabled="refreshing" @click="load">{{ t('settings.retry') }}</button></div>
+        <template v-else>
+        <div v-if="incomplete || (view === 'tree' && treeIncomplete)" class="alert warn-a" role="status"><Icon name="alert" size="s16" /><span>{{ t(view === 'tree' ? 'collections.cl_tree_incomplete' : 'collections.cl_incomplete', { loaded: rows.length, total }) }}</span><button type="button" class="btn sm" :disabled="refreshing" @click="load">{{ t('ui.retry') }}</button></div>
+
         <!-- the key to the short chips of the cards (the table spells the words out) -->
         <div v-if="MULTI && isCards && !reorder.on && rows.length" class="cl-key">
           <span class="cl-k pub"><i />{{ t('collections.cl_key_published') }}</span><span class="cl-k chg"><i />{{ t('collections.cl_key_changed') }}</span><span class="cl-k off"><i />{{ t('collections.cl_key_missing') }}</span>
         </div>
 
-        <EmptyState v-if="!reorder.on && !rows.length" icon="search" :title="t('collections.cl_nothing_title')" :text="t('collections.cl_nothing_text')">
+        <EmptyState v-if="!reorder.on && !rows.length && !incomplete" icon="search" :title="t('collections.cl_nothing_title')" :text="t('collections.cl_nothing_text')">
           <button type="button" class="btn" @click="resetFilters">{{ t('collections.cl_reset_filters') }}</button>
         </EmptyState>
 
@@ -772,6 +787,8 @@ const runRow = (a) => { const r = menu.value.row; menu.value.open = false; if (r
             </div>
           </div>
         </div>
+
+        </template>
 
         <ListPager v-if="!reorder.on && rows.length && !wide" v-model:page="page" v-model:per-page="perPage" :total="total" />
       </template>

@@ -59,6 +59,12 @@ final class MediaService
         return $this->files->search($q, $type, $folder);
     }
 
+    /** @return array{items: list<MediaFile>, total: int, nextCursor: ?string, previousCursor: ?string} */
+    public function page(string $q, string $type, string $folder, int $offset, int $limit, string $cursor = ''): array
+    {
+        return $this->files->page($q, $type, $folder, $offset, $limit, $cursor);
+    }
+
     public function find(string $id): MediaFile
     {
         return $this->files->find($id) ?? throw ContentException::notFound(I18n::t('http.file_not_found'));
@@ -278,15 +284,20 @@ final class MediaService
         if ($withUsage && null === $viewer) {
             throw new \InvalidArgumentException('Media usage requires an explicit Viewer.');
         }
+        $size = $m->width > 0 && $m->height > 0 ? [$m->width, $m->height] : null;
+        // A legacy JPEG can have raw dimensions saved before EXIF was available. Other formats keep the metadata fast path.
+        if ('image/jpeg' === $m->mime && null !== ($path = $this->variants->pathOf($m->path))) {
+            $size = $this->variants->dimensions($path) ?? $size;
+        }
 
         return [
             'id' => $m->id,
             'name' => $m->title,
             'originalName' => $m->originalName,
             'src' => $m->path,
-            'thumb' => $m->isImage() ? $this->variants->url($m->path, 320) : '',
-            'w' => $m->width,
-            'h' => $m->height,
+            'thumb' => $m->isImage() ? $this->variants->url($m->path, 320, originalSize: $size) : '',
+            'w' => $size[0] ?? $m->width,
+            'h' => $size[1] ?? $m->height,
             'kb' => \max(1, (int) \round($m->size / 1024)),
             'alt' => $m->alt,
             'folderId' => $m->folderId(),

@@ -502,7 +502,22 @@ describe('Яндекс Вебмастер', () => {
 })
 
 describe('requests and their delivery to the messengers', () => {
-  const failedOne = () => get('requests').body.find((r) => r.st === 'failed')
+  it('slices filtered requests newest first and keeps the filtered total on later pages', () => {
+    const db = makeDb()
+    const row = db.requests[0]
+    db.requests = [3, 1, 5, 2, 4].map((id) => ({ ...row, id, locale: id > 1 ? 'kk' : 'ru', dt: row.dt }))
+    mock = createMock(db)
+    const first = get('requests', { locale: 'kk', perPage: '2' }).body
+    const second = get('requests', { locale: 'kk', perPage: '2', page: '2' }).body
+    expect(first).toMatchObject({ total: 4, page: 1, perPage: 2 })
+    expect(first.items.map((item) => item.id)).toEqual([5, 4])
+    expect(second.items.map((item) => item.id)).toEqual([3, 2])
+    expect(get('media', { page: '2' }).body).toEqual({ items: [], total: 0, page: 2, perPage: 50, nextCursor: null, previousCursor: null })
+    db.requests.push({ ...row, id: 6, locale: 'kk' })
+    expect(get('requests', { locale: 'kk', perPage: '2', page: '2', cursor: first.nextCursor }).body.items.map((item) => item.id)).toEqual([3, 2])
+  })
+
+  const failedOne = () => get('requests').body.items.find((r) => r.st === 'failed')
 
   it('matches phone digits across stored punctuation, handles missing numbers, and keeps text search case-insensitive', () => {
     const db = makeDb()
@@ -510,11 +525,11 @@ describe('requests and their delivery to the messengers', () => {
     const missing = { ...db.requests[0], id: 99, phone: null, name: null, city: null, form: 'Order' }
     db.requests = [row, missing]
     mock = createMock(db)
-    const ids = (q) => get('requests', { q }).body.map((r) => r.id)
+    const ids = (q) => get('requests', { q }).body.items.map((r) => r.id)
     for (const q of ['79001112233', '+7 900 111-22-33', '11122', ' VISITOR ', 'ASTANA', 'callback']) expect(ids(q)).toEqual([row.id])
     expect(ids('order')).toEqual([missing.id])
     expect(ids('999')).toEqual([])
-    expect(ids(null)).toEqual([row.id, missing.id])
+    expect(ids(null)).toEqual([missing.id, row.id])
   })
 
   it('every request tells the state of each channel, and the aggregate is derived from them', () => {
@@ -522,7 +537,7 @@ describe('requests and their delivery to the messengers', () => {
     expect(r.channels).toEqual([{ channel: 'telegram', state: 'sent', error: null }, { channel: 'max', state: 'failed', error: 'chat not found' }])
     expect(r).toMatchObject({ delivery: 'failed', deliveryError: 'MAX: chat not found' })
     expect(get('requests/counts').body.failed).toBe(1)
-    expect(get('requests', { status: 'failed' }).body.map((x) => x.id)).toEqual([r.id])
+    expect(get('requests', { status: 'failed' }).body.items.map((x) => x.id)).toEqual([r.id])
   })
 
   it('a resend to one channel changes only that channel', () => {

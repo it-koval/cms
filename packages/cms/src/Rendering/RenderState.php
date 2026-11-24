@@ -22,6 +22,10 @@ final class RenderState
     /** @var array<string, mixed>|null snapshot on the live site (preview only) */
     public ?array $published = null;
     public string $template = 'default';
+    /** @var array<string, string> collection record id => collection key, discovered by Twig reads in this render */
+    public array $collectionOwners = [];
+    /** @var list<array<string, mixed>> exact site/settings() maps handed to Twig in this render */
+    public array $settingsSubjects = [];
     /** What itk_cache() asked of the cache of pages in this render: seconds the entry may live at most, false = do not keep, null = nothing asked. */
     public int|false|null $cache = null;
     /** The critical CSS itk_stylesheets() inlines in this render. */
@@ -45,6 +49,8 @@ final class RenderState
         $this->path = '/';
         $this->published = null;
         $this->template = 'default';
+        $this->collectionOwners = [];
+        $this->settingsSubjects = [];
         $this->cache = null;
         $this->critical = null;
     }

@@ -1,5 +1,5 @@
 // Media library API: a thin fetch client over /admin/api.
-//   list({ q, type, folder })  GET    media?q=&type=&folder=    type: '' | 'img' | 'pdf'; folder: '' (all files) | 'none' (outside any folder) | a folder id
+//   list({ q, type, folder, page, perPage })   GET media → { items, total, page, perPage }; folder: '' (all files) | 'none' (outside any folder) | a folder id
 //   usage(id)                GET    media/:id/usage           [{ label, to }]  where the file is used (pages, collection records, settings)
 //   upload(file, folderId)   POST   media (multipart, field `file`, optional `folderId`)   a File from <input type=file>; the size limit is the server's (413 with its message)
 //   update(id, patch)        PATCH  media/:id                 { alt, name, folderId, focal, crops }
@@ -14,7 +14,7 @@
 import { ApiError, http } from './http.js'
 import { t } from '@/i18n/index.js'
 
-export const list = ({ q = '', type = '', folder = '' } = {}) => http.get('media', { q: q.trim(), type, folder })
+export const list = ({ q = '', type = '', folder = '', page, perPage, cursor } = {}) => http.get('media', { q: q.trim(), type, folder, page, perPage, cursor })
 export const usage = (id) => http.get(`media/${encodeURIComponent(id)}/usage`)
 
 export async function upload(file, folderId = null) {

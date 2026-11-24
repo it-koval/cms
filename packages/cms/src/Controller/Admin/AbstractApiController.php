@@ -35,6 +35,15 @@ abstract class AbstractApiController
         return $response;
     }
 
+    /** @return array{int, int, int} page, per-page size and offset */
+    protected function listPage(Request $request): array
+    {
+        $perPage = \max(1, \min(100, $request->query->getInt('perPage', 50)));
+        $page = \max(1, $request->query->getInt('page', 1));
+
+        return [$page, $perPage, \min($page - 1, \intdiv(\PHP_INT_MAX, $perPage)) * $perPage];
+    }
+
     /**
      * The request body as an array: JSON, or form fields.
      *

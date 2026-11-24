@@ -153,7 +153,7 @@ tr.unread td .ph{font-weight:700}
 .mdi .pic{aspect-ratio:1/1;background:var(--hair-2);display:grid;place-items:center;overflow:hidden}
 .mdi .pic img{width:100%;height:100%;object-fit:cover;display:block}
 .mdi .pic .pdf{color:var(--red);display:flex;flex-direction:column;align-items:center;gap:4px;font-size:var(--t-xs);font-weight:650}
-.mdi .nm{padding:7px 9px 8px;font-size:var(--t-xs);line-height:1.3;word-break:break-all}
+.mdi .nm{max-width:100%;padding:7px 9px 8px;font-size:var(--t-xs);line-height:1.3;overflow-wrap:anywhere}
 .mdi .nm small{display:block;color:var(--ink-2)}
 .used a{display:flex;align-items:center;gap:6px;font-size:var(--t-sm)}
 

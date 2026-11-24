@@ -83,9 +83,19 @@ final class Format
      */
     public static function page(array $items, int $offset, int $limit): array
     {
-        $total = \count($items);
+        return self::pageResult(\array_slice($items, $offset, $limit), \count($items), $offset, $limit);
+    }
 
-        return ['items' => \array_slice($items, $offset, $limit), 'total' => $total, 'offset' => $offset, 'limit' => $limit, 'hasMore' => $offset + $limit < $total];
+    /**
+     * @template T
+     *
+     * @param list<T> $items the rows of a page already selected by the database
+     *
+     * @return array{items: list<T>, total: int, offset: int, limit: int, hasMore: bool}
+     */
+    public static function pageResult(array $items, int $total, int $offset, int $limit): array
+    {
+        return ['items' => $items, 'total' => $total, 'offset' => $offset, 'limit' => $limit, 'hasMore' => $limit < $total - $offset];
     }
 
     /**

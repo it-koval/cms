@@ -407,6 +407,8 @@ The site puts its templates in `templates/`:
 
 A page template has access to `page` (`id`, `parentId`, `template`, `locale`, `html_lang`, `og_locale`, `translations`, `title`, `url`, `seo`, `fields`, `sections`, `h1Id`) and `site` (the settings, plus `name`, `domain`, `locale`).
 
+To make a record or setting clickable in the page preview, use `itk_field(record, 'title')` on a row from `itk_collection()` or `listing()`, and `itk_field(site, 'phone')` or `itk_field(settings(), 'phone')` for a setting. Use `itk_field_attrs()` on the surrounding element for custom markup. A click opens the field in the preview language when the editor has access.
+
 ### Twig functions
 
 | Function | What it does |
@@ -484,7 +486,7 @@ A field is an object from `Itk\Cms\Field\` with chained methods. The label comes
 | `Select` | `select` | One option: `->options(['open' => 'Open'])` | string |
 | `Date`, `DateTime` | `date`, `dateTime` | `2026-11-30`, `2026-11-30T18:00` | string |
 | `Image` | `image` | An image | `{src, alt}` |
-| `Photos` | `photos` | A list of photos. An item is a URL string or `{src, alt}`. In a template, write `{{ p.src ?? p }}` | list |
+| `Photos` | `photos` | Photos with individual alt text. An item is a URL string or `{src, alt}`. Use `p.src ?? p` for the URL and `p.alt ?? ''` for the alt text | list |
 | `Link` | `link` | A link to a page or a URL | `{kind, page, url}` |
 | `Repeater` | `repeater` | A list of items: `->fields(...)` | list, each item has `_id` |
 | `Relation` | `relation` | A link to a collection record: `->to('destinations')`, `->multiple()` | id or list of ids |
@@ -499,6 +501,7 @@ All methods return the field, and you can call them in any order.
 | Method | What it does |
 |---|---|
 | `required()`, `max(int)`, `rows(int)` | Required, length, height of the input |
+| `lineBreak(false)` | Disable line breaks in a headline. The default and `lineBreak()` allow them |
 | `hint(string)` | Help text under the field. Alias: `help()` |
 | `default($v)` | The value for a new record. Alias: `initial()` |
 | `pattern($regex, $message)` | Server-side check of a site form value |
@@ -749,6 +752,14 @@ The bundle recognizes the admin panel by the route names `itk_admin_*` and `itk_
 - All admin responses get `X-Frame-Options: SAMEORIGIN`, `Content-Security-Policy: frame-ancestors 'self'`, `X-Content-Type-Options: nosniff` and `Referrer-Policy: same-origin`. A header set by the controller is not overwritten.
 
 The `Itk\Cms\Admin\AdminPath` service tells where the admin panel is (`base()`, `to('/api/me')`), taking the import `prefix` into account. Links in e-mails are built through it.
+
+#### Requests and media lists
+
+`GET /admin/api/requests` and `GET /admin/api/media` return `{ items, total, page, perPage, nextCursor, previousCursor }`. Use `page` (starting at 1) and `perPage` (default 50, range 1–100). `total` counts all matches. Both lists sort by creation time and ID, descending. For adjacent pages, pass `nextCursor` or `previousCursor` as `cursor` with the same filters and page size. The cursor takes precedence over the offset implied by `page`, and is `null` in a direction with no more results. Requests using only a page number select by current position in the matching list.
+
+- Requests support `status`, `form`, `q`, `period`, `from`, `to` and `locale`. `GET /admin/api/requests/counts` gives site-wide totals.
+- Media supports `q` for a literal substring in the title, original filename or alt text, `type=img|pdf`, and `folder` (a folder ID, `none` for unfiled files, or omitted for all files).
+- `GET /admin/api/dashboard` includes up to eight rows in `newRequests` and reports the full count in `newRequestCount`. All new requests are available through `GET /admin/api/requests?status=new`.
 
 #### Collection lists
 
@@ -1478,6 +1489,7 @@ The server supports protocol versions `2025-11-25`, `2025-06-18`, `2025-03-26` a
 
 - `site_schema` without arguments gives an overview, and with `kind` and `key` the full description of one section. The `itk://schema` resource returns the same.
 - `settings_get` does not return passwords, tokens, the mail server, chats or notification addresses.
+- `requests_list` and `media_search` accept `offset` (default 0), `limit` (default 20 for requests and 30 for media, maximum 100), and an optional `cursor` that takes precedence over `offset`. Both return `{ items, total, offset, limit, hasMore, nextCursor, previousCursor }`. Pass `nextCursor` as `cursor` with the same filters to continue through rows ordered by creation time and ID, descending.
 - `media_upload` accepts a base64 file of up to 5 MB. The server does not download files by URL.
 - `page_unpublish` leaves the page as a draft. The home page cannot be unpublished.
 - Through MCP you cannot delete pages, records, files or rules, change users, roles, keys, settings or redirects, or restore versions.

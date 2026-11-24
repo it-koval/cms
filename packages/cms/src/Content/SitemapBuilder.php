@@ -17,7 +17,7 @@ use Symfony\Contracts\Cache\ItemInterface;
  *  - multilingual addresses use PublicUrl, the same trusted base as HTML. A single-language site uses a valid public_url, then the `domain` setting
  *    (written the way 0.2.2 wrote it); without a base there is no sitemap (the route answers 404);
  *  - <lastmod> is the day the page was published;
- *  - the XML is kept in the cache for an hour and dropped when a page is published, unpublished, changed or deleted, or an SEO rule changes (SitemapInvalidator).
+ *  - the XML is kept in the cache for an hour and dropped when a page is published, unpublished or deleted, or an SEO rule changes (SitemapInvalidator).
  */
 final class SitemapBuilder
 {

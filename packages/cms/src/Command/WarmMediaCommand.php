@@ -41,38 +41,14 @@ final class WarmMediaCommand extends Command
             }
         }
 
-        $jobs = [];
-        foreach ($this->files->search('', 'img') as $m) {
-            $path = $this->variants->pathOf($m->path);
-            if (null === $path) {
-                continue;
-            }
-            $size = $this->variants->dimensions($path);
-            if ([] === $only) {
-                foreach ($this->variants->warmJobs($size[0] ?? $m->width) as [$w, $format]) {
-                    $jobs[] = [$m->path, $w, $format];
-                }
-            } else {
-                foreach ($only as $w) {
-                    $jobs[] = [$m->path, $w, 'webp'];
-                    if ($this->variants->supportsAvif()) {
-                        $jobs[] = [$m->path, $w, 'avif'];
-                    }
-                }
-            }
-        }
-
         $made = $existing = $skipped = 0;
-        $bar = $io->createProgressBar(\count($jobs));
+        $bar = $io->createProgressBar();
         $bar->start();
-        foreach ($jobs as [$url, $w, $format]) {
-            if (\is_file((string) $this->variants->variantFileOf($url, $w, null, $format))) {
-                ++$existing;
-            } elseif (null !== $this->variants->generate($url, $w, $format)) {
-                ++$made;
-            } else {
-                ++$skipped;
-            }
+        foreach ($this->files->imagesForWarming() as $image) {
+            $result = $this->variants->warm($image['path'], $image['width'], $only);
+            $made += $result['made'];
+            $existing += $result['existing'];
+            $skipped += $result['skipped'];
             $bar->advance();
         }
         $bar->finish();

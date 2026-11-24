@@ -29,6 +29,9 @@ All notable changes to ITK CMS are recorded in this file. The format follows [Ke
 - Record after-events expose the committed snapshot in `data.fields`, `data.meta` and `data.status`. Publishing reports the live version. Deleting reports the snapshot captured before removal.
 - CI runs the PHP and Symfony matrix in Docker, covers PostgreSQL 16 and 17 and lowest dependencies, tests two random orders, and checks a clean Symfony install and the production Compose stack. The package split requires a successful CI run for the same commit.
 - The Composer archive no longer includes development scripts.
+- Admin requests and media lists take `page` and `perPage` and return a paginated object. Admin and MCP lists use creation-time and ID cursors for adjacent pages. See [UPGRADE.md](UPGRADE.md#030).
+- Today reads snapshots in batches and displays the latest eight new requests with a link to the whole list. Public listings read the relevant subtree and live collection records. The media warm command reads bounded batches and reuses variant generation.
+
 - Analytics initialization uses one versioned external `defer` loader with `data-*` attributes. In `manual`, the bundle makes no provider requests or preliminary connections before `start()` and omits Metrika's `<noscript>` pixel. `auto` keeps that pixel. Verification meta tags remain available in both modes. Sites manage consent, persistence and reload after revocation, and must remove their direct analytics inserts before switching to `manual`. See [UPGRADE.md](UPGRADE.md#030).
 - Forms use a 1,000-character limit for fields without `max()`. Schema lint and Site status report those fields. MCP `request_get` reads up to 6,000 characters of each form value.
 - The default async transport retries request delivery after 60, 120 and 240 seconds. A manual resend of more than 20 parts per channel is queued and the admin panel confirms it.
@@ -52,6 +55,11 @@ All notable changes to ITK CMS are recorded in this file. The format follows [Ke
 - Republishing a page at the same address queues one IndexNow notification.
 
 ### Fixed
+
+- The preview opens the field clicked inside a disclosure, including marked collection records and settings in the preview language. Each photo has its own editable alt text.
+- Draft input survives a failed delete or a cancelled navigation. Escape closes the top dialog, destructive confirmations focus Cancel, and profile edits prompt before closing.
+- Collection lists show load errors with Retry and disable tree moves when a parent is missing. Field errors are associated with their inputs. Media names and request form names wrap on narrow screens.
+- Saving a page draft preserves the sitemap cache.
 
 - Language links, crawler files, IndexNow and critical CSS include only versions whose addresses route to their language. Moving a multilingual version preserves any live page at its old address.
 - An invalid public URL leaves public HTML and crawler routes usable. The doctor reports the invalid configuration.

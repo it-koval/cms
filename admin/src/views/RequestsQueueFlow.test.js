@@ -22,6 +22,8 @@ vi.mock('@/components/ui/useConfirm.js', () => ({ useConfirm: () => vi.fn() }))
 const request = { id: 41, form: 'order', place: 'Fixture form', phone: '+10000000000', dt: '2026-11-24T12:00:00Z', work: 'new', data: {}, comment: '', delivery: 'failed', st: 'failed', channels: [{ channel: 'telegram', state: 'failed', error: 'Fixture delivery failure' }], sendable: [], log: [] }
 const report = { status: 'warn', generatedAt: request.dt, messenger: { queues: [], failed: { available: true, total: 0, items: [] } }, requests: { failed: 1, items: [{ id: 41, form: 'Fixture form', dt: request.dt, error: 'Fixture delivery failure', queuedChannels: [], canResend: true }] }, schedules: { available: true, items: [] }, disk: [], versions: { php: '8.4', symfony: '7.4', itk: '0.3.0' }, updates: { enabled: false }, checks: [] }
 const locales = [['ru', 'Поставлено в очередь'], ['en', 'Queued for delivery'], ['kk', 'Кезекке қойылды']]
+const originalWidth = Object.getOwnPropertyDescriptor(window, 'innerWidth')
+const originalViewport = { ...vp }
 let app, host
 const flush = async () => { for (let i = 0; i < 12; i++) { await Promise.resolve(); await nextTick() } }
 async function mount(path) {
@@ -37,9 +39,10 @@ async function mount(path) {
 }
 
 beforeEach(() => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
   vi.clearAllMocks()
   toastState.items = []
-  mocks.list.mockResolvedValue([structuredClone(request)])
+  mocks.list.mockResolvedValue({ items: [structuredClone(request)], total: 1, page: 1, perPage: 50, nextCursor: null, previousCursor: null })
   mocks.get.mockResolvedValue(structuredClone(request))
   mocks.resend.mockResolvedValue({ ...structuredClone(request), queuedChannels: ['telegram'] })
   mocks.report.mockResolvedValue(structuredClone(report))
@@ -50,6 +53,10 @@ afterEach(async () => {
   host?.remove()
   toastState.items = []
   document.body.classList.remove('ov-lock')
+  Object.defineProperty(window, 'innerWidth', originalWidth)
+  Object.assign(vp, originalViewport)
+  vi.clearAllTimers()
+  vi.useRealTimers()
   await initI18n('ru')
 })
 

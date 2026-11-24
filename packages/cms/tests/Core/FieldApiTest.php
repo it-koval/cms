@@ -27,6 +27,14 @@ use PHPUnit\Framework\TestCase;
 final class FieldApiTest extends TestCase
 {
     #[Test]
+    public function headlineLineBreakCanBeExplicitlyDisabledWithoutChangingTheDefault(): void
+    {
+        self::assertArrayNotHasKey('brk', Headline::make('Title', 'title')->toArray());
+        self::assertTrue(Headline::make('Title', 'title')->lineBreak()->toArray()['brk']);
+        self::assertFalse(Headline::make('Title', 'title')->lineBreak(false)->toArray()['brk']);
+    }
+
+    #[Test]
     public function aFieldTakesTheLabelFirstAndTheKeySecond(): void
     {
         $f = Text::make('Заголовок', 'title');

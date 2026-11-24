@@ -187,7 +187,7 @@ final class PageService
     {
         $live = $this->liveSnapshot($t);
 
-        return null === $live ? 0 : \count($this->changes->pageChanges($t->draft, $t->page->template, $live));
+        return null === $live ? 0 : $this->changes->pageChangeCount($t->draft, $t->page->template, $live);
     }
 
     /** @return list<array<string, mixed>> */
@@ -1048,7 +1048,8 @@ final class PageService
         $t = $p->translation($locale);
         $src = $t ?? $p->translation($this->mainLocale) ?? ($p->translations->first() ?: null);
         $d = null !== $src ? $this->access->pageOutput($this->schema, $p->template, $this->present($src->draft), false) : ['title' => '', 'url' => '', 'seo' => ['title' => '', 'description' => ''], 'sections' => [], 'fields' => new \stdClass()];
-        $n = null !== $t ? $this->changeCount($t) : 0;
+        $summary = $this->summary($p);
+        $n = $summary[$locale]['changes'] ?? 0;
 
         return [
             'id' => $p->id,
@@ -1071,7 +1072,7 @@ final class PageService
             'published' => null !== $t && $t->isLive(),
             'awaiting' => $t?->awaiting,
             'returned' => $t?->returned,
-            'locales' => $this->summary($p),
+            'locales' => $summary,
         ];
     }
 

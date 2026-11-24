@@ -6,7 +6,7 @@
 // It does what a TextField does (label, «n / max», magenta mark, error) around a prefixed input, so the SEO tab looks the same as for the main language.
 import { computed } from 'vue'
 import FieldShell from '@/components/form/FieldShell.vue'
-import { fieldEmits, fieldProps } from '@/components/form/fieldProps.js'
+import { fieldAria, fieldEmits, fieldProps } from '@/components/form/fieldProps.js'
 import { pathPrefix, prefix, unprefix } from '@/utils/locales.js'
 import { t } from '@/i18n/index.js'
 
@@ -31,10 +31,10 @@ function onInput(e) {
 </script>
 
 <template>
-  <FieldShell :label="field.label" :path="path" :for-id="id" :help-id="id + '_h'" :help="field.help" :error="error" :changed="changed" :top="top" :budget="budget" @revert="emit('revert')">
+  <FieldShell :error-id="id + '_e'" :label="field.label" :path="path" :for-id="id" :help-id="id + '_h'" :help="field.help" :error="error" :changed="changed" :top="top" :budget="budget" @revert="emit('revert')">
     <div class="adr">
       <span class="adr-p" :title="t('collections.af_fixed', { prefix: fixed })">{{ fixed }}</span>
-      <input :id="id" type="text" :value="shown" autocomplete="off" :aria-describedby="field.help ? id + '_h' : undefined" :aria-invalid="error ? 'true' : undefined" @input="onInput">
+      <input :id="id" type="text" :value="shown" autocomplete="off" v-bind="fieldAria(id, field.help, error)" @input="onInput">
     </div>
   </FieldShell>
 </template>

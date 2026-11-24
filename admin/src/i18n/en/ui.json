@@ -214,6 +214,7 @@
   "ui.today_view": "View",
   "ui.today_waiting_empty": "Nothing is waiting for publication right now. When an author sends a page or record for publication, it will appear here.",
   "ui.today_new_requests": "New requests",
+  "ui.today_all_requests": "See all new requests",
   "ui.today_mark_seen_label": "Mark request #{id} as seen",
   "ui.today_mark_seen_title": "Mark as seen",
   "ui.today_seen_btn": "Seen",
@@ -362,5 +363,6 @@
   "ui.ym_col_query": "Query",
   "ui.ym_col_shows": "Shows",
   "ui.ym_col_clicks": "Clicks",
-  "ui.ym_collecting": "Yandex is still collecting data about the site. It appears within a few days."
+  "ui.ym_collecting": "Yandex is still collecting data about the site. It appears within a few days.",
+  "ui.profile_unsaved": "Your name or email changes have not been saved. Closing the profile will discard them."
 }

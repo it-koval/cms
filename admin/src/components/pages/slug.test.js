@@ -46,9 +46,9 @@ describe('addresses', () => {
 
   it('checks an address and says why not, in Russian', () => {
     expect(urlError('', pages)).toMatch(/Укажите адрес/)
-    expect(urlError('about', pages)).toMatch(/начинаться со слэша/)
+    expect(urlError('about', pages)).toMatch(/Начните адрес с \//)
     expect(urlError('/a b', pages)).toMatch(/пробелов/)
-    expect(urlError('/a//b', pages)).toMatch(/Два слэша/)
+    expect(urlError('/a//b', pages)).toMatch(/Уберите второй \//)
     expect(urlError('/страница', pages)).toMatch(/латинские/)
     expect(urlError('/about', pages)).toMatch(/уже занят: страница «О нас»/)
     expect(urlError('/about', pages, 'p1')).toBe('')

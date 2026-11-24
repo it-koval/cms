@@ -13,6 +13,8 @@ import { useToast } from '@/components/ui/useToast.js'
 import { useConfirm } from '@/components/ui/useConfirm.js'
 import { fmtDT } from '@/utils/format.js'
 import { t } from '@/i18n/index.js'
+import { fieldAria } from '@/components/form/fieldProps.js'
+import { useUnsavedChanges } from '@/composables/useUnsavedChanges.js'
 
 const toast = useToast()
 const confirm = useConfirm()
@@ -40,6 +42,7 @@ const testResult = reactive({ ok: '', error: '' })
 const FIELDS = ['enabled', 'host', 'port', 'encryption', 'username', 'fromAddress', 'fromName']
 const same = (a, b) => String(a ?? '') === String(b ?? '')
 const dirty = computed(() => !!state.value && (FIELDS.some((k) => !same(draft[k], state.value[k])) || password.value !== '' || clearPassword.value))
+useUnsavedChanges(dirty, { saving })
 const passwordSet = computed(() => !!state.value && state.value.passwordSet && !clearPassword.value)
 const SERVER_CHANGED = t('integrations.ml_server_changed')
 const serverMoved = computed(() => !!state.value && passwordSet.value && password.value === ''
@@ -67,9 +70,11 @@ async function load() {
 onMounted(() => { testTo.value = (app.user && app.user.email) || ''; load() })
 
 // another kind of protection: the port that was the usual one of the old kind follows to the usual one of the new kind (a port typed by hand stays)
-watch(() => draft.encryption, (now, was) => {
-  if (was && (draft.port === '' || String(draft.port) === String(PORTS[was]))) draft.port = String(PORTS[now])
-})
+function changeEncryption(next) {
+  const previous = draft.encryption
+  draft.encryption = next
+  if (draft.port === '' || String(draft.port) === String(PORTS[previous])) draft.port = String(PORTS[next])
+}
 
 watch([password, () => draft.host, () => draft.username], () => { delete errors.password })
 
@@ -166,7 +171,7 @@ const lastBad = computed(() => last.value.bad)
         <div :class="{ 'ro-zone': !canEdit }" :inert="!canEdit || undefined">
           <div :class="['field', 'ml-first', { 'is-changed': !same(draft.enabled, state.enabled) }]">
             <div class="lbl">
-              <label class="sw"><input v-model="draft.enabled" type="checkbox"><span class="tr" /><span>{{ t('integrations.ml_enabled_label') }}</span></label>
+              <label class="sw"><input v-model="draft.enabled" type="checkbox" :disabled="saving"><span class="tr" /><span>{{ t('integrations.ml_enabled_label') }}</span></label>
               <span class="mark"><span class="pmark" aria-hidden="true"><i /></span>{{ t('integrations.changed') }}</span>
             </div>
             <div class="help">{{ t('integrations.ml_enabled_help') }}</div>
@@ -174,58 +179,59 @@ const lastBad = computed(() => last.value.bad)
 
           <div :class="['field', { 'is-error': errors.host, 'is-changed': !same(draft.host, state.host) }]">
             <div class="lbl"><label for="ml-host">{{ t('integrations.ml_host_label') }}</label><span class="mark"><span class="pmark" aria-hidden="true"><i /></span>{{ t('integrations.changed') }}</span></div>
-            <input id="ml-host" v-model="draft.host" type="text" autocomplete="off" spellcheck="false" placeholder="smtp.example.com" :aria-invalid="errors.host ? 'true' : undefined">
-            <div class="help">{{ t('integrations.ml_host_help') }}</div>
-            <div v-if="errors.host" class="err" role="alert"><Icon name="alert" size="s16" /><span>{{ errors.host }}</span></div>
+            <input id="ml-host" v-model="draft.host" type="text" autocomplete="off" spellcheck="false" placeholder="smtp.example.com" :disabled="saving" v-bind="fieldAria('ml-host', true, errors.host)">
+            <div id="ml-host_h" class="help">{{ t('integrations.ml_host_help') }}</div>
+            <div v-if="errors.host" id="ml-host_e" class="err" role="alert"><Icon name="alert" size="s16" /><span>{{ errors.host }}</span></div>
           </div>
 
           <div class="ml-two">
             <div :class="['field', { 'is-error': errors.encryption, 'is-changed': !same(draft.encryption, state.encryption) }]">
               <div class="lbl"><label for="ml-enc">{{ t('integrations.ml_enc_label') }}</label><span class="mark"><span class="pmark" aria-hidden="true"><i /></span>{{ t('integrations.changed') }}</span></div>
-              <select id="ml-enc" v-model="draft.encryption">
+              <select id="ml-enc" :value="draft.encryption" @change="changeEncryption($event.target.value)" :disabled="saving" v-bind="fieldAria('ml-enc', true, errors.encryption)">
                 <option v-for="o in ENCRYPTIONS" :key="o.value" :value="o.value">{{ o.label }}</option>
               </select>
-              <div class="help">{{ t('integrations.ml_enc_help') }}</div>
+              <div id="ml-enc_h" class="help">{{ t('integrations.ml_enc_help') }}</div>
+              <div v-if="errors.encryption" id="ml-enc_e" class="err" role="alert"><Icon name="alert" size="s16" /><span>{{ errors.encryption }}</span></div>
               <div v-if="plainLogin" class="alert warn-a" role="status"><Icon name="alert" size="s16" /><span>{{ t('integrations.ml_plain_warn') }}</span></div>
             </div>
             <div :class="['field', { 'is-error': errors.port, 'is-changed': !same(draft.port, state.port) }]">
               <div class="lbl"><label for="ml-port">{{ t('integrations.ml_port_label') }}</label><span class="mark"><span class="pmark" aria-hidden="true"><i /></span>{{ t('integrations.changed') }}</span></div>
-              <input id="ml-port" v-model="draft.port" type="text" inputmode="numeric" autocomplete="off" :placeholder="String(PORTS[draft.encryption] || 587)" :aria-invalid="errors.port ? 'true' : undefined">
-              <div class="help">{{ t('integrations.ml_port_help') }}</div>
-              <div v-if="errors.port" class="err" role="alert"><Icon name="alert" size="s16" /><span>{{ errors.port }}</span></div>
+              <input id="ml-port" v-model="draft.port" type="text" inputmode="numeric" autocomplete="off" :placeholder="String(PORTS[draft.encryption] || 587)" :disabled="saving" v-bind="fieldAria('ml-port', true, errors.port)">
+              <div id="ml-port_h" class="help">{{ t('integrations.ml_port_help') }}</div>
+              <div v-if="errors.port" id="ml-port_e" class="err" role="alert"><Icon name="alert" size="s16" /><span>{{ errors.port }}</span></div>
             </div>
           </div>
 
           <div :class="['field', { 'is-error': errors.username, 'is-changed': !same(draft.username, state.username) }]">
             <div class="lbl"><label for="ml-user">{{ t('integrations.ml_user_label') }}</label><span class="mark"><span class="pmark" aria-hidden="true"><i /></span>{{ t('integrations.changed') }}</span></div>
-            <input id="ml-user" v-model="draft.username" type="text" autocomplete="off" spellcheck="false" :aria-invalid="errors.username ? 'true' : undefined">
-            <div class="help">{{ t('integrations.ml_user_help') }}</div>
-            <div v-if="errors.username" class="err" role="alert"><Icon name="alert" size="s16" /><span>{{ errors.username }}</span></div>
+            <input id="ml-user" v-model="draft.username" type="text" autocomplete="off" spellcheck="false" :disabled="saving" v-bind="fieldAria('ml-user', true, errors.username)">
+            <div id="ml-user_h" class="help">{{ t('integrations.ml_user_help') }}</div>
+            <div v-if="errors.username" id="ml-user_e" class="err" role="alert"><Icon name="alert" size="s16" /><span>{{ errors.username }}</span></div>
           </div>
 
           <div :class="['field', { 'is-error': errors.password, 'is-changed': password !== '' || clearPassword }]">
             <div class="lbl"><label for="ml-pass">{{ t('integrations.ml_pass_label') }}</label><span class="mark"><span class="pmark" aria-hidden="true"><i /></span>{{ t('integrations.changed') }}</span></div>
             <div class="row">
-              <input id="ml-pass" v-model="password" type="password" autocomplete="new-password" :placeholder="passwordSet ? t('integrations.ml_pass_saved_ph') : t('integrations.ml_pass_empty_ph')" :aria-invalid="errors.password ? 'true' : undefined">
-              <button v-if="passwordSet" type="button" class="btn sm" @click="dropPassword">{{ t('integrations.ml_drop_btn') }}</button>
+              <input id="ml-pass" v-model="password" type="password" autocomplete="new-password" :placeholder="passwordSet ? t('integrations.ml_pass_saved_ph') : t('integrations.ml_pass_empty_ph')" :disabled="saving" v-bind="fieldAria('ml-pass', true, errors.password)">
+              <button v-if="passwordSet" type="button" class="btn sm" :disabled="saving" @click="dropPassword">{{ t('integrations.ml_drop_btn') }}</button>
             </div>
-            <div class="help">{{ t('integrations.ml_pass_help') }}<template v-if="clearPassword"> {{ t('integrations.ml_pass_clear_note') }}</template></div>
+            <div id="ml-pass_h" class="help">{{ t('integrations.ml_pass_help') }}<template v-if="clearPassword"> {{ t('integrations.ml_pass_clear_note') }}</template></div>
             <div v-if="serverMoved && !errors.password" class="help">{{ t('integrations.ml_pass_moved_help') }}</div>
-            <div v-if="errors.password" class="err" role="alert"><Icon name="alert" size="s16" /><span>{{ errors.password }}</span></div>
+            <div v-if="errors.password" id="ml-pass_e" class="err" role="alert"><Icon name="alert" size="s16" /><span>{{ errors.password }}</span></div>
           </div>
 
           <div :class="['field', { 'is-error': errors.fromAddress, 'is-changed': !same(draft.fromAddress, state.fromAddress) }]">
             <div class="lbl"><label for="ml-from">{{ t('integrations.ml_from_label') }}</label><span class="mark"><span class="pmark" aria-hidden="true"><i /></span>{{ t('integrations.changed') }}</span></div>
-            <input id="ml-from" v-model="draft.fromAddress" type="text" inputmode="email" autocomplete="off" spellcheck="false" placeholder="site@example.com" :aria-invalid="errors.fromAddress ? 'true' : undefined">
-            <div class="help">{{ t('integrations.ml_from_help') }}</div>
-            <div v-if="errors.fromAddress" class="err" role="alert"><Icon name="alert" size="s16" /><span>{{ errors.fromAddress }}</span></div>
+            <input id="ml-from" v-model="draft.fromAddress" type="text" inputmode="email" autocomplete="off" spellcheck="false" placeholder="site@example.com" :disabled="saving" v-bind="fieldAria('ml-from', true, errors.fromAddress)">
+            <div id="ml-from_h" class="help">{{ t('integrations.ml_from_help') }}</div>
+            <div v-if="errors.fromAddress" id="ml-from_e" class="err" role="alert"><Icon name="alert" size="s16" /><span>{{ errors.fromAddress }}</span></div>
           </div>
 
           <div :class="['field', { 'is-error': errors.fromName, 'is-changed': !same(draft.fromName, state.fromName) }]">
             <div class="lbl"><label for="ml-name">{{ t('integrations.ml_name_label') }}</label><span class="mark"><span class="pmark" aria-hidden="true"><i /></span>{{ t('integrations.changed') }}</span></div>
-            <input id="ml-name" v-model="draft.fromName" type="text" autocomplete="off" :placeholder="t('integrations.ml_name_ph')" :aria-invalid="errors.fromName ? 'true' : undefined">
-            <div class="help">{{ t('integrations.ml_name_help') }}</div>
-            <div v-if="errors.fromName" class="err" role="alert"><Icon name="alert" size="s16" /><span>{{ errors.fromName }}</span></div>
+            <input id="ml-name" v-model="draft.fromName" type="text" autocomplete="off" :placeholder="t('integrations.ml_name_ph')" :disabled="saving" v-bind="fieldAria('ml-name', true, errors.fromName)">
+            <div id="ml-name_h" class="help">{{ t('integrations.ml_name_help') }}</div>
+            <div v-if="errors.fromName" id="ml-name_e" class="err" role="alert"><Icon name="alert" size="s16" /><span>{{ errors.fromName }}</span></div>
           </div>
         </div>
 

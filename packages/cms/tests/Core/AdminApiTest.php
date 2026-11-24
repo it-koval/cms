@@ -133,7 +133,9 @@ final class AdminApiTest extends WebTestCase
     #[Test]
     public function customRequestDateFiltersRequireCalendarDatesInOrder(): void
     {
-        self::assertSame([], $this->api('GET', 'requests?form=f2-date-filter&period=custom&from=2024-02-29&to=2024-02-29'));
+        $result = $this->api('GET', 'requests?form=f2-date-filter&period=custom&from=2024-02-29&to=2024-02-29');
+        self::assertSame([], $result['items']);
+        self::assertSame(0, $result['total']);
         foreach (['from=2024-02-30', 'from=tomorrow', 'from=2024-03-01&to=2024-02-29'] as $filter) {
             $this->api('GET', 'requests?period=custom&' . $filter, [], 422);
         }
@@ -171,7 +173,7 @@ final class AdminApiTest extends WebTestCase
             $em->persist($request);
         }
         $em->flush();
-        $search = fn (string $q): array => $this->api('GET', 'requests?' . \http_build_query(['form' => $form, 'q' => $q]));
+        $search = fn (string $q): array => $this->api('GET', 'requests?' . \http_build_query(['form' => $form, 'q' => $q]))['items'];
 
         try {
             foreach (['9001112233', '+7 (900) 111-22-33', '111-22'] as $query) {

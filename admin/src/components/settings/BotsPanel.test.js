@@ -6,8 +6,9 @@ import BotsPanel from './BotsPanel.vue'
 import componentSource from './BotsPanel.vue?raw'
 
 const mocks = vi.hoisted(() => ({ get: vi.fn(), save: vi.fn(), show: vi.fn(), error: vi.fn(), confirm: vi.fn() }))
+vi.mock('vue-router', () => ({ useRouter: () => ({ afterEach: () => () => {} }), onBeforeRouteLeave: vi.fn(), onBeforeRouteUpdate: vi.fn() }))
 vi.mock('@/api/index.js', () => ({ api: { bots: { get: mocks.get, save: mocks.save } } }))
-vi.mock('@/stores/app.js', () => ({ can: (area, action = 'view') => rights[area]?.includes(action) }))
+vi.mock('@/stores/app.js', () => ({ useLocaleGuard: vi.fn(), can: (area, action = 'view') => rights[area]?.includes(action) }))
 vi.mock('@/components/ui/useToast.js', () => ({ useToast: () => ({ show: mocks.show, error: mocks.error }) }))
 vi.mock('@/components/ui/useConfirm.js', () => ({ useConfirm: () => mocks.confirm }))
 vi.mock('@/components/ui/Icon.vue', () => ({ default: { render: () => null } }))

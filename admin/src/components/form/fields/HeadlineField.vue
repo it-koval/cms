@@ -3,7 +3,7 @@
 import { computed, inject, ref } from 'vue'
 import FieldShell from '../FieldShell.vue'
 import RichText from '../RichTextAsync.js'
-import { domId, fieldEmits, fieldProps } from '../fieldProps.js'
+import { domId, fieldAria, fieldEmits, fieldProps } from '../fieldProps.js'
 import { budgetLength } from '@/utils/fields.js'
 import { headlineMarks } from '@/utils/html.js'
 import { t } from '@/i18n/index.js'
@@ -20,7 +20,7 @@ defineExpose({ focus: () => rt.value && rt.value.focus() })
 </script>
 
 <template>
-  <FieldShell :label="field.label" :path="path" :label-id="id + '_l'" :help-id="id + '_h'" :help="hint" :error="error" :changed="changed" :top="top" :budget="budget" @revert="emit('revert')">
-    <RichText ref="rt" :model-value="modelValue ?? ''" mode="headline" :allow-break="allowBreak" :invalid="!!error" :aria-labelledby="id + '_l'" :aria-describedby="id + '_h'" @update:model-value="emit('update:modelValue', $event)" />
+  <FieldShell :error-id="id + '_e'" :label="field.label" :path="path" :label-id="id + '_l'" :help-id="id + '_h'" :help="hint" :error="error" :changed="changed" :top="top" :budget="budget" @revert="emit('revert')">
+    <RichText ref="rt" :model-value="modelValue ?? ''" mode="headline" :allow-break="allowBreak" :invalid="!!error" :aria-labelledby="id + '_l'" v-bind="fieldAria(id, hint, error)" @update:model-value="emit('update:modelValue', $event)" />
   </FieldShell>
 </template>

@@ -257,9 +257,9 @@ abstract class AbstractField implements PublicFieldInterface
     }
 
     /** The headline editor offers a forced line break. */
-    public function lineBreak(): static
+    public function lineBreak(bool $allow = true): static
     {
-        $this->definition['brk'] = true;
+        $this->definition['brk'] = $allow;
 
         return $this;
     }

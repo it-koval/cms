@@ -213,6 +213,7 @@ final class PageRenderer
         $this->state->template = $p->template;
         $this->state->published = $preview ? $this->pages->liveSnapshot($t) : null;
         $this->state->critical = $critical;
+        $this->state->settingsSubjects[] = $site;
         try {
             $names = ['pages/' . $p->template . '.html.twig', '@ItkCms/pages/' . $p->template . '.html.twig', '@ItkCms/pages/default.html.twig'];
 

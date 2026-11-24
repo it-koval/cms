@@ -2,7 +2,7 @@
 // A link to a record of another collection (field.to = its key). One record: a select with an empty choice. Several (field.multi): a list of ticks. The value is the record id (a list of ids).
 import { computed, inject } from 'vue'
 import FieldShell from '../FieldShell.vue'
-import { domId, fieldEmits, fieldProps } from '../fieldProps.js'
+import { domId, fieldAria, fieldEmits, fieldProps } from '../fieldProps.js'
 import { relationLoaded, relationOptions } from '../relationOptions.js'
 import { t } from '@/i18n/index.js'
 
@@ -18,13 +18,13 @@ const toggle = (v, on) => emit('update:modelValue', on ? [...picked.value, v] : 
 </script>
 
 <template>
-  <FieldShell :label="field.label" :path="path" :for-id="field.multi ? undefined : id" :help-id="id + '_h'" :help="field.help" :error="error" :changed="changed" :top="top" @revert="emit('revert')">
-    <div v-if="field.multi" :id="id" class="rel-m" role="group" :aria-label="field.label">
+  <FieldShell :error-id="id + '_e'" :label="field.label" :path="path" :for-id="field.multi ? undefined : id" :help-id="id + '_h'" :help="field.help" :error="error" :changed="changed" :top="top" @revert="emit('revert')">
+    <div v-if="field.multi" :id="id" class="rel-m" role="group" v-bind="fieldAria(id, field.help, error)" :aria-label="field.label">
       <p v-if="loading" class="muted">{{ t('forms.loading') }}</p>
       <p v-else-if="!options.length" class="muted">{{ t('forms.relation_empty') }}</p>
-      <label v-for="o in options" :key="o[0]" class="rel-o"><input type="checkbox" :disabled="field.disabled || undefined" :checked="picked.includes(o[0])" @change="toggle(o[0], $event.target.checked)"><span>{{ o[1] }}</span></label>
+      <label v-for="o in options" :key="o[0]" class="rel-o"><input type="checkbox" v-bind="fieldAria(id, field.help, error)" :disabled="field.disabled || undefined" :checked="picked.includes(o[0])" @change="toggle(o[0], $event.target.checked)"><span>{{ o[1] }}</span></label>
     </div>
-    <select v-else :id="id" :value="modelValue ?? ''" :disabled="field.disabled || undefined" :aria-describedby="field.help ? id + '_h' : undefined" @change="emit('update:modelValue', $event.target.value)">
+    <select v-else :id="id" :value="modelValue ?? ''" :disabled="field.disabled || undefined" v-bind="fieldAria(id, field.help, error)" @change="emit('update:modelValue', $event.target.value)">
       <option value="">{{ loading ? t('forms.loading') : t('forms.relation_none') }}</option>
       <option v-for="o in options" :key="o[0]" :value="o[0]" :disabled="o[2]?.unavailable || undefined">{{ o[1] }}</option>
     </select>

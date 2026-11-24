@@ -1,6 +1,7 @@
 {
   "editor.settings_leave_message": "Бет баптауларында сақталмаған өзгерістер бар.",
   "editor.preview_dialog": "Бетті алдын ала қарау",
+  "editor.preview_item_unavailable": "Алдын ала қараудағы элемент енді қолжетімсіз. Алдын ала қарауды жаңартыңыз.",
   "editor.preview_heading": "Алдын ала қарау · {title}",
   "editor.preview_draft_sections": {
     "other": "жоба, {count} секция"

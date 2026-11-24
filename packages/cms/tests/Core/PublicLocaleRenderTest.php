@@ -102,6 +102,10 @@ final class PublicLocaleRenderTest extends KernelTestCase
             public function fields(): iterable
             {
                 yield Text::make('Title', 'title');
+                yield \Itk\Cms\Field\Repeater::make('FAQ', 'faq')->fields(
+                    Text::make('Question', 'title'),
+                    \Itk\Cms\Field\Repeater::make('Answers', 'answers')->fields(Text::make('Answer', 'text')),
+                );
             }
         });
         $registry->add(new class($this->prefix) extends SettingsResource {
@@ -125,6 +129,10 @@ final class PublicLocaleRenderTest extends KernelTestCase
                 yield Text::make('Missing translation', $this->prefix . '_missing')->translatable();
                 yield Text::make('Shared', $this->prefix . '_shared');
                 yield Text::make('Default', $this->prefix . '_initial')->translatable()->initial('Schema default');
+                yield \Itk\Cms\Field\Repeater::make('FAQ', $this->prefix . '_faq')->translatable()->fields(
+                    Text::make('Question', 'title'),
+                    \Itk\Cms\Field\Repeater::make('Answers', 'answers')->fields(Text::make('Answer', 'text')),
+                );
             }
         });
         $twig = self::getContainer()->get(Environment::class);
@@ -175,7 +183,7 @@ TWIG]), $this->loader]));
         $em->createQuery('DELETE FROM Itk\Cms\Entity\CollectionItem i WHERE i.id IN (:ids)')->setParameter('ids', $this->items ?: ['-'])->execute();
         $em->createQuery('DELETE FROM Itk\Cms\Entity\User u WHERE u.id IN (:ids)')->setParameter('ids', $this->users ?: ['-'])->execute();
         $em->createQuery('DELETE FROM Itk\Cms\Entity\MenuArea m WHERE m.key = :key')->setParameter('key', $this->prefix)->execute();
-        $keys = \array_map(fn (string $suffix): string => $this->prefix . $suffix, ['_text', '_missing', '_shared', '_initial']);
+        $keys = \array_map(fn (string $suffix): string => $this->prefix . $suffix, ['_text', '_missing', '_shared', '_initial', '_faq']);
         $em->createQuery('DELETE FROM Itk\Cms\Entity\Setting s WHERE s.key IN (:keys)')->setParameter('keys', $keys)->execute();
         self::getContainer()->get(SettingsService::class)->reset();
         $this->restoreSettings();
@@ -277,6 +285,126 @@ TWIG]), $this->loader]));
         $overlay = \json_decode($match[1], true, flags: \JSON_THROW_ON_ERROR);
         self::assertFalse($overlay['readonly']);
         self::assertSame('Edit', $overlay['texts']['edit']);
+    }
+
+    #[Test]
+    public function previewMarksCollectionAndSettingsFieldsInTheContentLanguage(): void
+    {
+        $page = $this->fixture();
+        self::getContainer()->get(\Itk\Cms\Schema\Schema::class)->template('test_public_locale')->listing(collection: 'test_public_locale_items');
+        $twig = self::getContainer()->get(Environment::class);
+        $twig->setLoader(new ChainLoader([new ArrayLoader(['pages/test_public_locale.html.twig' => <<<'TWIG'
+<html><head></head><body>
+{{ itk_field(site, page.fields.probe ~ '_text') }}
+<div{{ itk_field_attrs(settings(), page.fields.probe ~ '_shared') }}>{{ settings(page.fields.probe ~ '_shared') }}</div>
+{% for item in itk_collection('test_public_locale_items') %}{{ itk_field(item, 'title') }}{% endfor %}
+{% for item in listing(page) %}<b{{ itk_field_attrs(item, 'title') }}>{{ item.title }}</b>{% endfor %}
+</body></html>
+TWIG]), $this->loader]));
+        foreach (['ru', 'kk'] as $locale) {
+            $html = (string) self::getContainer()->get(PageRenderer::class)->renderPreview($page->id, $locale)->getContent();
+            self::assertStringContainsString('data-f="' . $this->prefix . '_text" data-sec="@settings"', $html);
+            self::assertStringContainsString('data-f="' . $this->prefix . '_shared" data-sec="@settings"', $html);
+            self::assertStringContainsString('data-f="title" data-sec="@collection/test_public_locale_items/', $html);
+            self::assertSame('ru' === $locale ? 4 : 2, \substr_count($html, 'data-sec="@collection/test_public_locale_items/'));
+            self::assertStringContainsString('ru' === $locale ? 'RU record' : 'KK record', $html);
+            self::assertStringContainsString('ru' === $locale ? 'RU setting' : 'KK setting', $html);
+            $live = $this->live($page->translation($locale));
+            self::assertStringNotContainsString('data-f=', $live);
+            self::assertStringContainsString('ru' === $locale ? 'RU record' : 'KK record', $live);
+            self::assertStringContainsString('ru' === $locale ? 'RU setting' : 'KK setting', $live);
+        }
+    }
+
+    #[Test]
+    public function repeaterMarkersCarryPublishedRowIdsForCollectionAndSettingsSubjects(): void
+    {
+        $page = $this->fixture();
+        $a = ['_id' => 'row-A', 'title' => 'A', 'answers' => [['_id' => 'answer-X', 'text' => 'X']]];
+        $b = ['_id' => 'row-B', 'title' => 'B', 'answers' => []];
+        $em = self::getContainer()->get(EntityManagerInterface::class);
+        foreach ($this->items as $id) {
+            $item = $em->find(CollectionItem::class, $id);
+            foreach (['ru', 'kk'] as $locale) {
+                $item->translations[$locale]['draft']['faq'] = [$b, $a];
+                if (null !== $item->translations[$locale]['published']) {
+                    $item->translations[$locale]['published']['faq'] = [$a, $b];
+                }
+            }
+        }
+        $em->flush();
+        foreach (['ru', 'kk'] as $locale) {
+            self::getContainer()->get(SettingsService::class)->set($this->prefix . '_faq', [$a, $b], $locale);
+        }
+        $twig = self::getContainer()->get(Environment::class);
+        $twig->setLoader(new ChainLoader([new ArrayLoader(['pages/test_public_locale.html.twig' => <<<'TWIG'
+<html><head></head><body>
+{% for item in itk_collection('test_public_locale_items') %}
+{{ itk_field(item, 'faq.0.title') }}<div{{ itk_field_attrs(item, 'faq.0.answers.0.text') }}>Answer</div>
+{% endfor %}
+{{ itk_field(site, page.fields.probe ~ '_faq.0.title') }}
+<div{{ itk_field_attrs(settings(), page.fields.probe ~ '_faq.0.answers.0.text') }}>Setting</div>
+</body></html>
+TWIG]), $this->loader]));
+        foreach (['ru', 'kk'] as $locale) {
+            $html = (string) self::getContainer()->get(PageRenderer::class)->renderPreview($page->id, $locale)->getContent();
+            $document = new \DOMDocument();
+            $document->loadHTML('<?xml encoding="utf-8" ?>' . $html);
+            foreach ((new \DOMXPath($document))->query('//*[@data-f]') as $marker) {
+                self::assertInstanceOf(\DOMElement::class, $marker);
+                $nested = \str_contains($marker->getAttribute('data-f'), 'answers');
+                self::assertSame($nested ? ['row-A', 'answer-X'] : ['row-A'], \json_decode($marker->getAttribute('data-row-ids'), true), $marker->getAttribute('data-f'));
+            }
+            self::assertStringNotContainsString('data-row-ids=', $this->live($page->translation($locale)));
+        }
+    }
+
+    #[Test]
+    public function settingsOwnerKeysDoNotChangePreviewMarkersOrLiveFieldValues(): void
+    {
+        $registry = self::getContainer()->get(ResourceRegistry::class);
+        $registry->add(new class extends SettingsResource {
+            public function key(): string
+            {
+                return 'test_settings_owner_keys';
+            }
+
+            public function title(): string
+            {
+                return 'Settings owner keys';
+            }
+
+            public function fields(): iterable
+            {
+                foreach (['type', 'template', 'fields'] as $key) {
+                    yield Text::make($key, $key);
+                }
+                yield \Itk\Cms\Field\Repeater::make('id', 'id')->fields(Text::make('Title', 'title'));
+            }
+        });
+        $page = $this->fixture();
+        $twig = self::getContainer()->get(Environment::class);
+        $twig->setLoader(new ChainLoader([new ArrayLoader(['pages/test_public_locale.html.twig' => <<<'TWIG'
+<html><head></head><body>
+<p>{{ itk_field(site, page.fields.probe ~ '_text') }}</p>
+<p>{{ itk_field(settings(), page.fields.probe ~ '_text') }}</p>
+<div{{ itk_field_attrs(site, page.fields.probe ~ '_text') }}>Site</div>
+<div{{ itk_field_attrs(settings(), page.fields.probe ~ '_text') }}>Settings</div>
+</body></html>
+TWIG]), $this->loader]));
+        foreach (['type' => 'test-settings-owner', 'id' => [['_id' => 'owner', 'title' => 'Owner']], 'template' => 'test-settings-owner', 'fields' => 'test-settings-owner'] as $key => $value) {
+            $this->setting($key, $value);
+            foreach (['ru', 'kk'] as $locale) {
+                $text = 'ru' === $locale ? 'RU setting' : 'KK setting';
+                $preview = (string) self::getContainer()->get(PageRenderer::class)->renderPreview($page->id, $locale)->getContent();
+                self::assertSame(4, \substr_count($preview, 'data-sec="@settings"'), $key);
+                self::assertSame(2, \substr_count($preview, $text), $key);
+                $live = $this->live($page->translation($locale));
+                self::assertStringNotContainsString('data-sec=', $live);
+                self::assertSame(2, \substr_count($live, $text), $key);
+            }
+            self::getContainer()->get(SettingsService::class)->remove($key);
+        }
     }
 
     #[Test]

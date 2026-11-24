@@ -14,7 +14,7 @@ use Symfony\Component\Routing\Attribute\Route;
 
 /**
  * Media library. Item: { id, name, originalName, src, thumb (w320 WebP of an image, else ''), w, h, kb, alt, folderId, focal: {x,y}|null, crops: { "16:9": {x,y,w,h} }, mime, type: 'img'|'pdf', used: [{ label, to }], createdAt }.
- *   GET media?q=&type=img|pdf&folder=   list (`used` empty: ask media/{id}); folder: a folder id, "none" (no folder), empty (all files)
+ *   GET media?q=&type=img|pdf&folder=&page=&perPage=   { items, total, page, perPage } (`used` empty: ask media/{id}); folder: a folder id, "none" (no folder), empty (all files)
  *   GET media/{id}   item with `used`      GET media/{id}/usage   [{ label, to }]
  *   POST media (multipart, field "file", optional "folderId")   201, item
  *   PATCH media/{id} { alt, name, folderId, focal, crops }   item; folderId null or "root": the top level; focal and crops (fractions 0..1 of the picture) only for photos, crops replaces all frames
@@ -38,9 +38,11 @@ final class MediaController extends AbstractApiController
     public function list(Request $request): JsonResponse
     {
         $this->access->require('media', 'view');
-        $files = $this->media->list((string) $request->query->get('q', ''), (string) $request->query->get('type', ''), (string) $request->query->get('folder', ''));
+        [$page, $perPage, $offset] = $this->listPage($request);
+        $q = $request->query;
+        $files = $this->media->page((string) $q->get('q', ''), (string) $q->get('type', ''), (string) $q->get('folder', ''), $offset, $perPage, (string) $q->get('cursor', ''));
 
-        return $this->json(\array_map(fn ($m): array => $this->media->present($m), $files));
+        return $this->json(['items' => \array_map($this->media->present(...), $files['items']), 'page' => $page, 'perPage' => $perPage] + $files);
     }
 
     #[Route('', name: 'upload', methods: ['POST'])]

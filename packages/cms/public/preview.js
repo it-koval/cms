@@ -5,7 +5,7 @@
  *
  * Messages (window.postMessage, same origin, event.data = { type, ...payload }):
  *   page -> admin   itk:ready  { sections: [{ sec, type, label }] }          the page is drawn (sent on every load)
- *                   itk:focus  { sec, path }                                 a field ([data-f]) or the section was clicked; path '' = the section itself, sec '@page' = a field of the page
+ *                   itk:focus  { sec, path, rows? }                          a field ([data-f]) or the section was clicked; rows = stable repeater ids in path order; path '' = the section itself, sec '@page' = a field of the page
  *                   itk:action { sec, act }                                  act: 'edit' | 'mv-up' | 'mv-down' | 'dup' | 'toggle-hide' | 'del'
  *   admin -> page   itk:select { sec, path? }                                outline the section the open form belongs to (sec '' clears); path scrolls to / flashes that field
  *                   itk:reload                                               reload keeping the scroll position (a reload from outside keeps it as well)
@@ -170,7 +170,7 @@
 
   /* ---------- clicks: the preview is not a live site ---------- */
   document.addEventListener('click', function (e) {
-    var t = e.target
+    var t = e.target instanceof Element ? e.target : e.target && e.target.parentElement
     if (!(t instanceof Element)) return
     var btn = t.closest('.itk-pv-btn')
     if (btn) {
@@ -183,11 +183,20 @@
     }
     if (t.closest('.itk-pv')) return
     if (touched(e)) setCurrent(t.closest(SEC)) // a tap shows the toolbar of that section (no hover comes before it)
-    if (t.closest('a[href], button, [type=submit], label')) e.preventDefault() // links and buttons of the site do nothing here
     var f = t.closest('[data-f]')
+    var disclosure = f && t.closest('summary') && !t.closest('a[href], button, [type=submit]')
+    if (!disclosure && t.closest('a[href], button, [type=submit], label')) e.preventDefault()
     if (f) {
-      e.preventDefault()
-      post('itk:focus', { sec: f.getAttribute('data-sec') || '', path: f.getAttribute('data-f') || '' })
+      // The same click opens the field and lets the browser expand a native FAQ item.
+      if (!disclosure) {
+        e.preventDefault()
+        e.stopPropagation()
+      }
+      var focus = { sec: f.getAttribute('data-sec') || '', path: f.getAttribute('data-f') || '' }
+      if (f.hasAttribute('data-row-ids')) {
+        try { focus.rows = JSON.parse(f.getAttribute('data-row-ids')) } catch (err) { focus.rows = [] }
+      }
+      post('itk:focus', focus)
       return
     }
     var s = t.closest(SEC)

@@ -14,14 +14,14 @@ const lockPage = (on) => {
   document.body.classList.toggle('ov-lock', locks > 0)
 }
 
-export function useOverlay(elRef, isOpen, { onEsc, initial, top = false } = {}) {
+export function useOverlay(elRef, isOpen, { onEsc, initial, top = false, lock = true, restore = true } = {}) {
   let prev = null
   let locked = false
   const overlay = { top }
   const isTop = () => (overlays.findLast((entry) => entry.top) ?? overlays.at(-1)) === overlay
   const keydown = (e) => {
     if (!elRef.value || !isTop()) return
-    if (e.key === 'Escape' && onEsc) { e.stopPropagation(); onEsc(); return }
+    if (e.key === 'Escape' && onEsc) { e.preventDefault(); e.stopImmediatePropagation(); onEsc(); return }
     if (e.key !== 'Tab') return
     const list = [...elRef.value.querySelectorAll(FOCUSABLE)].filter((x) => x.offsetParent !== null)
     if (!list.length) return
@@ -41,11 +41,12 @@ export function useOverlay(elRef, isOpen, { onEsc, initial, top = false } = {}) 
       prev = document.activeElement
       overlays.push(overlay)
       document.addEventListener('keydown', keydown, true)
-      if ((vp.phone || (vp.compact && vp.touch)) && !locked) { locked = true; lockPage(true) }
+      if (lock && (vp.phone || (vp.compact && vp.touch)) && !locked) { locked = true; lockPage(true) }
       await nextTick()
       if (!isTop()) return
       const root = elRef.value
-      let wanted = initial && root && root.querySelector(initial)
+      const selector = typeof initial === 'function' ? initial() : initial
+      let wanted = selector && root && root.querySelector(selector)
       // a finger: a text field that gets the focus at once brings the keyboard up over the dialog. So only an empty field is focused (a «new …» dialog, a search); the settings of something that exists open without the keyboard
       if (wanted && (vp.touch || vp.phone) && wanted.matches(TEXT_FIELD) && String(wanted.value ?? wanted.textContent).trim()) wanted = null
       const first = root && [...root.querySelectorAll(FOCUSABLE)].find((x) => !(vp.touch || vp.phone) || !x.matches(TEXT_FIELD))
@@ -54,7 +55,7 @@ export function useOverlay(elRef, isOpen, { onEsc, initial, top = false } = {}) 
     } else {
       const restoreFocus = isTop()
       remove()
-      if (restoreFocus && prev && document.contains(prev)) prev.focus({ preventScroll: true })
+      if (restore && restoreFocus && prev && document.contains(prev)) prev.focus({ preventScroll: true })
       prev = null
     }
   }, { immediate: true })

@@ -10,14 +10,18 @@ use Itk\Cms\Repository\UserTwoFactorRepository;
 use Itk\Cms\Security\TwoFactor\TwoFactorService;
 use Itk\Cms\Tests\App\TestKernel;
 
+if (!isset($argv[1], $argv[2], $argv[3])) {
+    throw new \InvalidArgumentException('Expected user ID, barrier directory and worker ID.');
+}
+[, $userId, $dir, $workerId] = $argv;
 $kernel = new TestKernel('test', true);
 $kernel->boot();
 $container = $kernel->getContainer()->get('test.service_container');
-$user = $container->get('doctrine.orm.entity_manager')->find(User::class, $argv[1]);
+$user = $container->get('doctrine.orm.entity_manager')->find(User::class, $userId);
 $container->get(UserTwoFactorRepository::class)->ofUser($user); // both requests have already read the initial count
-\touch($argv[2] . '/ready-' . $argv[3]);
+\touch($dir . '/ready-' . $workerId);
 $deadline = \microtime(true) + 15;
-while (!\is_file($argv[2] . '/start')) {
+while (!\is_file($dir . '/start')) {
     if (\microtime(true) > $deadline) {
         throw new \RuntimeException('The concurrency test barrier timed out.');
     }

@@ -14,6 +14,7 @@ use Itk\Cms\Entity\User;
 use Itk\Cms\Resource\ResourceRegistry;
 use Itk\Cms\Schema\Schema;
 use Itk\Cms\Security\UserManager;
+use Itk\Cms\Tests\App\QueryCounter;
 use Itk\Cms\Tests\App\TestKernel;
 use Itk\Cms\Tests\Core\Fixture\TripsCollection;
 use PHPUnit\Framework\Attributes\Test;
@@ -186,10 +187,16 @@ final class MultilingualAdminApiTest extends WebTestCase
         $em->flush();
         $this->client->loginUser($user, 'itk_admin');
 
-        foreach ($this->api('GET', 'dashboard')['locales'] as $stats) {
+        $dashboard = [];
+        $queries = QueryCounter::during(function () use (&$dashboard): void {
+            $dashboard = $this->api('GET', 'dashboard');
+        });
+        $contentQueries = \array_filter($queries, static fn (string $sql): bool => \str_contains($sql, 'itk_page_translation') || \str_contains($sql, 'itk_collection_item'));
+        self::assertSame([], $contentQueries, 'A request-only viewer needs no content snapshots.');
+        foreach ($dashboard['locales'] as $stats) {
             self::assertSame(['pages' => ['count' => 0, 'unpublished' => 0], 'collections' => ['count' => 0, 'unpublished' => 0]], $stats);
         }
-        self::assertSame([], $this->api('GET', 'dashboard')['unpublished']);
+        self::assertSame([], $dashboard['unpublished']);
         self::assertSame([], $this->api('GET', 'collections'));
         $this->api('GET', 'history/page/' . $page['id'] . '?scope=all', [], 403);
         $this->api('GET', 'history/item/' . $item . '?scope=all', [], 403);

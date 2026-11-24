@@ -75,7 +75,6 @@ final class ItkRuntime implements RuntimeExtensionInterface, ResetInterface
     public function __construct(
         private readonly Schema $schema,
         private readonly RenderState $state,
-        private readonly HtmlSanitizer $html,
         private readonly FieldValues $values,
         private readonly ChangeDetector $changes,
         private readonly MenuService $menus,
@@ -130,7 +129,7 @@ final class ItkRuntime implements RuntimeExtensionInterface, ResetInterface
      */
     public function field(array $subject, string $path): mixed
     {
-        [$field, $data, $secId, $base, $miss] = $this->resolve($subject, $path);
+        [$field, $data, $secId, $base, $miss, $rowIds] = $this->resolve($subject, $path);
         $value = Json::get($data, $path);
         if (null !== $miss && !$this->state->preview) {
             $this->mistake(I18n::t(isset($subject['type']) ? 'http.field_missing_section' : 'http.field_missing_page', [
@@ -141,7 +140,7 @@ final class ItkRuntime implements RuntimeExtensionInterface, ResetInterface
             return \is_scalar($value) ? new Markup(HtmlSanitizer::escape((string) $value), 'UTF-8') : $value;
         }
         if ($field->isRich()) {
-            $out = $this->images->rewriteHtml($this->html->sanitize($value, (string) $field->richMode()));
+            $out = $this->images->rewriteHtml($this->values->richValue($field, $value));
         } elseif (\in_array($field->type(), ['text', 'textarea', 'number', 'select'], true)) {
             $out = HtmlSanitizer::escape(\is_scalar($value) ? (string) $value : '');
             if ('textarea' === $field->type()) {
@@ -152,7 +151,7 @@ final class ItkRuntime implements RuntimeExtensionInterface, ResetInterface
         }
         if ($this->state->preview) {
             $cls = 'itk-f' . ($field->isRich() && 'headline' !== $field->type() ? ' itk-rich' : '') . ($this->fieldChanged($subject, $field, $path, $base) ? ' chg' : '');
-            $out = '<span data-f="' . HtmlSanitizer::escape($path) . '" data-sec="' . HtmlSanitizer::escape($secId) . '" class="' . $cls . '">' . $out . '</span>';
+            $out = '<span data-f="' . HtmlSanitizer::escape($path) . '" data-sec="' . HtmlSanitizer::escape($secId) . '"' . self::rowAttrs($rowIds) . ' class="' . $cls . '">' . $out . '</span>';
         }
 
         return new Markup($out, 'UTF-8');
@@ -164,10 +163,16 @@ final class ItkRuntime implements RuntimeExtensionInterface, ResetInterface
         if (!$this->state->preview) {
             return new Markup('', 'UTF-8');
         }
-        [$field, , $secId, $base] = $this->resolve($subject, $path);
+        [$field, , $secId, $base, , $rowIds] = $this->resolve($subject, $path);
         $chg = null !== $field && $this->fieldChanged($subject, $field, $path, $base);
 
-        return new Markup(' data-f="' . HtmlSanitizer::escape($path) . '" data-sec="' . HtmlSanitizer::escape($secId) . '"' . ($chg ? ' data-chg="1"' : ''), 'UTF-8');
+        return new Markup(' data-f="' . HtmlSanitizer::escape($path) . '" data-sec="' . HtmlSanitizer::escape($secId) . '"' . self::rowAttrs($rowIds) . ($chg ? ' data-chg="1"' : ''), 'UTF-8');
+    }
+
+    /** @param list<string> $ids repeater identities in path order, independent of the saved row positions */
+    private static function rowAttrs(array $ids): string
+    {
+        return [] === $ids ? '' : ' data-row-ids="' . HtmlSanitizer::escape(Json::encode($ids)) . '"';
     }
 
     /** @param array<string, mixed> $section */
@@ -259,7 +264,12 @@ final class ItkRuntime implements RuntimeExtensionInterface, ResetInterface
     public function setting(?string $key = null, mixed $default = null): mixed
     {
         if (null === $key) {
-            return $this->settings->all($this->locale());
+            $subject = $this->settings->all($this->locale());
+            if (!\in_array($subject, $this->state->settingsSubjects, true)) {
+                $this->state->settingsSubjects[] = $subject;
+            }
+
+            return $subject;
         }
 
         return $this->settings->get($key, $default, $this->locale());
@@ -442,7 +452,13 @@ final class ItkRuntime implements RuntimeExtensionInterface, ResetInterface
      */
     public function listingOf(array $page): array
     {
-        return isset($page['id']) ? $this->listing->forPage((string) $page['id'], $this->locale()) : [];
+        $rows = isset($page['id']) ? $this->listing->forPage((string) $page['id'], $this->locale()) : [];
+        $collection = $this->schema->template((string) ($page['template'] ?? $this->state->template))?->listingRule()['collection'] ?? null;
+        if (null !== $collection) {
+            $this->rememberCollectionOwners($rows, (string) $collection);
+        }
+
+        return $rows;
     }
 
     /**
@@ -454,11 +470,22 @@ final class ItkRuntime implements RuntimeExtensionInterface, ResetInterface
      */
     public function collection(string $key, ?array $options = null): array
     {
-        if (null === $options) {
-            return $this->collections->published($key, $this->locale());
-        }
+        $rows = null === $options
+            ? $this->collections->published($key, $this->locale())
+            : $this->read(fn (): array => $this->reader->collection($key, $options, $this->locale()), []);
+        $this->rememberCollectionOwners($rows, $key);
 
-        return $this->read(fn (): array => $this->reader->collection($key, $options, $this->locale()), []);
+        return $rows;
+    }
+
+    /** @param list<array<string, mixed>> $rows */
+    private function rememberCollectionOwners(array $rows, string $key): void
+    {
+        foreach ($rows as $row) {
+            if (isset($row['id'])) {
+                $this->state->collectionOwners[(string) $row['id']] = $key;
+            }
+        }
     }
 
     /**
@@ -498,13 +525,24 @@ final class ItkRuntime implements RuntimeExtensionInterface, ResetInterface
     /**
      * @param array<string, mixed> $subject
      *
-     * @return array{0: ?FieldInterface, 1: array<string, mixed>, 2: string, 3: ?array<string, mixed>, 4: array{0: string, 1: list<string>}|null} field, data, owner id for data-sec, published data of the owner,
-     *                                                                                                                                            and the first key of the path the section or the repeater does not have (with the keys it has)
+     * @return array{0: ?FieldInterface, 1: array<string, mixed>, 2: string, 3: ?array<string, mixed>, 4: array{0: string, 1: list<string>}|null, 5: list<string>} field, data, owner id, published data, missing field and repeater row identities
      */
     private function resolve(array $subject, string $path): array
     {
-        $isSection = isset($subject['type']);
-        if ($isSection) {
+        $isSettings = \in_array($subject, $this->state->settingsSubjects, true);
+        $isSection = !$isSettings && isset($subject['type']);
+        $collection = !$isSettings && isset($subject['id']) ? ($this->state->collectionOwners[(string) $subject['id']] ?? null) : null;
+        if ($isSettings) {
+            $fields = $this->schema->settingsFields();
+            $data = $subject;
+            $secId = '@settings';
+            $base = null;
+        } elseif (null !== $collection) {
+            $fields = $this->schema->collection($collection)?->fieldList() ?? [];
+            $data = $subject;
+            $secId = '@collection/' . $collection . '/' . (string) $subject['id'];
+            $base = null;
+        } elseif ($isSection) {
             $fields = $this->schema->sectionFields((string) $subject['type']);
             $data = (array) ($subject['data'] ?? []);
             $secId = (string) ($subject['id'] ?? '');
@@ -523,8 +561,14 @@ final class ItkRuntime implements RuntimeExtensionInterface, ResetInterface
         $field = null;
         $miss = null;
         $list = $fields;
+        $rowIds = [];
+        $at = $data;
         foreach (\explode('.', $path) as $depth => $part) {
             if (\ctype_digit($part)) {
+                $at = \is_array($at) ? ($at[$part] ?? null) : null;
+                if ('repeater' === $field?->type()) {
+                    $rowIds[] = \is_array($at) && \is_string($at['_id'] ?? null) ? $at['_id'] : '';
+                }
                 continue;
             }
             $field = null;
@@ -539,10 +583,11 @@ final class ItkRuntime implements RuntimeExtensionInterface, ResetInterface
                 $miss = 0 === $depth || [] !== $list ? [$part, \array_map(static fn (FieldInterface $f): string => $f->key(), $list)] : null;
                 break;
             }
+            $at = \is_array($at) ? ($at[$part] ?? null) : null;
             $list = $field->subFields();
         }
 
-        return [$field, $data, $secId, $base, $miss];
+        return [$field, $data, $secId, $base, $miss, $rowIds];
     }
 
     /** A mistake of a site template: an exception in strict mode, else one warning in the log per request. */
