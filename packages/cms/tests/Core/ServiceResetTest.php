@@ -116,7 +116,7 @@ final class ServiceResetTest extends KernelTestCase
     {
         $bots = self::getContainer()->get(BotSettings::class);
         $box = self::getContainer()->get(SecretBox::class);
-        foreach (['telegram' => 'telegramBot', 'max' => 'maxBot'] as $channel => $key) {
+        foreach (['telegram' => 'itk:telegramBot', 'max' => 'itk:maxBot'] as $channel => $key) {
             $this->writeBehindTheBack($key, ['token' => $box->seal('first-token')]);
             self::assertSame('first-token', $bots->token($channel));
             $this->writeBehindTheBack($key, ['token' => $box->seal('replacement-token')]);

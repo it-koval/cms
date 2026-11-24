@@ -56,10 +56,8 @@ final class ItkCmsBundle extends AbstractBundle
             }
         }, PassConfig::TYPE_BEFORE_OPTIMIZATION, 10);
 
-        // Outside a request (console, worker, a service called directly) the interface speaks itk_cms.admin_locale, not framework.default_locale: the translator starts in it and the
-        // locale switcher goes back to it when the services are reset. In a request Symfony and Itk\Cms\I18n\AdminLocaleListener decide as usual.
-        // The fallback languages stay the ones of the site (its list, else framework.default_locale): English only goes behind them, for a language the catalogues of the bundle do not have.
-        // A prepended `fallbacks` would not do: an empty list is what makes Symfony take the default language, and a list of the site would merge behind English.
+        // Keep the application's default locale in consoles and workers. The interface listener scopes the admin language to CMS requests.
+        // Append the bundle fallback after the site's own fallback languages.
         $container->addCompilerPass(new class implements CompilerPassInterface {
             public function process(ContainerBuilder $container): void
             {
@@ -72,10 +70,6 @@ final class ItkCmsBundle extends AbstractBundle
                         }
                     }
                     $translator->setMethodCalls($calls);
-                    $translator->addMethodCall('setLocale', ['%itk_cms.admin_locale%']);
-                }
-                if ($container->hasDefinition('translation.locale_switcher')) {
-                    $container->getDefinition('translation.locale_switcher')->replaceArgument(0, '%itk_cms.admin_locale%');
                 }
             }
         });
@@ -573,12 +567,6 @@ final class ItkCmsBundle extends AbstractBundle
                 'migrations_paths' => $paths,
                 // by the date in the class name, so site migrations that use bundle tables run after the bundle migrations that create them
                 'services' => [Comparator::class => 'itk_cms.migration_version_comparator'],
-            ]);
-        }
-
-        if ($builder->hasExtension('twig')) {
-            $builder->prependExtensionConfig('twig', [
-                'paths' => [$path . '/templates' => 'ItkCms'],
             ]);
         }
 

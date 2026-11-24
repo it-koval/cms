@@ -64,7 +64,7 @@ final class SeoAddressCheck
         if (null !== $route && self::CATCH_ALL !== $route) {
             return $this->result($path, $rules, ['kind' => 'route', 'status' => 200, 'label' => I18n::t('content.seo_check_route')], $this->sources($matches[0] ?? null, [], ''));
         }
-        $redirect = $this->redirects->lookup($pathOnly);
+        $redirect = $this->redirects->lookup($pathOnly, $requestedQuery);
         if (null !== $redirect) {
             return $this->result($path, $rules, [
                 'kind' => 'redirect', 'status' => $redirect->code, 'to' => $redirect->toPath,

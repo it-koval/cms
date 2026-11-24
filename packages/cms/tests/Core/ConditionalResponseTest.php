@@ -176,7 +176,7 @@ final class ConditionalResponseTest extends WebTestCase
         $c->get(Connection::class)->executeStatement('UPDATE itk_media_file SET crops = ? WHERE id = ?', ['{"16:9": {"x": 0, "y": 0, "w": 1, "h": 0.5}}', $file->id]); // the request has reset the manager
         $changed('a saved frame of a picture (it decides the address of the picture)');
 
-        $item = $c->get(CollectionService::class)->create('tours', ['title' => 'Тур для кеша']);
+        $item = $c->get(CollectionService::class)->create('tours', ['city' => 'Тур для кеша', 'dateStart' => '2026-11-01', 'dateEnd' => '2026-11-09']);
         $this->items[] = $item['id'];
         $c->get(CollectionService::class)->publish('tours', $item['id']);
         $changed('a record of a collection');
@@ -190,7 +190,7 @@ final class ConditionalResponseTest extends WebTestCase
         $client = $this->client();
         $c = self::getContainer();
         $this->publish('Для черновиков', '/test-cond-drafts');
-        $item = $c->get(CollectionService::class)->create('tours', ['title' => 'Тур для черновиков']);
+        $item = $c->get(CollectionService::class)->create('tours', ['city' => 'Тур для черновиков', 'dateStart' => '2026-11-01', 'dateEnd' => '2026-11-09']);
         $this->items[] = $item['id'];
         $c->get(CollectionService::class)->publish('tours', $item['id']);
         $tag = $this->get($client, '/test-cond-drafts')[1];

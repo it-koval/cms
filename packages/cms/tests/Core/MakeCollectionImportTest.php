@@ -13,6 +13,7 @@ use Itk\Cms\Generator\MakeContext;
 use Itk\Cms\Generator\ProjectLayout;
 use Itk\Cms\Generator\SkeletonRenderer;
 use Itk\Cms\Generator\TableReader;
+use Itk\Cms\I18n\I18n;
 use Itk\Cms\Repository\CollectionItemRepository;
 use Itk\Cms\Resource\ResourceRegistry;
 use Itk\Cms\Tests\Core\Fixture\SourceTable;
@@ -94,15 +95,15 @@ final class MakeCollectionImportTest extends KernelTestCase
         // a dry run: the plan and the first rows, no file, no record
         $t = $run($args + ['--import' => true, '--dry-run' => true]);
         self::assertSame(Command::SUCCESS, $t->getStatusCode(), $t->getDisplay());
-        self::assertStringContainsString('будет создано: 3, будет обновлено: 0', $t->getDisplay());
-        self::assertStringContainsString('Пробный запуск', $t->getDisplay());
+        self::assertStringContainsString(I18n::t('ops.make_import_result_dry', ['created' => 3, 'updated' => 0, 'failed' => 0]), $t->getDisplay());
+        self::assertStringContainsString(I18n::t('ops.dry_run_note'), $t->getDisplay());
         self::assertFileDoesNotExist($this->project . '/src/Itk/Collection/TestGenTripsCollection.php');
         self::assertSame(0, $this->itemCount('test_gen_trips'));
 
         // the real run
         $t = $run($args + ['--import' => true, '--publish' => true]);
         self::assertSame(Command::SUCCESS, $t->getStatusCode(), $t->getDisplay());
-        self::assertStringContainsString('создано: 3, обновлено: 0', $t->getDisplay());
+        self::assertStringContainsString(I18n::t('ops.make_import_result', ['created' => 3, 'updated' => 0, 'failed' => 0]), $t->getDisplay());
         self::assertFileExists($this->project . '/src/Itk/Collection/TestGenTripsCollection.php');
         self::assertSame(3, $this->itemCount('test_gen_trips'));
         $items = $this->records('test_gen_trips');
@@ -117,8 +118,8 @@ final class MakeCollectionImportTest extends KernelTestCase
         $this->db()->executeStatement('INSERT INTO ' . self::TABLE . " (city, level) VALUES ('Сочи', 'hard')");
         $t = $run($args + ['--import' => true]);
         self::assertSame(Command::SUCCESS, $t->getStatusCode(), $t->getDisplay());
-        self::assertStringContainsString('создано: 1, обновлено: 3', $t->getDisplay());
-        self::assertStringContainsString('класс уже есть', $t->getDisplay());
+        self::assertStringContainsString(I18n::t('ops.make_import_result', ['created' => 1, 'updated' => 3, 'failed' => 0]), $t->getDisplay());
+        self::assertStringContainsString(I18n::t('ops.make_collection_class_kept'), $t->getDisplay());
         self::assertSame(4, $this->itemCount('test_gen_trips'));
         self::assertContains('Алтай-2', \array_column($this->records('test_gen_trips'), 'city'));
 

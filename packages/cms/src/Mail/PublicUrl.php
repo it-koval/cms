@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Itk\Cms\Mail;
 
 use Itk\Cms\Content\SettingsService;
+use Itk\Cms\Content\SiteAddress;
 use Itk\Cms\I18n\I18n;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\HttpFoundation\Request;
@@ -34,7 +35,7 @@ final class PublicUrl
     /** Is this an address of the form «https://example.com» (a trailing slash is allowed, a path and a query are not)? */
     public static function isValid(string $url): bool
     {
-        return 1 === \preg_match('~^https?://[^\s/?#]+$~i', \rtrim($url, '/'));
+        return null !== SiteAddress::fromUrl($url);
     }
 
     /**
@@ -44,24 +45,36 @@ final class PublicUrl
      */
     public function base(): ?string
     {
-        $base = \trim((string) $this->configured);
-        if ('' !== $base && !self::isValid($base)) {
-            throw new \UnexpectedValueException(I18n::t('http.mail_public_url_invalid', ['value' => $base]));
+        $configured = $this->configuredAddress();
+        if (null !== $configured) {
+            return $configured->origin();
         }
-        if ('' === $base && [] !== Request::getTrustedHosts()) {
-            $base = $this->requests->getMainRequest()?->getSchemeAndHttpHost() ?? '';
-        }
-        if ('' === $base) {
-            $domain = \trim((string) $this->settings->get('domain', null, ''));
-            if ('' !== $domain) {
-                $base = \preg_match('~^https?://~i', $domain) ? $domain : 'https://' . $domain;
-            }
-        }
-        if ('' === $base && $this->debug) {
-            $base = $this->requests->getMainRequest()?->getSchemeAndHttpHost() ?? '';
+        $request = $this->requests->getMainRequest();
+        $trusted = [] !== Request::getTrustedHosts() && null !== $request ? SiteAddress::fromUrl($request->getSchemeAndHttpHost()) : null;
+        $address = $trusted ?? $this->domainAddress();
+        if (null === $address && $this->debug && null !== $request) {
+            $address = SiteAddress::fromUrl($request->getSchemeAndHttpHost());
         }
 
-        return '' === $base ? null : \rtrim($base, '/');
+        return $address?->origin();
+    }
+
+    /** The address configured by the site, independent of the current request. */
+    public function siteAddress(): ?SiteAddress
+    {
+        return $this->configuredAddress() ?? $this->domainAddress();
+    }
+
+    private function configuredAddress(): ?SiteAddress
+    {
+        $base = \trim((string) $this->configured);
+
+        return '' === $base ? null : (SiteAddress::fromUrl($base) ?? throw new \UnexpectedValueException(I18n::t('http.mail_public_url_invalid', ['value' => $base])));
+    }
+
+    private function domainAddress(): ?SiteAddress
+    {
+        return SiteAddress::fromDomain((string) $this->settings->get('domain', null, ''));
     }
 
     /**

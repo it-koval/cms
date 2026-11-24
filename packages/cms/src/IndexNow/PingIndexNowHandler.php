@@ -29,7 +29,7 @@ use Symfony\Contracts\HttpClient\HttpClientInterface;
  *
  * @internal
  */
-#[AsMessageHandler(bus: 'messenger.bus.default')]
+#[AsMessageHandler]
 final class PingIndexNowHandler implements BatchHandlerInterface
 {
     use BatchHandlerTrait;

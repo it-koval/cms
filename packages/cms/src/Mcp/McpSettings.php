@@ -15,7 +15,7 @@ use Symfony\Contracts\Service\ResetInterface;
  */
 final class McpSettings implements ResetInterface
 {
-    public const KEY = 'mcpEnabled';
+    public const KEY = 'itk:mcpEnabled';
 
     private ?bool $enabled = null;
 

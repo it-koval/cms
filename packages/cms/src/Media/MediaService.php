@@ -39,7 +39,6 @@ final class MediaService
         private readonly Schema $schema,
         private readonly ImageVariants $variants,
         private readonly MediaFolderRepository $folders,
-        #[Autowire(service: 'messenger.bus.default')]
         private readonly MessageBusInterface $bus,
         #[Autowire(param: 'itk_cms.upload_dir')]
         private readonly string $uploadDir,

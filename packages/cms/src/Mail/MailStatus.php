@@ -15,7 +15,7 @@ use Itk\Cms\Entity\Setting;
  */
 final class MailStatus
 {
-    public const KEY = 'mailStatus';
+    public const KEY = 'itk:mailStatus';
 
     public function __construct(
         private readonly EntityManagerInterface $em,

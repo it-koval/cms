@@ -21,7 +21,7 @@ use Symfony\Component\DependencyInjection\Attribute\Autowire;
  */
 final class AdminTheme
 {
-    public const KEY = 'adminTheme';
+    public const KEY = 'itk:adminTheme';
     public const DEFAULTS = ['brand' => '#0B5D80', 'accent' => '#C8217A', 'radius' => 6];
     public const MAX_RADIUS = 16;
     public const MAX_NAME = 40;

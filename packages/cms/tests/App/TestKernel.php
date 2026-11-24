@@ -89,6 +89,7 @@ final class TestKernel extends BaseKernel
 
         $container->extension('framework', $this->framework + [
             'secret' => 'itk-cms-tests',
+            'default_locale' => 'ru', // the test site's content, console and default interface speak Russian
             'test' => true,
             'profiler' => ['collect' => false], // a test turns it on for one request: $client->enableProfiler()
             'http_method_override' => true,

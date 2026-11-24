@@ -10,6 +10,7 @@ use Doctrine\ORM\Query;
 use Itk\Cms\Entity\Request;
 use Itk\Cms\Event\RequestDelivery;
 use Itk\Cms\I18n\AdminLocale;
+use Psr\Log\LoggerInterface;
 use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 
 /**
@@ -29,6 +30,7 @@ final class RequestDeliverer
         private readonly TelegramNotifier $telegram,
         private readonly MaxNotifier $max,
         private readonly AdminLocale $locale,
+        private readonly ?LoggerInterface $logger = null,
     ) {
     }
 
@@ -50,7 +52,8 @@ final class RequestDeliverer
         // a chat is read by many, in admin_locale: also when a sync transport runs this inside the request of one person
         $outcome = $this->locale->runDefault(static fn (): ChannelOutcome => $notifier->attempt($request, $resend));
 
-        return $this->em->wrapInTransaction(function () use ($requestId, $notifier, $outcome, $channel, $resend): ?bool {
+        $announce = null;
+        $saved = $this->em->wrapInTransaction(function () use ($requestId, $notifier, $outcome, $channel, $resend, &$announce): ?bool {
             $request = self::load($this->em, $requestId, LockMode::PESSIMISTIC_WRITE);
             if (null === $request) {
                 return null;
@@ -59,22 +62,45 @@ final class RequestDeliverer
                 return true;
             }
 
-            return $this->locale->runDefault(static fn (): bool => $notifier->record($request, $outcome));
+            return $notifier->record($request, $outcome, static function (\Closure $dispatch) use (&$announce): void {
+                $announce = $dispatch;
+            });
         });
+        if (null !== $announce) {
+            $this->locale->runDefault(fn () => self::announce($announce, $this->logger, $requestId, $channel));
+        }
+
+        return $saved;
     }
 
-    /** A queue failure may race with a worker for the same request, just like a messenger failure. */
-    public static function recordQueueFailure(EntityManagerInterface $em, EventDispatcherInterface $events, int $requestId, string $channel, string $error): void
+    /**
+     * A queue failure may race with a worker for the same request, just like a messenger failure.
+     *
+     * @param Request::CHANNEL_* $channel
+     */
+    public static function recordQueueFailure(EntityManagerInterface $em, EventDispatcherInterface $events, int $requestId, string $channel, string $error, ?LoggerInterface $logger = null): void
     {
-        $em->wrapInTransaction(static function () use ($em, $events, $requestId, $channel, $error): void {
+        $request = $em->wrapInTransaction(static function () use ($em, $requestId, $channel, $error): ?Request {
             $request = self::load($em, $requestId, LockMode::PESSIMISTIC_WRITE);
             if (null === $request || Request::DELIVERY_SENT === $request->channelState($channel)) {
-                return;
+                return null;
             }
             $request->markChannel($channel, Request::DELIVERY_FAILED, $error);
-            $em->flush();
-            $events->dispatch(new RequestDelivery($request, false, $error, false, $channel));
+
+            return $request;
         });
+        if (null !== $request) {
+            self::announce(static fn () => $events->dispatch(new RequestDelivery($request, false, $error, false, $channel)), $logger, $requestId, $channel);
+        }
+    }
+
+    private static function announce(\Closure $dispatch, ?LoggerInterface $logger, int $requestId, string $channel): void
+    {
+        try {
+            $dispatch();
+        } catch (\Throwable $exception) {
+            $logger?->error('Request delivery listener failed for request #{id} ({channel}).', ['id' => $requestId, 'channel' => $channel, 'exception' => $exception]);
+        }
     }
 
     /** A query both refreshes a managed request and returns null when another process deleted it. */

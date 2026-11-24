@@ -23,6 +23,7 @@ final class CollectionImporter
         private readonly CollectionItemRepository $items,
         private readonly EntityManagerInterface $em,
         private readonly Schema $schema,
+        private readonly EditLock $lock,
     ) {
     }
 
@@ -63,7 +64,7 @@ final class CollectionImporter
             }
 
             try {
-                $id = $this->em->wrapInTransaction(function () use ($collection, $id, $data, $sourceId, $source, $locale): string {
+                $id = $this->lock->transactional(function () use ($collection, $id, $data, $sourceId, $source, $locale): string {
                     if (null === $id) {
                         $id = (string) $this->collections->create($collection, $data)['id'];
                     } else {
@@ -79,6 +80,7 @@ final class CollectionImporter
                     $this->collections->publish($collection, $id);
                 }
             } catch (ContentException $e) {
+                $this->em->clear(); // discard objects changed by the rolled-back row, keeping the manager usable
                 $result->failed[] = I18n::t('content.import_row_failed', ['row' => $sourceId, 'message' => $e->getMessage()]);
             }
         }
@@ -143,10 +145,16 @@ final class CollectionImporter
         if (!\is_scalar($raw) || '' === \trim((string) $raw) || \str_starts_with((string) $raw, '0000-00-00')) {
             return '';
         }
+        $value = \trim((string) $raw);
+        if (1 !== \preg_match('/^\d{4}-\d{2}-\d{2}(?:[ T]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z| ?[+-]\d{2}(?::?\d{2})?)?)?\z/', $value)) {
+            return $value; // preserve invalid input for the shared field validator to report
+        }
         try {
-            return (new \DateTimeImmutable((string) $raw))->format($format);
+            $date = new \DateTimeImmutable($value);
+
+            return false === \DateTimeImmutable::getLastErrors() ? $date->format($format) : $value;
         } catch (\Exception) {
-            return '';
+            return $value;
         }
     }
 }

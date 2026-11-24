@@ -261,3 +261,5 @@
 'http.telegram_problem_token': 'Set a Telegram token in Settings → Messenger bots'
 'http.max_problem_client': 'Install yuri-kovalev/max-bot-symfony-bundle to send to MAX'
 'http.max_problem_token': 'Set a MAX token in Settings → Messenger bots'
+http.request_date_invalid: 'Enter a valid date in YYYY-MM-DD format.'
+http.request_date_range_invalid: 'The end date must be on or after the start date.'

@@ -13,7 +13,7 @@ use Symfony\Component\Messenger\Attribute\AsMessageHandler;
  *
  * @internal
  */
-#[AsMessageHandler(bus: 'messenger.bus.default')]
+#[AsMessageHandler]
 final class SendMailHandler
 {
     public function __construct(

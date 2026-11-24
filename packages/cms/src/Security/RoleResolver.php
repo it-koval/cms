@@ -8,12 +8,13 @@ use Itk\Cms\Entity\Role;
 use Itk\Cms\Entity\User;
 use Itk\Cms\Repository\RoleRepository;
 use Itk\Cms\Schema\Schema;
+use Symfony\Contracts\Service\ResetInterface;
 
 /**
  * Works out the rights of a role against the permission areas of the schema (mirror of admin/src/utils/permissions.js).
  * Built-in roles follow the structure of the site; custom roles carry perms { area: [actions] } and templates (null = every template).
  */
-final class RoleResolver
+final class RoleResolver implements ResetInterface
 {
     private const ORDER = ['view', 'edit', 'publish', 'delete'];
 
@@ -24,6 +25,11 @@ final class RoleResolver
         private readonly Schema $schema,
         private readonly RoleRepository $roles,
     ) {
+    }
+
+    public function reset(): void
+    {
+        $this->cache = [];
     }
 
     /** Add what a set of actions needs (Публиковать / Удалять -> Править -> Смотреть), in the order of the matrix columns. @param list<string> $list @return list<string> */

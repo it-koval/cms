@@ -43,7 +43,6 @@
 'content.item_translation_last_required': 'Бұл жазбаның соңғы нұсқасы. Жазбаны толығымен жойыңыз'
 'content.page_not_found': 'Бет табылмады'
 'content.page_title_required': 'Бет атауын көрсетіңіз'
-'content.page_url_slash': 'Мекенжай қиғаш сызықпен басталуы керек, мысалы /about-us'
 'content.page_url_invalid': '255 таңбаға дейінгі жергілікті жолды енгізіңіз, мысалы /about-us. ?, # және кері қиғаш сызықты қолданбаңыз'
 'content.locale_unknown': '«{locale}» тілі бұл сайт үшін бапталмаған'
 'content.url_locale_prefix': '{language} тіліндегі {url} мекенжайы {prefix} префиксінен басталуы керек'
@@ -77,7 +76,6 @@
 'content.page_home_url_locked': 'Басты беттің мекенжайын өзгертуге болмайды'
 'content.page_home_template_locked': 'Басты беттің үлгісін өзгертуге болмайды'
 'content.page_own_parent': 'Бет өзінің аталық беті бола алмайды'
-'content.page_parent_is_descendant': 'Бет өзінің еншілес бетінің еншілесі бола алмайды'
 'content.placement_template_unknown': 'Мұндай үлгі жоқ'
 'content.placement_home_exists': 'Басты бет бұрыннан бар'
 'content.placement_single': '«{template}» үлгісіндегі бет сайтта тек біреу болуы мүмкін және ол бұрыннан бар'
@@ -227,3 +225,11 @@
 'content.history_entry_not_found': 'Тарихта мұндай жазба жоқ'
 'content.history_not_found': 'Мұндай тарих жоқ'
 'content.no_permission': 'Бұл әрекетке құқығыңыз жоқ'
+content.redirect_address_too_long: 'Қайта бағыттау мекенжайы {max} таңбадан аспауы керек.'
+
+'content.field_max_length': '{count} таңбадан аспауы керек'
+
+'content.field_choice_invalid': 'Қолжетімді нұсқалардың бірін таңдаңыз'
+
+'content.field_date_invalid': 'Дұрыс күнді енгізіңіз'
+content.settings_domain_invalid: 'Сайт доменін жолсыз, параметрлерсіз және фрагментсіз енгізіңіз.'

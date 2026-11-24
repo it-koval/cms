@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Itk\Cms\Notification\Channel;
 
+use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\EntityManagerInterface;
 use Itk\Cms\Entity\StoredNotification;
 use Itk\Cms\Notification\Notification;
@@ -28,9 +29,6 @@ final class DatabaseChannel implements NotificationChannelInterface
 
     public function send(Notification $notification): void
     {
-        if (null !== $notification->key && $this->em->getRepository(StoredNotification::class)->count(['dedupeKey' => $notification->key]) > 0) {
-            return;
-        }
         $row = new StoredNotification($notification->type, \mb_substr($notification->title, 0, 255));
         $row->body = \mb_substr($notification->body, 0, 2000);
         $row->link = null === $notification->link ? null : \mb_substr($notification->link, 0, 512);
@@ -39,7 +37,23 @@ final class DatabaseChannel implements NotificationChannelInterface
         $row->dedupeKey = $notification->key;
         $row->payload = $notification->payload;
         $row->i18n = $notification->i18n;
-        $this->em->persist($row);
-        $this->em->flush();
+        $this->em->getConnection()->executeStatement(
+            'INSERT INTO itk_notification (type, title, body, link, level, audience, dedupe_key, payload, i18n, created_at)
+             VALUES (:type, :title, :body, :link, :level, :audience, :key, :payload, :i18n, :created)
+             ON CONFLICT (dedupe_key) DO NOTHING',
+            [
+                'type' => $row->type,
+                'title' => $row->title,
+                'body' => $row->body,
+                'link' => $row->link,
+                'level' => $row->level,
+                'audience' => $row->audience,
+                'key' => $row->dedupeKey,
+                'payload' => $row->payload,
+                'i18n' => $row->i18n,
+                'created' => $row->createdAt,
+            ],
+            ['payload' => Types::JSON, 'i18n' => Types::JSON, 'created' => Types::DATETIME_IMMUTABLE],
+        );
     }
 }

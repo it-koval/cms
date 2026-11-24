@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Itk\Cms\Mcp\Support;
 
+use Itk\Cms\Content\FieldValueRules;
 use Itk\Cms\Field\FieldInterface;
 use Itk\Cms\Repository\MediaFileRepository;
 use Itk\Cms\Security\Access;
@@ -240,6 +241,15 @@ final class FieldInput
     private function value(FieldInterface $f, mixed $v, string $p, array $knownSrc, array $current = []): array
     {
         $input = $f->toArray()['inputType'] ?? '';
+        $problems = FieldValueRules::problems($f, $v);
+        if ([] !== $problems) {
+            return \array_map(static fn (array $problem): string => $p . ': ' . match ($problem['code']) {
+                'max' => \sprintf('at most %d characters (got %d)', $f->maxLength(), \mb_strlen((string) $v)),
+                'choice' => 'must be one of: ' . \implode(', ', \array_column($f->choices(), 0)),
+                'date' => 'date' === $input ? 'a date like 2026-11-05' : 'a date and time like 2026-11-05T14:30',
+                default => $problem['message'],
+            }, $problems);
+        }
         switch ($f->type()) {
             case 'text':
             case 'textarea':
@@ -249,18 +259,6 @@ final class FieldInput
                 }
                 if (\mb_strlen($v) > self::MAX_TEXT) {
                     return [\sprintf('%s: too long', $p)];
-                }
-                if (!$f->isRich() && null !== $f->maxLength() && \mb_strlen($v) > $f->maxLength()) {
-                    return [\sprintf('%s: at most %d characters (got %d)', $p, $f->maxLength(), \mb_strlen($v))];
-                }
-                if ('' !== $v && 'date' === $input && !\preg_match('/^\d{4}-\d{2}-\d{2}$/', $v)) {
-                    return [\sprintf('%s: a date like 2026-11-05', $p)];
-                }
-                if ('' !== $v && 'datetime-local' === $input && !\preg_match('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/', $v)) {
-                    return [\sprintf('%s: a date and time like 2026-11-05T14:30', $p)];
-                }
-                if ('' !== $v && null !== $f->regex() && 1 !== @\preg_match($f->regex(), $v)) {
-                    return [\sprintf('%s: %s', $p, $f->regexMessage())];
                 }
 
                 return [];

@@ -45,7 +45,7 @@ final class PageController
     {
         $url = Url::fromPath($path);
 
-        $redirect = $this->redirects->lookup($url);
+        $redirect = $this->redirects->lookup($url, $request->getQueryString());
         if (null !== $redirect) {
             return new RedirectResponse($redirect->toPath, $redirect->code);
         }

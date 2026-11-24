@@ -143,7 +143,7 @@ final class MailSettingsTest extends WebTestCase
         // in the database it is sealed, not text
         $em = self::getContainer()->get(EntityManagerInterface::class);
         $em->clear();
-        $row = $em->getRepository(Setting::class)->find(['key' => 'mail', 'locale' => '*']);
+        $row = $em->getRepository(Setting::class)->find(['key' => 'itk:mail', 'locale' => '*']);
         self::assertNotNull($row);
         self::assertStringStartsWith('v1.', $row->value['password']);
         self::assertStringNotContainsString(self::SECRET, (string) \json_encode($row->value));
@@ -386,7 +386,7 @@ final class MailSettingsTest extends WebTestCase
         $status->failed('reset', 'Не вышло: сервер ответил отказом');
         self::assertSame('Не вышло: сервер ответил отказом', $status->get()['error']);
         self::assertNotNull($status->get()['errorAt']);
-        $row = $em->getRepository(Setting::class)->find(['key' => 'mailStatus', 'locale' => '*']); // the manager now remembers this row
+        $row = $em->getRepository(Setting::class)->find(['key' => 'itk:mailStatus', 'locale' => '*']); // the manager now remembers this row
         self::assertNotNull($row);
         $status->sent();
 

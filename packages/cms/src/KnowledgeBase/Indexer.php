@@ -6,7 +6,9 @@ namespace Itk\Cms\KnowledgeBase;
 
 use Doctrine\DBAL\ArrayParameterType;
 use Doctrine\DBAL\Connection;
+use Doctrine\DBAL\Exception\ConnectionException;
 use Doctrine\DBAL\Exception\ForeignKeyConstraintViolationException;
+use Doctrine\DBAL\Exception\RetryableException;
 use Doctrine\DBAL\Types\Types;
 use Itk\Cms\KnowledgeBase\Embedding\Embedder;
 use Itk\Cms\KnowledgeBase\Embedding\EmbeddingFailed;
@@ -117,6 +119,9 @@ final class Indexer
                     $plans[$key] = $plan;
                 }
             } catch (\Throwable $e) {
+                if ($e instanceof RetryableException || $e instanceof ConnectionException) {
+                    throw $e;
+                }
                 $outcomes[$key] = Outcome::Failed;
                 $failures[$key] = $e->getMessage();
                 $this->logger->warning('Knowledge base: {key} was not planned: {error}', ['key' => $key, 'error' => $e->getMessage()]);
@@ -140,6 +145,9 @@ final class Indexer
             try {
                 $outcomes[$key] = $this->rewrite($plan, $vectors);
             } catch (\Throwable $e) {
+                if ($e instanceof RetryableException || $e instanceof ConnectionException) {
+                    throw $e;
+                }
                 $outcomes[$key] = Outcome::Failed;
                 $failures[$key] = $e->getMessage();
                 $this->logger->warning('Knowledge base: {key} was not written: {error}', ['key' => $key, 'error' => $e->getMessage()]);

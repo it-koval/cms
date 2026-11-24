@@ -80,12 +80,6 @@ final class PageUpdateTool extends AbstractMcpTool
         }
         $tpl = $this->schema->template($page->template);
         $problems = [];
-        if (isset($args['url']) && !\str_starts_with((string) $args['url'], '/')) {
-            $problems[] = 'url: must start with /';
-        }
-        if (isset($args['title']) && '' === \trim((string) $args['title'])) {
-            $problems[] = 'title: must not be empty';
-        }
         if (isset($args['fields'])) {
             $current = (array) $this->pages->get($id, $locale)['fields'];
             $problems = [...$problems, ...$this->input->problems($tpl?->fieldList() ?? [], (array) $args['fields'], FieldInput::srcsIn($current, $tpl?->fieldList() ?? []), 'fields', $current)];

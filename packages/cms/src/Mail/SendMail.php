@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Itk\Cms\Mail;
 
 /**
- * Messenger message (async, bus messenger.bus.default): one letter to one person, already written. The worker connects to the mail server and sends it
+ * Messenger message (async, default Messenger bus): one letter to one person, already written. The worker connects to the mail server and sends it
  * (SendMailHandler), so a page never waits for the server. It holds the text of the letter and no mail settings: those are read when the letter is sent.
  *
  * kind  what the letter is for: 'reset', 'invite', 'request', 'test'

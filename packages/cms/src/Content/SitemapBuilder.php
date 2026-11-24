@@ -67,40 +67,26 @@ final class SitemapBuilder
     public function forget(): void
     {
         $this->cache->delete(self::KEY . 'locales');
-        $base = $this->domainBase();
+        $base = $this->address()?->origin();
         if (null !== $base) {
             $this->cache->delete(self::KEY . \md5($base));
         }
     }
 
-    /** The trusted SEO base; legacy sites keep their domain-only behavior. Null when no address is available. */
+    /** The trusted SEO base. Null when no address is available. */
     public function base(): ?string
     {
         if ($this->isMultilingual() && null !== $this->publicUrl) {
-            $base = $this->publicUrl->base();
-
-            return null !== $base && PublicUrl::isValid($base) ? $base : null;
+            return $this->publicUrl->base();
         }
 
-        return $this->domainBase();
+        return $this->address()?->origin();
     }
 
-    private function domainBase(): ?string
-    {
-        $domain = \rtrim(\trim((string) $this->settings->get('domain', null, '')), '/');
-        if (1 !== \preg_match('~^(https?://)?[\p{L}\p{N}][\p{L}\p{N}.\-]*(:\d{1,5})?$~u', $domain)) {
-            return null;
-        }
-
-        return \preg_match('~^https?://~i', $domain) ? $domain : 'https://' . $domain;
-    }
-
-    /** The domain setting as a SiteAddress, kept independent of request-based SEO origins for host vouching and IndexNow. */
+    /** The configured address for host vouching and search engines. */
     public function address(): ?SiteAddress
     {
-        $base = $this->domainBase();
-
-        return null === $base ? null : SiteAddress::fromUrl($base);
+        return $this->publicUrl?->siteAddress() ?? SiteAddress::fromDomain((string) $this->settings->get('domain', null, ''));
     }
 
     public function isMultilingual(): bool

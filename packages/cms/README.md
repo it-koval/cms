@@ -335,10 +335,12 @@ A collection is a list of records with fields: reviews, tours, staff. Records ar
 | `defaultSort([...])`, `perPage(int)` | The default sort and the list page size (50) |
 | `filters(...)`, `actions(...)`, `metrics(...)` | Filters, actions and metrics |
 | `tree()` | Records nest inside each other |
-| `singleton('main')` | A collection of one record with this id |
+| `singleton('main')` | A collection of one record with this id. Reads return initial values until the first explicit save creates the row |
 | `view('matrix')`, `matrix([...])` | A table editor for one record: `colFields`, `rowKinds`, `rowLabel` |
 | `singular()`, `newLabel()`, `icon()`, `describe()`, `emptyState()` | Labels and the icon in the admin panel |
 | `menu(...)`, `visibleWhen(fn)` | The place in the admin menu and visibility, see [Admin menu](#admin-menu) |
+
+Use a business field such as `stage` for a kanban column. Collection fields cannot use metadata keys from `Collection::RESERVED_KEYS`. Admin, PHP, MCP and collection imports share value validation. A custom field can implement `Itk\Cms\Field\ValueValidatingFieldInterface` and return translated errors from `validationErrors()`.
 
 ### Menus
 
@@ -354,6 +356,8 @@ A settings group is a form in **Settings** with its own fields. Settings keys ar
 | `analytics` (**Analytics and webmaster tools**) | `yandexMetrikaId`, `yandexMetrikaWebvisor`, `googleAnalyticsId`, `yandexVerification`, `googleVerification`, `indexNow` |
 
 A site extends a built-in group with `$s->settings('site')->fields(...)`. A site field with the key of a built-in field replaces the core field, whichever group the site declares it in.
+
+Set `domain` to a hostname or an HTTP(S) origin. A path, query or fragment is invalid. `itk_cms.public_url` alone supplies the origin for the sitemap, IndexNow and Webmaster. International hostnames are written as ASCII in URLs. Internal settings such as SMTP and bot credentials use a separate `itk:` namespace.
 
 Site code reads settings with the `Itk\Cms\Settings\Settings` service. The value comes in the field's type:
 
@@ -389,6 +393,8 @@ Originals are stored at `{upload_url}/Y/m/name.jpg` (by default `/uploads/media`
 
 ### Twig templates
 
+Place overrides in `templates/bundles/ItkCmsBundle/`. To extend the original bundle template from an override, use `@!ItkCms/…`. Admin and preview assets use the default Symfony Asset package when available, including its base path or CDN.
+
 The site puts its templates in `templates/`:
 
 - `layout.html.twig` is the layout. It declares `{% block content %}`. `{% block title %}` is convenient for `<title>`.
@@ -419,6 +425,7 @@ A page template has access to `page` (`id`, `parentId`, `template`, `locale`, `h
 | `itk_seo({...})` | Meta tags of the current URL, see [SEO rules for URLs](#seo-rules-for-urls) |
 | `itk_cache(300)`, `itk_cache(false)` | The lifetime of the entry in the page cache, see [Page cache](#page-cache) |
 | `itk_stylesheets({nonce: x})` | The site stylesheets, see [Critical CSS](#critical-css) |
+| `itk_asset('preview.js')` | URL of a file in `bundles/itkcms/`. Uses the site's Symfony Asset package or the request base path |
 | `itk_t('area.key', {...})`, `itk_locale()` | Text and language of the admin interface. For your own sign-in pages and e-mails |
 | `itk_admin_font()` | The `@font-face` rules of the admin font for your own sign-in pages |
 
@@ -1122,6 +1129,8 @@ The sender address comes from **Settings** → **Mail**. With only `MAILER_DSN` 
 
 **Request e-mails.** **Settings** → **Notifications** → **Emails about new requests** (`mailRoutes`, the `set:notifications` area): comma-separated addresses for all forms and a separate list for each form, up to 10 addresses. Each address gets an e-mail with the form fields and a link to the request.
 
+Custom request filters use calendar dates in `YYYY-MM-DD` format. Telegram and MAX delivery events run after the CMS saves the outcome.
+
 **E-mail templates.** `@ItkCms/email/layout.html.twig` and the pairs `reset_password`, `invite`, `request`, `test` (`.html.twig` and `.txt.twig`). The site overrides any file with its own file in `templates/email/`, for example `templates/email/layout.html.twig`. Inside, you can extend the bundle template: `{% extends '@ItkCms/email/reset_password.html.twig' %}`.
 
 ### Admin notifications and custom channels
@@ -1261,7 +1270,7 @@ In all other cases (turned off, not ready yet, failed, preview, a site controlle
 - A result larger than `max_kb` counts as a failure. If the CSS has `!important` or `@layer`, the worker writes a warning, because crittr loses them.
 - The generator does not work with the `sync` transport.
 
-**CSP.** `<style>` requires `style-src 'unsafe-inline'` or a nonce. `{{ itk_stylesheets({nonce: nonce}) }}` puts the `nonce` on each `<style>` and on the link. A nonce does not cover the `onload` attribute. For it, allow the handler hash: `script-src 'unsafe-hashes' 'sha256-MhtPZXr7+LpJUY5qtMutB+qWfQtMaPccfe7QXtCcEYc='`. Without this, the full stylesheet stays at `media="print"`.
+**CSP.** Pass `{{ itk_stylesheets({nonce: nonce}) }}` to put the nonce on each critical `<style>` and use regular links for the full stylesheets. Allow the stylesheet source in the site's CSP.
 
 **In Docker**, the image is built with Node and Chromium with the `CRITICAL_CSS=1` argument (see [Critical CSS in Docker](#critical-css-in-docker)).
 
@@ -1450,7 +1459,7 @@ Each line is `ok`, `off`, `warning` or `ERROR`. `off` marks a module that is not
 
 | Command | What it does |
 |---|---|
-| `itk:install` | Prepares the site: roles, menu areas, default settings, the queue table, the home page, the first administrator. Options `--email`, `--password`, `--name`, `--site-name`, `--domain`, `--no-home` |
+| `itk:install` | Prepares roles, menu areas, settings, queues, the home page and the first administrator. The first password must be at least 10 characters. Options `--email`, `--password`, `--name`, `--site-name`, `--domain`, `--no-home` |
 | `itk:doctor [--ci]` | Checks the site |
 | `itk:schema:lint` | Checks the schema and the Twig templates |
 | `itk:user:password <email> [--password=]` | Sets a password |

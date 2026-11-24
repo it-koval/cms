@@ -79,7 +79,7 @@ trait MailSupport
     {
         $em = self::getContainer()->get(EntityManagerInterface::class);
         $em->clear();
-        $em->createQuery("DELETE FROM Itk\\Cms\\Entity\\Setting s WHERE s.key IN ('mail', 'mailStatus', 'mailRoutes')")->execute();
+        $em->createQuery("DELETE FROM Itk\\Cms\\Entity\\Setting s WHERE s.key IN ('itk:mail', 'itk:mailStatus', 'mailRoutes')")->execute();
     }
 
     /** Письма, которые страница поставила в очередь. @return list<SendMail> */

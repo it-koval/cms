@@ -14,7 +14,7 @@ use Doctrine\ORM\Mapping as ORM;
 #[ORM\Entity]
 #[ORM\Table(name: 'itk_notification')]
 #[ORM\Index(name: 'itk_notification_created_idx', columns: ['created_at'])]
-#[ORM\Index(name: 'itk_notification_key_idx', columns: ['dedupe_key'])]
+#[ORM\UniqueConstraint(name: 'itk_notification_key_idx', columns: ['dedupe_key'])]
 class StoredNotification
 {
     #[ORM\Id]

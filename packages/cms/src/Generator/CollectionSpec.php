@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Itk\Cms\Generator;
 
+use Itk\Cms\I18n\I18n;
+
 /**
  * What a collection class is generated from: a JSON file or a table.
  *
@@ -26,6 +28,13 @@ final class CollectionSpec
         public readonly ?array $source = null,
         public readonly array $notes = [],
     ) {
+        $seen = [];
+        foreach ($fields as $field) {
+            if (isset($seen[$field->key])) {
+                throw new \InvalidArgumentException(I18n::t('model.problem_field_key_repeated', ['at' => $title, 'key' => $field->key]));
+            }
+            $seen[$field->key] = true;
+        }
     }
 
     public function withKeyAndTitle(string $key, string $title): self

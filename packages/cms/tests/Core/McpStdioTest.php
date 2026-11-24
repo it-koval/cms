@@ -118,6 +118,44 @@ final class McpStdioTest extends KernelTestCase
         self::assertStringContainsString('revoked', (string) \stream_get_contents($err));
     }
 
+    #[Test]
+    public function settingsChangedByAnotherProcessAreSeenByTheNextStdioCommand(): void
+    {
+        $key = $this->mcpKey($this->mcpUser());
+        $db = self::getContainer()->get(\Doctrine\DBAL\Connection::class);
+        $other = \Doctrine\DBAL\DriverManager::getConnection($db->getParams());
+        $before = $db->fetchOne("SELECT setting_value FROM itk_setting WHERE setting_key = 'testTitle' AND locale = 'ru'");
+        $first = 'F2-first-' . \bin2hex(\random_bytes(5));
+        $second = 'F2-second-' . \bin2hex(\random_bytes(5));
+        $write = static function (string $value) use ($other): void {
+            $other->executeStatement("INSERT INTO itk_setting (setting_key, locale, setting_value) VALUES ('testTitle', 'ru', ?) ON CONFLICT (setting_key, locale) DO UPDATE SET setting_value = EXCLUDED.setting_value", [\json_encode($value)]);
+        };
+        $write($first);
+        $line = static fn (int $id): string => \json_encode(['jsonrpc' => '2.0', 'id' => $id, 'method' => 'tools/call', 'params' => ['name' => 'settings_get', 'arguments' => ['group' => 'test_settings', 'locale' => 'ru']]]) . "\n";
+        $in = $this->feed([$line(1), $line(2)]);
+        TestRevokingStream::$beforeSecond = static fn () => $write($second);
+        $out = \fopen('php://memory', 'w+');
+        $err = \fopen('php://memory', 'w+');
+        try {
+            self::assertSame(0, self::getContainer()->get(McpStdio::class)->serve($key['plain'], $in, $out, $err));
+            \rewind($out);
+            $answers = \array_map(static fn (string $line): array => \json_decode($line, true), \explode("\n", \trim((string) \stream_get_contents($out))));
+            self::assertCount(2, $answers);
+            self::assertSame($first, $answers[0]['result']['structuredContent']['groups'][0]['settings']['testTitle']['value']);
+            self::assertSame($second, $answers[1]['result']['structuredContent']['groups'][0]['settings']['testTitle']['value']);
+        } finally {
+            TestRevokingStream::$beforeSecond = null;
+            $other->executeStatement("DELETE FROM itk_setting WHERE setting_key = 'testTitle' AND locale = 'ru'");
+            if (false !== $before) {
+                $other->executeStatement("INSERT INTO itk_setting (setting_key, locale, setting_value) VALUES ('testTitle', 'ru', ?)", [$before]);
+            }
+            $other->close();
+            foreach ([$in, $out, $err] as $stream) {
+                \fclose($stream);
+            }
+        }
+    }
+
     private function killDatabaseConnection(): void
     {
         $connection = self::getContainer()->get(\Doctrine\DBAL\Connection::class);

@@ -23,9 +23,9 @@ const BLOCK = new Set(['p', 'div', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'blockquo
 // tags that start a new line inside a table cell (a cell holds inline text only)
 const CELL_BLOCK = new Set(['ul', 'ol', 'li', 'table', 'thead', 'tbody', 'tfoot', 'tr', 'td', 'th', 'caption'])
 const lineBlock = (tag, mode) => BLOCK.has(tag) || (mode === 'cell' && CELL_BLOCK.has(tag))
-const SAFE_HREF = /^(https?:\/\/|mailto:|tel:|\/|#)/i
+const SAFE_HREF = /^(https?:\/\/|mailto:|tel:|\/(?![/\\])|#)/i
 // photos of an article: the media library (relative path, data URL of an uploaded photo) or an absolute address
-const SAFE_SRC = /^(assets\/[^"'<>\s]+|\/[^"'<>\s]+|https?:\/\/[^"'<>\s]+|data:image\/(png|jpe?g|webp|gif|avif);base64,[A-Za-z0-9+/=]+)$/i
+const SAFE_SRC = /^(assets\/[^"'<>\s]+|\/(?![/\\])[^"'<>\s]+|https?:\/\/[^"'<>\s]+|data:image\/(png|jpe?g|webp|gif|avif);base64,[A-Za-z0-9+/=]+)$/i
 
 function parse(html) {
   return new DOMParser().parseFromString(`<body>${html ?? ''}</body>`, 'text/html').body

@@ -30,7 +30,7 @@ final class BotSettingsApiTest extends WebTestCase
     {
         try {
             $em = self::getContainer()->get(EntityManagerInterface::class);
-            $em->createQuery('DELETE FROM Itk\Cms\Entity\Setting s WHERE s.key IN (:keys)')->setParameter('keys', ['telegramBot', 'maxBot'])->execute();
+            $em->createQuery('DELETE FROM Itk\Cms\Entity\Setting s WHERE s.key IN (:keys)')->setParameter('keys', ['itk:telegramBot', 'itk:maxBot'])->execute();
             $em->createQuery('DELETE FROM Itk\Cms\Entity\User u WHERE u.email LIKE :email')->setParameter('email', 'test-bots-%@example.com')->execute();
             $em->createQuery('DELETE FROM Itk\Cms\Entity\Role r WHERE r.key LIKE :key')->setParameter('key', 'test-bots-%')->execute();
         } finally {
@@ -67,7 +67,7 @@ final class BotSettingsApiTest extends WebTestCase
         self::assertArrayNotHasKey('problem', $state['max']);
 
         $em = self::getContainer()->get(EntityManagerInterface::class);
-        $em->persist(new Setting('maxBot', Setting::ALL, ['token' => 'sealed-with-another-app-secret']));
+        $em->persist(new Setting('itk:maxBot', Setting::ALL, ['token' => 'sealed-with-another-app-secret']));
         $em->flush();
         self::assertArrayHasKey('problem', $this->api('GET')['max']);
     }
@@ -90,12 +90,12 @@ final class BotSettingsApiTest extends WebTestCase
         $this->client->request('GET', '/admin/api/settings');
         self::assertResponseIsSuccessful();
         $text = (string) $this->client->getResponse()->getContent();
-        foreach (['telegramBot', 'maxBot', self::TELEGRAM, self::MAX] as $secret) {
+        foreach (['itk:telegramBot', 'itk:maxBot', self::TELEGRAM, self::MAX] as $secret) {
             self::assertStringNotContainsString($secret, $text);
         }
         $em = self::getContainer()->get(EntityManagerInterface::class);
-        self::assertNotNull($em->find(Setting::class, ['key' => 'telegramBot', 'locale' => '*']));
-        self::assertSame(0, (int) $em->getConnection()->fetchOne("SELECT COUNT(*) FROM itk_revision WHERE resource_id IN ('telegramBot', 'maxBot', 'bots')"));
+        self::assertNotNull($em->find(Setting::class, ['key' => 'itk:telegramBot', 'locale' => '*']));
+        self::assertSame(0, (int) $em->getConnection()->fetchOne("SELECT COUNT(*) FROM itk_revision WHERE resource_id IN ('itk:telegramBot', 'itk:maxBot', 'bots')"));
         $this->api('PUT', ['telegram' => ['token' => ''], 'max' => ['token' => '']]);
         self::assertSame(self::TELEGRAM, self::getContainer()->get(BotSettings::class)->token('telegram'));
         $this->api('PUT', ['telegram' => ['clear' => true], 'max' => ['clear' => true]]);

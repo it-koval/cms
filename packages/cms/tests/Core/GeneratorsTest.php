@@ -381,4 +381,31 @@ final class GeneratorsTest extends TestCase
         self::assertSame(Command::INVALID, $t->getStatusCode());
         self::assertStringContainsString('--map', $t->getDisplay());
     }
+
+    #[Test]
+    public function builtinFieldTypesCannotBeReplacedByTheGenerator(): void
+    {
+        foreach (['image', 'repeater', 'relation', 'readonly', 'text'] as $key) {
+            $t = $this->exec(new MakeFieldCommand($this->make), ['key' => $key]);
+            self::assertSame(Command::FAILURE, $t->getStatusCode(), $t->getDisplay());
+        }
+        self::assertDirectoryDoesNotExist($this->project . '/src');
+        self::assertDirectoryDoesNotExist($this->project . '/public');
+    }
+
+    #[Test]
+    public function specFieldsUseTheSchemasKeyRuleAndRejectDuplicates(): void
+    {
+        foreach (['bad.key', 'space key', ''] as $bad) {
+            \file_put_contents($this->project . '/keys.json', (string) \json_encode(['key' => 'f2_keys', 'fields' => [['key' => $bad]]]));
+            self::assertSame(Command::INVALID, $this->exec($this->collectionCommand(), ['--from' => 'keys.json'])->getStatusCode());
+            self::assertDirectoryDoesNotExist($this->project . '/src');
+        }
+        \file_put_contents($this->project . '/keys.json', (string) \json_encode(['key' => 'f2_keys', 'fields' => [['key' => 'name'], ['key' => 'name']]]));
+        self::assertSame(Command::INVALID, $this->exec($this->collectionCommand(), ['--from' => 'keys.json'])->getStatusCode());
+        self::assertDirectoryDoesNotExist($this->project . '/src');
+        \file_put_contents($this->project . '/keys.json', (string) \json_encode(['key' => 'f2_keys', 'fields' => [['key' => '1-name'], ['key' => 'camelCase']]]));
+        $t = $this->exec($this->collectionCommand(), ['--from' => 'keys.json']);
+        self::assertSame(Command::SUCCESS, $t->getStatusCode(), $t->getDisplay());
+    }
 }

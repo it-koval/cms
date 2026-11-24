@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Itk\Cms\Mcp;
 
+use Itk\Cms\Content\ContentException;
 use Itk\Cms\I18n\I18n;
 use Itk\Cms\Security\RoleResolver;
 
@@ -35,7 +36,7 @@ final class McpScopes
     ];
 
     /**
-     * Known scopes only, with what each needs (publish -> write -> read), in the fixed order.
+     * Validates scopes and adds what each needs (publish -> write -> read), in the fixed order.
      *
      * @param list<mixed> $scopes
      *
@@ -43,7 +44,12 @@ final class McpScopes
      */
     public static function normalize(array $scopes): array
     {
-        $have = \array_flip(\array_filter($scopes, 'is_string'));
+        foreach ($scopes as $scope) {
+            if (!\in_array($scope, self::ALL, true)) {
+                throw ContentException::invalid(I18n::t('http.token_scope_unknown'), ['scopes' => I18n::t('http.token_scope_choose')]);
+            }
+        }
+        $have = \array_flip($scopes);
         if (isset($have[self::PUBLISH])) {
             $have[self::WRITE] = true;
         }

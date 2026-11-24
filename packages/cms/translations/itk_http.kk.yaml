@@ -261,3 +261,5 @@
 'http.telegram_problem_token': 'Telegram токенін Баптаулар → Мессенджер боттары бөлімінде орнатыңыз'
 'http.max_problem_client': 'MAX арқылы жіберу үшін yuri-kovalev/max-bot-symfony-bundle орнатыңыз'
 'http.max_problem_token': 'MAX токенін Баптаулар → Мессенджер боттары бөлімінде орнатыңыз'
+http.request_date_invalid: 'ЖЖЖЖ-АА-КК пішімінде жарамды күнді енгізіңіз.'
+http.request_date_range_invalid: 'Аяқталу күні басталу күнінен ерте болмауы керек.'

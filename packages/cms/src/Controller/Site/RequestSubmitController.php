@@ -40,7 +40,7 @@ final class RequestSubmitController
     ) {
     }
 
-    #[Route('/request/{form}', name: 'itk_request_submit', requirements: ['form' => '[a-z0-9_\-]+'], methods: ['POST'])]
+    #[Route('/request/{form}', name: 'itk_request_submit', requirements: ['form' => '[A-Za-z0-9][A-Za-z0-9_\-]*'], methods: ['POST'])]
     public function __invoke(Request $request, string $form): JsonResponse
     {
         $limit = $this->limiter->create($request->getClientIp() ?? 'unknown')->consume();

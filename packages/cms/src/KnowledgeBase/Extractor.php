@@ -63,7 +63,9 @@ final class Extractor
             $live->source->title,
             'fields.',
             '' === $description ? [] : [$description],
-            '' === $description ? 'title' : 'seo.description',
+            '' === $description ? null : 'seo.description',
+            null,
+            true,
         );
         $hasNoHeadBlock = [] === $blocks || null !== $blocks[0]->sectionId;
         if ($hasNoHeadBlock) {
@@ -108,7 +110,7 @@ final class Extractor
      *
      * @return list<Block>
      */
-    private function fields(array $fields, array $values, ?string $sectionId, ?string $sectionType, ?string $heading, string $path, array $lead = [], ?string $leadField = null, ?string $skip = null): array
+    private function fields(array $fields, array $values, ?string $sectionId, ?string $sectionType, ?string $heading, string $path, array $lead = [], ?string $leadField = null, ?string $skip = null, bool $splitFields = false): array
     {
         $blocks = [];
         $plain = $lead;
@@ -129,6 +131,9 @@ final class Extractor
             $got = $this->contribution($f, $value);
             if (null === $got) {
                 continue;
+            }
+            if ($splitFields && null !== $plainField && $plainField !== $field) {
+                $flush();
             }
             if ('heading' === $got) {
                 $text = $this->html->oneLine($value);

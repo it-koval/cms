@@ -46,8 +46,12 @@ final class UserManager
         if (null === $this->roles->find($roleKey)) {
             $details['roleId'] = I18n::t('http.role_required');
         }
-        if (null !== $password && \mb_strlen($password) < 8) {
-            $details['password'] = I18n::t('http.password_min', ['length' => 8]);
+        if (null !== $password) {
+            try {
+                self::checkPasswordPolicy($password);
+            } catch (ContentException $e) {
+                $details['password'] = $e->getMessage();
+            }
         }
         if ([] !== $details) {
             throw ContentException::invalid((string) \reset($details), $details);
@@ -81,9 +85,7 @@ final class UserManager
      */
     public function setPassword(User $user, string $password): void
     {
-        if (\mb_strlen($password) < 8) {
-            throw ContentException::invalid(I18n::t('http.password_min', ['length' => 8]));
-        }
+        self::checkPasswordPolicy($password);
         $user->passwordHash = $this->hasher->hashPassword($user, $password);
         $this->em->wrapInTransaction(function () use ($user): void {
             $this->em->flush();

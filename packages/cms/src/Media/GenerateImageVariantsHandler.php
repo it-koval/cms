@@ -8,7 +8,7 @@ use Itk\Cms\Repository\MediaFileRepository;
 use Symfony\Component\Messenger\Attribute\AsMessageHandler;
 
 /** @internal */
-#[AsMessageHandler(bus: 'messenger.bus.default')]
+#[AsMessageHandler]
 final class GenerateImageVariantsHandler
 {
     public function __construct(

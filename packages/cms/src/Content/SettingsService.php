@@ -126,6 +126,9 @@ final class SettingsService implements ResetInterface
                     continue;
                 }
                 $norm = $this->values->normalize([$f], [$key => $value])[$key] ?? $this->values->emptyFor($f);
+                if ('domain' === $key) {
+                    self::checkDomain($norm);
+                }
                 $e = $this->values->validate([$f], [$key => $norm]);
                 foreach ($e as $row) {
                     $errors[] = $row;
@@ -181,6 +184,9 @@ final class SettingsService implements ResetInterface
     /** Sets a shared value from code (install, import). */
     public function set(string $key, mixed $value, string $locale = Setting::ALL): void
     {
+        if ('domain' === $key) {
+            self::checkDomain($value);
+        }
         $row = $this->settings->find(['key' => $key, 'locale' => $locale]);
         if (null === $row) {
             $this->em->persist(new Setting($key, $locale, $value));
@@ -189,6 +195,15 @@ final class SettingsService implements ResetInterface
         }
         $this->em->flush();
         $this->loaded = null;
+    }
+
+    private static function checkDomain(mixed $value): void
+    {
+        if (null === $value || (\is_string($value) && ('' === \trim($value) || null !== SiteAddress::fromDomain($value)))) {
+            return;
+        }
+        $message = I18n::t('content.settings_domain_invalid');
+        throw ContentException::invalid($message, ['domain' => $message]);
     }
 
     /** A shared value that is not a field of the schema, kept by a module of its own (all() never lists it, nor does the settings API or the history). */

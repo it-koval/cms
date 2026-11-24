@@ -23,8 +23,8 @@ use Symfony\Component\Messenger\Event\WorkerMessageReceivedEvent;
  * never reaches the second step, so the same choice is made again before ApiErrorListener (10) writes the answer. A refusal of the router (a 405 of a route of the API) comes
  * ahead of the firewall, when the person is not known yet: that answer is in admin_locale.
  * The public form route gets its own language. Pages of the site are not touched: they speak the language the site itself chose, and so does the preview of a page, which must look like it.
- * A request whose language was changed here goes back to admin_locale when it ends (Symfony puts framework.default_locale there), any other stays with what Symfony does. Every message of a
- * worker starts from admin_locale: the services are reset between messages, and nothing a message did stays behind.
+ * A request whose language was changed here goes back to framework.default_locale when it ends. Every message of a
+ * worker starts from the application language: the services are reset between messages, and nothing a message did stays behind.
  *
  * The body of a StreamedResponse runs after the end of the request, so it no longer speaks the language of the person: put its texts together before the response is returned.
  *
@@ -84,13 +84,13 @@ final class AdminLocaleListener implements EventSubscriberInterface
     public function onFinish(FinishRequestEvent $event): void
     {
         if ($event->isMainRequest() && $event->getRequest()->attributes->getBoolean(self::APPLIED)) {
-            $this->locale->apply($this->locale->default());
+            $this->locale->apply($this->locale->application());
         }
     }
 
     public function onMessage(WorkerMessageReceivedEvent $event): void
     {
-        $this->locale->apply($this->locale->default());
+        $this->locale->apply($this->locale->application());
     }
 
     private function usePersonalLanguage(Request $request): void

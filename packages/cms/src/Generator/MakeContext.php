@@ -45,10 +45,13 @@ final class MakeContext
     /**
      * Who already uses the key: a class (other than $exceptClass) or config/itk/schema.php; null when it is free.
      *
-     * @param 'collection'|'template'|'section'|'settings' $kind
+     * @param 'collection'|'template'|'section'|'settings'|'field'|'plugin' $kind
      */
     public function keyOwner(string $kind, string $key, string $exceptClass): ?string
     {
+        if ('field' === $kind && \in_array($key, [...\array_keys(FieldSpec::TYPES), 'repeater', 'relation', 'readonly', 'note'], true)) {
+            return 'Itk\\Cms\\Field';
+        }
         $type = self::RESOURCES[$kind] ?? null;
         if (null === $type) {
             return null;

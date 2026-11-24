@@ -6,10 +6,12 @@ namespace Itk\Cms\Content;
 
 use Doctrine\ORM\EntityManagerInterface;
 use Itk\Cms\Entity\SeoRule;
+use Itk\Cms\Event\SeoRulesChanged;
 use Itk\Cms\I18n\ContentLocales;
 use Itk\Cms\I18n\I18n;
 use Itk\Cms\Repository\SeoRuleRepository;
 use Itk\Cms\Support\Url;
+use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 
 /**
  * SEO rules of addresses (Настройки → SEO → Правила адресов): the list, create, change, remove. Saved at once, there is no publish step.
@@ -29,6 +31,7 @@ final class SeoRuleService
         private readonly ContentLocales $contentLocales,
         private readonly ?SitemapBuilder $sitemap = null,
         private readonly ?CrawlerFiles $crawlerFiles = null,
+        private readonly ?EventDispatcherInterface $events = null,
     ) {
     }
 
@@ -54,6 +57,7 @@ final class SeoRuleService
         $this->em->flush();
         $this->resolver->reset();
         $this->forgetCrawlerFiles(); // «noindex» of a rule changes the sitemap and llms.txt
+        $this->events?->dispatch(new SeoRulesChanged([clone $rule]));
 
         return $rule;
     }
@@ -64,21 +68,25 @@ final class SeoRuleService
     public function update(string $id, array $patch): SeoRule
     {
         $rule = $this->find($id);
+        $before = clone $rule;
         $this->fill($rule, $patch);
         $rule->updatedAt = new \DateTimeImmutable();
         $this->em->flush();
         $this->resolver->reset();
         $this->forgetCrawlerFiles();
+        $this->events?->dispatch(new SeoRulesChanged([$before, clone $rule]));
 
         return $rule;
     }
 
     public function remove(string $id): void
     {
+        $rule = clone $this->find($id);
         $this->em->remove($this->find($id));
         $this->em->flush();
         $this->resolver->reset();
         $this->forgetCrawlerFiles();
+        $this->events?->dispatch(new SeoRulesChanged([$rule]));
     }
 
     /**

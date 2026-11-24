@@ -32,7 +32,6 @@ final class RequestService
         private readonly MaxNotifier $max,
         private readonly RequestDeliverer $deliverer,
         private readonly NotifierInterface $notifier,
-        #[Autowire(service: 'messenger.bus.default')]
         private readonly MessageBusInterface $bus,
         #[Autowire(param: 'kernel.secret')]
         private readonly string $secret,
@@ -63,15 +62,12 @@ final class RequestService
                 $errors[$f->key()] = I18n::t('http.request_field_required', ['label' => $f->label()]);
                 continue;
             }
-            if (!$empty && \is_string($value)) {
-                if (null !== $f->maxLength() && \mb_strlen($value) > $f->maxLength()) {
-                    $errors[$f->key()] = I18n::t('http.request_field_too_long', ['label' => $f->label(), 'count' => $f->maxLength()]);
-                    continue;
-                }
-                if (null !== $f->regex() && !self::matches($f->regex(), $value)) {
-                    $errors[$f->key()] = $f->regexMessage();
-                    continue;
-                }
+            $problems = \Itk\Cms\Content\FieldValueRules::problems($f, $value);
+            if ([] !== $problems) {
+                $errors[$f->key()] = 'max' === $problems[0]['code']
+                    ? I18n::t('http.request_field_too_long', ['label' => $f->label(), 'count' => $f->maxLength()])
+                    : $problems[0]['message'];
+                continue;
             }
             if (!$empty) {
                 $data[$f->key()] = $value;
@@ -340,18 +336,6 @@ final class RequestService
     private static function whole(?string $column, mixed $sent): string
     {
         return null !== $column && \is_string($sent) && \str_starts_with($sent, $column) ? $sent : (string) $column;
-    }
-
-    /** A long value can exhaust the small stack of the PCRE JIT, and a valid value would be refused: then the interpreter checks it. */
-    private static function matches(string $regex, string $value): bool
-    {
-        $found = \preg_match($regex, $value);
-        if (false === $found && \PREG_JIT_STACKLIMIT_ERROR === \preg_last_error()) {
-            $regex = \ltrim($regex);
-            $found = \preg_match($regex[0] . '(*NO_JIT)' . \substr($regex, 1), $value);
-        }
-
-        return 1 === $found;
     }
 
     private function work(string $w): string

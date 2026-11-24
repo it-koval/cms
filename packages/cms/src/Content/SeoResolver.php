@@ -52,30 +52,41 @@ final class SeoResolver implements ResetInterface
     public function matches(string $path, array $query = [], ?string $locale = null): array
     {
         $locale ??= $this->mainLocale;
-        $key = Url::key($path);
         $hits = [];
         foreach ($this->active() as $rule) {
-            if (null !== $rule->locale && '' !== $rule->locale && $rule->locale !== $locale) {
+            if (!self::covers($rule, $path, $query, $locale)) {
                 continue;
             }
             $own = Url::key($rule->pathOnly());
-            $covers = SeoRule::EXACT === $rule->matchType
-                ? $key === $own
-                : ('/' === $own || $key === $own || \str_starts_with($key, $own . '/'));
-            if (!$covers) {
-                continue;
-            }
             $params = $rule->queryParams();
-            foreach ($params as $name => $value) {
-                if (!\array_key_exists($name, $query) || !self::same($query[$name], $value)) {
-                    continue 2;
-                }
-            }
             $hits[] = [$rule, [\count($params), SeoRule::EXACT === $rule->matchType ? 1 : 0, \strlen($own), $rule->locale === $locale ? 1 : 0, $rule->updatedAt->getTimestamp()]];
         }
         \usort($hits, static fn (array $a, array $b): int => $b[1] <=> $a[1] ?: \strcmp($b[0]->id, $a[0]->id));
 
         return \array_map(static fn (array $h): SeoRule => $h[0], $hits);
+    }
+
+    /** The same address matching is used when a changed rule invalidates derived content. @param array<array-key, mixed> $query */
+    public static function covers(SeoRule $rule, string $path, array $query, string $locale): bool
+    {
+        if (!$rule->active || (null !== $rule->locale && '' !== $rule->locale && $rule->locale !== $locale)) {
+            return false;
+        }
+        $key = Url::key($path);
+        $own = Url::key($rule->pathOnly());
+        $covers = SeoRule::EXACT === $rule->matchType
+            ? $key === $own
+            : ('/' === $own || $key === $own || \str_starts_with($key, $own . '/'));
+        if (!$covers) {
+            return false;
+        }
+        foreach ($rule->queryParams() as $name => $value) {
+            if (!\array_key_exists($name, $query) || !self::same($query[$name], $value)) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /** @param array<array-key, mixed> $query */

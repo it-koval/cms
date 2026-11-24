@@ -22,7 +22,7 @@ use Itk\Cms\Security\TwoFactor\SecretBox;
  */
 final class MailSettings
 {
-    public const KEY = 'mail';
+    public const KEY = 'itk:mail';
 
     public function __construct(
         private readonly EntityManagerInterface $em,

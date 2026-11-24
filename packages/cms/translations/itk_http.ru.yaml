@@ -261,3 +261,5 @@
 'http.telegram_problem_token': 'Задайте токен Telegram в «Настройки → Боты мессенджеров»'
 'http.max_problem_client': 'Для отправки в MAX установите yuri-kovalev/max-bot-symfony-bundle'
 'http.max_problem_token': 'Задайте токен MAX в «Настройки → Боты мессенджеров»'
+http.request_date_invalid: 'Введите корректную дату в формате ГГГГ-ММ-ДД.'
+http.request_date_range_invalid: 'Дата окончания не может быть раньше даты начала.'

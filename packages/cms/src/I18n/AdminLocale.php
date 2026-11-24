@@ -16,7 +16,7 @@ use Symfony\Contracts\Translation\TranslatorInterface;
  *   a person of the admin or of MCP        his own language (User::$locale), else itk_cms.admin_locale; a language that left admin_locales counts as none
  *   sign-in, reset, invitation pages       admin_locale (nobody is known yet)
  *   public routes (the forms of the site)  main_locale when it is one of admin_locales, else admin_locale
- *   console, queue worker                  admin_locale; a letter to one person runs in his language (runFor), letters about requests and Telegram in admin_locale (runDefault)
+ *   console, queue worker                  framework.default_locale; a letter to one person runs in his language (runFor), letters about requests and Telegram in admin_locale (runDefault)
  *
  * AdminLocaleListener applies this to requests and queue messages. run*() put the language back in any case, so a message never leaves its language to the next one.
  */
@@ -33,7 +33,14 @@ final class AdminLocale
         private readonly LoggerInterface $logger,
         private readonly ?TranslatorInterface $translator = null,
         private readonly ?LocaleSwitcher $switcher = null,
+        #[Autowire(param: 'kernel.default_locale')]
+        private readonly ?string $applicationLocale = null,
     ) {
+    }
+
+    public function application(): string
+    {
+        return $this->applicationLocale ?? $this->default;
     }
 
     public function default(): string

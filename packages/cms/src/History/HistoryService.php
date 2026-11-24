@@ -276,8 +276,8 @@ final class HistoryService
         if (null !== $last && '' === $r->title) {
             $r->title = $last->title;
         }
-        $this->trim($kind, $id, $locale);
         $this->em->persist($r);
+        $this->trim($kind, $id, $locale);
     }
 
     /** The version an object had before its first recorded change. */
@@ -300,12 +300,21 @@ final class HistoryService
         return \time() - $r->updatedAt->getTimestamp() < self::MERGE_SECONDS;
     }
 
-    /** Leaves room for one more entry: an object keeps its newest `keep`. */
+    /** An object keeps its newest entries, including those pending the caller's flush. */
     private function trim(string $kind, string $id, string $locale): void
     {
-        $drop = $this->revisions->beyond($kind, $id, $locale, \max(1, $this->keep) - 1);
-        if ([] !== $drop) {
-            $this->revisions->deleteIds($drop);
+        $pending = [];
+        foreach ($this->em->getUnitOfWork()->getScheduledEntityInsertions() as $entry) {
+            if ($entry instanceof Revision && $entry->kind === $kind && $entry->resourceId === $id && $entry->locale === $locale) {
+                $pending[] = $entry;
+            }
+        }
+        $keep = \max(1, $this->keep);
+        foreach (\array_slice($pending, 0, \max(0, \count($pending) - $keep)) as $entry) {
+            $this->em->remove($entry);
+        }
+        foreach ($this->revisions->beyond($kind, $id, $locale, \max(0, $keep - \count($pending))) as $revisionId) {
+            $this->em->remove($this->em->getReference(Revision::class, $revisionId));
         }
     }
 

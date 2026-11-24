@@ -8,6 +8,7 @@ use Doctrine\DBAL\Connection;
 use Doctrine\ORM\EntityManagerInterface;
 use Itk\Cms\Content\SettingsService;
 use Itk\Cms\Entity\Request;
+use Itk\Cms\Event\RequestDelivery;
 use Itk\Cms\I18n\AdminLocale;
 use Itk\Cms\Request\Max\MaxApiSender;
 use Itk\Cms\Request\MaxNotifier;
@@ -421,6 +422,39 @@ final class LongRequestDeliveryTest extends WebTestCase
         self::assertSame($items, $r->data['items']);
         self::assertSame($this->notifier($channel)->buildText($r), \implode('', $this->sent($channel, $r)));
         self::assertStringContainsString(LongText::TOTAL, \implode('', $this->api->texts($channel)));
+    }
+
+    #[Test]
+    #[DataProvider('channels')]
+    public function deliveryIsSavedBeforeAListenerThrows(string $channel): void
+    {
+        $c = self::getContainer();
+        $em = $c->get(EntityManagerInterface::class);
+        $db = $em->getConnection();
+        $events = $c->get('event_dispatcher');
+        $r = self::request([], 'f2-delivery-' . \bin2hex(\random_bytes(5)));
+        $em->persist($r);
+        $em->flush();
+        $id = (int) $r->id;
+        $transaction = null;
+        $listener = static function () use ($db, &$transaction): never {
+            $transaction = $db->isTransactionActive();
+            throw new \RuntimeException('F2 test listener failed');
+        };
+        $events->addListener(RequestDelivery::class, $listener, 100);
+        $deliverer = new RequestDeliverer($em, $this->telegram, $this->max, $c->get(AdminLocale::class));
+
+        try {
+            self::assertTrue($deliverer->deliver($id, $channel, false));
+            self::assertFalse($transaction, 'listeners run after the delivery transaction commits');
+            $em->refresh($r);
+            self::assertSame(Request::DELIVERY_SENT, $r->channelState($channel));
+            self::assertTrue($deliverer->deliver($id, $channel, false));
+            self::assertSame(1, $this->api->attempts);
+        } finally {
+            $events->removeListener(RequestDelivery::class, $listener);
+            $db->delete('itk_request', ['id' => $id]);
+        }
     }
 
     #[Test]

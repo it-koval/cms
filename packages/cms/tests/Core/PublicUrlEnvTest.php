@@ -4,6 +4,10 @@ declare(strict_types=1);
 
 namespace Itk\Cms\Tests\Core;
 
+use Doctrine\DBAL\Connection;
+use Itk\Cms\Content\ContentException;
+use Itk\Cms\Content\SettingsService;
+use Itk\Cms\Content\SitemapBuilder;
 use Itk\Cms\Mail\PublicUrl;
 use Itk\Cms\Tests\App\TestKernel;
 use PHPUnit\Framework\Attributes\Test;
@@ -40,6 +44,41 @@ final class PublicUrlEnvTest extends KernelTestCase
     }
 
     #[Test]
+    public function publicUrlAloneIsAnAsciiSiteOriginForTheSitemap(): void
+    {
+        $origin = 'https://xn----8sbarojrwjdmo.xn--p1ai';
+        $publicUrl = $this->boot('https://Пример-Сайта.рф:443/');
+        $sitemap = self::getContainer()->get(SitemapBuilder::class);
+        $db = self::getContainer()->get(Connection::class);
+        $db->beginTransaction();
+        try {
+            self::getContainer()->get(SettingsService::class)->set('domain', '');
+            self::assertSame($origin, $publicUrl->base());
+            self::assertSame($origin, $sitemap->base());
+            self::assertSame($origin, $sitemap->address()?->origin());
+            self::assertStringContainsString('<urlset', (string) $sitemap->xml());
+        } finally {
+            $sitemap->forget();
+            $db->rollBack();
+        }
+    }
+
+    #[Test]
+    public function aPathCannotBeSavedAsTheSiteDomain(): void
+    {
+        $this->boot('');
+        $settings = self::getContainer()->get(SettingsService::class);
+        $db = self::getContainer()->get(Connection::class);
+        $db->beginTransaction();
+        try {
+            $this->expectException(ContentException::class);
+            $settings->update(['domain' => 'https://f2-domain.example/path']);
+        } finally {
+            $db->rollBack();
+        }
+    }
+
+    #[Test]
     public function aWrongAddressFromTheEnvironmentIsRefusedWhenItIsRead(): void
     {
         $urls = $this->boot('example.org');
@@ -53,8 +92,14 @@ final class PublicUrlEnvTest extends KernelTestCase
     public function anEmptyVariableIsAsIfTheOptionWasNotSet(): void
     {
         $urls = $this->boot('');
-
-        self::assertNull($urls->base(), 'no request, no «domain» setting: no trusted address, as without the option');
+        $db = self::getContainer()->get(Connection::class);
+        $db->beginTransaction();
+        try {
+            self::getContainer()->get(SettingsService::class)->set('domain', '');
+            self::assertNull($urls->base(), 'no request, no «domain» setting: no trusted address, as without the option');
+        } finally {
+            $db->rollBack();
+        }
     }
 
     #[Test]

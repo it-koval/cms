@@ -70,8 +70,8 @@ final class PageCreateTool extends AbstractMcpTool
         $context->require('pages', 'edit', $key);
 
         $problems = [];
-        if (!\str_starts_with((string) $args['url'], '/')) {
-            $problems[] = 'url: must start with /';
+        if (null !== ($problem = PageService::addressShapeProblem(\trim((string) $args['url'])))) {
+            $problems[] = 'url: ' . $problem;
         }
         if (isset($args['fields'])) {
             $problems = [...$problems, ...$this->input->problems($tpl->fieldList(), (array) $args['fields'], [], 'fields')];

@@ -316,7 +316,7 @@ final class CollectionListEnvelopeTest extends WebTestCase
     }
 
     #[Test]
-    public function readingASingletonCreatesItsRecordAndKeepsTheMatrixRowShape(): void
+    public function readingASingletonReturnsInitialStateAndKeepsTheMatrixRowShape(): void
     {
         $id = Uuid::v7()->toRfc4122();
         $this->collection()->singleton($id)->matrix(['colFields' => [], 'rowKinds' => [], 'rowLabel' => 'Row']);

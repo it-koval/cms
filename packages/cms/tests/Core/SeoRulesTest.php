@@ -111,6 +111,34 @@ final class SeoRulesTest extends WebTestCase
     }
 
     #[Test]
+    public function redirectsMatchTheQueryUnlessAPathRuleTakesPriority(): void
+    {
+        $this->api('POST', 'redirects', ['from' => '/f2-redirect-query', 'to' => '/f2-redirect-query?ref=Summer'], 422);
+        $redirects = self::getContainer()->get(RedirectService::class);
+        $specific = $redirects->create('/f2-redirect-query?ref=Summer&id=4', '/f2-specific');
+        $general = null;
+        try {
+            $this->client->request('GET', '/f2-redirect-query?id=4&ref=Summer');
+            self::assertResponseRedirects('/f2-specific', 301);
+            $this->client->request('GET', '/f2-redirect-query?id=4&ref=summer');
+            self::assertResponseStatusCodeSame(404);
+            $check = $this->api('GET', 'seo-rules/check?path=' . \urlencode('/f2-redirect-query?id=4&ref=Summer'));
+            self::assertSame('/f2-specific', $check['answer']['to'] ?? null);
+
+            $general = $redirects->create('/f2-redirect-query', '/f2-general');
+            $this->client->request('GET', '/f2-redirect-query?id=4&ref=Summer');
+            self::assertResponseRedirects('/f2-general', 301);
+            $this->client->request('GET', '/f2-redirect-query');
+            self::assertResponseRedirects('/f2-general', 301);
+        } finally {
+            $redirects->remove($specific->id);
+            if (null !== $general) {
+                $redirects->remove($general->id);
+            }
+        }
+    }
+
+    #[Test]
     public function theMostSpecificRuleWins(): void
     {
         $this->rules()->create(['path' => '/test-blog', 'match' => 'prefix', 'title' => 'Весь раздел']);

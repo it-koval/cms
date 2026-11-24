@@ -366,12 +366,8 @@ final class PageService
         $title = \trim((string) ($input['title'] ?? ''));
         $url = \trim((string) ($input['url'] ?? ''));
         $parentId = $input['parentId'] ?? null;
-        if ('' === $title) {
-            throw ContentException::invalid(I18n::t('content.page_title_required'));
-        }
-        if (!\str_starts_with($url, '/')) {
-            throw ContentException::invalid(I18n::t('content.page_url_slash'));
-        }
+        $this->assertPageTitle($title);
+        $this->assertPageAddress($locale, $url);
         $tpl = $this->schema->template($templateKey) ?? throw ContentException::invalid(I18n::t('content.page_template_unknown'));
         self::assertNotReserved($url);
         $this->assertLocaleAddress($locale, $url);
@@ -407,7 +403,7 @@ final class PageService
         $t->draft = [
             'title' => $title,
             'url' => $url,
-            'seo' => (array) ($input['seo'] ?? []) + ['title' => $title, 'description' => ''],
+            'seo' => $this->normalizeSeo((array) ($input['seo'] ?? []) + ['title' => $title, 'description' => '']),
             'sections' => $sections,
             'fields' => $fields,
         ];
@@ -661,14 +657,28 @@ final class PageService
     public function massRemove(array $ids): int
     {
         $records = $this->records($ids);
+        $depth = [];
+        foreach ($records as $record) {
+            $seen = [];
+            for ($page = $this->find($record->id); null !== $page->parent && !isset($seen[$page->id]); $page = $page->parent) {
+                $seen[$page->id] = true;
+            }
+            $depth[$record->id] = \count($seen);
+        }
+        \usort($records, static fn (Record $a, Record $b): int => $depth[$b->id] <=> $depth[$a->id]);
         foreach ($this->byTemplate($records) as $template => $group) {
             $this->hooks->mass('delete', 'before', 'page', $template, $this->mainLocale, $group);
         }
-        $this->hooks->deferAfter(fn () => $this->em->wrapInTransaction(function () use ($records): void {
-            foreach ($records as $r) {
-                $this->remove($r->id);
-            }
-        }));
+        try {
+            $this->lock->transactional(function () use ($records): void {
+                foreach ($records as $r) {
+                    $this->remove($r->id);
+                }
+            });
+        } catch (\Throwable $e) {
+            $this->em->clear(); // discard removals scheduled before a later page rejected the batch
+            throw $e;
+        }
         foreach ($this->byTemplate($records) as $template => $group) {
             $this->hooks->mass('delete', 'after', 'page', $template, $this->mainLocale, $group);
         }
@@ -745,6 +755,7 @@ final class PageService
         }
         $p = $this->find($id);
         $t = $this->version($p, $locale);
+        $this->assertPageTitle((string) ($t->draft['title'] ?? ''));
         $errors = $this->requiredErrors($t->draft, $p->template);
         if ([] !== $errors) {
             throw ContentException::invalid(I18n::t('content.page_publish_required'), $errors);
@@ -883,18 +894,23 @@ final class PageService
         }
         $address = (string) ($t->published['url'] ?? '');
         $url = Url::key($address);
+        $this->assertPageTitle((string) ($t->published['title'] ?? ''));
         $this->assertPageAddress($locale, $address);
         foreach ($this->translations->findForLocale($locale) as $other) {
             if ($other->id !== $t->id && $other->publishedUrl === $url) {
                 throw ContentException::conflict(I18n::t('content.page_url_taken_published'));
             }
         }
+        $live = clone $t;
+        $live->draft = $t->published;
+        $this->hooks->publishing($this->record($p, $live));
         $was = $this->history->pageState($p, $t);
         $t->status = PageTranslation::PUBLISHED;
         $t->publishedUrl = $url;
         $this->history->page($p, $t, Revision::PUBLISH, $was);
         $this->em->flush();
-        $this->hooks->published($this->record($p, $t), ['liveVersions' => [$this->liveAddress($t)]]); // live again: the sitemap and llms.txt caches and the hooks of the site hear it as a publish
+        $live->status = PageTranslation::PUBLISHED;
+        $this->hooks->published($this->record($p, $live), ['liveVersions' => [$this->liveAddress($t)]]); // hooks see the restored live snapshot, not unpublished edits
 
         return $this->flat($p, $t);
     }
@@ -1260,10 +1276,36 @@ final class PageService
         return Url::isLocalPath($url) && \mb_strlen($url) <= 255 && false === \strpbrk($url, '?#\\');
     }
 
+    /** @internal Shared address-shape error for transports that aggregate input problems before writing. */
+    public static function addressShapeProblem(string $url): ?string
+    {
+        return self::hasPageAddressShape($url) ? null : I18n::t('content.page_url_invalid');
+    }
+
+    private function assertPageTitle(string $title): void
+    {
+        if ('' === \trim($title)) {
+            throw ContentException::invalid(I18n::t('content.page_title_required'));
+        }
+    }
+
+    /** @param array<string, mixed> $seo @return array<string, string> */
+    private function normalizeSeo(array $seo): array
+    {
+        $out = ['title' => \trim((string) ($seo['title'] ?? '')), 'description' => \trim((string) ($seo['description'] ?? ''))];
+        foreach (['robots', 'canonical', 'ogImage'] as $key) {
+            if (\array_key_exists($key, $seo)) {
+                $out[$key] = \trim((string) $seo[$key]);
+            }
+        }
+
+        return $out;
+    }
+
     private function assertPageAddress(string $locale, string $url): void
     {
-        if (!self::hasPageAddressShape($url)) {
-            throw ContentException::invalid(I18n::t('content.page_url_invalid'));
+        if (null !== ($problem = self::addressShapeProblem($url))) {
+            throw ContentException::invalid($problem);
         }
         self::assertNotReserved($url);
         $this->assertLocaleAddress($locale, $url);
@@ -1371,8 +1413,15 @@ final class PageService
                 throw ContentException::invalid(I18n::t('content.page_home_top_level'));
             }
         }
-        if ($nextAddress !== $currentAddress && '' !== $nextAddress) {
-            $this->assertPageAddress($t->locale, $nextAddress);
+        $this->assertPageTitle(\array_key_exists('title', $data) ? \trim((string) $data['title']) : (string) ($cur['title'] ?? ''));
+        // Existing secondary drafts may have a legacy prefix or no address yet; publishing still checks the full invariant.
+        if (!('' === $nextAddress && $t->locale !== $this->mainLocale) && null !== ($problem = self::addressShapeProblem($nextAddress))) {
+            throw ContentException::invalid($problem);
+        }
+        if ($nextAddress !== $currentAddress) {
+            if ('' !== $nextAddress) {
+                $this->assertPageAddress($t->locale, $nextAddress);
+            }
             if (Url::key($nextAddress) !== Url::key($currentAddress)) {
                 $this->lockAddress($t->locale, $nextAddress);
                 if ($this->urlTaken($t->locale, $nextAddress, $p->id)) {
@@ -1392,10 +1441,7 @@ final class PageService
             $next['url'] = $nextAddress;
         }
         if (\array_key_exists('seo', $data) && \is_array($data['seo'])) {
-            $next['seo'] = [
-                'title' => \trim((string) ($data['seo']['title'] ?? '')),
-                'description' => \trim((string) ($data['seo']['description'] ?? '')),
-            ];
+            $next['seo'] = $this->normalizeSeo($data['seo']);
         }
         if ($withSections && !$tplChanged && \array_key_exists('sections', $data) && \is_array($data['sections'])) {
             $next['sections'] = false === $tpl?->hasSections() ? [] : $this->normalizeSections($data['sections']);
@@ -1449,13 +1495,13 @@ final class PageService
             if ($parent->id === $p->id) {
                 throw ContentException::invalid(I18n::t('content.page_own_parent'));
             }
-            for ($cur = $parent, $guard = 0; null !== $cur && $guard < 50; $cur = $cur->parent, ++$guard) {
-                if ($cur->id === $p->id) {
-                    throw ContentException::invalid(I18n::t('content.page_parent_is_descendant'));
-                }
-            }
         }
         $rows = $this->guardRows();
+        $current = [];
+        foreach ($rows as $row) {
+            $current[$row['id']] = [$row['parentId'], 0];
+        }
+        TreeMove::resolve($current, [$p->id => [$nextParentId, 0]]);
         $parentRow = null !== $parent ? ['id' => $parent->id, 'template' => $parent->template] : null;
         $me = ['id' => $p->id, 'parentId' => $nextParentId, 'template' => $p->template, 'title' => ''];
         $r = $tplChanged ? $this->placement->canChangeTemplate($me, $nextTpl, $rows) : $this->placement->canPlace($p->template, $parentRow, $rows, $p->id);

@@ -8,7 +8,7 @@ use Itk\Cms\Entity\Request;
 use Symfony\Component\Messenger\Attribute\AsMessageHandler;
 
 /** @internal */
-#[AsMessageHandler(bus: 'messenger.bus.default')]
+#[AsMessageHandler]
 final class SendRequestNotificationHandler
 {
     public function __construct(private readonly RequestDeliverer $deliverer)
