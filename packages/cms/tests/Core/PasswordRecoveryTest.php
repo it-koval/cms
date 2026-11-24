@@ -529,9 +529,9 @@ final class PasswordRecoveryTest extends WebTestCase
     }
 
     #[Test]
-    public function withTrustedHostsTheHostOfTheRequestIsUsedAndAnotherOneIsRefused(): void
+    public function trustedHostsAloneDoNotAuthorizeAnAccountLinkOrigin(): void
     {
-        $this->useMailpit();
+        self::getContainer()->get(\Itk\Cms\Mail\MailSettings::class)->save(['enabled' => true, 'host' => '127.0.0.1', 'port' => 1, 'encryption' => 'none', 'clearPassword' => true, 'fromAddress' => 'test@example.com']);
         $settings = self::getContainer()->get(SettingsService::class);
         $restoreDomain = $this->setDomain($settings, 'test-link.example.com');
         $hosts = Request::getTrustedHosts();
@@ -540,13 +540,14 @@ final class PasswordRecoveryTest extends WebTestCase
             self::getContainer()->set(PublicUrl::class, new PublicUrl(self::getContainer()->get('request_stack'), $settings, null, false));
             $user = $this->user('trusted');
             $this->forgot($user->email, null, true, ['HTTP_HOST' => 'test-web.example.com']);
-            self::assertStringStartsWith('http://test-web.example.com/admin/reset-password/', $this->linkIn($this->sent[0]));
+            self::assertSame([], $this->queuedRequests(), 'A trusted hostname does not establish a trusted scheme and port.');
+            self::assertSame([], $this->sent);
 
             $this->forgot($user->email, null, true, ['HTTP_HOST' => 'evil.example']);
             self::assertResponseStatusCodeSame(400);
-            self::assertCount(1, $this->sent, 'no letter for a forged Host');
+            self::assertSame([], $this->sent, 'no letter for a forged Host');
         } finally {
-            Request::setTrustedHosts($hosts);
+            Request::setTrustedHosts(\array_map(static fn (string $pattern): string => \substr($pattern, 1, -2), $hosts));
             $restoreDomain();
         }
     }

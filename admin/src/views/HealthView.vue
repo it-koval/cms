@@ -79,14 +79,14 @@ async function drop(m) {
   })
   if (ok) await act('delete:' + m.id, () => api.health.remove(m.id), t('settings.health_dropped'))
 }
-const queuedRequests = ref([])
 async function resend(r) {
   if (busy.value) return
   busy.value = 'resend:' + r.id
   try {
     const res = await api.health.resendRequest(r.id)
-    if (res.queuedChannels?.length) {
-      queuedRequests.value.push(r.id)
+    const failedChannel = Object.values(res.outcomes || {}).find((outcome) => outcome.state === 'failed')
+    if (failedChannel) toast.error(failedChannel.error || t('settings.health_resend_failed'))
+    else if (res.queuedChannels?.length) {
       toast.show(t('ui.rd_queued'))
     } else if (res.delivery === 'sent') toast.show(t('settings.health_resent', { id: r.id }))
     else if (res.delivery === 'pending') toast.error(t('settings.health_resend_pending'))
@@ -185,8 +185,8 @@ async function checkUpdates() {
               <td class="nw num ts-top">{{ fmtDT(r.dt) }}</td>
               <td class="hl-err ts-line">{{ r.error || t('settings.health_no_reason') }}</td>
               <td v-if="canAct" class="nw hl-act ts-acts">
-                <span v-if="queuedRequests.includes(r.id)" class="chip" role="status">{{ t('ui.rd_queued') }}</span>
-                <button v-else type="button" :class="['btn sm', { loading: busy === 'resend:' + r.id }]" :disabled="!!busy" @click="resend(r)"><Icon name="send" size="s14" />{{ t('settings.health_resend') }}</button>
+                <span v-if="r.queuedChannels?.length" class="chip" role="status">{{ t('ui.rd_queued') }}</span>
+                <button v-if="r.canResend !== false" type="button" :class="['btn sm', { loading: busy === 'resend:' + r.id }]" :disabled="!!busy" @click="resend(r)"><Icon name="send" size="s14" />{{ t('settings.health_resend') }}</button>
               </td>
             </tr>
           </tbody>

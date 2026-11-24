@@ -61,8 +61,8 @@ final class InstallCommand extends Command
         $this
             ->addOption('email', null, InputOption::VALUE_REQUIRED, I18n::t('ops.install_email_option'))
             ->addOption('name', null, InputOption::VALUE_REQUIRED, I18n::t('ops.install_name_option'))
-            ->addOption('password', null, InputOption::VALUE_REQUIRED, I18n::t('ops.install_password_option'))
-            ->addOption('password-file', null, InputOption::VALUE_REQUIRED, I18n::t('ops.install_password_file_option'))
+            ->addOption('password', null, InputOption::VALUE_REQUIRED, I18n::t('ops.install_password_option', ['min' => UserManager::MIN_PASSWORD_LENGTH]))
+            ->addOption('password-file', null, InputOption::VALUE_REQUIRED, I18n::t('ops.install_password_file_option', ['min' => UserManager::MIN_PASSWORD_LENGTH]))
             ->addOption('site-name', null, InputOption::VALUE_REQUIRED, I18n::t('ops.install_site_name_option'))
             ->addOption('domain', null, InputOption::VALUE_REQUIRED, I18n::t('ops.install_domain_option'))
             ->addOption('no-home', null, InputOption::VALUE_NONE, I18n::t('ops.install_no_home_option'));
@@ -126,7 +126,7 @@ final class InstallCommand extends Command
             $password = $input->getOption('password') ?: (\getenv('ITK_ADMIN_PASSWORD') ?: null);
         }
         if (!$password && $input->isInteractive()) {
-            $q = (new Question(I18n::t('ops.install_password_question')))->setHidden(true)->setHiddenFallback(false);
+            $q = (new Question(I18n::t('ops.install_password_question', ['min' => UserManager::MIN_PASSWORD_LENGTH])))->setHidden(true)->setHiddenFallback(false);
             $password = $io->askQuestion($q);
         }
         if (!$password) {

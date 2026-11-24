@@ -83,6 +83,7 @@
 'http.mail_server_changed': 'The server has changed: enter the password again'
 'http.mail_encryption_choose': 'Choose how the connection is secured'
 'http.mail_password_requires_tls': 'Choose STARTTLS or SSL/TLS before saving an SMTP password.'
+'http.mail_env_password_tls_warning': 'MAILER_DSN contains an SMTP password without mandatory TLS. Configure smtps:// or require_tls=1; the existing transport remains enabled.'
 'http.mail_port_invalid': 'The port is a number from 1 to 65535, for example 587'
 'http.mail_host_invalid': 'The server address is a name like smtp.example.com, without http:// or spaces'
 'http.mail_username_invalid': 'The login is at most 255 characters, with no line breaks'

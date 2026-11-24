@@ -182,10 +182,10 @@ security:
 - The `itk_mcp` firewall is mandatory. Without it, an enabled MCP server returns 500 with the code `mcp_firewall_not_configured`, and `itk:doctor` and **Site status** warn about it in advance.
 - `(/|$)` at the end of the pattern keeps other paths such as `/administrator` out of the rule.
 - `login_throttling` limits password guessing. `enable_csrf` on logout stops another page from signing the administrator out.
-- If the admin panel is not at `/admin`, change `^/admin` in the firewall `pattern` and in both `access_control` lines. The bundle does not change this file. **Without these rules the admin sign-in does not open, and collection actions (`POST {admin}/api/resources/{collection}/actions/{action}`) run without a sign-in check.** Example: with `itk_cms.admin_path: /cp` write `^/cp`; when the routes are imported with `prefix: /cp` write `^/cp/admin`.
+- If the admin panel is mounted at another path, update the firewall `pattern` and both `access_control` rules. Use `^/cp` for `itk_cms.admin_path: /cp`. Use `^/cp/admin` when importing the routes with `prefix: /cp`. Collection actions require sign-in and the relevant permission even without those access rules.
 - In production, `APP_SECRET` must be unique and non-empty. The admin CSRF token, the encryption of secrets (two-step sign-in secrets, bot tokens, SMTP password, Yandex Webmaster token), the IndexNow key and the URL hashes in requests depend on it. Flex puts an empty `APP_SECRET=` line in `.env` and a working development value in `.env.dev`. With an empty secret, `/admin` returns 500 with the text `APP_SECRET is empty`, and `itk:install` prints a warning. To keep it in the Symfony vault, see [Secrets in production](#secrets-in-production-symfony-vault).
 - Behind a proxy or CDN, set `framework.trusted_proxies`. Otherwise all visitors appear to come from one address for the form and sign-in limits.
-- In production, set `framework.trusted_hosts` or the `itk_cms.public_url` option. Links in e-mails and the page cache depend on them.
+- Set `itk_cms.public_url` to the full origin for password and invitation links. Set `framework.trusted_hosts` to constrain incoming hosts.
 
 #### Secrets in production (Symfony vault)
 
@@ -233,7 +233,7 @@ Run the worker under supervisor or systemd: `php bin/console messenger:consume a
 
 1. Configure the bundle in `config/packages/itk_cms.yaml`. All options are optional. The full list is in [Configuration reference](#configuration-reference).
 2. Run `php bin/console doctrine:migrations:migrate`. The bundle registers its own migrations, `Itk\Cms\Migrations`.
-3. Run `php bin/console itk:install --email=you@example.com --site-name="My site" --domain=example.com`. The command is safe to run again. It creates the built-in roles, the menu areas from the schema, the default settings, the queue table, the home page and the first administrator. It asks for the password with hidden input. For automation, pass a readable file with `--password-file`. `--name` sets the administrator's name. `--no-home` skips the home page.
+3. Run `php bin/console itk:install --email=you@example.com --site-name="My site" --domain=example.com`. The command is safe to run again. It creates the built-in roles, the menu areas from the schema, the default settings, the queue table, the home page and the first administrator. It asks for a password of 10 to 200 characters with hidden input. For automation, pass a readable file with `--password-file`. `--name` sets the administrator's name. `--no-home` skips the home page.
 4. Run `php bin/console assets:install`. The admin files become available at `/bundles/itkcms/admin/`. Flex does this on `composer install` and `composer update`.
 5. Run `doctrine:schema:validate` and `doctrine:migrations:diff` only after `itk:install`. `itk:install` creates the `messenger_messages` table. Before that step, `validate` reports a mismatch, and `diff` writes the creation of that table into the site's migration.
 
@@ -828,7 +828,7 @@ Symfony gives every signed-in person the `ROLE_ITK_USER` role. In code, `Itk\Cms
 - All unused links of a person expire when the person's password is set in any way, their e-mail changes, or they are blocked.
 - **Console.** `php bin/console itk:user:password name@example.com` asks for the password with hidden input. `--password=…` leaves the password in the shell history.
 
-Password and invitation links use `itk_cms.public_url` first. The fallback is the request address checked by `framework.trusted_hosts`. Without a trusted address, **Forgot your password?** records a configuration error, and admin invitation and reset return a one-time password. The **Site address** setting still supplies ordinary site links.
+Password and invitation links use the configured `itk_cms.public_url`, such as `https://example.com`. Include the port if the site uses a custom one. Without this configuration, **Forgot your password?** records a configuration error, and admin invitation and reset return a one-time password. **Site status** and `itk:doctor` report the missing address.
 
 ### Two-step sign-in
 
@@ -1040,7 +1040,9 @@ A form is described in the schema: `$s->form('call', 'Call request')->fields(...
 
 The site sends the form to `POST /request/{form}`. The hidden `itk_hp` field (a trap for bots) must be empty. The response is `{"success": true}` or `{"success": false, "message": "…", "errors": {...}}`. The limit is 10 requests in 15 minutes from one address (`framework.rate_limiter.itk_request_form`, the site can override it).
 
-The request body limit is 256 KiB by default (`itk_cms.requests.max_body`, in bytes). Larger submissions return HTTP 413. JSON accepts one object with up to 1,000 scalar or null values. Malformed JSON and nested values return HTTP 422. For multipart forms, set the reverse proxy body limit to the same value and keep PHP `post_max_size` at or above it so PHP can parse accepted submissions.
+The request body limit is 256 KiB by default (`itk_cms.requests.max_body`, in bytes). Larger submissions return HTTP 413. JSON accepts one object with up to 1,000 scalar or null values. Malformed JSON and nested values return HTTP 422. For conventional form posts, the CMS uses the fields declared in the schema.
+
+The Docker kit applies a `256k` nginx body limit and PHP `post_max_size=256K` on `/request/`. Larger bodies are refused before PHP parses them, including chunked requests. If you change `max_body`, change both route limits to match. With another proxy, enforce the limit before passing multipart bodies to PHP.
 
 The request is saved and appears in the **Requests** section (the `requests` area). Then the `request.new` notification goes to the channels: the admin bell, Telegram, MAX and e-mail. A request has its own status for each messenger (`channels`). The overall `delivery` status is `failed` if the request did not reach at least one messenger, otherwise `sent` if it reached at least one. A messenger that is not connected leaves the status at `pending`, which is not a failure. To retry undelivered requests, use the button in the admin panel or `php bin/console itk:requests:resend`. The request JSON also has `sendable`: the messengers that never got the request and can take it now (connected, on, with a chat for the form). The request drawer shows **Send to MAX** or **Send to Telegram** for each of them and calls `POST requests/{id}/resend {channel}`.
 
@@ -1120,9 +1122,9 @@ The sender address comes from **Settings** → **Mail**. With only `MAILER_DSN` 
 - `GET {admin}/api/settings/mail` returns the fields, `passwordSet`, `configured`, `source` (`settings`, `env`, `none`), `problem` and `last` (the result of the last sending).
 - `PUT {admin}/api/settings/mail` saves the settings.
 - `POST {admin}/api/settings/mail-test {to?}` sends a test e-mail right away, without the queue. The server's refusal reason comes in the response (502). At most 10 e-mails per hour per person (429).
-- `ssl` uses `smtps://` and `starttls` requires TLS. Choose either when saving a password. `none` is available for servers without a password. The SMTP dialog is excluded from logs.
+- `ssl` uses `smtps://` and `starttls` requires TLS. Choose either when saving a password. `none` is available for servers without a password. The SMTP dialog is excluded from logs. If the active `MAILER_DSN` uses password authentication with optional TLS, `itk:doctor` and **Site status** show a warning. Use `smtps://` or set `require_tls=1` on `smtp://`.
 
-**Errors.** A delivery that exhausts its retries stays in the failure transport. Password and invitation deliveries store a job. The worker creates its one-time link for each attempt and revokes it when the attempt fails. A failed request e-mail also raises a `mail.failed` notification.
+**Errors.** A delivery that exhausts its retries stays in the failure transport and raises a `mail.failed` notification. Password and invitation deliveries store a job. The worker creates its one-time link for each attempt and revokes it when the attempt fails.
 
 **Request e-mails.** **Settings** → **Notifications** → **Emails about new requests** (`mailRoutes`, the `set:notifications` area): comma-separated addresses for all forms and a separate list for each form, up to 10 addresses. Each address gets an e-mail with the form fields and a link to the request.
 
@@ -1702,7 +1704,8 @@ The package ships a ready Docker kit in `vendor/itk/cms/docker`. You copy it int
 | `compose.yaml` | The services `php` (php-fpm), `nginx`, `worker`, `database` (PostgreSQL 17 with pgvector) and `mailer` (Mailpit). Ports are open only on `127.0.0.1` |
 | `Dockerfile` | The stages `php_base`, `php_dev`, `php_prod`, PHP extensions, Composer, health check |
 | `Dockerfile.dockerignore` | What stays out of the image: `.git`, `vendor`, `node_modules`, `var`, `public/uploads`, `public/bundles`, `.env.local`, `.env.*.local`, `.env.local.php`, the secrets decryption key, `compose.override.yaml` |
-| `nginx/default.conf` | Static files, caching of build files, headers, passing to `index.php` |
+| `nginx/default.conf` | Static files, caching, headers, a route-specific request body limit, and forwarding to `index.php` |
+| `chrome-seccomp.json` | Docker Engine 27.5.1 default seccomp policy with three additional rules for Chromium namespaces |
 | `php/conf.d/10-app.ini`, `php/php-fpm.d/zz-app.conf` | PHP and php-fpm settings |
 | `php/docker-entrypoint.sh` | On `php` start: `composer install`, `assets:install`, waiting for the database, migrations, `itk:install` |
 
@@ -1777,7 +1780,9 @@ The `worker` service is built from the same image and runs `messenger:consume as
 
 ### Critical CSS in Docker
 
-Node, crittr and Chrome must be in the same image as PHP: php-fpm runs the check, and the worker computes the pages.
+Node, crittr and Chrome must be in the same image as PHP. The `php` and `worker` services use `docker/chrome-seccomp.json`. It starts from the Docker Engine 27.5.1 built-in profile and permits the `clone` and `unshare` flags needed for user, PID, network and mount namespaces. Keep the profile on both services. Run Chromium as an unprivileged user with Linux user namespaces available.
+
+The renderer serves files whose resolved paths are inside the site's `public/`. Copy needed assets there when links in `public/` point elsewhere.
 
 1. Build the image with Node and Chromium:
 

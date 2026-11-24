@@ -92,6 +92,11 @@ final class RequestsController extends AbstractApiController
 
         $result = $this->requests->resendResult($id, $this->deliveryChannel($request));
 
-        return $this->json($this->requests->card($result['request']) + ['queuedChannels' => $result['queuedChannels']], [] !== $result['queuedChannels'] ? 202 : 200);
+        $body = $this->requests->card($result['request']) + ['outcomes' => $result['outcomes']];
+        if (502 === $result['status']) {
+            $body['error'] = (string) (\reset($result['outcomes'])['error'] ?? '');
+        }
+
+        return $this->json($body, $result['status']);
     }
 }

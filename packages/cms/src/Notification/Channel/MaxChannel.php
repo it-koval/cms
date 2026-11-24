@@ -52,15 +52,19 @@ final class MaxChannel implements NotificationChannelInterface
             return;
         }
         $id = (int) $notification->payload['requestId'];
+        $job = RequestDeliverer::reserve($this->em, $id, Request::CHANNEL_MAX, false);
+        if (null === $job) {
+            return;
+        }
         try {
-            $this->bus->dispatch(new SendRequestNotification($id, false, Request::CHANNEL_MAX));
+            $this->bus->dispatch(new SendRequestNotification($id, false, Request::CHANNEL_MAX, $job));
         } catch (\Throwable $e) {
             // the request is saved; it can be sent again from the admin or with itk:requests:resend
             // the text is kept and shown to the staff in the bell, so it is written in the language of the site, not of the route that failed
             $write = static fn (): string => I18n::t('http.max_queue_failed', ['reason' => $e->getMessage()]);
             $error = null !== $this->locale ? $this->locale->runDefault($write) : $write();
             $this->logger->error('Could not queue MAX notification for request #{id}: {error}', ['id' => $id, 'error' => $e->getMessage()]);
-            RequestDeliverer::recordQueueFailure($this->em, $this->events, $id, Request::CHANNEL_MAX, $error);
+            RequestDeliverer::recordQueueFailure($this->em, $this->events, $id, Request::CHANNEL_MAX, $error, $job);
         }
     }
 }

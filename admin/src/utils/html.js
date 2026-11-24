@@ -73,7 +73,7 @@ function walk(node, mode) {
       case 'blockquote': return kids.trim() ? `<blockquote>${/^<p>/.test(kids) ? kids : `<p>${kids}</p>`}</blockquote>` : ''
       case 'hr': return '<hr>'
       case 'img': {
-        const src = (node.getAttribute('src') || '').trim()
+        const src = (node.getAttribute('src') || '').trim().replace(/\u00a0/g, '%C2%A0')
         if (hasUrlControls(src) || !SAFE_SRC.test(src)) return ''
         const alt = (node.getAttribute('alt') || '').trim()
         // width and height: positive whole numbers only (the display size the author set; the site uses it for sizes/srcset)

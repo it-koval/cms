@@ -37,9 +37,10 @@ final class DsnBuilder
      * Cuts the secrets out of a text that is going to the screen or to a log.
      *
      * @param list<string> $secrets
+     * @param list<string> $usernames short usernames are omitted from free-text replacement
      */
-    public static function clean(string $text, #[\SensitiveParameter] array $secrets): string
+    public static function clean(string $text, #[\SensitiveParameter] array $secrets, #[\SensitiveParameter] array $usernames = []): string
     {
-        return SecretScrubber::scrub($text, $secrets, minLength: 4); // short usernames in free text would hide ordinary words
+        return SecretScrubber::scrub(SecretScrubber::scrub($text, $usernames, minLength: 4), $secrets);
     }
 }

@@ -83,6 +83,7 @@
 'http.mail_server_changed': 'Сервер өзгерді — құпиясөзді қайта енгізіңіз'
 'http.mail_encryption_choose': 'Байланыс қалай қорғалғанын таңдаңыз'
 'http.mail_password_requires_tls': 'SMTP құпиясөзін сақтамас бұрын STARTTLS немесе SSL/TLS таңдаңыз.'
+'http.mail_env_password_tls_warning': 'MAILER_DSN ішінде міндетті TLS жоқ SMTP құпиясөзі бар. smtps:// немесе require_tls=1 орнатыңыз; ағымдағы тасымал жұмысын жалғастырады.'
 'http.mail_port_invalid': 'Порт — 1-ден 65535-ке дейінгі сан, мысалы 587'
 'http.mail_host_invalid': 'Сервер мекенжайы — smtp.example.com сияқты атау, http:// мен бос орындарсыз'
 'http.mail_username_invalid': 'Логин ең көбі 255 таңба, жол тасымалынсыз'

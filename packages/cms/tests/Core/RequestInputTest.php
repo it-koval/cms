@@ -54,4 +54,18 @@ final class RequestInputTest extends WebTestCase
         self::assertSame(200 === $status, $response['success']);
         self::assertSame(200 === $status ? 1 : 0, (int) self::getContainer()->get(Connection::class)->fetchOne("SELECT COUNT(*) FROM itk_request WHERE form_key = 'f1_input'"));
     }
+
+    public function testOrdinaryPostIgnoresAnUndeclaredMultipleHelperField(): void
+    {
+        $client = static::createClient();
+        $client->request('POST', '/request/f1_input', ['text' => 'ok', 'helper' => ['one', 'two']]);
+        self::assertResponseStatusCodeSame(200);
+    }
+
+    public function testOrdinaryPostRejectsAnArrayInADeclaredField(): void
+    {
+        $client = static::createClient();
+        $client->request('POST', '/request/f1_input', ['text' => ['one', 'two']]);
+        self::assertResponseStatusCodeSame(422);
+    }
 }

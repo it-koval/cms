@@ -90,6 +90,26 @@
     "expected": "<img src=\"/photo.png\" alt=\"photo\">"
   },
   {
+    "name": "image internal nonbreaking space",
+    "html": "<img src=\"/photo\u00a0name.png\" alt=\"photo\">",
+    "expected": "<img src=\"/photo%C2%A0name.png\" alt=\"photo\">"
+  },
+  {
+    "name": "image surrounding nonbreaking space",
+    "html": "<img src=\"\u00a0/photo.png\u00a0\" alt=\"photo\">",
+    "expected": "<img src=\"/photo.png\" alt=\"photo\">"
+  },
+  {
+    "name": "image encoded nonbreaking space",
+    "html": "<img src=\"assets/photo&nbsp;name.png\" alt=\"photo\">",
+    "expected": "<img src=\"assets/photo%C2%A0name.png\" alt=\"photo\">"
+  },
+  {
+    "name": "image internal em space",
+    "html": "<img src=\"/photo\u2003name.png\" alt=\"photo\">",
+    "expected": ""
+  },
+  {
     "name": "image control character",
     "html": "<img src=\"/photo.png\" alt=\"photo\">",
     "expected": ""

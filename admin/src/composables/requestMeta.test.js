@@ -11,6 +11,9 @@ const both = {
 }
 
 describe('resendOutcome', () => {
+  it('reports a failed channel when another was accepted in the queue', () => {
+    expect(resendOutcome({ queuedChannels: ['telegram'], outcomes: { telegram: { state: 'queued' }, max: { state: 'failed', error: 'queue refused' } } })).toEqual({ state: 'failed', error: 'queue refused' })
+  })
   it('reports successful dispatch separately from an earlier failed delivery', () => {
     expect(resendOutcome({ ...both, queuedChannels: ['max'] }, 'max')).toEqual({ state: 'queued', error: '' })
     expect(resendOutcome({ ...both, queuedChannels: ['max'] }, 'telegram')).toEqual({ state: 'sent', error: '' })

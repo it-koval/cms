@@ -220,6 +220,25 @@ final class HealthMonitorTest extends TestCase
     }
 
     #[Test]
+    public function legacyPasswordMessagesCannotBeRetried(): void
+    {
+        foreach ([new \Itk\Cms\Mail\SendMail('fixture@example.com', 'Legacy', 'Fixture', '<p>Fixture</p>', 'reset'), new \Itk\Cms\Security\RequestPasswordLink('fixture@example.com', 'https://old.example')] as $job) {
+            $envelope = new Envelope($job, [new TransportMessageIdStamp('legacy'), new SentToFailureTransportStamp('async')]);
+            $failed = $this->failedTransport($envelope);
+            $async = $this->queue(0);
+            $monitor = new MessengerMonitor($this->locator(['async' => $async, 'failed' => $failed]), $failed);
+            try {
+                $monitor->retry('legacy');
+                self::fail('Legacy password jobs must be deleted, never put back into the queue.');
+            } catch (ContentException $error) {
+                self::assertSame(422, $error->status());
+            }
+            self::assertCount(0, $async->getSent());
+            self::assertSame([], $failed->acked);
+        }
+    }
+
+    #[Test]
     public function deleteDropsOneMessage(): void
     {
         $failed = $this->failedTransport($this->failedEnvelope('7'), $this->failedEnvelope('8'));

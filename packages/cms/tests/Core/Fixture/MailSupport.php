@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace Itk\Cms\Tests\Core\Fixture;
 
 use Doctrine\ORM\EntityManagerInterface;
+use Itk\Cms\Entity\Setting;
 use Itk\Cms\Mail\MailSettings;
+use Itk\Cms\Mail\MailStatus;
 use Itk\Cms\Mail\SendMail;
 use Symfony\Component\HttpClient\HttpClient;
 use Symfony\Component\Messenger\Transport\InMemory\InMemoryTransport;
@@ -79,7 +81,9 @@ trait MailSupport
     {
         $em = self::getContainer()->get(EntityManagerInterface::class);
         $em->clear();
-        $em->createQuery("DELETE FROM Itk\\Cms\\Entity\\Setting s WHERE s.key IN ('mail', 'mailStatus', 'mailRoutes')")->execute();
+        $em->createQuery('DELETE FROM Itk\Cms\Entity\Setting s WHERE s.key IN (:keys) AND s.locale = :locale')
+            ->setParameter('keys', [MailSettings::KEY, MailStatus::KEY, 'mailRoutes'])
+            ->setParameter('locale', Setting::ALL)->execute();
     }
 
     /** Письма, которые страница поставила в очередь. @return list<SendMail> */

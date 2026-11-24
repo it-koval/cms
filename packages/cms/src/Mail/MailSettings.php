@@ -12,7 +12,7 @@ use Itk\Cms\Repository\SettingRepository;
 use Itk\Cms\Security\TwoFactor\SecretBox;
 
 /**
- * «Настройки → Почта»: the mail server the site sends letters through. One setting `mail` (shared by all languages), kept outside the settings groups
+ * «Настройки → Почта»: the mail server the site sends letters through. One setting `itk:mail` (shared by all languages), kept outside the settings groups
  * of the schema on purpose: the generic settings API never hands it out, so the password cannot leave through it.
  *
  * The password is stored sealed (libsodium secretbox, key from APP_SECRET: Security\TwoFactor\SecretBox). It is never returned: view() says only
@@ -22,7 +22,7 @@ use Itk\Cms\Security\TwoFactor\SecretBox;
  */
 final class MailSettings
 {
-    public const KEY = 'mail';
+    public const KEY = 'itk:mail';
 
     public function __construct(
         private readonly EntityManagerInterface $em,

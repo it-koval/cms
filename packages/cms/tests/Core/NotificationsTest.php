@@ -281,15 +281,25 @@ final class NotificationsTest extends KernelTestCase
         self::assertTrue($ok->supports($note));
         self::assertFalse($ok->supports(new Notification(Notification::TELEGRAM_FAILED, 'Сбой', payload: ['requestId' => $r->id])), 'only new requests go to Telegram');
         $ok->send($note);
-        self::assertEquals([new SendRequestNotification($r->id)], $queued->sent);
+        self::assertCount(1, $queued->sent);
+        self::assertInstanceOf(SendRequestNotification::class, $queued->sent[0]);
+        self::assertSame($r->id, $queued->sent[0]->requestId);
+        self::assertSame('telegram', $queued->sent[0]->channel);
+        self::assertNotNull($queued->sent[0]->jobId);
         $this->em->refresh($r);
         self::assertSame(RequestEntity::DELIVERY_PENDING, $r->delivery);
+        self::assertSame(['telegram'], $r->queuedChannels());
+        $ok->send($note);
+        self::assertCount(1, $queued->sent, 'an active job cannot be queued twice');
 
-        (new TelegramChannel($this->em, $down, $events, new NullLogger(), $telegram))->send($note);
-        $this->em->refresh($r);
-        self::assertSame(RequestEntity::DELIVERY_FAILED, $r->delivery);
-        self::assertStringContainsString('очередь недоступна', (string) $r->deliveryError);
-        self::assertContains('Заявка №' . $r->id . ' не дошла в Telegram', $this->titles($admin), 'the failure reaches the bell');
+        $rejected = $this->request();
+        $rejectedNote = new Notification(Notification::REQUEST_NEW, 'Новая заявка №' . $rejected->id, payload: ['requestId' => $rejected->id]);
+        (new TelegramChannel($this->em, $down, $events, new NullLogger(), $telegram))->send($rejectedNote);
+        $this->em->refresh($rejected);
+        self::assertSame(RequestEntity::DELIVERY_FAILED, $rejected->delivery);
+        self::assertSame([], $rejected->queuedChannels());
+        self::assertStringContainsString('очередь недоступна', (string) $rejected->deliveryError);
+        self::assertContains('Заявка №' . $rejected->id . ' не дошла в Telegram', $this->titles($admin), 'the failure reaches the bell');
     }
 
     #[Test]

@@ -83,6 +83,7 @@
 'http.mail_server_changed': 'Сервер изменился — введите пароль заново'
 'http.mail_encryption_choose': 'Выберите, как защищено соединение'
 'http.mail_password_requires_tls': 'Выберите STARTTLS или SSL/TLS перед сохранением пароля SMTP.'
+'http.mail_env_password_tls_warning': 'В MAILER_DSN задан пароль SMTP без обязательного TLS. Укажите smtps:// или require_tls=1; текущий транспорт продолжает работать.'
 'http.mail_port_invalid': 'Порт — число от 1 до 65535, например 587'
 'http.mail_host_invalid': 'Адрес сервера — имя вроде smtp.example.com, без http:// и пробелов'
 'http.mail_username_invalid': 'Логин не длиннее 255 знаков, без переводов строки'

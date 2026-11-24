@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
 import { createServer, request } from 'node:http';
 import { once } from 'node:events';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { promisify } from 'node:util';
@@ -15,6 +16,7 @@ function throughProxy(origin, url) {
             res.on('end', () => resolve(res.statusCode));
         });
         req.on('error', reject);
+        req.setTimeout(3000, () => req.destroy(new Error('Local render request timed out')));
         req.end();
     });
 }
@@ -61,6 +63,30 @@ test('the proxy serves the render origin and refuses other localhost origins and
     }
 });
 
+test('the render server only serves files whose canonical path is inside public', { timeout: 5000 }, async () => {
+    const fixture = await mkdtemp(join(tmpdir(), 'itk-critical-public-'));
+    const publicDir = join(fixture, 'public');
+    const localCss = join(publicDir, 'site.css');
+    const externalCss = join(fixture, 'outside.css');
+    let server;
+    try {
+        await mkdir(publicDir);
+        await writeFile(localCss, 'p { color: blue; }');
+        await writeFile(externalCss, 'p { color: red; }');
+        await symlink(localCss, join(publicDir, 'internal.css'));
+        await symlink(externalCss, join(publicDir, 'external.css'));
+        await symlink(fixture, join(publicDir, 'directory'));
+        server = await startServer(publicDir);
+
+        assert.equal(await throughProxy(server.origin, `${server.origin}/internal.css`), 200);
+        assert.equal(await throughProxy(server.origin, `${server.origin}/external.css`), 404);
+        assert.equal(await throughProxy(server.origin, `${server.origin}/directory/outside.css`), 404);
+    } finally {
+        server?.close();
+        await rm(fixture, { recursive: true, force: true });
+    }
+});
+
 const chrome = process.env.ITK_TEST_CHROME;
 test('Chrome loads same-origin assets and blocks another localhost origin and a redirect to it', { skip: !chrome }, async (t) => {
     let visits = 0;
@@ -72,7 +98,7 @@ test('Chrome loads same-origin assets and blocks another localhost origin and a 
     await once(other, 'listening');
     const otherUrl = `http://127.0.0.1:${other.address().port}`;
     const renderServer = await startServer(import.meta.dirname);
-    const profile = await mkdtemp(join(import.meta.dirname, '.chrome-'));
+    const profile = await mkdtemp(join(tmpdir(), 'itk-critical-chrome-'));
     renderServer.setPage({
         path: '/page',
         html: `<!doctype html><body><img src="${otherUrl}/image.png">

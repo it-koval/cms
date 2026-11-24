@@ -28,9 +28,13 @@ x-php-build: &php-build
     UID: ${UID:-1000}
     GID: ${GID:-1000}
 
+x-chrome-security: &chrome-security
+  - seccomp=./docker/chrome-seccomp.json
+
 services:
   php:
     build: *php-build
+    security_opt: *chrome-security
     environment: *php-env
     # Optional: enable this and the top-level secrets block to create the first administrator at startup.
     # secrets:
@@ -60,6 +64,7 @@ services:
   # the bundle registers both of the last transports itself.
   worker:
     build: *php-build
+    security_opt: *chrome-security
     environment:
       <<: *php-env
       SKIP_ENTRYPOINT: "1"

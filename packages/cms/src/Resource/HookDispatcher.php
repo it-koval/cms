@@ -21,13 +21,14 @@ use Itk\Cms\Event\RecordUpdating;
 use Itk\Cms\Schema\Schema;
 use Itk\Cms\Security\Access;
 use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
+use Symfony\Contracts\Service\ResetInterface;
 
 /**
  * Tells the site what happens to its records: the Symfony event first (listeners), then the method of the resource class.
  * PageService and CollectionService call it around create / update / delete / publish / unpublish and their mass variants.
  * Inside deferAfter() the `after…` hooks and events wait until the work is done: a mass operation runs them only after its transaction is committed.
  */
-final class HookDispatcher
+final class HookDispatcher implements ResetInterface
 {
     /** @var array<string, true> */
     private array $loaded = [];
@@ -40,6 +41,12 @@ final class HookDispatcher
         private readonly Schema $schema,
         private readonly Access $access,
     ) {
+    }
+
+    /** Start a new request or worker message with its own once-per-resource/locale onLoad calls. */
+    public function reset(): void
+    {
+        $this->loaded = [];
     }
 
     /**

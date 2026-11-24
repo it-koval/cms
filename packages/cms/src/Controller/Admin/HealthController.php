@@ -71,8 +71,10 @@ final class HealthController extends AbstractApiController
         $this->access->require('dev', 'edit');
 
         $result = $this->health->resendRequest($id, $this->deliveryChannel($request));
+        $status = $result['httpStatus'];
+        unset($result['httpStatus']);
 
-        return $this->json(['ok' => true] + $result, [] !== $result['queuedChannels'] ? 202 : 200);
+        return $this->json(['ok' => 502 !== $status] + $result, $status);
     }
 
     #[Route('/updates/refresh', name: 'updates_refresh', methods: ['POST'])]

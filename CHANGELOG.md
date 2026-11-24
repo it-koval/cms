@@ -36,14 +36,16 @@ All notable changes to ITK CMS are recorded in this file. The format follows [Ke
 
 ### Fixed
 
+- Site status lists form fields that lack an explicit limit. Long request retries retain per-channel outcomes across reloads and release failed channels for another retry.
 - Malformed or nested JSON in public forms returns a validation error. Oversized submissions return HTTP 413 before decoding.
 - An existing SMTP setting with a password and disabled encryption reports how to restore mail delivery.
 
 ### Security
 
+- Account links use a configured origin and can be consumed only once under a database lock. The Docker kit applies the form body limit at nginx and runs Chromium with a seccomp profile derived from Docker Engine 27.5.1.
 - Collection actions require sign-in and permission. Blocking a user revokes their next admin request, and sign-in failures use the same public message. Two-step sign-in serializes verification and limits attempts per person.
-- Password links use a configured or trusted site address. Queue jobs no longer carry rendered password links. The worker revokes each failed attempt's link.
-- SMTP passwords require TLS. Sensitive parameters and transport errors use credential redaction. The Docker kit reads the administrator password from a mounted file.
+- Queue jobs no longer carry rendered password links. The worker revokes each failed attempt's link.
+- Saved SMTP passwords require TLS. Site status and `itk:doctor` warn when `MAILER_DSN` uses a password with optional TLS. Sensitive parameters and transport errors use credential redaction. The installer checks passwords of 10 to 200 characters, including passwords read from a mounted file.
 - PHP and the admin editor reject control characters in HTML URLs. Critical CSS runs Chrome in its sandbox and restricts connections to the local render server. The search embedding cache is bounded.
 
 ## [0.2.2] - 2026-11-22

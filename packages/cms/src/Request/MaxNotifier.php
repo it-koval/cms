@@ -110,8 +110,13 @@ final class MaxNotifier implements ChannelNotifier
     }
 
     /** Writes the outcome of attempt() into the request and announces it. Returns true when it needs no retry. */
-    public function record(Request $r, ChannelOutcome $outcome): bool
+    public function record(Request $r, ChannelOutcome $outcome, bool $announce = true): bool
     {
+        if (!$announce) {
+            $r->markChannel(Request::CHANNEL_MAX, $outcome->state, $outcome->error);
+
+            return !$outcome->isFailed();
+        }
         if ($outcome->isPending()) {
             $wasFailed = Request::DELIVERY_FAILED === $r->channelState(Request::CHANNEL_MAX);
             $r->markChannel(Request::CHANNEL_MAX, Request::DELIVERY_PENDING);
@@ -161,6 +166,16 @@ final class MaxNotifier implements ChannelNotifier
     public function parts(Request $r, bool $resend = false): MessageParts
     {
         return MessageParts::max($this->buildText($r, $resend));
+    }
+
+    /** Called only after the durable delivery result has committed. */
+    public function announce(Request $r, ChannelOutcome $outcome): void
+    {
+        try {
+            $this->events->dispatch(new RequestDelivery($r, Request::DELIVERY_SENT === $outcome->state, $outcome->error, $outcome->isPending(), Request::CHANNEL_MAX));
+        } catch (\Throwable) {
+            $this->logger->error('A delivery listener failed for request #{id}.', ['id' => $r->id]);
+        }
     }
 
     /** MAX takes &, <, > and " as named entities; HtmlSanitizer::escape writes the apostrophe as a numeric entity, and MAX may show those as they are. */

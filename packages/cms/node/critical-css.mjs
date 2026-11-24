@@ -131,7 +131,7 @@ async function loadLibraries(projectDir) {
 }
 
 export function startServer(publicDir) {
-    const root = path.resolve(publicDir);
+    const root = realpathSync(publicDir);
     let current = null;
     let origin;
     const server = createServer((req, res) => {
@@ -162,13 +162,19 @@ export function startServer(publicDir) {
             res.end(req.method === 'HEAD' ? undefined : current.html);
             return;
         }
-        const file = path.resolve(root, `.${pathname}`);
-        if (!file.startsWith(root + path.sep) || !existsSync(file) || !statSync(file).isFile()) {
-            res.writeHead(404).end();
-            return;
+        const candidate = path.resolve(root, `.${pathname}`);
+        try {
+            const file = candidate.startsWith(root + path.sep) ? realpathSync(candidate) : null;
+            if (file && file.startsWith(root + path.sep) && statSync(file).isFile()) {
+                const body = req.method === 'HEAD' ? undefined : readFileSync(file);
+                res.writeHead(200, { 'Content-Type': CONTENT_TYPES[path.extname(candidate).toLowerCase()] ?? 'application/octet-stream' });
+                res.end(body);
+                return;
+            }
+        } catch {
+            // Missing or unreadable assets are ordinary 404 responses.
         }
-        res.writeHead(200, { 'Content-Type': CONTENT_TYPES[path.extname(file).toLowerCase()] ?? 'application/octet-stream' });
-        res.end(req.method === 'HEAD' ? undefined : readFileSync(file));
+        res.writeHead(404).end();
     });
     server.on('connect', (_req, socket) => socket.end('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n'));
     server.on('upgrade', (_req, socket) => socket.destroy());

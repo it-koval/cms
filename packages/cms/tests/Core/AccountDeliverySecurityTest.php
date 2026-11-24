@@ -150,5 +150,142 @@ final class AccountDeliverySecurityTest extends KernelTestCase
         $urls = new PublicUrl($requests, self::getContainer()->get(SettingsService::class), null, true);
         self::assertNull($urls->trustedBase());
         self::assertSame('https://trusted.example', (new PublicUrl($requests, self::getContainer()->get(SettingsService::class), 'https://trusted.example/'))->trustedBase());
+        $configured = new PublicUrl($requests, self::getContainer()->get(SettingsService::class), 'HTTPS://Trusted.Example:08443/');
+        self::assertSame('HTTPS://Trusted.Example:08443', $configured->trustedBase());
+        self::assertSame('HTTPS://Trusted.Example:08443', $configured->base(), 'An accepted configured origin retains its spelling and explicit port for ordinary links.');
+    }
+
+    public function testTrustedHostsDoNotAuthorizeACompletePasswordLinkOrigin(): void
+    {
+        $previous = Request::getTrustedHosts();
+        Request::setTrustedHosts(['^trusted\\.example$']);
+        try {
+            $requests = new RequestStack();
+            $requests->push(Request::create('http://trusted.example:8099'));
+            $urls = new PublicUrl($requests, self::getContainer()->get(SettingsService::class));
+            self::assertNull($urls->trustedBase(), 'A trusted hostname does not establish the scheme and port for account links.');
+            self::assertSame('http://trusted.example:8099', $urls->base(), 'Ordinary site links retain the trusted-host fallback.');
+            self::assertSame('warn', (new \Itk\Cms\Health\TrustedPublicUrlHealthCheck($urls))->check()->status);
+        } finally {
+            Request::setTrustedHosts(\array_map(static fn (string $pattern): string => \substr($pattern, 1, -2), $previous));
+        }
+    }
+
+    public function testCachedResetLinkCannotBeUsedAfterItWasConsumedElsewhere(): void
+    {
+        $this->user = self::getContainer()->get(UserManager::class)->create('test-f1-used-' . \bin2hex(\random_bytes(5)) . '@example.com', 'Fixture', 'editor', 'innocuous-test-password');
+        $token = \bin2hex(\random_bytes(24));
+        $em = self::getContainer()->get(EntityManagerInterface::class);
+        $link = new PasswordReset($this->user, PasswordRecovery::hash($token), PasswordReset::RESET, new \DateTimeImmutable('+1 hour'));
+        $em->persist($link);
+        $em->flush();
+        $recovery = self::getContainer()->get(PasswordRecovery::class);
+        self::assertNotNull($recovery->find($token));
+        $em->getConnection()->executeStatement('UPDATE itk_password_reset SET used_at = CURRENT_TIMESTAMP WHERE id = ?', [$link->id]);
+        try {
+            $recovery->complete($token, 'new-innocuous-password', 'new-innocuous-password');
+            self::fail('A spent link must be rejected after acquiring the account lock.');
+        } catch (ContentException $error) {
+            self::assertSame(410, $error->status());
+        }
+    }
+
+    public function testAnEnvironmentSmtpPasswordWithoutRequiredTlsWarnsWithoutDisablingTheRoute(): void
+    {
+        $settings = self::getContainer()->get(MailSettings::class);
+        $settings->save(['enabled' => false, 'fromAddress' => 'test@example.com']);
+        foreach (['smtp://fixture:fixture-password@localhost:1025', 'smtp://fixture:fixture-password@localhost:1025?auto_tls=false', 'failover(smtps://fixture:fixture-password@localhost:1025 smtp://fixture:fixture-password@localhost:1025)'] as $dsn) {
+            $factory = new \Itk\Cms\Mail\MailerFactory($settings, self::getContainer()->get(SettingsService::class), self::getContainer()->get('event_dispatcher'), $dsn);
+            self::assertNotNull($factory->route(), 'The existing environment route is preserved.');
+            $health = new \Itk\Cms\Mail\MailHealthCheck($factory, self::getContainer()->get(\Itk\Cms\Mail\MailStatus::class), self::getContainer()->get(SettingsService::class));
+            self::assertSame('warn', $health->check()->status);
+            self::assertStringNotContainsString('fixture-password', $health->check()->message);
+        }
+        foreach (['smtp://fixture:fixture-password@localhost:1025?require_tls=1', 'smtps://fixture:fixture-password@localhost:1025', 'smtp://localhost:1025'] as $dsn) {
+            $factory = new \Itk\Cms\Mail\MailerFactory($settings, self::getContainer()->get(SettingsService::class), self::getContainer()->get('event_dispatcher'), $dsn);
+            self::assertFalse($factory->hasUnsafeEnvCredentials());
+        }
+    }
+
+    public function testShortSmtpPasswordsNeverReachFailureLogsOrHealthState(): void
+    {
+        foreach (['q', 'qz', 'qzx'] as $password) {
+            $settings = self::getContainer()->get(MailSettings::class);
+            $settings->save(['enabled' => true, 'host' => 'localhost', 'port' => 1, 'encryption' => 'starttls', 'username' => 'fixture', 'password' => $password, 'fromAddress' => 'test@example.com']);
+            $dispatcher = new \Symfony\Component\EventDispatcher\EventDispatcher();
+            $dispatcher->addListener(\Symfony\Component\Mailer\Event\MessageEvent::class, static function () use ($password): never {
+                // Refuse before a transport opens a connection: a synthetic SMTP error containing the known password.
+                throw new \RuntimeException('SMTP fixture rejected ' . $password);
+            });
+            $factory = new \Itk\Cms\Mail\MailerFactory($settings, self::getContainer()->get(SettingsService::class), $dispatcher);
+            $logger = $this->createMock(\Psr\Log\LoggerInterface::class);
+            $logger->expects(self::once())->method('error')->with(self::anything(), ['kind' => SendMail::TEST, 'error' => 'SMTP *** rejected ***']);
+            $status = self::getContainer()->get(\Itk\Cms\Mail\MailStatus::class);
+            $mailer = new \Itk\Cms\Mail\SiteMailer($factory, $status, $this->createStub(\Symfony\Component\Messenger\MessageBusInterface::class), $logger);
+            try {
+                $mailer->deliver(new SendMail('fixture@example.com', 'Fixture', 'Fixture', '<p>Fixture</p>', SendMail::TEST));
+                self::fail('The synthetic transport boundary must fail.');
+            } catch (\Itk\Cms\Mail\MailDeliveryException $error) {
+                self::assertStringNotContainsString($password, $error->getMessage());
+                self::assertStringNotContainsString($password, $status->get()['error']);
+            }
+        }
+    }
+
+    public function testCompositeEnvironmentDsnsScrubEveryPasswordWithoutRewritingTheTransport(): void
+    {
+        $settings = self::getContainer()->get(MailSettings::class);
+        $settings->save(['enabled' => false, 'fromAddress' => 'test@example.com']);
+        foreach (['failover', 'roundrobin'] as $strategy) {
+            $dsn = $strategy . '(smtp://first:q@localhost:1025?require_tls=1 smtps://second:qz@localhost:1026 smtp://third:q%7Ax@localhost:1027)';
+            $factory = new \Itk\Cms\Mail\MailerFactory($settings, self::getContainer()->get(SettingsService::class), self::getContainer()->get('event_dispatcher'), $dsn);
+            $route = $factory->route();
+            self::assertNotNull($route);
+            self::assertSame($dsn, $route->dsn);
+            foreach (['q', 'qz', 'qzx'] as $password) {
+                self::assertContains($password, $route->secrets);
+                self::assertSame('SMTP rejected ***', \Itk\Cms\Mail\DsnBuilder::clean('SMTP rejected ' . $password, $route->secrets, $route->usernames));
+            }
+            self::assertTrue($factory->hasUnsafeEnvCredentials());
+        }
+    }
+
+    public function testUpgradeBurnsExistingLinksWithoutRemovingTheirAuditRows(): void
+    {
+        $this->user = self::getContainer()->get(UserManager::class)->create('test-f1-upgrade-' . \bin2hex(\random_bytes(5)) . '@example.com', 'Fixture', 'editor', 'innocuous-test-password');
+        $em = self::getContainer()->get(EntityManagerInterface::class);
+        $token = \bin2hex(\random_bytes(24));
+        $link = new PasswordReset($this->user, PasswordRecovery::hash($token), PasswordReset::INVITE, new \DateTimeImmutable('+1 day'));
+        $em->persist($link);
+        $em->flush();
+        $db = $em->getConnection();
+        $db->beginTransaction();
+        try {
+            $migration = new \Itk\Cms\Migrations\Version20261124110000($db, new \Psr\Log\NullLogger());
+            $migration->up($db->createSchemaManager()->introspectSchema());
+            foreach ($migration->getSql() as $query) {
+                $db->executeStatement($query->getStatement(), $query->getParameters(), $query->getTypes());
+            }
+            $em->refresh($link);
+            self::assertNotNull($link->usedAt);
+            self::assertFalse($link->isUsable());
+        } finally {
+            $db->rollBack();
+            $em->clear();
+        }
+    }
+
+    public function testHealthReportAndDoctorWarnWhenAccountLinkOriginIsMissing(): void
+    {
+        $checks = self::getContainer()->get(\Itk\Cms\Health\HealthService::class)->report()['checks'];
+        $name = \Itk\Cms\I18n\I18n::t('ops.doctor_name_public_url');
+        $matching = \array_values(\array_filter($checks, static fn (array $check): bool => $name === $check['name']));
+        self::assertCount(1, $matching, 'The automatic health tag exposes the account-link diagnostic.');
+        self::assertSame('warn', $matching[0]['status']);
+        self::assertStringContainsString('itk_cms.public_url', $matching[0]['message']);
+        $doctor = self::getContainer()->get(\Itk\Cms\Health\Doctor::class)->run();
+        $matching = \array_values(\array_filter($doctor, static fn (array $check): bool => $name === $check['name']));
+        self::assertCount(1, $matching, 'Doctor must not duplicate the tagged check.');
+        self::assertSame('warn', $matching[0]['status']);
     }
 }

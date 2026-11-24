@@ -47,6 +47,11 @@ final class Extractor
         return SourceKind::Page === $live->source->kind ? $this->page($live) : $this->item($live);
     }
 
+    public static function allowsField(?FieldInterface $field): bool
+    {
+        return $field instanceof PublicFieldInterface && $field->isPublic() && !$field->isNote() && !$field->isRaw();
+    }
+
     /**
      * The head block (title as heading; seo.description; the template's fields in schema order), then the visible sections in order.
      *
@@ -196,7 +201,7 @@ final class Extractor
             }
         }
         foreach ($repeater->subFields() as $sub) {
-            if ($sub instanceof Text && $sub->isPublic() && \is_string($row[$sub->key()] ?? null) && '' !== \trim($row[$sub->key()])) {
+            if ($sub instanceof Text && self::allowsField($sub) && \is_string($row[$sub->key()] ?? null) && '' !== \trim($row[$sub->key()])) {
                 return [\trim($row[$sub->key()]), $sub->key()];
             }
         }
@@ -229,7 +234,7 @@ final class Extractor
      */
     private function contribution(FieldInterface $f, mixed $value): array|string|null
     {
-        if ($f->isNote() || $f->isRaw() || !$f instanceof PublicFieldInterface || !$f->isPublic()) {
+        if (!self::allowsField($f)) {
             return null;
         }
 

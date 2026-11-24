@@ -90,7 +90,7 @@ final class PasswordRecovery
         }
         $base = $this->urls->trustedBase();
         if (null === $base) {
-            $this->logger->error('A password link was asked for, but the site has no trusted address for it: set itk_cms.public_url or framework.trusted_hosts');
+            $this->logger->error('A password link was asked for, but the site has no trusted address for it: set itk_cms.public_url');
 
             return true;
         }
@@ -132,7 +132,7 @@ final class PasswordRecovery
     {
         $base ??= $this->urls->trustedBase();
         if (null === $base) {
-            $this->logger->error('A password link was not made: the site has no trusted address (itk_cms.public_url or framework.trusted_hosts)');
+            $this->logger->error('A password link was not made: the site has no trusted address (itk_cms.public_url)');
 
             throw new ContentException(I18n::t('http.recovery_no_url'), 503, ['code' => 'no_public_url']);
         }
@@ -214,17 +214,30 @@ final class PasswordRecovery
     public function complete(#[\SensitiveParameter] string $token, #[\SensitiveParameter] string $password, #[\SensitiveParameter] string $repeat, ?string $ip = null): User
     {
         $link = $this->find($token, $ip) ?? throw new ContentException(I18n::t('http.link_gone'), 410, ['code' => 'link_gone']);
-        $user = $link->user;
-        if (User::BLOCKED === $user->status) {
-            throw new ContentException(I18n::t('http.link_gone'), 410, ['code' => 'link_gone']);
-        }
-        UserManager::checkPasswordPolicy($password);
-        if ($password !== $repeat) {
-            throw ContentException::invalid(I18n::t('http.passwords_differ'), ['repeat' => I18n::t('http.passwords_differ')]);
-        }
-        $this->manager->setPassword($user, $password); // burns every link of the person, this one too
+        $connection = $this->em->getConnection();
+        $connection->beginTransaction();
+        try {
+            $user = $link->user;
+            // All account-link delivery and completion serialize on the same parent user.
+            // Refresh both objects: another request may have consumed a link cached before this lock.
+            $this->em->refresh($user, LockMode::PESSIMISTIC_WRITE);
+            $this->em->refresh($link, LockMode::PESSIMISTIC_WRITE);
+            if (!$link->isUsable() || User::BLOCKED === $user->status) {
+                throw new ContentException(I18n::t('http.link_gone'), 410, ['code' => 'link_gone']);
+            }
+            UserManager::checkPasswordPolicy($password);
+            if ($password !== $repeat) {
+                throw ContentException::invalid(I18n::t('http.passwords_differ'), ['repeat' => I18n::t('http.passwords_differ')]);
+            }
+            $this->manager->setPassword($user, $password); // burns every link in this transaction
+            $connection->commit();
 
-        return $user;
+            return $user;
+        } catch (\Throwable $error) {
+            $connection->rollBack();
+
+            throw $error;
+        }
     }
 
     public static function hash(#[\SensitiveParameter] string $token): string

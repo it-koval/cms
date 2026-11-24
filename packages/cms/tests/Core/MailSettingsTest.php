@@ -29,6 +29,8 @@ final class MailSettingsTest extends WebTestCase
 
     private KernelBrowser $client;
     private string $csrf = '';
+    /** @var list<string> */
+    private array $createdUserIds = [];
 
     protected function setUp(): void
     {
@@ -41,7 +43,9 @@ final class MailSettingsTest extends WebTestCase
     {
         $this->wipeMailSettings();
         $em = self::getContainer()->get(EntityManagerInterface::class);
-        $em->createQuery('DELETE FROM Itk\Cms\Entity\User u WHERE u.email LIKE :e')->setParameter('e', 'test-%@example.com')->execute();
+        if ([] !== $this->createdUserIds) {
+            $em->createQuery('DELETE FROM Itk\Cms\Entity\User u WHERE u.id IN (:ids)')->setParameter('ids', $this->createdUserIds)->execute();
+        }
         $this->mailpitWipe('test-mail-test@example.com');
         $this->restoreMailerEnv();
         parent::tearDown();
@@ -49,7 +53,9 @@ final class MailSettingsTest extends WebTestCase
 
     private function signIn(string $role = 'admin', string $email = 'test-mail-admin@example.com'): User
     {
+        $email = \str_replace('@', '-' . \bin2hex(\random_bytes(5)) . '@', $email);
         $user = self::getContainer()->get(UserManager::class)->create($email, 'Тест почты', $role, self::PASSWORD);
+        $this->createdUserIds[] = $user->id;
         $this->client->loginUser($user, 'itk_admin');
         $this->client->request('GET', '/admin');
         self::assertResponseIsSuccessful();
@@ -144,7 +150,7 @@ final class MailSettingsTest extends WebTestCase
         // in the database it is sealed, not text
         $em = self::getContainer()->get(EntityManagerInterface::class);
         $em->clear();
-        $row = $em->getRepository(Setting::class)->find(['key' => 'mail', 'locale' => '*']);
+        $row = $em->getRepository(Setting::class)->find(['key' => MailSettings::KEY, 'locale' => Setting::ALL]);
         self::assertNotNull($row);
         self::assertStringStartsWith('v1.', $row->value['password']);
         self::assertStringNotContainsString(self::SECRET, (string) \json_encode($row->value));
@@ -350,7 +356,7 @@ final class MailSettingsTest extends WebTestCase
     {
         $text = 'Expected response code 250 but got code "535", with message "535 Authentication failed for a".';
 
-        self::assertSame($text, DsnBuilder::clean($text, ['a', 'ab', 'abc', '']), 'one to three signs are left alone');
+        self::assertSame($text, DsnBuilder::clean($text, [], ['a', 'ab', 'abc', '']), 'short usernames are left alone; known passwords are always removed');
         self::assertSame('failed for ***', DsnBuilder::clean('failed for pass', ['pass']));
     }
 

@@ -448,6 +448,50 @@ final class MaxChannelTest extends WebTestCase
     }
 
     #[Test]
+    public function aLateTerminalFailureCannotReleaseTheSameJobWhileItsRetryIsSending(): void
+    {
+        self::bootKernel();
+        $fake = $this->maxReady();
+        $r = $this->request();
+        $em = self::getContainer()->get(EntityManagerInterface::class);
+        $deliverer = self::getContainer()->get(RequestDeliverer::class);
+        $handler = self::getContainer()->get(SendRequestNotificationHandler::class);
+        $job = RequestDeliverer::reserve($em, (int) $r->id, 'max', false);
+        $message = new SendRequestNotification((int) $r->id, false, 'max', $job);
+        $fake->refuse = 'first worker refusal';
+        try {
+            $handler($message);
+            self::fail('the first attempt must fail before the duplicate is claimed');
+        } catch (RequestNotDeliveredException) {
+            self::assertSame('retry', $r->channelJobPhase('max'));
+        }
+        $lateFailure = new \Symfony\Component\Messenger\Event\WorkerMessageFailedEvent(new Envelope($message), 'async', new RequestNotDeliveredException('first worker refusal'));
+        $phaseDuringSend = null;
+        $queuedDuringSend = [];
+        $newReservation = null;
+        $fake->refuse = null;
+        $fake->onSend = static function () use ($deliverer, $em, $r, $lateFailure, &$phaseDuringSend, &$queuedDuringSend, &$newReservation): void {
+            // Another envelope has already claimed this job when the first worker's final event arrives.
+            (new \Itk\Cms\Request\RequestDeliveryJobListener($deliverer))($lateFailure);
+            $phaseDuringSend = $r->channelJobPhase('max');
+            $queuedDuringSend = $r->queuedChannels();
+            $newReservation = RequestDeliverer::reserve($em, (int) $r->id, 'max', true);
+        };
+        try {
+            $handler($message);
+        } finally {
+            $fake->onSend = null;
+        }
+
+        self::assertSame('processing', $phaseDuringSend, 'the terminal event belongs to the previous attempt');
+        self::assertSame(['max'], $queuedDuringSend);
+        self::assertNull($newReservation, 'the operator cannot start another send while this one is running');
+        self::assertSame(RequestEntity::DELIVERY_SENT, $r->channelState('max'));
+        self::assertSame('done', $r->channelJobPhase('max'));
+        self::assertCount(1, $fake->sent);
+    }
+
+    #[Test]
     public function aRequestGoneBeforeItWasSentIsNoFailure(): void
     {
         self::bootKernel();

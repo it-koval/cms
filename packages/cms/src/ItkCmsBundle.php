@@ -425,7 +425,7 @@ final class ItkCmsBundle extends AbstractBundle
                     ->end()
                 ->end()
                 ->scalarNode('public_url')
-                    ->info('Address of the site for links in letters, e.g. https://example.com (password links lead there); may be an %env()% placeholder (its value is checked when it is read, an empty one counts as no option). Without it the address of the request is used: then set framework.trusted_hosts.')
+                    ->info('Full site origin for password and invitation links, e.g. https://example.com. May be an %env()% placeholder. Ordinary site links can also use the request host checked by framework.trusted_hosts.')
                     ->defaultNull()
                     ->validate()->ifTrue(static fn ($v): bool => null !== $v && !\is_string($v))->thenInvalid('An address like https://example.com is expected')->end()
                 ->end()

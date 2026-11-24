@@ -105,10 +105,8 @@ final class PagesController extends AbstractApiController
     public function saveDraft(Request $request, string $id): JsonResponse
     {
         $body = $this->body($request);
-        $this->need($id, 'edit');
-        $this->requireNewTemplate($body);
 
-        return $this->json($this->pages->saveDraft($id, $this->locale($request, $body), $this->without($body, 'locale', 'baseVersion'), $this->baseVersion($body)));
+        return $this->json($this->pages->saveDraft($id, $this->locale($request, $body), $this->without($body, 'locale', 'baseVersion'), $this->baseVersion($body), $this->requireTemplates(...)));
     }
 
     #[Route('', name: 'create', methods: ['POST'])]
@@ -124,10 +122,8 @@ final class PagesController extends AbstractApiController
     public function update(Request $request, string $id): JsonResponse
     {
         $body = $this->body($request);
-        $this->need($id, 'edit');
-        $this->requireNewTemplate($body);
 
-        return $this->json($this->pages->update($id, $this->locale($request, $body), $this->without($body, 'locale', 'sections')));
+        return $this->json($this->pages->update($id, $this->locale($request, $body), $this->without($body, 'locale', 'sections'), $this->requireTemplates(...)));
     }
 
     #[Route('/{id}', name: 'remove', requirements: ['id' => '[^/]+'], methods: ['DELETE'])]
@@ -175,11 +171,9 @@ final class PagesController extends AbstractApiController
         $this->access->require('pages', $action, $this->pages->find($id)->template);
     }
 
-    /** @param array<string, mixed> $body */
-    private function requireNewTemplate(array $body): void
+    private function requireTemplates(Page $page, string $target): void
     {
-        if (isset($body['template']) && \is_string($body['template'])) {
-            $this->access->require('pages', 'edit', $body['template']);
-        }
+        $this->access->require('pages', 'edit', $page->template);
+        $this->access->require('pages', 'edit', $target);
     }
 }

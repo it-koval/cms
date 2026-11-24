@@ -8,7 +8,11 @@ use Doctrine\ORM\EntityManagerInterface;
 use Itk\Cms\Content\PageService;
 use Itk\Cms\Entity\MediaFile;
 use Itk\Cms\Entity\User;
+use Itk\Cms\Field\Image;
+use Itk\Cms\Field\Repeater;
 use Itk\Cms\Media\MediaService;
+use Itk\Cms\Resource\ResourceRegistry;
+use Itk\Cms\Resource\SectionResource;
 use Itk\Cms\Security\Viewer;
 use PHPUnit\Framework\Attributes\Test;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
@@ -16,6 +20,65 @@ use Symfony\Component\Security\Core\Authentication\Token\UsernamePasswordToken;
 
 final class MediaUsageAudienceTest extends KernelTestCase
 {
+    #[Test]
+    public function usageDoesNotRevealImagesInsideUnreadableNestedRepeaterFields(): void
+    {
+        self::bootKernel();
+        $c = self::getContainer();
+        $unique = \bin2hex(\random_bytes(6));
+        $resource = new class('f1_nested_' . $unique) extends SectionResource {
+            public function __construct(private readonly string $resourceKey)
+            {
+            }
+
+            public function key(): string
+            {
+                return $this->resourceKey;
+            }
+
+            public function title(): string
+            {
+                return 'Nested fixture';
+            }
+
+            public function fields(): iterable
+            {
+                yield Repeater::make('Rows', 'rows')->fields(
+                    Repeater::make('Children', 'children')->fields(
+                        Image::make('Private picture', 'private')->canSee('set:users'),
+                        Image::make('Public picture', 'public'),
+                    ),
+                );
+            }
+        };
+        $c->get(ResourceRegistry::class)->add($resource);
+        $pages = $c->get(PageService::class);
+        $em = $c->get(EntityManagerInterface::class);
+        $file = new MediaFile('/uploads/media/f1-nested-' . $unique . '.jpg', 'fixture.jpg', 'image/jpeg');
+        $em->persist($file);
+        $em->flush();
+        $ids = [];
+        try {
+            foreach (['private', 'public'] as $field) {
+                $rows = [['_id' => 'outer', 'children' => [['_id' => 'inner', $field => ['src' => $file->path, 'alt' => 'Fixture']]]]];
+                $page = $pages->create(['template' => 'default', 'title' => 'F1 nested ' . $field, 'url' => '/f1-nested-' . $field . '-' . $unique,
+                    'sections' => [['id' => 'nested-' . $unique, 'type' => $resource->key(), 'data' => ['rows' => $rows]]],
+                ]);
+                $ids[] = $page['id'];
+            }
+            $viewer = Viewer::of(new User('nested-' . $unique . '@example.test', 'Fixture', 'editor'), ['perms' => ['pages' => ['view']], 'templates' => ['default']]);
+            self::assertSame(['/pages/' . $ids[1]], \array_column($c->get(MediaService::class)->usage($file, $viewer), 'to'));
+            self::assertEqualsCanonicalizing(\array_map(static fn (string $id): string => '/pages/' . $id, $ids), \array_column($c->get(MediaService::class)->usage($file, Viewer::system()), 'to'));
+        } finally {
+            foreach (\array_reverse($ids) as $id) {
+                $pages->remove($id);
+            }
+            $em->remove($em->getReference(MediaFile::class, $file->id));
+            $em->flush();
+            $em->createQuery('DELETE FROM Itk\Cms\Entity\Revision r WHERE r.resourceId IN (:ids)')->setParameter('ids', [...$ids, $file->id])->execute();
+        }
+    }
+
     #[Test]
     public function usageRequiresAnExplicitAudienceAndOnlyReturnsReadableMatches(): void
     {

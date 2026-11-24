@@ -53,7 +53,7 @@ final class RequestSubmitController
 
         try {
             $input = $this->input($request);
-            if ('' !== \trim((string) ($input[self::HONEYPOT] ?? ''))) {
+            if (!\is_scalar($input[self::HONEYPOT] ?? '') || '' !== \trim((string) ($input[self::HONEYPOT] ?? ''))) {
                 return new JsonResponse(['success' => true]);
             }
             $locale = $this->contentLocales->isConfigured() ? $this->locale($request) : $request->attributes->get('_locale', $this->mainLocale);
@@ -130,7 +130,9 @@ final class RequestSubmitController
                 throw ContentException::invalid(I18n::t('http.request_bad_input'));
             }
         }
-        RequestService::validateInput($input);
+        if ('json' === $request->getContentTypeFormat()) {
+            RequestService::validateInput($input);
+        }
 
         return $input;
     }

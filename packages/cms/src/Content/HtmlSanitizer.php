@@ -26,6 +26,8 @@ final class HtmlSanitizer
     /** Tags that start a new line inside a table cell (a cell holds inline text only). */
     private const CELL_BLOCK = ['ul', 'ol', 'li', 'table', 'thead', 'tbody', 'tfoot', 'tr', 'td', 'th', 'caption'];
     private const URL_CONTROLS = '~[\x00-\x1F\x7F]~';
+    /** ECMAScript trim() / \s, kept explicit because PCRE's whitespace set differs. */
+    private const JS_SPACE = '[\x09-\x0D\x20\x{00A0}\x{1680}\x{2000}-\x{200A}\x{2028}\x{2029}\x{202F}\x{205F}\x{3000}\x{FEFF}]';
     private const SAFE_HREF = '~^(https?://|mailto:|tel:|/(?![/\\\\])|#)~i';
     private const SAFE_SRC = '~^(assets/[^"\'<>\s]+|/(?![/\\\\])[^"\'<>\s]+|https?://[^"\'<>\s]+|data:image/(png|jpe?g|webp|gif|avif);base64,[A-Za-z0-9+/=]+)$~i';
 
@@ -335,8 +337,10 @@ final class HtmlSanitizer
                 case 'hr':
                     return '<hr>';
                 case 'img':
-                    $src = \trim($node->getAttribute('src'));
-                    if (\preg_match(self::URL_CONTROLS, $src) || !\preg_match(self::SAFE_SRC, $src)) {
+                    // Match the editor's trim(), and encode NBSP without changing the referenced filename.
+                    $src = (string) \preg_replace('~^' . self::JS_SPACE . '+|' . self::JS_SPACE . '+$~u', '', $node->getAttribute('src'));
+                    $src = \str_replace("\u{00A0}", '%C2%A0', $src);
+                    if (\preg_match(self::URL_CONTROLS, $src) || \preg_match('~' . self::JS_SPACE . '~u', $src) || !\preg_match(self::SAFE_SRC, $src)) {
                         return '';
                     }
 

@@ -20,7 +20,7 @@ vi.mock('@/schema/registry.js', () => ({ schema: { forms: [] }, byKey: () => nul
 vi.mock('@/components/ui/useConfirm.js', () => ({ useConfirm: () => vi.fn() }))
 
 const request = { id: 41, form: 'order', place: 'Fixture form', phone: '+10000000000', dt: '2026-11-24T12:00:00Z', work: 'new', data: {}, comment: '', delivery: 'failed', st: 'failed', channels: [{ channel: 'telegram', state: 'failed', error: 'Fixture delivery failure' }], sendable: [], log: [] }
-const report = { status: 'warn', generatedAt: request.dt, messenger: { queues: [], failed: { available: true, total: 0, items: [] } }, requests: { failed: 1, items: [{ id: 41, form: 'Fixture form', dt: request.dt, error: 'Fixture delivery failure' }] }, schedules: { available: true, items: [] }, disk: [], versions: { php: '8.4', symfony: '7.4', itk: '0.3.0' }, updates: { enabled: false }, checks: [] }
+const report = { status: 'warn', generatedAt: request.dt, messenger: { queues: [], failed: { available: true, total: 0, items: [] } }, requests: { failed: 1, items: [{ id: 41, form: 'Fixture form', dt: request.dt, error: 'Fixture delivery failure', queuedChannels: [], canResend: true }] }, schedules: { available: true, items: [] }, disk: [], versions: { php: '8.4', symfony: '7.4', itk: '0.3.0' }, updates: { enabled: false }, checks: [] }
 const locales = [['ru', 'Поставлено в очередь'], ['en', 'Queued for delivery'], ['kk', 'Кезекке қойылды']]
 let app, host
 const flush = async () => { for (let i = 0; i < 12; i++) { await Promise.resolve(); await nextTick() } }
@@ -86,6 +86,9 @@ for (const width of [375, 320, 1440]) {
         expect(document.querySelector('.drawer [role="status"]').textContent).toBe(queued)
       })
       it(`${locale}: the health queue action acknowledges acceptance in one click`, async () => {
+        const queuedReport = structuredClone(report)
+        Object.assign(queuedReport.requests.items[0], { queuedChannels: ['telegram'], canResend: false })
+        mocks.report.mockResolvedValueOnce(structuredClone(report)).mockResolvedValue(queuedReport)
         await initI18n(locale)
         await mount('/health')
         const button = host.querySelector('[aria-labelledby="hl-req"] button')
@@ -97,6 +100,21 @@ for (const width of [375, 320, 1440]) {
         expect(host.querySelector('.toast').textContent).toBe(queued)
         expect(host.querySelector('.toast.err-t')).toBeNull()
         expect(host.querySelector('[aria-labelledby="hl-req"] button')).toBeNull()
+      })
+      it(`${locale}: a final failure restores the health action after refresh without leaving the page`, async () => {
+        await initI18n(locale)
+        const queuedReport = structuredClone(report)
+        Object.assign(queuedReport.requests.items[0], { queuedChannels: ['telegram'], canResend: false })
+        mocks.report.mockResolvedValueOnce(queuedReport).mockResolvedValue(structuredClone(report))
+        const router = await mount('/health')
+        expect(host.querySelector('[aria-labelledby="hl-req"] [role="status"]').textContent).toBe(queued)
+        expect(host.querySelector('[aria-labelledby="hl-req"] button')).toBeNull()
+        host.querySelector('.page-h .actions button').click()
+        await flush()
+        expect(router.currentRoute.value.path).toBe('/health')
+        expect(host.querySelector('[aria-labelledby="hl-req"] [role="status"]')).toBeNull()
+        expect(host.querySelector('[aria-labelledby="hl-req"] button')).not.toBeNull()
+        expect(mocks.healthResend).not.toHaveBeenCalled()
       })
     }
   })

@@ -114,6 +114,9 @@ final class AccountSecurityTest extends TestCase
             [\Itk\Cms\Security\TwoFactor\SecretBox::class, 'open', ['sealed']],
             [\Itk\Cms\Security\TwoFactor\SecretBox::class, 'hash', ['value']],
             [\Itk\Cms\Mail\MailSettings::class, 'save', ['input']],
+            [\Itk\Cms\Mail\SiteMailer::class, 'failed', ['secrets', 'usernames']],
+            [\Itk\Cms\Mail\SiteMailer::class, 'reason', ['secrets', 'usernames']],
+            [\Itk\Cms\Mail\MailRoute::class, '__construct', ['secrets', 'usernames']],
         ];
         foreach ($methods as [$class, $method, $names]) {
             foreach ((new \ReflectionMethod($class, $method))->getParameters() as $parameter) {
@@ -122,5 +125,30 @@ final class AccountSecurityTest extends TestCase
                 }
             }
         }
+    }
+
+    public function testEvenShortKnownSmtpPasswordsAreScrubbed(): void
+    {
+        foreach (['q', 'qz', 'qzx'] as $password) {
+            self::assertSame('SMTP rejected ***', DsnBuilder::clean('SMTP rejected ' . $password, [$password]));
+        }
+        self::assertSame('SMTP rejected a', DsnBuilder::clean('SMTP rejected a', [], ['a']));
+    }
+
+    public function testConfiguredAccountUrlMustBeAnOriginWithoutCredentialsOrBrowserAmbiguities(): void
+    {
+        foreach (['https://example.com', 'https://example.com/', 'http://localhost:8099', 'https://[::1]:8443/', 'https://пример.рф', 'https://mail_fixture.local:8443'] as $origin) {
+            self::assertTrue(\Itk\Cms\Mail\PublicUrl::isValid($origin), $origin);
+        }
+        foreach (['https://user:fixture@example.com', 'https://user@example.com', 'https://example.com\\other', 'https://example.com/path', 'https://example.com//', 'https://example.com?query', 'https://example.com#fragment', 'https://%65xample.com', 'https://example.com:0', 'https://example.com:65536', 'https://example.com:', 'https://example.com:invalid', 'https://example.com..', "https://example.com\n", "https://example.com\0"] as $value) {
+            self::assertFalse(\Itk\Cms\Mail\PublicUrl::isValid($value), $value);
+        }
+    }
+
+    public function testResetUpgradeDoesNothingWhenTheResetTableDoesNotExist(): void
+    {
+        $migration = new \Itk\Cms\Migrations\Version20261124110000($this->createStub(\Doctrine\DBAL\Connection::class), new \Psr\Log\NullLogger());
+        $migration->up(new \Doctrine\DBAL\Schema\Schema());
+        self::assertSame([], $migration->getSql());
     }
 }

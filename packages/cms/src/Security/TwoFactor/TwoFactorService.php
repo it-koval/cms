@@ -325,6 +325,9 @@ final class TwoFactorService
                 $this->em->refresh($row, LockMode::PESSIMISTIC_WRITE);
             }
             try {
+                if ($limited && null !== $row) {
+                    $this->mustNotBeLocked($row);
+                }
                 if ($limited && null !== $this->attempts && !$this->attempts->create($user->id)->consume()->isAccepted()) {
                     throw new ContentException($this->lockedMessage(), 429, ['code' => '2fa_locked', 'seconds' => self::LOCK_MINUTES * 60]);
                 }
