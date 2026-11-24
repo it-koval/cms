@@ -105,16 +105,16 @@ final class AdminApiTest extends WebTestCase
     }
 
     #[Test]
-    public function theListKeepsItsOldAnswerWithoutParametersAndAnswersAnEnvelopeWithThem(): void
+    public function theListAnswersAnEnvelopeWithAndWithoutParameters(): void
     {
         $collections = self::getContainer()->get(CollectionService::class);
         foreach ([['А', 3], ['Б', 1], ['В', 2]] as [$t, $n]) {
             $collections->create('test_trips', ['title' => $t, 'seats' => $n, 'state' => 'open']);
         }
 
-        $old = $this->api('GET', 'collections/test_trips');
-        self::assertTrue(\array_is_list($old));
-        self::assertCount(3, $old);
+        $default = $this->api('GET', 'collections/test_trips');
+        self::assertCount(3, $default['items']);
+        self::assertSame([3, 1, 3], [$default['total'], $default['page'], $default['perPage']]);
 
         $new = $this->api('GET', 'collections/test_trips?sort=-seats&perPage=2&filter[state]=open');
         self::assertSame(['А', 'В'], \array_column($new['items'], 'title'));

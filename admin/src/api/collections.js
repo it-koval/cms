@@ -25,7 +25,16 @@ const enc = encodeURIComponent
 const at = (col, id) => `collections/${enc(col)}/${enc(id)}`
 
 export const listCollections = (locale) => http.get('collections', loc(locale))
-export const list = (col, { q = '', status = '', locale, onlyTranslated = false } = {}) => http.get(`collections/${enc(col)}`, { q, status, ...loc(locale), onlyTranslated })
+export async function list(col, { q = '', status = '', locale, onlyTranslated = false } = {}) {
+  const rows = []
+  for (let page = 1; page <= 100; page++) {
+    const result = await http.get(`collections/${enc(col)}`, { q, status, ...loc(locale), onlyTranslated, page, perPage: 200 })
+    rows.push(...result.items)
+    if (!result.items.length || rows.length >= result.total) return rows
+  }
+  console.error(`Collections list exceeded 100 pages: ${col}`)
+  return rows
+}
 export const query = (col, { q = '', filter = {}, sort = '', page = 1, perPage, locale } = {}) => http.get(`collections/${enc(col)}`, { q, filter, sort, page, perPage, envelope: true, ...loc(locale) })
 export const get = (col, id, locale) => http.get(at(col, id), loc(locale))
 export const create = (col, data = {}) => http.post(`collections/${enc(col)}`, data)

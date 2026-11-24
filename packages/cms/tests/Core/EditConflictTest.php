@@ -183,7 +183,7 @@ final class EditConflictTest extends WebTestCase
         $list = 'collections/test_trips';
         $path = $list . '/' . $item['id'];
         $opened = $this->api('POST', $path . '/publish');
-        $row = \array_column($this->api('GET', $list), null, 'id')[$item['id']];
+        $row = \array_column($this->api('GET', $list)['items'], null, 'id')[$item['id']];
         self::assertSame($opened['version'], $row['version']);
         $edited = $this->api('PUT', $path, ['seats' => 9]);
 

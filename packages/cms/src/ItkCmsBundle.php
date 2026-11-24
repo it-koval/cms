@@ -8,6 +8,7 @@ use Doctrine\Migrations\Version\Comparator;
 use Itk\Cms\Admin\Theme\AdminTheme;
 use Itk\Cms\Admin\Theme\Color;
 use Itk\Cms\Content\PageService;
+use Itk\Cms\Doctrine\JsonFirstValue;
 use Itk\Cms\Doctrine\JsonGet;
 use Itk\Cms\Doctrine\JsonNumber;
 use Itk\Cms\Doctrine\JsonText;
@@ -542,7 +543,7 @@ final class ItkCmsBundle extends AbstractBundle
                 ],
                 'orm' => [
                     'dql' => [
-                        'string_functions' => ['JSON_TEXT' => JsonText::class, 'JSON_GET' => JsonGet::class, 'ITK_PHONE_DIGITS' => PhoneDigits::class],
+                        'string_functions' => ['JSON_TEXT' => JsonText::class, 'JSON_GET' => JsonGet::class, 'JSON_FIRST_VALUE' => JsonFirstValue::class, 'ITK_PHONE_DIGITS' => PhoneDigits::class],
                         'numeric_functions' => ['JSON_NUMBER' => JsonNumber::class],
                     ],
                     'mappings' => [

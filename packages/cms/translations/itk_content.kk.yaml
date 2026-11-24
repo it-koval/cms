@@ -6,6 +6,7 @@
 'content.query_sort_not_allowed': 'Бұл өріс бойынша сұрыптау мүмкін емес'
 'content.query_bad_field_or_language': 'Өріс немесе тіл дұрыс емес'
 'content.query_bad_filter_value': 'Сүзгі мәні дұрыс емес'
+'content.query_bad_status': 'status параметріне draft, published немесе missing мәнін енгізіңіз не бос қалдырыңыз.'
 'content.settings_required': 'Міндетті өрістерді толтырыңыз'
 'content.settings_chat_id_hint': 'Чат ID — -1001234567890 сияқты сан немесе @my_channel сияқты арна атауы'
 'content.settings_chat_ids_check': 'Чат ID-ларын тексеріңіз'

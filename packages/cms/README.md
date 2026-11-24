@@ -658,9 +658,9 @@ GET {admin}/api/collections/tours?q=altai&filter[state]=open&filter[start][from]
 → { items, total, page, perPage, facets: { state: { open: 4, full: 3 } }, metrics: [{ label, kind, value }] }
 ```
 
-- The response with `items` and `total` comes when the request has `page`, `perPage`, `sort`, `filter` or `envelope=1`. Without them, the response is a plain list of rows.
+- The response is always `{ items, total, page, perPage, facets, metrics }`, including a request without query parameters. See **Collection lists** in the JSON API section below.
 - `sort` takes comma-separated keys, and `-` means descending. You can sort by fields with `sortable()`, and by `status`, `updatedAt`, `createdAt`, `position`. Without `sort`, `defaultSort()` applies, otherwise the manual order.
-- `q` searches the fields with `searchable()`, or, without them, the title and the second line. A field hidden by `canSee()` can be neither filtered nor sorted (422).
+- With `filter`, `q` searches visible fields marked `searchable()` or defaults to the title and second line if none are marked. A field hidden by `canSee()` cannot be filtered or sorted (422).
 - `perPage` defaults to 50, at most 200. `facets` counts records by the values of the `Select`, `Multi`, `Toggle` and `status` filters across the whole collection.
 - Metrics (`Metric::count('Total')`, `Metric::count('Published', filter: ['status' => 'published'])`, `Metric::sum('Seats', 'seats')`) are computed over the whole collection, not over the current filter.
 - The server remembers filters and the list view per person: `GET|PUT|DELETE {admin}/api/prefs/{key}`. The key is up to 100 characters of letters, digits and `. _ : -`, and the value is up to 16 KB of JSON.
@@ -738,6 +738,24 @@ The bundle recognizes the admin panel by the route names `itk_admin_*` and `itk_
 - All admin responses get `X-Frame-Options: SAMEORIGIN`, `Content-Security-Policy: frame-ancestors 'self'`, `X-Content-Type-Options: nosniff` and `Referrer-Policy: same-origin`. A header set by the controller is not overwritten.
 
 The `Itk\Cms\Admin\AdminPath` service tells where the admin panel is (`base()`, `to('/api/me')`), taking the import `prefix` into account. Links in e-mails are built through it.
+
+#### Collection lists
+
+`GET /admin/api/collections/{col}` always returns `{ items, total, page, perPage, facets, metrics }`. `items` contains the current page of rows. `total` counts matching rows before pagination. Read `items` and request the remaining pages up to `ceil(total / perPage)`.
+
+| Query parameter | Meaning |
+|---|---|
+| `q` | Case-insensitive substring search. Without `filter`, searches the visible title and second line (`titleField()` and `subField()`). With `filter`, uses the collection's visible search fields |
+| `status` | Omit or leave empty to include all statuses. `draft` includes drafts and published versions with unpublished changes. `published` includes published versions without unpublished changes. `missing` includes records with no version in the selected language. Other values return `422` |
+| `onlyTranslated` | Boolean such as `1` or `true`. Excludes records with no version in the selected language before counting and pagination |
+| `filter` | Pass field filters such as `filter[state]=open`, `filter[level]=mid,hard`, or `filter[start][from]=2026-11-01`. `Multi` and `Relation` accept arrays. Date and number bounds are inclusive and either bound can be omitted. `filter[status]` matches the stored status |
+| `sort` | Comma-separated keys such as `-start,title`. A leading `-` means descending. Allowed keys are visible fields with `sortable()`, plus `status`, `updatedAt`, `createdAt` and `position`. Defaults to `defaultSort()` when configured, or the manual order |
+| `page` | Page number starting at 1, which is also the default |
+| `perPage` | Page size set by the collection's `perPage()` by default (50). Values above 200 are capped at 200 |
+| `locale` | Content language. Defaults to the main language. A code outside an explicitly configured list returns `422` |
+| `envelope` | Accepted for compatibility. Every value and omission return the same response shape |
+
+Filters, search, status and translation selection apply before counting and pagination. `facets` contains counts for the collection's `Select`, `Multi`, `Toggle` and `status` filters. `metrics` contains the configured metrics. Both are computed over the whole collection.
 
 #### Page and record translations
 

@@ -19,6 +19,7 @@ All notable changes to ITK CMS are recorded in this file. The format follows [Ke
 
 ### Changed
 
+- `GET /admin/api/collections/{col}` always returns the paginated object `{ items, total, page, perPage, facets, metrics }`. Search, filters, status and translation selection apply before counting and pagination. Published versions with unpublished changes are included in the `draft` filter. Clients must read `items` and request further pages. See [UPGRADE.md](UPGRADE.md#030).
 - IndexNow submits the affected paths for all configured languages. Critical CSS is generated for the published versions of those languages.
 - Publishing or removing a translation refreshes the cached HTML and ETag of the other versions of the same page.
 - On configured sites, live and preview templates translate text in the page's language. JSON-LD uses its HTML language tag.
