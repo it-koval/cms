@@ -1,4 +1,4 @@
 {%- set d = section.data -%}
 {%- if d.image.src|default('') != '' -%}
-    <p><img src="{{ media_url(d.image, 1280) }}" alt="{{ d.image.alt|default('') }}" loading="lazy"{{ itk_section_attrs(section) }}></p>
+    <p><img src="{{ itk_media_url(d.image, 1280) }}" alt="{{ d.image.alt|default('') }}" loading="lazy"{{ itk_section_attrs(section) }}></p>
 {%- endif -%}

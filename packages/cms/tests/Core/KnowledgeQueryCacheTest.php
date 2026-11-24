@@ -38,7 +38,7 @@ final class KnowledgeQueryCacheTest extends TestCase
         $db->method('transactional')->willReturnCallback(static fn (\Closure $run): mixed => $run());
         $db->method('fetchAllAssociative')->willReturn([]);
         $indexable = new IndexablePages($this->createStub(PageTranslationRepository::class), new SeoResolver($this->createStub(SeoRuleRepository::class), new RequestStack(), 'ru'), 'ru');
-        $search = new KnowledgeSearch($db, $embedder, new Schema('ru', [], [], [], ['top' => [], 'bottom' => []], [], [], [], [], []), $indexable, new KnowledgeBaseOptions(true, [], [], 'ru'), $cache);
+        $search = new KnowledgeSearch($db, $embedder, new Schema('ru', [], [], ['top' => [], 'bottom' => []], [], [], [], [], []), $indexable, new KnowledgeBaseOptions(true, [], [], 'ru'), $cache);
 
         $search->search('cache fixture first');
         $search->search('cache fixture first');

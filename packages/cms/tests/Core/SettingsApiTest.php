@@ -10,7 +10,7 @@ use Itk\Cms\Tests\Core\Fixture\ResourceKernelTestCase;
 use PHPUnit\Framework\Attributes\Test;
 use Twig\Environment;
 
-/** Настройки для кода (Itk\Cms\Settings\Settings): значение приводится к типу поля, Twig settings() — то же самое. */
+/** Настройки для кода (Itk\Cms\Settings\Settings): значение приводится к типу поля, Twig itk_settings() — то же самое. */
 final class SettingsApiTest extends ResourceKernelTestCase
 {
     private Settings $settings;
@@ -145,8 +145,8 @@ final class SettingsApiTest extends ResourceKernelTestCase
         $this->store->set('testSeats', '5');
         $twig = self::getContainer()->get(Environment::class);
 
-        self::assertSame('yes|6|запас', $twig->createTemplate("{{ settings('testOn') ? 'yes' : 'no' }}|{{ settings('testSeats') + 1 }}|{{ settings('testTitle', 'запас') }}")->render());
-        self::assertSame('Site', $twig->createTemplate("{{ settings('nope', 'Site') }}")->render());
-        self::assertSame('1', $twig->createTemplate('{{ settings().testOn ? 1 : 0 }}')->render());
+        self::assertSame('yes|6|запас', $twig->createTemplate("{{ itk_settings('testOn') ? 'yes' : 'no' }}|{{ itk_settings('testSeats') + 1 }}|{{ itk_settings('testTitle', 'запас') }}")->render());
+        self::assertSame('Site', $twig->createTemplate("{{ itk_settings('nope', 'Site') }}")->render());
+        self::assertSame('1', $twig->createTemplate('{{ itk_settings().testOn ? 1 : 0 }}')->render());
     }
 }

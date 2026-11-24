@@ -25,6 +25,8 @@ use Symfony\Component\Security\Core\Exception\AccessDeniedException;
  * What the admin does with the history (the API of GET|POST history/…): lists, one entry with what returning to it would change, the trash, and the return itself.
  * Every call checks the rights of the signed-in person: reading needs `view`, returning to a version and restoring from the trash need `edit` (there is no
  * separate right to create: a new page or record needs `edit` too) of the thing the entry belongs to (pages by template, `col:<key>`, `set:<group>`, `set:menus`). The fields a person may not see (canSee) are left out of what he reads.
+ *
+ * @internal
  */
 final class HistoryAdmin
 {

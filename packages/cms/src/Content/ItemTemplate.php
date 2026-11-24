@@ -8,8 +8,6 @@ namespace Itk\Cms\Content;
  * The text of a title/summary template of a repeater row (Repeater::itemTitle / itemSummary). Mirrors admin/src/utils/itemTemplate.js:
  * {key} is a value, an empty value takes the text next to it away (text between two values is printed only between two values that are there,
  * text before the first and after the last one only next to a value), several templates are tried in order.
- *
- * @internal
  */
 final class ItemTemplate
 {

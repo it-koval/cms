@@ -30,6 +30,8 @@ use Symfony\Component\DependencyInjection\Attribute\AutowireLocator;
  * itk:make:collection [key] [название]                               — класс коллекции с парой полей
  * itk:make:collection --from=форма.json                              — класс по описанию {key, title, fields: [{key, label, type, required}]}
  * itk:make:collection --from=table:имя_таблицы [--import] [--map=…]  — класс по существующей SQL-таблице и (по желанию) перенос её строк в записи.
+ *
+ * @internal
  */
 #[AsCommand(name: 'itk:make:collection', description: 'ops.cmd_make_collection_description')]
 final class MakeCollectionCommand extends AbstractMakeCommand

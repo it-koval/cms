@@ -9,7 +9,11 @@ use Doctrine\DBAL\Platforms\PostgreSQLPlatform;
 use Itk\Cms\I18n\I18n;
 use Itk\Cms\Migrations\Version20261105000000;
 
-/** The database answers, and it is the PostgreSQL the bundle is written for (16 and newer). @internal */
+/**
+ * The database answers, and it is the PostgreSQL the bundle is written for (16 and newer).
+ *
+ * @internal
+ */
 final class DatabaseHealthCheck implements HealthCheckInterface
 {
     public function __construct(private readonly Connection $db)

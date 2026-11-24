@@ -25,6 +25,8 @@ use Symfony\Component\RateLimiter\RateLimiterFactoryInterface;
  *  - a role with `require2fa` makes people without a second factor set it up before they get anywhere (gate() says `enrol`);
  *  - five wrong codes (or wrong passwords where a password is asked) lock the factor for 15 minutes; a code works once.
  * Nothing here writes a secret or a code to a log.
+ *
+ * @internal
  */
 final class TwoFactorService
 {

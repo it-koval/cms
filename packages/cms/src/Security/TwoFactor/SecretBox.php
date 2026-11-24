@@ -10,6 +10,8 @@ use Symfony\Component\DependencyInjection\Attribute\Autowire;
  * Keeps the TOTP secrets of people encrypted in the database (libsodium secretbox, XSalsa20-Poly1305). The key is derived from APP_SECRET with a context of its
  * own, so the same APP_SECRET does not give the same key to anything else. Changing APP_SECRET makes stored secrets unreadable: people enrol again.
  * It also signs the recovery codes (they are stored as keyed hashes, never as text).
+ *
+ * @internal
  */
 final class SecretBox
 {

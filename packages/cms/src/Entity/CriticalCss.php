@@ -17,6 +17,8 @@ use Doctrine\ORM\Mapping as ORM;
  *
  * CriticalCss\CriticalCssGenerator is the one writer (worker and console only); web requests only read it.
  * `inputs` lets the worker skip Chrome when the rendered HTML and the source CSS are byte-identical to the last ready run.
+ *
+ * @internal
  */
 #[ORM\Entity]
 #[ORM\Table(name: 'itk_critical_css')]

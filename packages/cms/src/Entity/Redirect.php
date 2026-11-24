@@ -9,7 +9,11 @@ use Doctrine\ORM\Mapping as ORM;
 use Itk\Cms\Repository\RedirectRepository;
 use Symfony\Component\Uid\Uuid;
 
-/** A redirect from an old address. Created by hand, by import, or automatically when a published address changes. */
+/**
+ * A redirect from an old address. Created by hand, by import, or automatically when a published address changes.
+ *
+ * @internal
+ */
 #[ORM\Entity(repositoryClass: RedirectRepository::class)]
 #[ORM\Table(name: 'itk_redirect')]
 #[ORM\UniqueConstraint(name: 'itk_redirect_from', columns: ['from_path'])]

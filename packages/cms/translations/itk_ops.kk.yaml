@@ -376,5 +376,9 @@
 'ops.doctor_seo_base_missing': 'Сайттың сенімді мекенжайы жоқ: hreflang және sitemap жасалмайды. itk_cms.public_url немесе сайт доменін орнатыңыз.'
 
 'ops.doctor_name_schema_warnings': 'Схема ескертулері'
+'ops.health_legacy_twig': 'Ескірген Twig функциялары'
+'ops.health_legacy_twig_ok': 'templates/ ішінде ескірген Twig функцияларының шақырулары жоқ'
+'ops.health_legacy_twig_found': 'Ескірген Twig функцияларының шақырулары: {count}. Оларды itk_ префиксі бар функциялармен ауыстырыңыз: {list}'
+'ops.health_legacy_twig_unreadable': 'Үлгілерді тексеру мүмкін болмады; файлдарға қолжетімділікті және Twig синтаксисін тексеріңіз: {list}'
 'ops.migration_page_created_description': 'Жасалу күндерін сақтап, itk_page.created_at атауын біріздендіру'
 'ops.migration_page_created_missing': 'itk_page кестесіндегі бастапқы жасалу күні бағаны табылмады.'

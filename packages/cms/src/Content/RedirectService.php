@@ -11,7 +11,11 @@ use Itk\Cms\Repository\RedirectRepository;
 use Itk\Cms\Support\Url;
 use Symfony\Component\HttpFoundation\Request;
 
-/** Redirects: the manual list (Настройки → Переадресации) and the automatic ones written when a published address changes. */
+/**
+ * Redirects: the manual list (Настройки → Переадресации) and the automatic ones written when a published address changes.
+ *
+ * @internal
+ */
 final class RedirectService
 {
     public function __construct(

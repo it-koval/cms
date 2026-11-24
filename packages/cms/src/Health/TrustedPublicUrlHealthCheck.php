@@ -7,7 +7,11 @@ namespace Itk\Cms\Health;
 use Itk\Cms\I18n\I18n;
 use Itk\Cms\Mail\PublicUrl;
 
-/** A configured origin is needed in HTTP, CLI and workers for account links. @internal */
+/**
+ * A configured origin is needed in HTTP, CLI and workers for account links.
+ *
+ * @internal
+ */
 final class TrustedPublicUrlHealthCheck implements HealthCheckInterface
 {
     public function __construct(private readonly PublicUrl $urls)

@@ -8,7 +8,11 @@ use Psr\Cache\CacheItemInterface;
 use Psr\Cache\CacheItemPoolInterface;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 
-/** Shared generations fence off a build that finishes after a committed change invalidated its snapshot. */
+/**
+ * Shared generations fence off a build that finishes after a committed change invalidated its snapshot.
+ *
+ * @internal
+ */
 final class CrawlerCacheGeneration
 {
     private const KEY = 'itk_crawler_generation_';

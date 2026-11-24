@@ -429,7 +429,7 @@ final class MediaLibraryTest extends WebTestCase
         $twig = self::getContainer()->get('twig');
         $image = ['src' => $m->path, 'alt' => 'Тест'];
 
-        $url = $twig->createTemplate("{{ media_url(img, 960, '16:9') }}|{{ media_url(img, 960) }}|{{ media_url(img) }}")->render(['img' => $image]);
+        $url = $twig->createTemplate("{{ itk_media_url(img, 960, '16:9') }}|{{ itk_media_url(img, 960) }}|{{ itk_media_url(img) }}")->render(['img' => $image]);
         [$ratio, $plain, $original] = \explode('|', $url);
         self::assertStringContainsString('/_v/w960-r16x9/', $ratio);
         self::assertStringContainsString('/_v/w960/', $plain);

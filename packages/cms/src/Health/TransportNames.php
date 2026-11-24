@@ -6,7 +6,11 @@ namespace Itk\Cms\Health;
 
 use Symfony\Contracts\Service\ServiceProviderInterface;
 
-/** Messenger registers each receiver by its configured name and by messenger.transport.<name>. */
+/**
+ * Messenger registers each receiver by its configured name and by messenger.transport.<name>.
+ *
+ * @internal
+ */
 final class TransportNames
 {
     /**

@@ -7,7 +7,11 @@ namespace Itk\Cms\Health;
 use Itk\Cms\I18n\I18n;
 use Itk\Cms\Schema\SchemaLint;
 
-/** Schema limits must be visible even when multilingual content is not configured. */
+/**
+ * Schema limits must be visible even when multilingual content is not configured.
+ *
+ * @internal
+ */
 final class SchemaHealthCheck implements HealthCheckInterface
 {
     public function __construct(private readonly SchemaLint $lint)

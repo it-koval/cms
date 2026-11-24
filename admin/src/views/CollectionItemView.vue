@@ -1,7 +1,7 @@
 <script setup>
 // Route /collections/:col/:id — one record of a collection (product, athlete, article, review, partner) as a form.
 // Left: tabs «Содержимое» / «Для поисковиков» (SchemaForm; articles use the RichText body). Right: how the record looks on the site, live.
-// Edits autosave to the draft (api.collections.update); «Опубликовать» lists the changes first; the AI agent's suggestions sit above the form.
+// Edits autosave to the draft (api.collections.update); «Опубликовать» lists the changes first.
 // Every save names the version of the record it found (baseVersion); a record changed meanwhile (an assistant, another person) stops the autosave and EditConflict asks: show the new version or keep my edits.
 // The view is NOT re-mounted when only :id changes: it watches route.params. The options matrix (record 'main') lives in the list route.
 // It works in the CONTENT LANGUAGE (app.locale, fixed per mount: the route is re-mounted when the language changes): the form edits that language's version of the
@@ -27,7 +27,6 @@ import ActionDialog from '@/components/collections/actions/ActionDialog.vue'
 import { useActions } from '@/components/collections/actions/useActions.js'
 import Popover from '@/components/ui/Popover.vue'
 import HistoryDrawer from '@/components/history/HistoryDrawer.vue'
-import ProposalBlock from '@/components/collections/ProposalBlock.vue'
 import PublishPopover from '@/components/collections/PublishPopover.vue'
 import { isConflict, useDraftSave } from '@/components/collections/useDraftSave.js'
 import EditConflict from '@/components/ui/EditConflict.vue'
@@ -67,7 +66,6 @@ const translated = ref(true) // false: the record has no version in the content 
 const summary = ref(null) // api `locales`: { [code]: { status, changed, changes, title, updatedAt } | null } for the language select
 const langSel = ref(null)
 const startBusy = ref('') // 'copy' | 'blank' while a translation is being made
-const proposals = ref([])
 const tab = ref('')
 const form = ref(null)
 const quiet = ref(false) // a new, never published record shows no red «required» errors until the first publish attempt
@@ -159,7 +157,7 @@ async function load({ silent = false, focus = false } = {}) {
   if (!silent) loading.value = true
   const saves = saver.saves()
   try {
-    const [res, props] = await Promise.all([api.collections.get(col, id, LOC), api.proposals.list({ locale: LOC }).catch(() => [])])
+    const res = await api.collections.get(col, id, LOC)
     if (my !== seq) return
     summary.value = res.locales
     translated.value = res.translated
@@ -167,7 +165,6 @@ async function load({ silent = false, focus = false } = {}) {
     saver.setVersion(res.item && res.item.version, saves)
     published.value = res.published
     if (!silent) quiet.value = !res.published
-    proposals.value = res.translated ? props.filter((p) => p.kind === 'collection' && p.collection === col && p.itemId === id) : []
     notFound.value = false
     failed.value = ''
   } catch (e) {
@@ -274,14 +271,13 @@ function revertAddr() {
   onEdit({ ...draft.value, [addrField.value.k]: published.value[addrField.value.k] })
   toast.show(t('collections.iv_change_undone'))
 }
-const itemProposals = computed(() => (canEdit.value && activeTab.value && activeTab.value.key === tabs.value[0].key ? proposals.value : []))
 const awaiting = computed(() => (draft.value && draft.value.awaiting) || null) // { by, at } while the version waits for somebody to publish it
 const returned = computed(() => (draft.value && draft.value.returned) || null) // { by, at } after a publisher sent it back to the author
 
 /* ---------- editing ---------- */
 function onEdit(next) {
   if (!canEdit.value) return
-  // while a write that ends in a reload is on its way (publish, submit, return, revert, accepting a proposal, deleting) the form stands still (inert): its answer reloads the record, and what was changed meanwhile would be lost. What still reaches here
+  // while a write that ends in a reload is on its way (publish, submit, return, revert, deleting) the form stands still (inert): its answer reloads the record, and what was changed meanwhile would be lost. What still reaches here
   // (the «Отменить» of a toast) is refused aloud: applying it over the reloaded record would be a guess at what the person wants published
   if (locked.value) { toast.error(t('collections.wait_busy')); return }
   draft.value = next
@@ -511,36 +507,6 @@ useLocaleGuard(async () => {
 })
 const pickLang = (code) => switchContentLocale(code)
 
-/* ---------- AI agent ---------- */
-const propBusy = ref('')
-async function acceptProposal(p) {
-  propBusy.value = p.id
-  working.value = true
-  try {
-    if (!(await settled())) return // our own edits first: the agent's value is applied on top of the saved draft
-    await api.proposals.accept(p.id)
-    await load({ silent: true })
-    refreshCounters()
-    toast.show(t('collections.iv_accepted'))
-  } catch (e) {
-    toast.error(e.message || t('collections.iv_accept_failed'))
-  } finally {
-    working.value = false
-    propBusy.value = ''
-  }
-}
-async function rejectProposal(p) {
-  propBusy.value = p.id
-  try {
-    await api.proposals.reject(p.id)
-    proposals.value = proposals.value.filter((x) => x.id !== p.id)
-    toast.show(t('collections.iv_rejected'))
-  } catch (e) {
-    toast.error(e.message || t('collections.iv_reject_failed'))
-  } finally {
-    propBusy.value = ''
-  }
-}
 </script>
 
 <template>
@@ -617,7 +583,6 @@ async function rejectProposal(p) {
             >{{ tb.label }}<span v-if="tabErrors[tb.key]" class="cl-dot" :title="t('collections.iv_tab_errors')" /></button>
           </div>
           <div id="cl-panel" :class="['cl-panel', { 'ro-zone': !canEdit }]" :inert="!canEdit || locked" role="tabpanel" :aria-labelledby="tabs.length > 1 ? 'cl-tab-' + activeTab.key : undefined">
-            <ProposalBlock :items="itemProposals" :fields="fields" :busy-id="propBusy" @accept="acceptProposal" @reject="rejectProposal" />
             <AddressField
               v-if="addrField" :key="'adr:' + activeTab.key" :field="addrField" :path="addrField.k" :model-value="draft[addrField.k]" top :changed="addrChanged" :error="addrError"
               :locale="LOC" :mode="addrField.k === 'slug' ? 'slug' : 'url'" @update:model-value="setAddr" @revert="revertAddr"

@@ -12,6 +12,8 @@ use Itk\Cms\Repository\MenuAreaRepository;
  * A menu area. The areas declared in the schema are created by itk:install; the client can add more in Настройки → Меню.
  *
  * items: { ru: [{ _id, label, link: { kind: 'page'|'url'|'modal', page?, url? }, children?: [] }] }
+ *
+ * @internal
  */
 #[ORM\Entity(repositoryClass: MenuAreaRepository::class)]
 #[ORM\Table(name: 'itk_menu_area')]

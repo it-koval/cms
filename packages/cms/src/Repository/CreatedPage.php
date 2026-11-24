@@ -10,7 +10,11 @@ use Itk\Cms\Entity\MediaFile;
 use Itk\Cms\Entity\Request;
 use Itk\Cms\I18n\I18n;
 
-/** A page of a filtered list ordered by creation time and id, newest first. @internal */
+/**
+ * A page of a filtered list ordered by creation time and id, newest first.
+ *
+ * @internal
+ */
 final class CreatedPage
 {
     /**

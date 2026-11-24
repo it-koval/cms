@@ -13,7 +13,11 @@ use Itk\Cms\Field\FieldInterface;
 use Itk\Cms\Schema\Key;
 use Itk\Cms\Schema\SchemaBuilder;
 
-/** Turns a resource class into the same definitions $s->collection() / ->template() / ->section() / ->settings() make. */
+/**
+ * Turns a resource class into the same definitions $s->collection() / ->template() / ->section() / ->settings() make.
+ *
+ * @internal
+ */
 final class ResourceApplier
 {
     public static function apply(SchemaBuilder $b, ResourceInterface $r): void

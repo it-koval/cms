@@ -13,6 +13,8 @@ use Itk\Cms\Support\Json;
 /**
  * Field-level rights, on the server: a field with canSee() the person fails is left out of what he reads and what he writes; a field
  * with readonly() cannot be written by him. The system (console, imports, queue) is not limited.
+ *
+ * @internal
  */
 final class FieldAccess
 {

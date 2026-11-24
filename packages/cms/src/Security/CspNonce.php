@@ -6,7 +6,11 @@ namespace Itk\Cms\Security;
 
 use Symfony\Component\HttpFoundation\Request;
 
-/** The site sets this trusted per-response value and uses the same value in its CSP and itk_stylesheets({nonce: …}). @internal */
+/**
+ * The site sets this trusted per-response value and uses the same value in its CSP and itk_stylesheets({nonce: …}).
+ *
+ * @internal
+ */
 final class CspNonce
 {
     public const ATTRIBUTE = 'csp_nonce';

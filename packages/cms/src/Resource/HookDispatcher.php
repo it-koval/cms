@@ -27,6 +27,8 @@ use Symfony\Contracts\Service\ResetInterface;
  * Tells the site what happens to its records: the Symfony event first (listeners), then the method of the resource class.
  * PageService and CollectionService call it around create / update / delete / publish / unpublish and their mass variants.
  * Inside deferAfter() the `after…` hooks and events wait until the work is done: a mass operation runs them only after its transaction is committed.
+ *
+ * @internal
  */
 final class HookDispatcher implements ResetInterface
 {

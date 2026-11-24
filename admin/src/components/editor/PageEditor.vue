@@ -144,16 +144,6 @@ function openTpl(o = {}) {
 function showListing() {
   if (preview.value) preview.value.showEnd()
 }
-function openAi(id) {
-  selectSec(id, { form: true, focus: 'head' })
-  setTimeout(() => sidebar.value && sidebar.value.showAgent(), 250)
-}
-function gotoAgent() {
-  const p = ed.liveProps[0]
-  if (!p) return
-  selectSec(p.sectionId, { form: true, focus: 'head', scroll: 'nearest' })
-  setTimeout(() => sidebar.value && sidebar.value.showAgent(), 250)
-}
 /** «Предыдущая / Следующая секция» in the form header. */
 function stepSection(dir) {
   const k = ed.indexOf(ed.sel) + dir
@@ -270,7 +260,7 @@ async function openPreview() {
 const openSettings = () => { settingsOpen.value = true }
 
 provide(EDITOR_UI_KEY, {
-  selectSec, openForm, openTpl, showListing, openAi, goSb, collapseSb, reopenSb, toggleFull, setPane, toggleSb, stepSection, gotoChange, gotoError, gotoAgent,
+  selectSec, openForm, openTpl, showListing, goSb, collapseSb, reopenSb, toggleFull, setPane, toggleSb, stepSection, gotoChange, gotoError,
   moveSec, dupSec, delSec, toggleHide, addAt, pickType, step, setDevice, openPreview, openSettings,
 })
 

@@ -36,19 +36,19 @@ use Twig\Markup;
  *   itk_field_attrs(section|page, 'image') data-f / data-sec attributes of a non-text field (preview only, else '')
  *   itk_section_attrs(section)            attributes of a section's root element (preview only, else '')
  *   itk_section_class(section)            'chg' when the section differs from the published one (preview only)
- *   render_sections(page)                 every visible section through templates/sections/<type>.html.twig (or the template() of a section class)
- *   menu('header')                        items of a menu area: [{ label, kind, url, active, children }]
- *   settings('phone') / settings()        a site setting of the current language / all of them
- *   media_url(image[, width[, ratio]])    address of an image value ({ src, alt }) or of a path; with a width: of its WebP variant of that width;
+ *   itk_render_sections(page)                 every visible section through templates/sections/<type>.html.twig (or the template() of a section class)
+ *   itk_menu('header')                        items of a menu area: [{ label, kind, url, active, children }]
+ *   itk_settings('phone') / itk_settings()        a site setting of the current language / all of them
+ *   itk_media_url(image[, width[, ratio]])    address of an image value ({ src, alt }) or of a path; with a width: of its WebP variant of that width;
  *                                         with a ratio ('16:9'): of the frame of that ratio (the one saved in the media editor, else around the focal point)
  *                                         a ratio that is neither in itk_cms.images.ratios nor saved for the file is not an error: the whole picture is used and a warning is logged
- *   media_width(image)                    width of the original file in px (null for other addresses): for a picture the layout shows at its own size
- *   media_srcset(image[, maxWidth[, ratio]])  value of srcset: the WebP variants of the image (empty for GIF, SVG and other addresses), same ratio rules
- *   media_ratio(width, height)            the ratio key of a fixed slot ('14:5' for 700, 250; 219:103 is given as the nearest 17:8), to pass as the ratio above
+ *   itk_media_width(image)                    width of the original file in px (null for other addresses): for a picture the layout shows at its own size
+ *   itk_media_srcset(image[, maxWidth[, ratio]])  value of srcset: the WebP variants of the image (empty for GIF, SVG and other addresses), same ratio rules
+ *   itk_media_ratio(width, height)            the ratio key of a fixed slot ('14:5' for 700, 250; 219:103 is given as the nearest 17:8), to pass as the ratio above
  *   itk_img(image, { sizes, class, width, height, loading, alt, src_width, max_width, attrs, ratio })   a whole <img> with src, srcset and the image's alt;
  *                                         where the server makes AVIF it is wrapped in <picture> with an AVIF <source>
- *   page_url(link|page|id)                address behind a link value, a page or a page id
- *   listing(page)                         the published pages (or collection records) a page lists
+ *   itk_page_url(link|page|id)                address behind a link value, a page or a page id
+ *   itk_listing(page)                         the published pages (or collection records) a page lists
  *   itk_collection('ambassadors')         the published records of a collection in site order
  *   itk_collection('tours', {where, sort, limit, offset})   the same, filtered, sorted and cut by the database (only published, the same for everyone)
  *   itk_pages({template, parent, limit, sort})              the published pages of a template / under a page: [{ id, parentId, template, title, url, seo, fields, … }]

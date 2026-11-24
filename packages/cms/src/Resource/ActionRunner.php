@@ -13,7 +13,11 @@ use Itk\Cms\Schema\Schema;
 use Itk\Cms\Security\Access;
 use Symfony\Component\Security\Core\Exception\AccessDeniedException;
 
-/** Runs an action of a collection for the current person: checks that it is his to run, finds the records, checks the modal values, calls the handler. */
+/**
+ * Runs an action of a collection for the current person: checks that it is his to run, finds the records, checks the modal values, calls the handler.
+ *
+ * @internal
+ */
 final class ActionRunner
 {
     public const MAX_RECORDS = 500;

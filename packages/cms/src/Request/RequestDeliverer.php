@@ -32,6 +32,8 @@ use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
  * The next worker on the same channel sees the committed outcome before deciding whether to send. Events are dispatched after that commit.
  * A long request is several messages (MessageParts), a second or more apart, and is delivered only when all went out. A retry sends all of them
  * from the first: the chat may then see the first ones again, but a request that lacks its end is never taken for delivered.
+ *
+ * @internal
  */
 final class RequestDeliverer
 {

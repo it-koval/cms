@@ -127,13 +127,13 @@ final class StrictModeTest extends KernelTestCase
     public function anUnknownSectionTypeThrowsInStrictAndIsLoggedWithout(): void
     {
         self::bootKernel();
-        $message = $this->thrown('{{ render_sections(page) }}', ['page' => ['sections' => [$this->section('old_slider')], 'h1Id' => null]]);
+        $message = $this->thrown('{{ itk_render_sections(page) }}', ['page' => ['sections' => [$this->section('old_slider')], 'h1Id' => null]]);
         self::assertStringContainsString('«old_slider»', $message);
         self::assertStringContainsString('hero', $message);
         self::ensureKernelShutdown();
 
         self::bootKernel(['itk' => ['strict' => false]]);
-        self::assertSame('', $this->render('{{ render_sections(page) }}', ['page' => ['sections' => [$this->section('old_slider')], 'h1Id' => null]]));
+        self::assertSame('', $this->render('{{ itk_render_sections(page) }}', ['page' => ['sections' => [$this->section('old_slider')], 'h1Id' => null]]));
         self::assertStringContainsString('«old_slider»', $this->logger()->messages('warning')[0] ?? '');
     }
 
@@ -142,18 +142,18 @@ final class StrictModeTest extends KernelTestCase
     {
         self::bootKernel();
 
-        self::assertSame('', $this->render('{{ render_sections(page) }}', ['page' => ['sections' => [['hidden' => true] + $this->section('old_slider')], 'h1Id' => null]]));
+        self::assertSame('', $this->render('{{ itk_render_sections(page) }}', ['page' => ['sections' => [['hidden' => true] + $this->section('old_slider')], 'h1Id' => null]]));
     }
 
     #[Test]
     public function aSectionWithoutATemplateThrowsInStrictAndIsLoggedWithout(): void
     {
         self::bootKernel();
-        self::assertStringContainsString('sections/ghost.html.twig', $this->thrown('{{ render_sections(page) }}', ['page' => ['sections' => [$this->section('ghost')], 'h1Id' => null]]));
+        self::assertStringContainsString('sections/ghost.html.twig', $this->thrown('{{ itk_render_sections(page) }}', ['page' => ['sections' => [$this->section('ghost')], 'h1Id' => null]]));
         self::ensureKernelShutdown();
 
         self::bootKernel(['itk' => ['strict' => false]]);
-        self::assertSame('', $this->render('{{ render_sections(page) }}', ['page' => ['sections' => [$this->section('ghost')], 'h1Id' => null]]));
+        self::assertSame('', $this->render('{{ itk_render_sections(page) }}', ['page' => ['sections' => [$this->section('ghost')], 'h1Id' => null]]));
         self::assertStringContainsString('sections/ghost.html.twig', $this->logger()->messages('warning')[0] ?? '');
     }
 
@@ -163,7 +163,7 @@ final class StrictModeTest extends KernelTestCase
         self::bootKernel();
         self::getContainer()->get(RenderState::class)->preview = true;
         try {
-            $out = $this->render('{{ render_sections(page) }}{{ itk_field(section, "nokey") }}', ['page' => ['sections' => [$this->section('ghost'), $this->section('old_slider')], 'h1Id' => null], 'section' => $this->section('hero')]);
+            $out = $this->render('{{ itk_render_sections(page) }}{{ itk_field(section, "nokey") }}', ['page' => ['sections' => [$this->section('ghost'), $this->section('old_slider')], 'h1Id' => null], 'section' => $this->section('hero')]);
         } finally {
             self::getContainer()->get(RenderState::class)->reset();
         }

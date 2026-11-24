@@ -23,6 +23,8 @@ use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
  * When the queue itself is unavailable the request is marked «не доставлена» at once (itk:requests:resend or «Отправить снова» sends it later).
  * A site without a connected Telegram (or with it switched off) queues nothing: the request stays «pending», a queue that is down is not its failure.
  * Other notifications do not go to Telegram.
+ *
+ * @internal
  */
 final class TelegramChannel implements NotificationChannelInterface
 {

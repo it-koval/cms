@@ -5,7 +5,7 @@ import View from './CollectionItemView.vue'
 
 const mocks = vi.hoisted(() => ({ get: vi.fn(), createTranslation: vi.fn(), removeTranslation: vi.fn(), remove: vi.fn(), update: vi.fn(), confirm: vi.fn(), can: vi.fn(), replace: vi.fn(), toastShow: vi.fn(), actionBusy: { value: false }, guard: null, leave: null, routeUpdate: null, route: null, app: null, cfg: null }))
 vi.mock('vue-router', () => ({ useRoute: () => mocks.route, useRouter: () => ({ replace: mocks.replace }), onBeforeRouteLeave: (fn) => { mocks.leave = fn }, onBeforeRouteUpdate: (fn) => { mocks.routeUpdate = fn } }))
-vi.mock('@/api/index.js', () => ({ api: { collections: mocks, proposals: { list: async () => [] } }, isConflict: () => false, whileClosing: (fn) => fn() }))
+vi.mock('@/api/index.js', () => ({ api: { collections: mocks }, isConflict: () => false, whileClosing: (fn) => fn() }))
 vi.mock('@/stores/app.js', async () => {
   const { reactive } = await import('vue')
   mocks.app = reactive({ locale: 'kk', languages: { main: 'ru', list: [{ code: 'ru' }, { code: 'kk' }] }, user: null })

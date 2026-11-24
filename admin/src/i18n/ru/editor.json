@@ -102,16 +102,6 @@
   "editor.outline_legend_sel": "Секция, которую вы правите",
   "editor.form_hidden": "Секция скрыта: посетители её не видят.",
   "editor.form_show": "Показать на сайте",
-  "editor.agent_offered": {
-    "one": "ИИ-агент предложил {count} правку",
-    "few": "ИИ-агент предложил {count} правки",
-    "many": "ИИ-агент предложил {count} правок",
-    "other": "ИИ-агент предложил {count} правки"
-  },
-  "editor.agent_accept_all": "Принять все",
-  "editor.agent_note": "{note}. Пока вы не примете, на сайте и в черновике ничего не меняется.",
-  "editor.agent_accept": "Принять",
-  "editor.agent_reject": "Отклонить",
   "editor.revert_title": "Отменить все правки?",
   "editor.revert_title_multi": "Отменить все правки в {ver}?",
   "editor.revert_msg": "Страница вернётся к тому, что сейчас на сайте. Все неопубликованные правки на ней пропадут, вернуть их нельзя.",
@@ -256,18 +246,6 @@
   "editor.pane_form": "Форма",
   "editor.preview": "Предпросмотр",
   "editor.preview_full": "Предпросмотр на весь экран",
-  "editor.ai_offered_aria": {
-    "one": "ИИ предложил {count} правку",
-    "few": "ИИ предложил {count} правки",
-    "many": "ИИ предложил {count} правок",
-    "other": "ИИ предложил {count} правки"
-  },
-  "editor.ai_btn": {
-    "one": "ИИ: {count} правка",
-    "few": "ИИ: {count} правки",
-    "many": "ИИ: {count} правок",
-    "other": "ИИ: {count} правки"
-  },
   "editor.return_to_author": "Вернуть автору",
   "editor.sent_already": "Версия уже отправлена: её проверят и опубликуют",
   "editor.publish": "Опубликовать",
@@ -295,14 +273,6 @@
   "editor.undo_restore": "вернуть",
   "editor.toast_hidden": "Секция скрыта. Не забудьте опубликовать",
   "editor.toast_shown": "Секция снова показывается",
-  "editor.toast_accepted": "Правка принята и лежит в черновике: на сайт попадёт после публикации",
-  "editor.toast_rejected": "Правка отклонена",
-  "editor.toast_accepted_all": {
-    "one": "Принято правок: {count}. Они лежат в черновике: на сайт попадут после публикации",
-    "few": "Принято правок: {count}. Они лежат в черновике: на сайт попадут после публикации",
-    "many": "Принято правок: {count}. Они лежат в черновике: на сайт попадут после публикации",
-    "other": "Принято правок: {count}. Они лежат в черновике: на сайт попадут после публикации"
-  },
   "editor.toast_published": "Опубликовано",
   "editor.toast_published_multi": "{ver} опубликована",
   "editor.err_publish": "Не удалось опубликовать",

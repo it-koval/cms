@@ -7,7 +7,7 @@ namespace @@namespace@@;
 use Itk\Cms\Field\Text;
 use Itk\Cms\Resource\SettingsResource;
 
-/** Read in code with Itk\Cms\Settings\Settings::string('@@example@@'), in Twig with settings('@@example@@'). */
+/** Read in code with Itk\Cms\Settings\Settings::string('@@example@@'), in Twig with itk_settings('@@example@@'). */
 final class @@class@@ extends SettingsResource
 {
     public function key(): string

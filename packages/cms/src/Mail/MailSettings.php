@@ -19,6 +19,8 @@ use Itk\Cms\Security\TwoFactor\SecretBox;
  * `passwordSet: true|false`. On save an empty or absent `password` keeps the current one; `clearPassword: true` removes it.
  * The saved password stays bound to the server it was saved for: when the host or the login changes, a new password must come with the change (422 otherwise),
  * so nobody who may edit the settings can point the saved password at a server of his own.
+ *
+ * @internal
  */
 final class MailSettings
 {

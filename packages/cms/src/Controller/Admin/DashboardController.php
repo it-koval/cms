@@ -16,7 +16,7 @@ use Symfony\Component\Security\Core\Exception\AccessDeniedException;
  * «Сегодня». GET dashboard →
  *   newRequests   latest 8 requests with work status «new»   newRequestCount   all new requests   failedCount   requests not delivered to Telegram or MAX
  *   unpublished   [{ kind: 'page'|'item', id, locale, title, pageKind, template?|collection?, draft, changes, updatedAt, migrated?, awaiting, to }]  newest first
- *   awaiting      the same rows that wait for a publisher, + by, at                           proposals   [] (no AI in this iteration)
+ *   awaiting      the same rows that wait for a publisher, + by, at
  *   recent        [{ label, to, at }] last published, newest first (8)                        languages   { main, list }
  *   locales       { code: { pages: { count, unpublished }, collections: { count, unpublished } } } enabled languages, accessible versions only
  * A person sees only what his rights show: requests, pages (by template) and collections.

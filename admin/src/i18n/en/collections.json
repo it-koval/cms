@@ -102,14 +102,6 @@
   "collections.act_done": "Done",
   "collections.act_failed": "Could not run the action",
   "collections.draft_save_failed": "Could not save",
-  "collections.pr_label": "AI agent suggestions",
-  "collections.pr_header": {
-    "one": "The AI agent suggested {count} edit",
-    "other": "The AI agent suggested {count} edits"
-  },
-  "collections.pr_note": "{note}. Nothing changes until you accept it.",
-  "collections.pr_accept": "Accept",
-  "collections.pr_reject": "Reject",
   "collections.pp_send": "Send for publication",
   "collections.pp_title": "What will be published",
   "collections.pp_count": {
@@ -309,10 +301,6 @@
   "collections.iv_delete_version_text": "“{title}” will stop being shown {site}. The versions in other languages stay. This cannot be undone.",
   "collections.iv_delete_version_text_page": "“{title}” and its page will stop being shown {site}. The versions in other languages stay. This cannot be undone.",
   "collections.iv_version_deleted": "The {version} was deleted",
-  "collections.iv_accepted": "The edit was accepted and is in the draft: it will reach the site after publishing",
-  "collections.iv_accept_failed": "Could not accept the edit",
-  "collections.iv_rejected": "The edit was rejected",
-  "collections.iv_reject_failed": "Could not reject it",
   "collections.iv_not_found": "There is no such record",
   "collections.iv_not_loaded": "The record did not load",
   "collections.iv_deleted_hint": "It may have been deleted. Go back to the list.",

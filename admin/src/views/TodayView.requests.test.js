@@ -13,7 +13,7 @@ vi.mock('@/components/today/YandexWebmasterCard.vue', () => ({ default: { render
 clientComponent(Today, source)
 let mounted, host, state, records
 const tick = async () => { for (let i = 0; i < 6; i++) { await Promise.resolve(); await nextTick() } }
-const dashboard = (rows = records) => ({ newRequests: rows.slice(0, 8), newRequestCount: rows.length, unpublished: [], proposals: [], recent: [], awaiting: [] })
+const dashboard = (rows = records) => ({ newRequests: rows.slice(0, 8), newRequestCount: rows.length, unpublished: [], recent: [], awaiting: [] })
 const envelope = (rows) => ({ items: rows.slice(0, 8), total: rows.length, page: 1, perPage: 8 })
 const deferred = () => { let resolve; const promise = new Promise((done) => { resolve = done }); return { promise, resolve } }
 beforeEach(() => {

@@ -376,5 +376,9 @@
 'ops.doctor_seo_base_missing': 'No trusted site URL: hreflang and sitemap are not generated. Set itk_cms.public_url or the site domain.'
 
 'ops.doctor_name_schema_warnings': 'Schema warnings'
+'ops.health_legacy_twig': 'Legacy Twig functions'
+'ops.health_legacy_twig_ok': 'No legacy Twig function calls in templates/'
+'ops.health_legacy_twig_found': 'Legacy Twig function calls: {count}. Replace them with itk_ prefixed functions: {list}'
+'ops.health_legacy_twig_unreadable': 'Could not check templates; check file access and Twig syntax: {list}'
 'ops.migration_page_created_description': 'Normalize itk_page.created_at without changing creation dates'
 'ops.migration_page_created_missing': 'The original itk_page creation date column was not found.'

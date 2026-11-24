@@ -7,7 +7,11 @@ namespace Itk\Cms\Health;
 use Itk\Cms\I18n\I18n;
 use Itk\Cms\Media\ImageVariants;
 
-/** Whether GD can generate WebP image variants. @internal */
+/**
+ * Whether GD can generate WebP image variants.
+ *
+ * @internal
+ */
 final class WebpHealthCheck implements HealthCheckInterface
 {
     public function __construct(private readonly ImageVariants $images)

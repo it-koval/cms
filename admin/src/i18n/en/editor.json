@@ -96,14 +96,6 @@
   "editor.outline_legend_sel": "The section you are editing",
   "editor.form_hidden": "The section is hidden: visitors cannot see it.",
   "editor.form_show": "Show on the site",
-  "editor.agent_offered": {
-    "one": "The AI agent suggested {count} edit",
-    "other": "The AI agent suggested {count} edits"
-  },
-  "editor.agent_accept_all": "Accept all",
-  "editor.agent_note": "{note}. Until you accept it, nothing changes on the site or in the draft.",
-  "editor.agent_accept": "Accept",
-  "editor.agent_reject": "Reject",
   "editor.revert_title": "Discard all edits?",
   "editor.revert_title_multi": "Discard all edits in the {ver}?",
   "editor.revert_msg": "The page will go back to what is on the site now. All unpublished edits on it will be lost and cannot be restored.",
@@ -234,14 +226,6 @@
   "editor.pane_form": "Form",
   "editor.preview": "Preview",
   "editor.preview_full": "Full-screen preview",
-  "editor.ai_offered_aria": {
-    "one": "The AI suggested {count} edit",
-    "other": "The AI suggested {count} edits"
-  },
-  "editor.ai_btn": {
-    "one": "AI: {count} edit",
-    "other": "AI: {count} edits"
-  },
   "editor.return_to_author": "Return to author",
   "editor.sent_already": "The version has already been sent: it will be reviewed and published",
   "editor.publish": "Publish",
@@ -269,12 +253,6 @@
   "editor.undo_restore": "undo",
   "editor.toast_hidden": "The section is hidden. Do not forget to publish",
   "editor.toast_shown": "The section is shown again",
-  "editor.toast_accepted": "The edit was accepted and is in the draft: it will reach the site after publishing",
-  "editor.toast_rejected": "The edit was rejected",
-  "editor.toast_accepted_all": {
-    "one": "{count} edit accepted. It is in the draft: it will reach the site after publishing",
-    "other": "{count} edits accepted. They are in the draft: they will reach the site after publishing"
-  },
   "editor.toast_published": "Published",
   "editor.toast_published_multi": "The {ver} was published",
   "editor.err_publish": "Could not publish",

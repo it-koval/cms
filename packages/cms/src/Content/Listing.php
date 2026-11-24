@@ -9,7 +9,11 @@ use Itk\Cms\Repository\PageTranslationRepository;
 use Itk\Cms\Schema\Schema;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 
-/** The list a page fills by itself (template->listing): published pages below it, or the published records of a collection. */
+/**
+ * The list a page fills by itself (template->listing): published pages below it, or the published records of a collection.
+ *
+ * @internal
+ */
 final class Listing
 {
     public function __construct(

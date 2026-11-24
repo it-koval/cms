@@ -18,6 +18,8 @@ use Itk\Cms\Repository\RevisionRepository;
  *           a deleted page { page: { id, parentId, position, template, createdAt }, versions: { locale: { draft, published, status, … } } }
  *           a deleted record { position, parentId, createdAt, translations: { locale: { draft, published, status, … } } }
  * summary:  the changes against the entry before: [{ kind, name?, label, val, old, key?, sec? }] (the format of ChangeDetector)
+ *
+ * @internal
  */
 #[ORM\Entity(repositoryClass: RevisionRepository::class)]
 #[ORM\Table(name: 'itk_revision')]

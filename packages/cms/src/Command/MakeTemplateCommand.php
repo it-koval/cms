@@ -9,6 +9,7 @@ use Itk\Cms\Generator\Naming;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Input\InputInterface;
 
+/** @internal */
 #[AsCommand(name: 'itk:make:template', description: 'ops.cmd_make_template_description')]
 final class MakeTemplateCommand extends AbstractMakeCommand
 {

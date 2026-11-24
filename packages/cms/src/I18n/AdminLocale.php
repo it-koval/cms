@@ -19,6 +19,8 @@ use Symfony\Contracts\Translation\TranslatorInterface;
  *   console, queue worker                  framework.default_locale; a letter to one person runs in his language (runFor), letters about requests and Telegram in admin_locale (runDefault)
  *
  * AdminLocaleListener applies this to requests and queue messages. run*() put the language back in any case, so a message never leaves its language to the next one.
+ *
+ * @internal
  */
 final class AdminLocale
 {

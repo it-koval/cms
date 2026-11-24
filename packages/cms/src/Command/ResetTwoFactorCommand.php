@@ -13,7 +13,11 @@ use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
 
-/** For the case nobody can sign in: the only administrator lost the phone and the recovery codes. He sets the second factor up again at the next sign-in. */
+/**
+ * For the case nobody can sign in: the only administrator lost the phone and the recovery codes. He sets the second factor up again at the next sign-in.
+ *
+ * @internal
+ */
 #[AsCommand(name: 'itk:user:reset-2fa', description: 'ops.cmd_reset_2fa_description')]
 final class ResetTwoFactorCommand extends Command
 {

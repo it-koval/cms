@@ -14,6 +14,7 @@ use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
 
+/** @internal */
 #[AsCommand(name: 'itk:media:warm', description: 'ops.cmd_warm_media_description')]
 final class WarmMediaCommand extends Command
 {

@@ -10,7 +10,6 @@ vi.mock('@/api/index.js', async () => {
         getDraft, publish, createTranslation, removeTranslation, list: async () => [], submit: vi.fn(), returnToAuthor: vi.fn(), revert: vi.fn(),
         saveDraft: (id, locale, data, baseVersion) => saveDraft(id, locale, data, baseVersion),
       },
-      proposals: { list: async () => [], accept: async () => ({}), reject: async () => ({}) },
     },
     isConflict: http.isConflict,
     whileClosing: http.whileClosing,

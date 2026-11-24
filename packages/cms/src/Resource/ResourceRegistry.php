@@ -11,6 +11,8 @@ use Symfony\Component\DependencyInjection\Attribute\AutowireIterator;
 /**
  * Every resource class of the site: the ones found by themselves (tag `itk.resource`), the ones extensions registered, and the ones
  * added from code (tests). The schema is built from this list.
+ *
+ * @internal
  */
 final class ResourceRegistry
 {

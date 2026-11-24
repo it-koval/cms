@@ -12,6 +12,8 @@ use Itk\Cms\Entity\Setting;
 /**
  * How the last attempt to send a letter ended: what «Состояние сайта» and «Настройки → Почта» tell («последнее письмо ушло» / «последняя отправка не удалась: …»).
  * Kept as the setting `mailStatus`; the error text is already cleaned of passwords. Writing it must never break sending, so a failure here is swallowed (and, written with SQL, cannot close the entity manager).
+ *
+ * @internal
  */
 final class MailStatus
 {

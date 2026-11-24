@@ -7,7 +7,11 @@ namespace Itk\Cms\Migrations;
 use Doctrine\DBAL\Schema\Schema;
 use Doctrine\Migrations\AbstractMigration;
 
-/** Expire account links issued before token-free delivery jobs and full-origin trust. */
+/**
+ * Expire account links issued before token-free delivery jobs and full-origin trust.
+ *
+ * @internal
+ */
 final class Version20261124110000 extends AbstractMigration
 {
     public function getDescription(): string

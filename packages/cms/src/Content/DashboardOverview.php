@@ -118,7 +118,6 @@ final class DashboardOverview
             'failedCount' => $requestCounts['failed'],
             'unpublished' => $unpublished,
             'awaiting' => $awaiting,
-            'proposals' => [],
             'recent' => \array_slice($recent, 0, self::RECENT),
             'languages' => $this->contentLocales->catalog(),
             'locales' => $locales,

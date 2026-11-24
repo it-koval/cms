@@ -9,7 +9,11 @@ use Doctrine\DBAL\Schema\Schema;
 use Doctrine\Migrations\AbstractMigration;
 use Itk\Cms\I18n\I18n;
 
-/** Keep dates created under Doctrine's default naming strategy when adopting the explicit column name. */
+/**
+ * Keep dates created under Doctrine's default naming strategy when adopting the explicit column name.
+ *
+ * @internal
+ */
 final class Version20261124090100 extends AbstractMigration
 {
     public function getDescription(): string

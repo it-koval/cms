@@ -13,7 +13,11 @@ use Psr\Log\LoggerInterface;
 use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
 use Symfony\Component\Messenger\MessageBusInterface;
 
-/** SEO rules take effect immediately; read all live versions, including those currently excluded by noindex. */
+/**
+ * SEO rules take effect immediately; read all live versions, including those currently excluded by noindex.
+ *
+ * @internal
+ */
 #[AsEventListener]
 final class QueueOnSeoRuleChange
 {

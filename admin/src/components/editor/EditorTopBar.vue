@@ -1,6 +1,6 @@
 <script setup>
 // Top bar of the page editor: ← Страницы, page name with a dropdown of pages, status chip, undo / redo, save state,
-// Компьютер / Телефон, «Структура», «ИИ: N правки», Предпросмотр, «Опубликовать» with the change count.
+// Компьютер / Телефон, «Структура», Предпросмотр, «Опубликовать» with the change count.
 // Multilingual sites: a language select with status dots next to the page name (PageLangSelect), «Удалить <язык> версию» in the page menu (never for the main language),
 // and the publish button acts on the language on screen. A page without a version in that language shows only the left part (back, name, language select).
 // RIGHTS: without «Править» there is no undo / save state / publish (the page is only looked at); without «Публиковать» the main button says «Отправить на публикацию» (and «Ждёт публикации» once sent);
@@ -47,7 +47,6 @@ const canRemoveVersion = computed(() => multi.value && !isMain(ed.locale) && !!e
 const submitMode = computed(() => !ed.canPublish) // «Отправить на публикацию» instead of «Опубликовать»
 // Removing a home translation is blocked while that language has other pages on the site.
 const held = computed(() => canRemoveVersion.value && homeVersionHeld(ed.pages, ed.shell, ed.locale))
-const pend = computed(() => ed.liveProps.length)
 // an article or a product goes back to its flat list («Статьи блога», «Товары»), any other page to «Страницы»
 const backTo = computed(() => { const t = ed.template; return t && t.shortcut && getTemplate(t.key) ? { path: '/pages', query: { template: t.key } } : '/pages' })
 const backLabel = computed(() => (ed.template && ed.template.shortcut) || t('editor.back_pages'))
@@ -198,9 +197,6 @@ async function giveBack() {
 
     <div v-if="ed.page && !vp.phone" class="ed-r">
       <button id="sbBtn" type="button" class="btn tgl" :aria-pressed="ed.sb === 'outline'" aria-controls="sb" :aria-label="t('editor.sb_outline')" :title="t('editor.sb_outline')" @click="ui.toggleSb()"><Icon name="layers" size="s16" /><span>{{ t('editor.outline_title') }}</span></button>
-      <button v-if="pend" type="button" class="btn ai" :aria-label="t('editor.ai_offered_aria', { count: pend })" @click="ui.gotoAgent()">
-        <Icon name="sparkle" size="s16" /><span>{{ t('editor.ai_btn', { count: pend }) }}</span>
-      </button>
       <button type="button" class="btn" :aria-label="t('editor.history')" :title="t('editor.history')" @click="openHistory"><Icon name="clock" size="s16" /><span>{{ t('editor.history_btn') }}</span></button>
       <button type="button" class="btn" :aria-label="t('editor.preview')" :title="t('editor.preview')" @click="ui.openPreview()"><Icon name="eye" size="s16" /><span>{{ t('editor.preview') }}</span></button>
       <button v-for="a in pluginButtons" :key="a.name" type="button" class="btn" :aria-label="a.label" :title="a.title || a.label" @click="runPlugin(a)"><Icon :name="a.icon" size="s16" /><span>{{ a.label }}</span></button>
@@ -229,7 +225,6 @@ async function giveBack() {
     </Popover>
     <Popover v-if="vp.phone && ed.page" v-model:open="moreOpen" :anchor="moreBtn" align="right" :label="t('editor.more')">
       <button type="button" class="mi" role="menuitem" @click="inMore(() => ui.goSb('outline', { focus: 'head' }))"><Icon name="layers" size="s16" /><span>{{ t('editor.sb_outline') }}</span></button>
-      <button v-if="pend" type="button" class="mi" role="menuitem" @click="inMore(() => ui.gotoAgent())"><Icon name="sparkle" size="s16" /><span>{{ t('editor.ai_btn', { count: pend }) }}</span></button>
       <button type="button" class="mi" role="menuitem" @click="inMore(openHistory)"><Icon name="clock" size="s16" /><span>{{ t('editor.history') }}</span></button>
       <button v-if="!ed.readOnly" type="button" class="mi" role="menuitem" @click="inMore(() => ui.openSettings())"><Icon name="sliders" size="s16" /><span>{{ t('editor.settings_title') }}</span></button>
       <button type="button" class="mi" role="menuitem" @click="inMore(() => ui.openPreview())"><Icon name="monitor" size="s16" /><span>{{ t('editor.preview_full') }}</span></button>
@@ -273,14 +268,14 @@ async function giveBack() {
   .ed-top { gap: 8px; padding: 0 12px; }
 }
 @media (768px <= width < 1400px) {
-  .dev-sw button span, .ed-r .btn:not(.primary):not(.ai):not(.wide) span { display: none; }
+  .dev-sw button span, .ed-r .btn:not(.primary):not(.wide) span { display: none; }
   .dev-sw button { padding: 0 9px; }
-  .ed-r .btn:not(.primary):not(.ai):not(.wide) { width: 34px; padding: 0; }
+  .ed-r .btn:not(.primary):not(.wide) { width: 34px; padding: 0; }
 }
 /* a multilingual site adds the language select and the version chip on the left: the secondary buttons keep their icon only up to 1560 px, so the page name still has room */
 @media (1400px <= width < 1560px) {
-  .ed-top.multi .dev-sw button span, .ed-top.multi .ed-r .btn:not(.primary):not(.ai):not(.wide) span { display: none; }
+  .ed-top.multi .dev-sw button span, .ed-top.multi .ed-r .btn:not(.primary):not(.wide) span { display: none; }
   .ed-top.multi .dev-sw button { padding: 0 9px; }
-  .ed-top.multi .ed-r .btn:not(.primary):not(.ai):not(.wide) { width: 34px; padding: 0; }
+  .ed-top.multi .ed-r .btn:not(.primary):not(.wide) { width: 34px; padding: 0; }
 }
 </style>

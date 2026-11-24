@@ -23,6 +23,8 @@ use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
  *
  * MAX is optional. A site without the MAX bundle or its token, with MAX switched off, or without a chat keeps the MAX delivery «pending»: nothing is retried and nobody is told about a failure.
  * Only a message that a connected MAX refused is a failure.
+ *
+ * @internal
  */
 final class MaxNotifier implements ChannelNotifier
 {

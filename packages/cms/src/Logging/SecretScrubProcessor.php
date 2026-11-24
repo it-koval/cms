@@ -13,6 +13,8 @@ use Monolog\Processor\ProcessorInterface;
  * An exception in the context (`'exception' => $e`; HttpClient puts the request URL into its message) that carries the token, or whose previous exception does, is replaced
  * with a ScrubbedThrowable: the class, message, place and previous exceptions stay, the secret and the stack trace do not.
  * Registered by the bundle when Monolog is installed (config/services.php), with the tag `monolog.processor`.
+ *
+ * @internal
  */
 final class SecretScrubProcessor implements ProcessorInterface
 {

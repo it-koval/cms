@@ -25,7 +25,6 @@
 .row-i .when{font-size:var(--t-sm);color:var(--ink-2);font-variant-numeric:tabular-nums;white-space:nowrap}
 .dot-new{width:9px;height:9px;border-radius:50%;background:var(--cy);flex:none}
 .pdot{width:9px;height:9px;flex:none}
-.ai-b{display:inline-flex;align-items:center;gap:5px;font-size:var(--t-xs);font-weight:620;color:var(--cy-dd)}
 .done-l .row-i{padding:10px 16px}
 .done-l .ok{color:var(--green)}
 
@@ -45,7 +44,6 @@
 .seg2 button[aria-pressed=true]{background:#fff;color:var(--brand-text);box-shadow:var(--sh-1)}
 .seg2.txt button{width:auto;padding:0 12px;font-size:var(--t-sm);font-weight:560}
 .btn[aria-pressed=true]{background:var(--cy-50);border-color:var(--cy);color:var(--cy-dd)}
-.chip.ai{background:var(--cy-50);color:var(--cy-dd)}
 .rq-dates{display:inline-flex;align-items:center;gap:6px}
 .rq-dates[hidden]{display:none}
 .rq-dates label{font-size:var(--t-sm);color:var(--ink-2);font-weight:550}

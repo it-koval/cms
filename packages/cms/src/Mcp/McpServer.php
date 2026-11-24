@@ -21,6 +21,7 @@ use Symfony\Component\Security\Core\Exception\AccessDeniedException;
  * @internal
  */
 #[WithMonologChannel('itk_mcp')] // with Monolog the audit lines get their own channel, so the site can keep them in production (README, «MCP»)
+/** @internal */
 final class McpServer
 {
     public const SUPPORTED_VERSIONS = ['2025-11-25', '2025-06-18', '2025-03-26', '2024-11-05'];

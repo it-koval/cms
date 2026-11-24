@@ -22,8 +22,6 @@ body.ed-mode{overflow:hidden}
 .save-st{font-size:var(--t-xs);color:var(--ink-3);min-width:78px;white-space:nowrap}
 .save-st[data-s=busy]{color:var(--brand-text)}
 .dev-sw button{display:inline-flex;align-items:center;gap:6px;width:auto;padding:0 12px;height:28px;font-size:var(--t-sm);font-weight:560}
-.btn.ai{background:var(--cy-50);border-color:var(--cy-100);color:var(--cy-dd)}
-.btn.ai:hover{background:var(--cy-100);border-color:var(--cy-200);color:var(--cy-dd)}
 .btn.primary .cnt{box-shadow:0 0 0 1.5px #fff}
 .ed-conflict{flex:none;padding:8px max(16px,env(safe-area-inset-right)) 8px max(16px,env(safe-area-inset-left));background:var(--sheet);border-bottom:1px solid var(--hair)}
 .ed-main{flex:1;min-height:0;display:flex;position:relative}
@@ -108,15 +106,6 @@ body.ed-mode{overflow:hidden}
 .ol-leg{margin:16px 14px 0;font-size:var(--t-xs);color:var(--ink-2);display:flex;flex-direction:column;gap:6px}
 .ol-leg div{display:flex;gap:8px;align-items:center}
 /* panel form pieces kept from the form engine */
-.agent-b{margin:14px 0 4px;border:1px solid var(--cy-100);background:var(--cy-50);border-radius:var(--r-lg);overflow:hidden}
-.agent-b .ah{display:flex;align-items:center;gap:8px;padding:10px 12px;font-weight:620;color:var(--cy-dd)}
-.agent-b .ah small{font-weight:450;color:var(--ink-2);margin-left:auto}
-.diff{padding:10px 12px;border-top:1px solid var(--cy-100);background:#fff}
-.diff .fl{font-size:var(--t-xs);font-weight:620;color:var(--ink-2);margin-bottom:4px}
-.diff del{display:block;color:var(--ink-2);text-decoration:line-through;text-decoration-color:var(--ink-3);font-size:var(--t-sm);line-height:1.45}
-.diff ins{display:block;color:var(--cy-dd);text-decoration:none;font-weight:540;margin-top:4px;line-height:1.45;background:var(--cy-50);padding:4px 6px;border-radius:4px}
-.diff .dn{display:block;font-size:var(--t-xs);color:var(--ink-2);margin-top:6px}
-.diff .da{display:flex;gap:8px;margin-top:10px}
 .imgf{display:flex;gap:12px;align-items:flex-start}
 .imgf .ph{width:96px;height:96px;border-radius:var(--r);overflow:hidden;border:1px solid var(--hair);background:var(--hair-2);flex:none}
 .imgf .ph img{width:100%;height:100%;object-fit:cover;display:block}

@@ -14,7 +14,11 @@ use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
 
-/** Checks the site in one pass (see Doctor). Without --ci it only tells; with --ci the exit code is 1 when a check failed (for a deploy script or CI). */
+/**
+ * Checks the site in one pass (see Doctor). Without --ci it only tells; with --ci the exit code is 1 when a check failed (for a deploy script or CI).
+ *
+ * @internal
+ */
 #[AsCommand(name: 'itk:doctor', description: 'ops.cmd_doctor_description')]
 final class DoctorCommand extends Command
 {

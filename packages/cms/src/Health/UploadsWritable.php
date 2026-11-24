@@ -4,7 +4,11 @@ declare(strict_types=1);
 
 namespace Itk\Cms\Health;
 
-/** The first upload may create missing folders, provided the nearest existing parent accepts files. */
+/**
+ * The first upload may create missing folders, provided the nearest existing parent accepts files.
+ *
+ * @internal
+ */
 final class UploadsWritable
 {
     public static function check(string $path): bool

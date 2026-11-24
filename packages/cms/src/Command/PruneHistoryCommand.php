@@ -13,7 +13,11 @@ use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
 
-/** Drops the history beyond its depth (`itk_cms.history.keep` entries of an object, `itk_cms.history.days` days). Meant for the schedule: once a day. */
+/**
+ * Drops the history beyond its depth (`itk_cms.history.keep` entries of an object, `itk_cms.history.days` days). Meant for the schedule: once a day.
+ *
+ * @internal
+ */
 #[AsCommand(name: 'itk:history:prune', description: 'ops.cmd_prune_history_description')]
 final class PruneHistoryCommand extends Command
 {

@@ -7,7 +7,11 @@ namespace Itk\Cms\Entity;
 use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\Mapping as ORM;
 
-/** «Прочитано»: a person has seen a notification. Both ends cascade: a removed notification or user takes the mark with it. */
+/**
+ * «Прочитано»: a person has seen a notification. Both ends cascade: a removed notification or user takes the mark with it.
+ *
+ * @internal
+ */
 #[ORM\Entity]
 #[ORM\Table(name: 'itk_notification_read')]
 class NotificationRead

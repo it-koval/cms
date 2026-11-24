@@ -20,6 +20,8 @@ use Symfony\Component\DependencyInjection\Attribute\Autowire;
  * the original gives a copy of the original size). A ratio is allowed when it is in itk_cms.images.ratios or the file has
  * a frame of it (MediaFile::$crops). JPG, PNG, WebP and AVIF are converted; GIF, SVG, PDF, other addresses and originals
  * above itk_cms.images.max_pixels are passed through unchanged.
+ *
+ * @internal
  */
 final class ImageVariants
 {
@@ -110,7 +112,7 @@ final class ImageVariants
      * The ratio of a fixed slot in a layout (an <img> of $width × $height pixels) as a key such as "14:5": the reduced
      * fraction of width:height. A ratio takes sides of 1..99, so a slot that reduces to bigger numbers (1095×515 is 219:103)
      * gets the closest ratio that fits (17:8, off by well under 1%). Null for a size that is not positive.
-     * Use it for media_url()/itk_img() so that the delivered file has the shape of its slot.
+     * Use it for itk_media_url()/itk_img() so that the delivered file has the shape of its slot.
      */
     public static function slotRatio(int $width, int $height): ?string
     {

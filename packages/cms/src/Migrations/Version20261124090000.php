@@ -8,7 +8,11 @@ use Doctrine\DBAL\Platforms\PostgreSQLPlatform;
 use Doctrine\DBAL\Schema\Schema;
 use Doctrine\Migrations\AbstractMigration;
 
-/** Dedicated internal keys cannot collide with schema keys (which do not allow a colon). */
+/**
+ * Dedicated internal keys cannot collide with schema keys (which do not allow a colon).
+ *
+ * @internal
+ */
 final class Version20261124090000 extends AbstractMigration
 {
     private const KEYS = ['mail', 'mailStatus', 'adminTheme', 'mcpEnabled', 'telegramBot', 'maxBot', 'yandexWebmaster', 'tgOn', 'maxOn', 'tgRoutes', 'maxRoutes', 'mailRoutes'];

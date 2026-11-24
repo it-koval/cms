@@ -17,7 +17,11 @@ use Symfony\Component\Notifier\Transport\TransportInterface;
 use Symfony\Contracts\HttpClient\HttpClientInterface;
 use Symfony\Contracts\Service\ResetInterface;
 
-/** The site's optional Telegram transport, shared by request delivery and validation of the routing settings. @internal */
+/**
+ * The site's optional Telegram transport, shared by request delivery and validation of the routing settings.
+ *
+ * @internal
+ */
 final class TelegramConnection implements ResetInterface
 {
     private bool $resolved = false;

@@ -21,6 +21,8 @@ use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
  * MAX for the requests of the site forms, as TelegramChannel is for Telegram: a `request.new` notification queues the delivery of its own (SendRequestNotification, channel max),
  * so a refused MAX message is retried alone and never touches the Telegram one. When the queue itself is unavailable the MAX delivery of the request is marked «не доставлена» at once.
  * A site without a connected MAX (no bundle, no token, switched off) queues nothing: the MAX delivery stays «pending». Other notifications do not go to MAX.
+ *
+ * @internal
  */
 final class MaxChannel implements NotificationChannelInterface
 {

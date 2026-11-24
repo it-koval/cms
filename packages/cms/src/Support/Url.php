@@ -81,7 +81,7 @@ final class Url
 
     /**
      * Value of a link field of kind «страница»: a site path (`/blog`, not `//host`, no backslash) or a page id; anything else is '/'.
-     * The one rule for page links in fields, menus and the template function page_url().
+     * The one rule for page links in fields, menus and the template function itk_page_url().
      */
     public static function cleanPageRef(mixed $value): string
     {

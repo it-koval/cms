@@ -11,6 +11,7 @@ use Itk\Cms\I18n\I18n;
 use Itk\Cms\Repository\SettingRepository;
 use Itk\Cms\Security\TwoFactor\SecretBox;
 
+/** @internal */
 final class BotSettings
 {
     public const TELEGRAM_KEY = 'itk:telegramBot';

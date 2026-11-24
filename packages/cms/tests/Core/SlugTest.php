@@ -32,4 +32,13 @@ final class SlugTest extends TestCase
     {
         self::assertSame(\str_repeat('q', 64), Slug::slugify(\str_repeat('Қ', 70)));
     }
+
+    #[Test]
+    public function areaKeysStartWithALetterAndAvoidExistingKeys(): void
+    {
+        self::assertSame('menu_123', Slug::areaKey('123'));
+        self::assertSame('menu', Slug::areaKey('!!!'));
+        self::assertSame('main_menu', Slug::areaKey('Main menu'));
+        self::assertSame('header_3', Slug::areaKey('Header', ['header', 'header_2']));
+    }
 }

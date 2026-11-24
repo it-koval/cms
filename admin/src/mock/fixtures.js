@@ -11,7 +11,6 @@ export const LANGUAGES = { main: 'ru', list: [
 const SCHEMA = {
   mainLocale: 'ru',
   design: { headlineMarks: [] },
-  features: { ai: false },
   sectionGroups: ['Первый экран', 'Содержимое'],
   sections: [
     {

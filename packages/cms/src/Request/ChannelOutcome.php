@@ -9,7 +9,11 @@ use Itk\Cms\Entity\Request;
 use Itk\Cms\Event\RequestDelivery;
 use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 
-/** What one messenger did with a request: nothing to send (pending), delivered, or refused with a reason. Made outside the transaction, written inside it. */
+/**
+ * What one messenger did with a request: nothing to send (pending), delivered, or refused with a reason. Made outside the transaction, written inside it.
+ *
+ * @internal
+ */
 final class ChannelOutcome
 {
     private function __construct(

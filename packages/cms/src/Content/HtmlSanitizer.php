@@ -16,6 +16,8 @@ use Itk\Cms\Schema\Schema;
  *             and a simple table: <table> <thead> <tbody> <tr> <th> <td> without attributes, except a numeric colspan / rowspan (2 and more) on <th> and <td>.
  *             A table is kept only at the top level of the text; a cell holds inline text only (<strong> <em> <a> <br>), blocks inside a cell become line breaks.
  *             The leading rows made of <th> cells only go to <thead>, the rest to <tbody> (so the editor, which has no <thead>, round-trips to the same HTML).
+ *
+ * @internal
  */
 final class HtmlSanitizer
 {

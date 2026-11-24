@@ -11,6 +11,8 @@ use Itk\Cms\Logging\SecretScrubber;
  *   none      smtp://host:25?auto_tls=false              no encryption, no password
  *   ssl       smtps://login:pass@host:465                the connection is encrypted from the first byte (SSL/TLS)
  *   starttls  smtp://login:pass@host:587?require_tls=1   starts plain and upgrades to TLS; no letter goes out if the server cannot.
+ *
+ * @internal
  */
 final class DsnBuilder
 {

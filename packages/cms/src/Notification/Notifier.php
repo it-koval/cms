@@ -10,7 +10,11 @@ use Itk\Cms\Notification\Channel\DatabaseChannel;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\Attribute\AutowireIterator;
 
-/** Hands a notification to every channel that supports it: the tagged services, then the classes extensions named in Registry::notificationChannels(). */
+/**
+ * Hands a notification to every channel that supports it: the tagged services, then the classes extensions named in Registry::notificationChannels().
+ *
+ * @internal
+ */
 final class Notifier implements NotifierInterface
 {
     /** @var list<NotificationChannelInterface>|null */

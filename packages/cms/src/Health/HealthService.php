@@ -25,6 +25,8 @@ use Symfony\Component\HttpKernel\Kernel;
  *     updates { enabled, current, latest, hasUpdate, checkedAt, message },
  *     checks [{name, status, message}] }
  * `status` is the worst of the checks (a check that is `off` ranks like `ok`), the disks, and «warn» when something sits in the failed queue or a request was not delivered.
+ *
+ * @internal
  */
 final class HealthService
 {

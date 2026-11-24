@@ -9,6 +9,8 @@ use Itk\Cms\Field\FieldInterface;
 /**
  * Templates every site has: home, default, and the blog ones (blog, blog_category, blog_article) unless the site has no blog.
  * The texts are kept as catalogue keys and looked up when the schema is read, so each person sees them in the language of the interface he chose.
+ *
+ * @internal
  */
 final class CoreSchema
 {

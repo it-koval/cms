@@ -33,7 +33,7 @@ final class HookDispatcherSnapshotsTest extends TestCase
 
     private function hooks(EventDispatcher $events): HookDispatcher
     {
-        $schema = new Schema('ru', [], [], [], ['top' => [], 'bottom' => []], [], [], [], [], []);
+        $schema = new Schema('ru', [], [], ['top' => [], 'bottom' => []], [], [], [], [], []);
         $security = $this->createStub(Security::class);
         $security->method('getUser')->willReturn(null);
         $access = new Access($security, new RoleResolver($schema, $this->createStub(RoleRepository::class)));

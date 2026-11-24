@@ -370,7 +370,7 @@ final class ItkCmsBundle extends AbstractBundle
                         ->integerNode('max_pixels')->info('Originals above this many pixels are not converted (decompression bomb guard); the original is served')->defaultValue(50_000_000)->min(1)->end()
                         ->integerNode('avif_quality')->info('Quality of the AVIF copies (AVIF looks the same as WebP at a lower number)')->defaultValue(60)->min(1)->max(100)->end()
                         ->arrayNode('ratios')
-                            ->info('Ratios an image may be cut to (the media editor offers them, media_url(img, w, "16:9") and itk_img(img, {ratio}) accept them); a frame saved for a file is allowed on top of these')
+                            ->info('Ratios an image may be cut to (the media editor offers them, itk_media_url(img, w, "16:9") and itk_img(img, {ratio}) accept them); a frame saved for a file is allowed on top of these')
                             ->scalarPrototype()->end()
                             ->defaultValue(['16:9', '4:3', '1:1', '3:4'])
                         ->end()

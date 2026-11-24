@@ -66,7 +66,7 @@ final class TelegramConnectionTest extends TestCase
 
     private function schema(): Schema
     {
-        return new Schema('ru', [], [], [], ['top' => [], 'bottom' => []], [], [], [], [], []);
+        return new Schema('ru', [], [], ['top' => [], 'bottom' => []], [], [], [], [], []);
     }
 
     /** The notifier only reads these preloaded site settings; no database is needed for the actual HTTP sending path. */

@@ -17,6 +17,8 @@ use Itk\Cms\Security\Access;
  * Through an AI assistant (MCP, see ChangeSource) nobody changes such a field, an administrator's key included: a model that reads texts of visitors could be talked into
  * writing a script, and the page would run it for everyone. So for a key every field is compared in its place (section, list item), not the page as a whole: emptying a field or
  * copying a code into another one is a change too. What stays allowed is taking the whole section or list item away (the code goes with it, as in the admin), moving and hiding.
+ *
+ * @internal
  */
 final class RawFieldGuard
 {

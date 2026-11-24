@@ -11,6 +11,8 @@ use Doctrine\Migrations\AbstractMigration;
 /**
  * ITK CMS: the delivery of a request to each messenger (itk_request.channels). `delivery` and `delivery_error` stay as the sum of them.
  * What was delivered or refused before the column existed was Telegram's.
+ *
+ * @internal
  */
 final class Version20261110100000 extends AbstractMigration
 {

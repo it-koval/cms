@@ -33,6 +33,8 @@ use Symfony\Component\RateLimiter\RateLimiterFactoryInterface;
  * «Забыл пароль» always looks the same from outside: the same answer, and the same work in the request for a known and an unknown address (the visitor's request only
  * queues RequestPasswordLink; the worker finds the person and writes the letter), so neither the words nor the time tell whether the address exists.
  * It is limited per address and per visitor.
+ *
+ * @internal
  */
 final class PasswordRecovery
 {
