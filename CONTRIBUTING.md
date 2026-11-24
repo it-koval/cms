@@ -25,7 +25,7 @@ make up
 
 ## Run the checks
 
-Run the checks from the repository root:
+Run the checks from the repository root.
 
 ```bash
 make test
@@ -34,19 +34,25 @@ make audit
 make admin-build
 ```
 
+`make test` runs `test-php` and `test-admin`. `make lint` runs `validate`, `lint-php`, and `lint-admin`.
+
 ### PHP
 
-`make test` runs `composer test`. This checks SQL, recreates the test database, and runs PHPUnit. `make lint` validates the Composer package, checks `src` and `tests` at PHPStan level 6, and checks PHP formatting.
+`make test-php` runs `composer test`. This checks SQL, recreates the test database, and runs PHPUnit. `make validate` validates the Composer package and checks SQL. `make lint-php` checks `src` and `tests` at PHPStan level 6 and checks PHP formatting.
 
-To test one class, start the stack with `make up` and open the PHP shell with `make sh`. Inside it, run `composer test:prepare` once, then `php vendor/bin/phpunit --filter ClassName`. For a random run, use `composer test:run -- --order-by=random --random-order-seed=30301` after preparation. CI also uses seed `30302`.
+`make test-random` runs the tests in random order with seeds `30301` and `30302`, as in CI. Set `SEEDS` to override them, for example `make test-random SEEDS=30301`. Run `make schema` after `make test-random` or `make test-php` to validate the prepared database schema.
+
+To test one class, start the stack with `make up` and open the PHP shell with `make sh`. Inside it, run `composer test:prepare` once, then `php vendor/bin/phpunit --filter ClassName`.
 
 The tests in `tests/Core` use the site in `tests/App`. For a separate test stack, run `COMPOSE_PROJECT_NAME=itkcms-alt make test`. Build the PHP image with that same project name first. If the main stack is running, set `DB_PORT` and `MAILPIT_PORT` to free ports as well.
 
 If you supply your own `DATABASE_URL` in the PHP shell, keep `serverVersion` in it. Set `ITK_TEST_CACHE_DIR` there to isolate the test cache. The tests stub Telegram and MAX. Mail tests need `ITK_TEST_MAILPIT_URL`.
 
+`make ci-deps` and `make test-max` are CI-only targets. They change Composer dependencies and require `CI=1` in a separate checkout for local runs.
+
 ### Admin panel
 
-`make test` also runs Vitest. `make lint` runs ESLint and checks the interface catalogs and Cyrillic in the code. `make audit` checks npm dependencies. `make admin-build` writes the build to `packages/cms/public/admin`.
+`make test-admin` runs Vitest. `make lint-admin` runs ESLint and checks the interface catalogs and Cyrillic in the code. `make audit` checks npm dependencies. `make admin-build` writes the build to `packages/cms/public/admin`. `make admin-build-check` rebuilds the admin panel and checks for differences against the Git index, including new files.
 
 `make admin-dev` starts Vite at `http://127.0.0.1:18023/bundles/itkcms/admin/`. By default the container reaches the site API at `host.docker.internal:8080`. Set `ITK_SITE_URL` to use another address.
 
@@ -59,6 +65,10 @@ docker compose -f admin/compose.yaml run --rm --service-ports node npm run dev:m
 Open `http://127.0.0.1:18023/bundles/itkcms/admin/`.
 
 `admin/compose.yaml` mounts the repository root at `/workspace` and keeps the Linux dependencies in a named volume. The container does not use or overwrite a `node_modules` directory on the host. `npm ci` installs exactly what the lock file lists. Keep the Node version the same in `admin/compose.yaml` and `admin/.nvmrc`.
+
+### Docker kit
+
+`CRITICAL_CSS=1 make smoke-dev` builds and checks the development image. Run `make site-clean` to prepare a clean Symfony site. Then run `make smoke-prod` to build and check the production kit on that site. These checks need network access.
 
 ## Commit the built admin panel
 

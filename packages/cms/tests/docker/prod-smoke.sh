@@ -5,7 +5,7 @@ set -euo pipefail
 cd "${1:?Pass the directory of the clean Symfony site}"
 export COMPOSE_PROJECT_NAME="itk-ci-prod"
 export DEPLOY_IMAGE_TAG=smoke
-export DEPLOY_PORT=18080
+export DEPLOY_PORT="${DEPLOY_PORT:-18028}"
 export DEPLOY_DB_PASSWORD=itk-ci-db
 export DATABASE_URL='postgresql://postgres:itk-ci-db@database:5432/app?serverVersion=17&charset=utf8'
 export APP_SECRET=itk-ci-secret-for-temporary-site
