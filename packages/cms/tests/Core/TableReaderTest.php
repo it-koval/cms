@@ -69,4 +69,15 @@ final class TableReaderTest extends KernelTestCase
             }
         }
     }
+
+    #[Test]
+    public function aTableWithoutOnePrimaryKeyKeepsItsIdColumnAsAField(): void
+    {
+        $this->table(primary: false);
+        // Without a single-column primary key, id is an ordinary column; a reserved metadata key needs an explicit mapping.
+        $spec = (new TableReader())->inspect($this->db(), self::TABLE, ['id' => ['source_id', null]]);
+
+        self::assertNull($spec->source['idColumn']);
+        self::assertContains('source_id', \array_map(static fn ($f): string => $f->key, $spec->fields));
+    }
 }

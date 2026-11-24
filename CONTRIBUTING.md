@@ -77,7 +77,7 @@ Open `http://127.0.0.1:18023/bundles/itkcms/admin/`.
 
 ### Docker kit
 
-`CRITICAL_CSS=1 make smoke-dev` builds and checks the development image. Run `make site-clean` to prepare a clean Symfony site. The default destination `.ci-site` must not exist. If you set `SITE`, use a new destination too. Then run `make smoke-prod` to build and check the production kit on that site. These checks need network access.
+`CRITICAL_CSS=1 make smoke-dev` builds and checks the development image. Run `make site-clean` to prepare a clean Symfony site. The default destination `.ci-site` must be absent or empty. If you set `SITE`, the same applies. If you set `DEPLOY_PORT`, pass the same value to `make site-clean` and `make smoke-prod`. Then run `make smoke-prod` to build and check the production kit on that site. These checks need network access.
 
 ## Commit the built admin panel
 
