@@ -9,6 +9,10 @@ namespace Itk\Cms\Mail;
  *
  * @internal
  */
-final class MailDeliveryException extends \RuntimeException
+class MailDeliveryException extends \RuntimeException
 {
+    public function __construct(string $message, public readonly bool $safeToRetry = false)
+    {
+        parent::__construct($message);
+    }
 }

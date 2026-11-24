@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Itk\Cms\Content;
 
 use Itk\Cms\Entity\SeoRule;
+use Itk\Cms\Mail\PublicUrl;
 use Itk\Cms\Repository\SeoRuleRepository;
 use Itk\Cms\Support\Url;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
@@ -35,6 +36,7 @@ final class SeoResolver implements ResetInterface
         private readonly RequestStack $requests,
         #[Autowire(param: 'itk_cms.main_locale')]
         private readonly string $mainLocale,
+        private readonly ?PublicUrl $publicUrl = null,
     ) {
     }
 
@@ -139,7 +141,7 @@ final class SeoResolver implements ResetInterface
 
     /**
      * What a template prints: the SEO of apply() with the fallbacks. title: SEO, then the page title, then defaults.title;
-     * description, robots, canonical, ogImage: SEO, then the same key of $defaults. canonical and ogImage become full addresses.
+     * description, robots, canonical, ogImage: SEO, then the same key of $defaults. Relative canonical and ogImage use the configured SEO origin when available.
      *
      * @param array<string, mixed> $seo result of apply()
      * @param array<string, mixed> $defaults what the site says when nothing else does
@@ -158,10 +160,10 @@ final class SeoResolver implements ResetInterface
             return '';
         };
         $text = static fn (mixed $v): string => \is_scalar($v) ? (string) $v : '';
-        $request ??= $this->requests->getCurrentRequest();
-        $full = static function (string $url) use ($request): string {
-            if (null !== $request && \str_starts_with($url, '/')) {
-                return $request->getSchemeAndHttpHost() . $request->getBaseUrl() . $url;
+        $base = $this->publicUrl?->seoBase();
+        $full = static function (string $url) use ($base): string {
+            if (null !== $base && \str_starts_with($url, '/') && !\str_starts_with($url, '//')) {
+                return $base . $url;
             }
 
             return $url;

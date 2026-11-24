@@ -150,7 +150,7 @@ final class MaxChannelTest extends WebTestCase
             public function send(MessageInterface $message): SentMessage
             {
                 if ($this->refuse) {
-                    throw new \RuntimeException('Chat not found');
+                    throw new \Itk\Cms\Request\DeliveryRefusedException('Chat not found');
                 }
 
                 return new SentMessage($message, 'recorder');
@@ -265,7 +265,8 @@ final class MaxChannelTest extends WebTestCase
         self::assertSame(RequestEntity::DELIVERY_FAILED, $r->channelState(RequestEntity::CHANNEL_MAX));
         self::assertSame(RequestEntity::DELIVERY_FAILED, $r->delivery);
         self::assertStringStartsWith('MAX: ', (string) $r->deliveryError);
-        self::assertStringContainsString('Queue is down', (string) $r->deliveryError);
+        self::assertStringNotContainsString('Queue is down', (string) $r->deliveryError, 'broker diagnostics are never shown to staff');
+        self::assertStringContainsString(\Itk\Cms\I18n\I18n::t('http.request_queue_failed'), (string) $r->deliveryError);
         self::assertSame(1, $this->bell($r, Notification::MAX_FAILED));
         self::assertSame(0, $this->bell($r, Notification::TELEGRAM_FAILED));
     }

@@ -29,7 +29,7 @@ final class Notifier implements NotifierInterface
     ) {
     }
 
-    public function notify(Notification $notification, ?Connection $connection = null): void
+    public function notify(Notification $notification, ?Connection $connection = null, bool $retryDatabaseFailure = false): void
     {
         foreach ($this->channels() as $channel) {
             try {
@@ -41,6 +41,9 @@ final class Notifier implements NotifierInterface
                     }
                 }
             } catch (\Throwable $e) {
+                if ($retryDatabaseFailure && $channel instanceof DatabaseChannel) {
+                    throw $e;
+                }
                 $this->logger->error('Notification channel {channel} failed for {type}: {error}', ['channel' => $channel->name(), 'type' => $notification->type, 'error' => $e->getMessage()]);
             }
         }

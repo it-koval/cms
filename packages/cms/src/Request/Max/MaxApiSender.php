@@ -6,10 +6,13 @@ namespace Itk\Cms\Request\Max;
 
 use Itk\Cms\Bots\BotSettings;
 use Itk\Cms\I18n\I18n;
+use Itk\Cms\Request\DeliveryUncertainException;
+use MaxMessenger\Bot\Exception\Validation\ValidationException;
 use MaxMessenger\Bot\MaxApiClient;
 use MaxMessenger\Bot\MaxApiConfig;
 use MaxMessenger\Bot\Model\Enum\TextFormat;
 use MaxMessenger\Bot\Model\Request\NewMessageBody;
+use Mj4444\SimpleHttpClient\Exceptions\HttpResponse\Http\HttpException;
 use Psr\Log\LoggerInterface;
 use Symfony\Contracts\Service\ResetInterface;
 
@@ -93,6 +96,10 @@ final class MaxApiSender implements MaxSender, ResetInterface
         $this->broken = false;
     }
 
+    /**
+     * @throws DeliveryUncertainException when the provider may already have accepted the message
+     * @throws MaxDeliveryException when a send is refused or no connection is available
+     */
     public function send(int|string $chatId, string $html): void
     {
         $this->resolve();
@@ -106,6 +113,10 @@ final class MaxApiSender implements MaxSender, ResetInterface
         try {
             $this->api->sendMessageToChat($id, new NewMessageBody(self::cut($html), format: TextFormat::Html), true);
         } catch (\Throwable $e) {
+            $status = $e instanceof HttpException ? $e->getResponse()->getHttpCode() : 0;
+            if (!$e instanceof ValidationException && ($status < 400 || $status >= 500 || 408 === $status)) {
+                throw new DeliveryUncertainException(I18n::t('http.request_delivery_uncertain'));
+            }
             $reason = '' !== \trim($e->getMessage()) ? $e->getMessage() : $e::class;
 
             throw new MaxDeliveryException($this->scrub($reason));
@@ -155,14 +166,18 @@ final class MaxApiSender implements MaxSender, ResetInterface
                 if (null === $this->client) {
                     return;
                 }
-                $token = $this->readToken();
+                $server = null === $this->config ? null : ($this->config)();
+                $token = self::readToken($server);
                 $this->token = $token ?? '';
                 $hasToken = null === $token || '' !== \trim($token);
                 if (!$hasToken) {
                     return;
                 }
                 $this->route = 'server';
-                $api = ($this->client)();
+                // The bundle's default HTTP client can repeat POST on a timeout or 5xx.
+                $api = $server instanceof MaxApiConfig
+                    ? new MaxApiClient((clone $server)->setRetryAttempts([]))
+                    : ($this->client)();
                 $source = 'server';
             }
             if (!$api instanceof MaxApiClient) {
@@ -182,10 +197,9 @@ final class MaxApiSender implements MaxSender, ResetInterface
     }
 
     /** The client does not tell its token; the configuration does. Null when there is no configuration service: the client is then taken as configured. */
-    private function readToken(): ?string
+    private static function readToken(?object $config): ?string
     {
-        $config = null === $this->config ? null : ($this->config)();
-        if (!\is_object($config) || !\method_exists($config, 'getAccessToken')) {
+        if (null === $config || !\method_exists($config, 'getAccessToken')) {
             return null;
         }
         $token = $config->getAccessToken();

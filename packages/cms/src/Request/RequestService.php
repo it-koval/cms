@@ -15,7 +15,6 @@ use Itk\Cms\Notification\NotifierInterface;
 use Itk\Cms\Repository\RequestRepository;
 use Itk\Cms\Schema\Schema;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
-use Symfony\Component\Messenger\Exception\HandlerFailedException;
 use Symfony\Component\Messenger\MessageBusInterface;
 
 /**
@@ -43,6 +42,7 @@ final class RequestService
         private readonly string $secret,
         #[Autowire(param: 'itk_cms.main_locale')]
         private readonly string $mainLocale,
+        private readonly ?RequestQueue $queue = null,
     ) {
     }
 
@@ -97,19 +97,23 @@ final class RequestService
         $r->sourceUrl = isset($meta['url']) ? \mb_substr((string) $meta['url'], 0, 512) : null;
         $r->locale = $meta['locale'] ?? $this->mainLocale;
         $r->ipHash = !empty($meta['ip']) && '' !== \trim($this->secret) ? \hash_hmac('sha256', (string) $meta['ip'], $this->secret) : null; // no key, no hash: with an empty one every address could be guessed
-        $this->em->persist($r);
-        $this->em->flush();
+        $this->em->wrapInTransaction(function () use ($r): void {
+            $this->em->persist($r);
+            $this->em->flush();
 
-        // the bell of the admin and the messenger deliveries (TelegramChannel and MaxChannel queue them; a queue that is down marks the request «не доставлена» for that messenger)
-        $this->notifier->notify(Notification::translated(
-            type: Notification::REQUEST_NEW,
-            titleKey: 'i18n.notification_request_new',
-            titleParams: ['id' => $r->id],
-            body: $this->summary($r),
-            link: '/requests/' . $r->id,
-            audience: 'requests',
-            payload: ['requestId' => $r->id, 'form' => $r->form],
-        ));
+            // the bell of the admin and the messenger deliveries (TelegramChannel and MaxChannel queue them; a queue that is down marks the request «не доставлена» for that messenger)
+            $this->notifier->notify(Notification::translated(
+                type: Notification::REQUEST_NEW,
+                titleKey: 'i18n.notification_request_new',
+                titleParams: ['id' => $r->id],
+                body: $this->summary($r),
+                link: '/requests/' . $r->id,
+                audience: 'requests',
+                payload: ['requestId' => $r->id, 'form' => $r->form],
+            ));
+        });
+        // An ambient transaction defers publication to the worker; an owned transaction is already committed.
+        $this->queue?->recover(500, (int) $r->id);
 
         return $r;
     }
@@ -221,32 +225,21 @@ final class RequestService
             throw ContentException::invalid(I18n::t('http.request_bad_channel'));
         }
         $outcomes = [];
-        $dispatchFailed = [];
         foreach (null !== $channel ? [$channel] : $this->channelsToResend($r) as $one) {
-            $again = null === $channel || Request::DELIVERY_FAILED === $r->channelState($one);
-            $job = RequestDeliverer::reserve($this->em, (int) $r->id, $one, $again);
-            if (null !== $job) {
-                if ($this->deliverer->partCount($r, $one, $again) > 20) {
-                    try {
-                        $this->bus->dispatch(new SendRequestNotification((int) $r->id, $again, $one, $job));
-                    } catch (\Throwable $failure) {
-                        if (!$this->em->isOpen()) {
-                            throw $failure;
-                        }
-                        $this->em->refresh($r);
-                        $phase = $job === $r->channelJob($one) ? $r->channelJobPhase($one) : null;
-                        if ($failure instanceof HandlerFailedException && 'retry' === $phase) {
-                            // sync:// handled the job and stored its refusal before Messenger threw.
-                            $this->deliverer->settlePhase((int) $r->id, $one, $job, 'failed');
-                        } elseif (!\in_array($phase, ['done', 'processing'], true)) {
-                            $this->deliverer->queueFailed((int) $r->id, $one, $job, I18n::t('http.request_queue_failed'));
-                            $dispatchFailed[] = $one;
-                        }
-                    }
-                } else {
-                    if (false === $this->deliverer->deliver((int) $r->id, $one, $again, $job)) {
-                        $this->deliverer->settlePhase((int) $r->id, $one, $job, 'failed');
-                    }
+            $wasFailed = Request::DELIVERY_FAILED === $r->channelState($one);
+            $again = null === $channel || $wasFailed;
+            if ($this->deliverer->partCount($r, $one, $again) <= 20) {
+                $this->deliverer->deliverSynchronously((int) $r->id, $one, $again, static function (EntityManagerInterface $manager, string $job) use ($r, $one, $again): void {
+                    // A process dying after the committed reservation leaves a delayed, replayable intent.
+                    RequestQueue::stageJob($manager, new SendRequestNotification((int) $r->id, $again, $one, $job), 30);
+                }, onlyIfFailed: $wasFailed);
+            } else {
+                $entry = null;
+                $this->deliverer->reserveForDispatch((int) $r->id, $one, $again, static function (EntityManagerInterface $manager, string $job) use ($r, $one, $again, &$entry): void {
+                    $entry = RequestQueue::stageJob($manager, new SendRequestNotification((int) $r->id, $again, $one, $job));
+                }, onlyIfFailed: $wasFailed);
+                if (null !== $entry) {
+                    ($this->queue ?? new RequestQueue($this->em, $this->bus, new \Psr\Log\NullLogger()))->publish($entry);
                 }
             }
             $this->em->refresh($r);
@@ -257,7 +250,7 @@ final class RequestService
         }
 
         $selectedQueued = \in_array('queued', \array_column($outcomes, 'state'), true);
-        $status = $selectedQueued ? 202 : (1 === \count($outcomes) && [] !== $dispatchFailed ? 502 : 200);
+        $status = $selectedQueued ? 202 : 200;
 
         return ['request' => $r, 'queuedChannels' => $r->queuedChannels(), 'outcomes' => $outcomes, 'status' => $status];
     }
@@ -291,13 +284,15 @@ final class RequestService
         $n = 0;
         foreach ($this->requests->findBy(['delivery' => Request::DELIVERY_FAILED]) as $r) {
             foreach ($this->failedChannels($r) as $channel) {
-                $job = RequestDeliverer::reserve($this->em, (int) $r->id, $channel, true);
-                if (null !== $job) {
-                    try {
-                        $this->bus->dispatch(new SendRequestNotification((int) $r->id, true, $channel, $job));
-                    } catch (\Throwable) {
-                        $this->deliverer->queueFailed((int) $r->id, $channel, $job, I18n::t('http.request_queue_failed'));
-                    }
+                if ('uncertain' === $r->channelJobPhase($channel)) {
+                    continue;
+                }
+                $entry = null;
+                $this->deliverer->reserveForDispatch((int) $r->id, $channel, true, static function (EntityManagerInterface $manager, string $job) use ($r, $channel, &$entry): void {
+                    $entry = RequestQueue::stageJob($manager, new SendRequestNotification((int) $r->id, true, $channel, $job));
+                }, onlyIfFailed: true);
+                if (null !== $entry) {
+                    ($this->queue ?? new RequestQueue($this->em, $this->bus, new \Psr\Log\NullLogger()))->publish($entry);
                 }
             }
             ++$n;

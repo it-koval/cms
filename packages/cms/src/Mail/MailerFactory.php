@@ -72,8 +72,12 @@ final class MailerFactory
     }
 
     /** A transport for the route. No logger on purpose: the SMTP conversation of the debug log holds the login and password in base64. */
-    public function transport(MailRoute $route): TransportInterface
+    public function transport(MailRoute $route, bool $guardRequestDelivery = false): TransportInterface
     {
+        if ($guardRequestDelivery) {
+            return (new RequestMailTransportGuard($this->dispatcher))->transport($route->dsn);
+        }
+
         return Transport::fromDsn($route->dsn, $this->dispatcher, null, null);
     }
 

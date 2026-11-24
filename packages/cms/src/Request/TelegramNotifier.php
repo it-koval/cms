@@ -9,11 +9,14 @@ use Itk\Cms\Content\ContentException;
 use Itk\Cms\Content\HtmlSanitizer;
 use Itk\Cms\Content\SettingsService;
 use Itk\Cms\Entity\Request;
+use Itk\Cms\Event\RequestDelivery;
 use Itk\Cms\I18n\I18n;
 use Itk\Cms\Schema\Schema;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\Notifier\Bridge\Telegram\TelegramOptions;
+use Symfony\Component\Notifier\Exception\TransportException;
+use Symfony\Component\Notifier\Exception\TransportExceptionInterface;
 use Symfony\Component\Notifier\Message\ChatMessage;
 use Symfony\Component\Notifier\Transport\TransportInterface;
 use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
@@ -90,7 +93,7 @@ final class TelegramNotifier implements ChannelNotifier
         return $this->record($r, $this->attempt($r, $resend));
     }
 
-    public function attempt(Request $r, bool $resend = false): ChannelOutcome
+    public function attempt(Request $r, bool $resend = false, ?DeliveryProgress $progress = null): ChannelOutcome
     {
         $chatter = $this->enabled && $this->settings->isTelegramOn() ? $this->connection->transport() : null;
         $chats = null === $chatter ? [] : $this->chatsFor($r->form);
@@ -100,23 +103,44 @@ final class TelegramNotifier implements ChannelNotifier
 
         $parts = $this->parts($r, $resend);
         $errors = [];
-        foreach ($chats as $chat) {
+        $uncertain = false;
+        foreach (\array_unique($chats) as $chat) {
             foreach ($parts->texts as $i => $text) {
-                $parts->pauseBefore($i, $this->sleep);
                 try {
-                    $chatter->send((new ChatMessage($text))->options(
-                        (new TelegramOptions())->chatId($chat)->parseMode(TelegramOptions::PARSE_MODE_HTML)->disableWebPagePreview(true),
-                    ));
-                } catch (\Throwable $e) {
+                    DeliveryProgress::send($progress, $chat, $i, $text, fn () => $parts->pauseBefore($i, $this->sleep), static function () use ($chatter, $chat, $text): void {
+                        try {
+                            $chatter->send((new ChatMessage($text))->options(
+                                (new TelegramOptions())->chatId($chat)->parseMode(TelegramOptions::PARSE_MODE_HTML)->disableWebPagePreview(true),
+                            ));
+                        } catch (TransportException $failure) {
+                            if (null === $failure->getPrevious()) {
+                                $status = $failure->getResponse()->getInfo('http_code');
+                                if ($status >= 400 && $status < 500 && 408 !== $status) {
+                                    throw new DeliveryRefusedException($failure->getMessage());
+                                }
+                            }
+                            throw new DeliveryUncertainException(I18n::t('http.request_delivery_uncertain'));
+                        } catch (TransportExceptionInterface|\Symfony\Contracts\HttpClient\Exception\ExceptionInterface) {
+                            throw new DeliveryUncertainException(I18n::t('http.request_delivery_uncertain'));
+                        }
+                    });
+                } catch (DeliveryRefusedException|DeliveryUncertainException $e) {
+                    $uncertain = $uncertain || $e instanceof DeliveryUncertainException;
                     $error = $parts->failure($i, $this->connection->scrubError($e->getMessage()));
                     $errors[] = $chat . ': ' . $error;
                     $this->logger->error('Telegram delivery failed for request #{id}, chat {chat}: {error}', ['id' => $r->id, 'chat' => $chat, 'error' => $error]);
-                    break; // the rest would arrive out of order; a retry starts from the first
+                    break; // the rest of this chat's messages would arrive out of order
                 }
             }
         }
 
-        return [] !== $errors ? ChannelOutcome::failed(\implode("\n", $errors)) : ChannelOutcome::sent();
+        return $uncertain ? ChannelOutcome::uncertain(\implode("\n", $errors)) : ([] !== $errors ? ChannelOutcome::failed(\implode("\n", $errors)) : ChannelOutcome::sent());
+    }
+
+    /** @internal */
+    public function announce(RequestDelivery $event): void
+    {
+        $this->events->dispatch($event);
     }
 
     /** Writes the outcome of attempt() into the request and announces it. Returns true when it needs no retry. */

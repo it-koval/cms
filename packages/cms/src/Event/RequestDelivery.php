@@ -21,6 +21,7 @@ final class RequestDelivery
         public readonly bool $cancelled = false,
         public readonly string $channel = Request::CHANNEL_TELEGRAM,
         private readonly ?Connection $deliveryConnection = null,
+        public readonly bool $durable = false,
     ) {
     }
 

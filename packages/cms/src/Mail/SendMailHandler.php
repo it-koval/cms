@@ -19,6 +19,7 @@ final class SendMailHandler
     public function __construct(
         private readonly SiteMailer $mailer,
         private readonly NotificationInbox $inbox,
+        private readonly RequestMailCheckpoint $checkpoint,
     ) {
     }
 
@@ -28,7 +29,7 @@ final class SendMailHandler
         if (\in_array($mail->kind, [SendMail::RESET, SendMail::INVITE], true)) {
             return;
         }
-        $this->mailer->deliver($mail);
+        $this->checkpoint->deliver($mail, fn () => $this->mailer->deliver($mail));
         if (SendMail::REQUEST === $mail->kind && null !== $mail->ref) {
             try {
                 $this->inbox->resolve(MailFailureListener::key($mail)); // it went out in the end: the bell takes the warning back

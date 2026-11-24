@@ -66,7 +66,7 @@ class Request
     #[ORM\Column(name: 'delivery_error', type: Types::TEXT, nullable: true)]
     public ?string $deliveryError = null;
 
-    /** @var array<string, array{state: string, error: ?string}> the delivery to each messenger that is not «pending»: channel => state and error */
+    /** @var array<string, array{state: string, error: ?string, job?: string, phase?: string, lease?: int, resend?: bool, parts?: array<string, array{hash: string, state: string}>, announcements?: list<array{delivered: bool, cancelled: bool, error: ?string}>, announcementRetryAt?: int}> */
     #[ORM\Column(type: Types::JSON, options: ['jsonb' => true, 'default' => '{}'])]
     private array $channels = [];
 
@@ -120,10 +120,14 @@ class Request
         $errors = [];
         $sent = false;
         foreach (self::CHANNELS as $key => $name) {
+            $metadata = \array_diff_key($jobs[$key] ?? [], ['state' => true, 'error' => true]);
             if (!isset($states[$key])) {
+                if ([] !== $metadata) {
+                    $this->channels[$key] = ['state' => self::DELIVERY_PENDING, 'error' => null] + $metadata;
+                }
                 continue;
             }
-            $this->channels[$key] = $states[$key] + \array_intersect_key($jobs[$key] ?? [], \array_flip(['job', 'phase', 'lease']));
+            $this->channels[$key] = $states[$key] + $metadata;
             $sent = $sent || self::DELIVERY_SENT === $states[$key]['state'];
             if (self::DELIVERY_FAILED === $states[$key]['state']) {
                 $errors[] = $name . ': ' . $states[$key]['error'];
@@ -178,7 +182,69 @@ class Request
         foreach ($states as $key => $state) {
             $this->channels[$key] = ($this->channels[$key] ?? []) + $state;
         }
+        if ($job !== $this->channelJob($channel)) {
+            unset($this->channels[$channel]['parts'], $this->channels[$channel]['resend']);
+        }
         $this->channels[$channel] = \array_replace($this->channels[$channel] ?? ['state' => self::DELIVERY_PENDING, 'error' => null], ['job' => $job, 'phase' => $phase, 'lease' => $lease]);
+    }
+
+    /** @return array<string, array{hash: string, state: string}> */
+    public function channelParts(string $channel): array
+    {
+        return $this->channels[$channel]['parts'] ?? [];
+    }
+
+    public function channelResend(string $channel): ?bool
+    {
+        return $this->channels[$channel]['resend'] ?? null;
+    }
+
+    public function markChannelResend(string $channel, bool $resend): void
+    {
+        $this->channels[$channel]['resend'] = $resend;
+    }
+
+    /** @param array{hash: string, state: string}|null $part */
+    public function markChannelPart(string $channel, string $key, ?array $part): void
+    {
+        if (null === $part) {
+            unset($this->channels[$channel]['parts'][$key]);
+
+            return;
+        }
+        $this->channels[$channel]['parts'][$key] = $part;
+    }
+
+    /** @return array{delivered: bool, cancelled: bool, error: ?string}|null */
+    public function channelAnnouncement(string $channel): ?array
+    {
+        return $this->channels[$channel]['announcements'][0] ?? null;
+    }
+
+    /** @param array{delivered: bool, cancelled: bool, error: ?string} $announcement */
+    public function enqueueChannelAnnouncement(string $channel, array $announcement): void
+    {
+        $this->channels[$channel] ??= ['state' => self::DELIVERY_PENDING, 'error' => null];
+        $this->channels[$channel]['announcements'][] = $announcement;
+    }
+
+    public function acknowledgeChannelAnnouncement(string $channel): void
+    {
+        $pending = $this->channels[$channel]['announcements'] ?? [];
+        \array_shift($pending);
+        unset($this->channels[$channel]['announcementRetryAt']);
+        if ([] === $pending) {
+            unset($this->channels[$channel]['announcements']);
+        } else {
+            $this->channels[$channel]['announcements'] = $pending;
+        }
+    }
+
+    public function deferChannelAnnouncement(string $channel, int $retryAt): void
+    {
+        if (null !== $this->channelAnnouncement($channel)) {
+            $this->channels[$channel]['announcementRetryAt'] = $retryAt;
+        }
     }
 
     /** @return list<string> */

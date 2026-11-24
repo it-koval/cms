@@ -101,6 +101,20 @@ final class MaxApiSenderTest extends TestCase
     }
 
     #[Test]
+    public function theServerClientDoesNotRepeatAnAmbiguousPost(): void
+    {
+        $config = (new MaxApiConfig(self::TOKEN))->setHttpClient($this->wire(503, '{"code":"unavailable","message":"unavailable"}'))->setRetryAttempts([1]);
+        $sender = new MaxApiSender(static fn (): MaxApiClient => new MaxApiClient($config), static fn (): MaxApiConfig => $config, new NullLogger());
+        try {
+            $sender->send(1, 'text');
+            self::fail('an uncertain response must be surfaced');
+        } catch (\Itk\Cms\Request\DeliveryUncertainException) {
+            self::assertCount(1, $this->requests);
+            self::assertSame([1], $config->getRetryAttempts());
+        }
+    }
+
+    #[Test]
     public function aRefusalHidesEncodedTokenFormsAsWellAsTheHeaderValue(): void
     {
         $token = 'secret/+value:with-punctuation';

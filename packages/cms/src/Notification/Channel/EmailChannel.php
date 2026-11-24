@@ -11,6 +11,7 @@ use Itk\Cms\Mail\MailComposer;
 use Itk\Cms\Mail\SiteMailer;
 use Itk\Cms\Notification\Notification;
 use Itk\Cms\Notification\NotificationChannelInterface;
+use Itk\Cms\Request\RequestQueue;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -29,6 +30,7 @@ final class EmailChannel implements NotificationChannelInterface
         private readonly SiteMailer $mailer,
         private readonly MailComposer $composer,
         private readonly LoggerInterface $logger,
+        private readonly ?RequestQueue $queue = null,
     ) {
     }
 
@@ -60,7 +62,12 @@ final class EmailChannel implements NotificationChannelInterface
         }
         foreach ($to as $address) {
             try {
-                $this->mailer->queue($this->composer->newRequest($request, $address));
+                $mail = $this->composer->newRequest($request, $address);
+                if (null !== $this->queue) {
+                    $this->queue->enqueueMail($mail);
+                } else {
+                    $this->mailer->queue($mail);
+                }
             } catch (\Throwable $e) {
                 // the request is saved and Telegram goes its own way; the others on the list still get their letter
                 $this->logger->error('Could not queue the letter about request #{id}: {error}', ['id' => $id, 'error' => $e->getMessage()]);

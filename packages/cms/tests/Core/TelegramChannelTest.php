@@ -132,6 +132,9 @@ final class TelegramChannelTest extends WebTestCase
 
         self::assertSame(1, $bus->attempts);
         self::assertSame(RequestEntity::DELIVERY_FAILED, $r->delivery);
-        self::assertStringContainsString('Queue is down', (string) $r->deliveryError);
+        self::assertStringNotContainsString('Queue is down', (string) $r->deliveryError, 'broker diagnostics are not exposed to staff');
+        self::assertStringContainsString(\Itk\Cms\I18n\I18n::t('http.request_queue_failed'), (string) $r->deliveryError);
+        self::assertSame(['telegram'], $r->queuedChannels(), 'the ambiguous publication remains recoverable');
+        self::assertSame(1, (int) self::getContainer()->get(EntityManagerInterface::class)->getConnection()->fetchOne('SELECT COUNT(*) FROM itk_request_queue WHERE request_id = ?', [$r->id]));
     }
 }

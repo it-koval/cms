@@ -14,6 +14,36 @@ use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 final class F2SettingsMigrationTest extends KernelTestCase
 {
     #[Test]
+    public function numericFormRoutesMoveAndExistingPrefixedRoutesRemainUntouched(): void
+    {
+        self::bootKernel();
+        $db = self::getContainer()->get(Connection::class);
+        $schema = 'numeric_routes_' . \bin2hex(\random_bytes(5));
+        $previous = (string) $db->fetchOne('SHOW search_path');
+        $db->executeStatement('CREATE SCHEMA ' . $schema);
+        try {
+            $db->executeStatement('SET search_path TO ' . $schema);
+            $db->executeStatement('CREATE TABLE itk_setting (setting_key TEXT, locale TEXT, setting_value JSONB, PRIMARY KEY (setting_key, locale))');
+            foreach (['tgRoutes', 'maxRoutes', 'mailRoutes'] as $key) {
+                $db->insert('itk_setting', ['setting_key' => $key, 'locale' => '*', 'setting_value' => '["12345"]']);
+            }
+            $this->migrate($db);
+            foreach (['tgRoutes', 'maxRoutes', 'mailRoutes'] as $key) {
+                self::assertSame('["12345"]', $db->fetchOne('SELECT setting_value FROM itk_setting WHERE setting_key = ?', ['itk:' . $key]), $key . ' routes for form key "0" survive the upgrade');
+                $db->insert('itk_setting', ['setting_key' => $key, 'locale' => '*', 'setting_value' => '["legacy"]']);
+            }
+            $this->migrate($db);
+            foreach (['tgRoutes', 'maxRoutes', 'mailRoutes'] as $key) {
+                self::assertSame('["12345"]', $db->fetchOne('SELECT setting_value FROM itk_setting WHERE setting_key = ?', ['itk:' . $key]));
+                self::assertSame('["legacy"]', $db->fetchOne('SELECT setting_value FROM itk_setting WHERE setting_key = ?', [$key]));
+            }
+        } finally {
+            $db->executeStatement('SET search_path TO ' . $previous);
+            $db->executeStatement('DROP SCHEMA ' . $schema . ' CASCADE');
+        }
+    }
+
+    #[Test]
     public function onlyInternalShapesMoveAndExistingDestinationsAndLocalesStayIntact(): void
     {
         self::bootKernel();
@@ -34,7 +64,7 @@ final class F2SettingsMigrationTest extends KernelTestCase
                 }
                 $this->migrate($db);
                 foreach ($keys as $key) {
-                    $moves = \in_array($key, $booleanKeys, true) ? \is_bool($value) : \is_object($value) || \is_array($value) && !\array_is_list($value);
+                    $moves = \in_array($key, $booleanKeys, true) ? \is_bool($value) : \is_object($value) || \is_array($value) && (!\array_is_list($value) || \in_array($key, ['tgRoutes', 'maxRoutes', 'mailRoutes'], true));
                     self::assertSame($moves, false !== $db->fetchOne('SELECT setting_value FROM itk_setting WHERE setting_key = ? AND locale = ?', ['itk:' . $key, '*']), $key . ' shape ' . \json_encode($value));
                     self::assertSame(!$moves, false !== $db->fetchOne('SELECT setting_value FROM itk_setting WHERE setting_key = ? AND locale = ?', [$key, '*']));
                 }
