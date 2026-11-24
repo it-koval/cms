@@ -13,7 +13,6 @@ use Itk\Cms\Media\GenerateImageVariants;
 use Itk\Cms\Request\RequestDeliverer;
 use Itk\Cms\Request\SendRequestNotification;
 use Itk\Cms\Security\RequestPasswordLink;
-use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\Messenger\Envelope;
 use Symfony\Component\Messenger\Stamp\BusNameStamp;
 use Symfony\Component\Messenger\Stamp\ErrorDetailsStamp;
@@ -40,17 +39,18 @@ final class MessengerMonitor
     private bool $failedResolved = false;
     private ?ReceiverInterface $failedReceiver = null;
     private ?string $failedProblem = null;
+    private ?RequestDeliverer $resolvedDeliverer = null;
 
     /**
      * @param ServiceProviderInterface<object> $receivers messenger.receiver_locator: every transport by its name (and by service id)
      * @param (\Closure(): ?ReceiverInterface)|ReceiverInterface|null $failed the failure transport (messenger.failure_transports.default; a closure builds it on first use, so a transport
      *                                                                        that cannot be built does not break the screen), null when the site has none
+     * @param (\Closure(): RequestDeliverer)|null $requestDeliverer
      */
     public function __construct(
         private readonly ServiceProviderInterface $receivers,
         private readonly \Closure|ReceiverInterface|null $failed = null,
-        #[Autowire(lazy: true)]
-        private readonly ?RequestDeliverer $requestDeliverer = null,
+        private readonly ?\Closure $requestDeliverer = null,
     ) {
     }
 
@@ -152,7 +152,8 @@ final class MessengerMonitor
         if (!$target instanceof SenderInterface) {
             throw ContentException::invalid(I18n::t('ops.queue_no_origin'));
         }
-        if ($message instanceof SendRequestNotification && null !== $this->requestDeliverer && !$this->requestDeliverer->resumeJob($message)) {
+        $deliverer = $message instanceof SendRequestNotification ? $this->deliverer() : null;
+        if ($message instanceof SendRequestNotification && false === $deliverer?->resumeJob($message)) {
             $this->failedTransport()?->ack($envelope);
 
             return;
@@ -160,8 +161,8 @@ final class MessengerMonitor
         try {
             $target->send(new Envelope($message, $envelope->all(BusNameStamp::class)));
         } catch (\Throwable $e) {
-            if ($message instanceof SendRequestNotification && null !== $this->requestDeliverer) {
-                $this->requestDeliverer->queueFailed($message->requestId, $message->channel, $message->jobId ?? 'legacy', I18n::t('http.request_queue_failed'));
+            if ($message instanceof SendRequestNotification) {
+                $deliverer?->queueFailed($message->requestId, $message->channel, $message->jobId ?? 'legacy', I18n::t('http.request_queue_failed'));
             }
             throw $e;
         }
@@ -178,6 +179,15 @@ final class MessengerMonitor
     private function transportNames(): array
     {
         return TransportNames::of($this->receivers);
+    }
+
+    private function deliverer(): ?RequestDeliverer
+    {
+        if (null === $this->requestDeliverer) {
+            return null;
+        }
+
+        return $this->resolvedDeliverer ??= ($this->requestDeliverer)();
     }
 
     /** The failure transport, built on the first call; null when the site has none or it cannot be built (the reason is in $failedProblem). */

@@ -63,10 +63,10 @@ security:
         - { path: '^/admin(/|$)', roles: ROLE_ITK_USER }
 YAML
 
-cat > config/packages/itk_cms.yaml <<'YAML'
+cat > config/packages/itk_cms.yaml <<YAML
 itk_cms:
     main_locale: en
-    public_url: http://127.0.0.1:18080
+    public_url: http://127.0.0.1:${DEPLOY_PORT:-18028}
 YAML
 
 mkdir -p src/Smoke templates/pages
@@ -85,6 +85,7 @@ use Itk\Cms\Content\PageService;
 use Itk\Cms\Repository\PageRepository;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
+use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Messenger\MessageBusInterface;
@@ -101,11 +102,21 @@ final class VerifyInstall extends Command
         parent::__construct();
     }
 
+    protected function configure(): void
+    {
+        $this->addArgument('marker', InputArgument::REQUIRED, 'Marker for this worker smoke run.');
+    }
+
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
+        $marker = $input->getArgument('marker');
+        if (!is_string($marker) || '' === $marker) {
+            throw new \InvalidArgumentException('The worker probe marker must be non-empty.');
+        }
+
         $home = $this->pages->findOneBy([]) ?? throw new \RuntimeException('The install did not seed a home page.');
         $this->pageService->publish($home->id);
-        $this->bus->dispatch(new WorkerProbe(), [new TransportNamesStamp(['async'])]);
+        $this->bus->dispatch(new WorkerProbe($marker), [new TransportNamesStamp(['async'])]);
 
         return self::SUCCESS;
     }
@@ -119,7 +130,15 @@ declare(strict_types=1);
 
 namespace App\Smoke;
 
-final class WorkerProbe {}
+use Symfony\Component\DependencyInjection\Attribute\Exclude;
+
+#[Exclude]
+final class WorkerProbe
+{
+    public function __construct(public readonly string $marker)
+    {
+    }
+}
 PHP
 
 cat > src/Smoke/WorkerProbeHandler.php <<'PHP'
@@ -139,7 +158,7 @@ final class WorkerProbeHandler
 
     public function __invoke(WorkerProbe $probe): void
     {
-        if (false === file_put_contents($this->projectDir . '/public/uploads/worker-probe.txt', 'worker received the queued message')) {
+        if (false === file_put_contents($this->projectDir . '/public/uploads/worker-probe.txt', $probe->marker)) {
             throw new \RuntimeException('Cannot write the worker probe.');
         }
     }

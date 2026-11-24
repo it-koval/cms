@@ -1,13 +1,7 @@
 #!/usr/bin/env bash
 # Smoke test of the Docker kit (packages/cms/docker), run INSIDE the php_dev image built with CRITICAL_CSS=1:
 #
-# Run these commands from the repository root.
-#   export COMPOSE_FILE=packages/cms/docker/compose.yaml:packages/cms/tests/docker/compose.ci.yaml
-#   CRITICAL_CSS=1 docker compose --project-directory packages/cms build php
-#   docker compose --project-directory packages/cms run --rm --no-deps php bash tests/docker/smoke.sh
-#
-# Browser-only smoke with local fixtures and the kit's seccomp profile, from packages/cms with a running kit (php_dev built with CRITICAL_CSS=1):
-#   docker compose --project-directory . -f docker/compose.yaml exec -T -e ITK_TEST_CHROME=/usr/bin/chromium php node --test /app/tests/node/critical-css-network.test.mjs /app/tests/docker/chrome-seccomp.test.mjs
+# From the repository root: CRITICAL_CSS=1 make smoke-dev.
 # The full smoke installs crittr and needs npm access.
 #
 # It proves that the image has what the bundle asks for: the PHP extensions of composer.json, Node 22+ and a browser that

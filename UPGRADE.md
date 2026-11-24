@@ -24,7 +24,7 @@ ITK CMS follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html):
 - A minor release (0.2.0) adds features. From 1.0.0 on, it does not break the public API.
 - A major release (2.0.0) may break the public API.
 
-Before 1.0.0 a minor release may break the public API. Each such change is listed in [CHANGELOG.md](CHANGELOG.md) and in the version notes below. A patch release never breaks it. To get fixes without surprises, pin the minor version in the site: `"itk/cms": "~0.2.0"`.
+Before 1.0.0 a minor release may break the public API. Each such change is listed in [CHANGELOG.md](CHANGELOG.md) and in the version notes below. A patch release never breaks it. To get fixes without surprises, pin the minor version in the site: `"itk/cms": "~0.3.0"`.
 
 Database changes come as bundle migrations. The bundle does not change the site's own tables.
 
@@ -265,8 +265,8 @@ After the bundle loader runs, call `window.itkAnalytics.start()` for all configu
 - Rename collection fields that use reserved metadata keys. Find the list in `Collection::RESERVED_KEYS`. If site code reads a singleton before its first save, it receives a draft with initial values. The first explicit save creates the row and its history.
 - If a collection used `locales` or `position` as a business field, rename it in the schema and in stored draft and published values. Table generators accept an explicit `--map` for source columns that use a reserved key.
 - Run `itk:schema:lint` to find missing `h1()` fields and invalid field keys. Use `firstScreen()` to mark the first screen with any group name. Use a separate business field such as `stage` for kanban.
-- Content writers enforce field choices, limits and date formats consistently. Review import data and custom content writers. Site-defined fields can add validation through `ValueValidatingFieldInterface`.
-- `regex()` now also applies to nonempty values written through admin, PHP and imports. Fix stored values that fail the pattern before publishing.
+- Field choices, limits, date formats and `regex()` are checked on writes through CMS services. This includes the admin panel, PHP services and MCP. `regex()` checks nonempty values. Fix stored values that fail the pattern before publishing. Site-defined fields can add validation through `ValueValidatingFieldInterface`.
+- Direct database writes by your own script bypass these checks and the edit history. Verify those data yourself.
 - Public forms reject nonempty values outside the available choices. An empty optional field is accepted.
 - Public forms reject invalid date and time formats.
 - A form value that exceeds its configured text limit returns a validation error.

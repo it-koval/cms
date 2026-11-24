@@ -6,13 +6,13 @@ The admin panel is a thin client for the `itk/cms` server. All data goes through
 
 ## Commands
 
-Run the commands from `admin/` inside Docker: `docker compose run --rm node <command>`. The container uses Node 24.22.2 (`.nvmrc`, `engines`, `admin/compose.yaml`) and keeps the Linux dependencies in a separate volume, apart from the host `node_modules`. You do not need Node or PHP changes on the host.
+Run npm commands from `admin/` inside Docker with `docker compose run --rm node <command>`. For Vite, use the root `make` targets in the table so the container publishes its port. The container uses Node 24.22.2 (`.nvmrc`, `engines`, `admin/compose.yaml`) and keeps the Linux dependencies in a separate volume, apart from the host `node_modules`. You do not need Node or PHP changes on the host.
 
 | Command | What it does |
 |---|---|
 | `npm ci` | Installs the dependencies from the lock file. |
-| `npm run dev` | Starts Vite at `http://127.0.0.1:18023/bundles/itkcms/admin/` (via `make admin-dev`) and proxies the API to the site. See [Develop without the server shell](#develop-without-the-server-shell). |
-| `npm run dev:mock` | Runs the admin panel without PHP, on made-up data. See [Mock mode](#mock-mode). |
+| `make admin-dev` from the repository root | Runs `npm run dev` in Docker. Starts Vite at `http://127.0.0.1:18023/bundles/itkcms/admin/` and proxies the API to the site. See [Develop without the server shell](#develop-without-the-server-shell). |
+| `make admin-mock` from the repository root | Runs `npm run dev:mock` in Docker. Starts the admin panel on port 18023 without PHP, on made-up data. See [Mock mode](#mock-mode). |
 | `npm run lint` | ESLint 9. |
 | `npm run check:i18n` | Checks the interface catalogs. See [Interface language](#interface-language). |
 | `npm test` | Vitest. |

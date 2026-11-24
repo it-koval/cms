@@ -39,7 +39,7 @@
 'ops.make_file_replaced': 'заменён'
 'ops.make_file_kept': 'уже есть, не тронут'
 'ops.make_file_exists': 'уже есть'
-'ops.make_collection_from_option': 'Откуда взять поля: файл.json или table:имя_таблицы (table:база.таблица, если она в другой базе)'
+'ops.make_collection_from_option': 'Взять поля из файл.json или table:имя_таблицы. Для другой схемы укажите table:схема.таблица, для другого подключения используйте --connection.'
 'ops.make_collection_rows_ignored': 'Поле "rows" игнорируется. Команда больше не импортирует записи. Перенесите данные своим скриптом.'
 'ops.make_collection_map_option': 'Колонка:поле[:тип], через запятую; "колонка:-" пропускает колонку. Например city:town,dateStart:start:date'
 'ops.make_collection_id_option': 'Колонка таблицы, которую нужно исключить из полей класса (по умолчанию одиночный первичный ключ)'

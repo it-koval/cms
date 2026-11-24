@@ -100,7 +100,7 @@ final class SettingsService implements ResetInterface
 
     /**
      * Saved at once (no publish step). Only the keys of the patch are checked and written. A signed-in person cannot write a field he may
-     * not see or one marked readonly(); the system (console, import, hooks) can.
+     * not see or one marked readonly(); the system (console, hooks) can.
      *
      * @param array<string, mixed> $patch
      *
@@ -234,7 +234,7 @@ final class SettingsService implements ResetInterface
         return $this->all($locale);
     }
 
-    /** Sets a shared value from code (install, import). */
+    /** Sets a shared value from code, for example during installation. */
     public function set(string $key, mixed $value, string $locale = Setting::ALL): void
     {
         if ('domain' === $key) {

@@ -1,6 +1,10 @@
 COMPOSE_PROJECT_NAME ?= itkcms
-HOST_UID ?= $(shell id -u)
-HOST_GID ?= $(shell id -g)
+ifndef HOST_UID
+HOST_UID := $(shell id -u)
+endif
+ifndef HOST_GID
+HOST_GID := $(shell id -g)
+endif
 ITK_CI_UID ?= $(HOST_UID)
 ITK_CI_GID ?= $(HOST_GID)
 HTTP_PORT ?= 18020
@@ -19,7 +23,7 @@ NODE = docker compose -f admin/compose.yaml -p itk-cms-admin
 .DEFAULT_GOAL := help
 .PHONY: help up down build build-php install admin-install sh logs
 .PHONY: test test-php test-random test-admin schema validate lint lint-php lint-admin
-.PHONY: admin-build admin-build-check admin-dev audit audit-prod audit-report
+.PHONY: admin-build admin-build-check admin-dev admin-mock audit audit-prod audit-report
 .PHONY: ci-deps test-max smoke-dev no-node site-clean smoke-prod
 
 help: ## Показать список целей
@@ -92,9 +96,11 @@ admin-build-check: admin-build ## Сверить сборку админки с 
 admin-dev: ## Запустить Vite для разработки админки
 	$(NODE) up node
 
-audit: ## Проверить зависимости npm на известные уязвимости
-	$(NODE) run --rm node npm audit --include=dev
-	$(NODE) run --rm node npm audit --omit=dev --audit-level=high
+admin-mock: ## Запустить админку на выдуманных данных без PHP
+	$(NODE) run --rm --service-ports node npm run dev:mock -- --host 0.0.0.0
+
+audit: audit-prod ## Проверить зависимости npm на известные уязвимости
+	-$(NODE) run --rm --no-deps node npm audit --include=dev
 
 audit-prod: ## Проверить рабочие зависимости npm на уязвимости уровня high и выше
 	$(NODE) run --rm --no-deps node npm audit --omit=dev --audit-level=high
@@ -121,16 +127,20 @@ test-max: ## Проверить опциональный бандл MAX в CI
 smoke-dev: ## Собрать и проверить образ разработки с Node и Chromium
 	$(PHP) build php
 	$(PHP) run --rm --no-deps php bash tests/docker/smoke.sh
-	$(PHP) run --rm --no-deps php php-fpm -t
+	$(PHP) run --rm --no-deps -e SKIP_ENTRYPOINT=1 php php-fpm -t
 
 no-node: ## Собрать образ разработки и проверить, что в нём нет Node
 	$(PHP) build php
 	$(PHP) run --rm --no-deps php sh -ec '! command -v node'
 
 site-clean: ## Подготовить чистый сайт Symfony из снимка пакета в Git
+	@if [ -d "$(SITE)" ] && { ! contents=$$(ls -Ab "$(SITE)/.") || [ -n "$$contents" ]; }; then \
+		printf 'Каталог %s уже есть. Удалите его и запустите снова.\n' "$(SITE)" >&2; \
+		exit 1; \
+	fi
 	$(PHP) run --rm --no-deps php composer create-project 'symfony/skeleton:7.4.*' "/workspace/$(SITE)" --no-interaction --no-progress
 	git archive --prefix=source/ HEAD:packages/cms | tar -xf - -C "$(SITE)"
-	$(PHP) run --rm --no-deps -w "/workspace/$(SITE)" php bash /workspace/packages/cms/tests/docker/prepare-site.sh
+	$(PHP) run --rm --no-deps -e DEPLOY_PORT="$(DEPLOY_PORT)" -w "/workspace/$(SITE)" php bash /workspace/packages/cms/tests/docker/prepare-site.sh
 
 smoke-prod: ## Собрать и проверить production-комплект на подготовленном сайте
 	bash packages/cms/tests/docker/prod-smoke.sh "$(SITE)"

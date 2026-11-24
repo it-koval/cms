@@ -25,7 +25,7 @@
 
 ### Добавлено
 
-- Через `make` можно запустить стенд разработки и локально выполнить проверки CI (`make help`). По умолчанию стенд использует порты 18020–18023 на `127.0.0.1`. См. [CONTRIBUTING](CONTRIBUTING.ru.md).
+- Через `make` можно запустить стенд разработки и локально выполнить проверки CI (`make help`). На `127.0.0.1` цель `make up` использует 18021 для PostgreSQL и 18022 для Mailpit. Цели `make admin-dev` и `make admin-mock` используют 18023. Порт 18020 зарезервирован для HTTP сайта. Цель `make smoke-prod` использует 18028. См. [CONTRIBUTING](CONTRIBUTING.ru.md).
 - `itk:requests:recover` запускает восстановление заданий и событий доставки заявок. После проверки чата Telegram/MAX команда `itk:requests:resolve <request> <telegram|max> <recipient> <sent|rejected>` фиксирует результат. `itk:requests:resend <request> --channel=<telegram|max>` продолжает доставку. Для SMTP используйте `itk:requests:mail:resolve <request> <recipient> <sent|rejected>`, а после подтверждённого отказа — `itk:requests:resend <request> --channel=mail --recipient=<address>`. Команды восстановления почты работают без транспорта ошибок. При наличии соответствующего задания команда разрешения также печатает его команду повтора.
 - Добавлены кодекс поведения, шаблоны задач и pull request, руководство по выкладке и откату и production-файл Compose. См. [DEPLOY.ru.md](docs/DEPLOY.ru.md).
 - «Состояние сайта» и `itk:doctor` сообщают о нечитаемых ключах двухэтапного входа и используют одну проверку GD/WebP.

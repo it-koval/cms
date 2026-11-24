@@ -15,7 +15,7 @@ use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
 use Symfony\Component\Messenger\MessageBusInterface;
 
 /**
- * A page or item version that goes live (publish, republish, each record of a mass publish, an import with --publish) or leaves the site
+ * A page or item version that goes live (publish, republish, each record of a mass publish) or leaves the site
  * gets its document brought up to date by the worker. One message per event: the batch handler coalesces bursts on the consumer side.
  *
  * A page that gets another template (PageTemplateChanged) is queued in the main language whenever the knowledge base is on, without asking about the
