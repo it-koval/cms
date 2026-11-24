@@ -26,6 +26,22 @@ class CollectionItemRepository extends ServiceEntityRepository
         return $this->createQueryBuilder('i')->where('i.collection = :c')->setParameter('c', $collection)->orderBy('i.position', 'ASC')->addOrderBy('i.createdAt', 'ASC')->getQuery()->getResult();
     }
 
+    /** @return iterable<array{id: string, translations: array<string, array<string, mixed>>}> */
+    public function forOverview(string $collection): iterable
+    {
+        $query = $this->createQueryBuilder('i')->select('i.id AS id', 'i.translations AS translations')
+            ->where('i.collection = :collection AND i.id > :cursor')->setParameter('collection', $collection)
+            ->orderBy('i.id', 'ASC')->setMaxResults(100);
+        $cursor = '';
+        do {
+            $batch = $query->setParameter('cursor', $cursor)->getQuery()->getArrayResult();
+            foreach ($batch as $row) {
+                $cursor = $row['id'];
+                yield $row;
+            }
+        } while (100 === \count($batch));
+    }
+
     public function nextPosition(string $collection): int
     {
         $max = $this->createQueryBuilder('i')->select('MAX(i.position)')->where('i.collection = :c')->setParameter('c', $collection)->getQuery()->getSingleScalarResult();

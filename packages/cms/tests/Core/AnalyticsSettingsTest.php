@@ -18,6 +18,7 @@ final class AnalyticsSettingsTest extends KernelTestCase
 {
     private const KEYS = ['yandexMetrikaId', 'yandexMetrikaWebvisor', 'googleAnalyticsId', 'yandexVerification', 'googleVerification', 'indexNow'];
 
+    /** @param array<string, mixed> $options */
     protected static function createKernel(array $options = []): KernelInterface
     {
         return new TestKernel('test', true);

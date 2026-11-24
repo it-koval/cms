@@ -40,20 +40,6 @@ final class LivenessProbe
     /** A file is really written and removed; a folder that is not made yet is fine while the nearest folder above it takes files (it is made by the first upload). */
     private function uploadsAreWritable(): bool
     {
-        if (!\is_dir($this->uploadDir)) {
-            $dir = $this->uploadDir;
-            while (!\is_dir($dir) && \dirname($dir) !== $dir) {
-                $dir = \dirname($dir);
-            }
-
-            return \is_writable($dir);
-        }
-        $probe = $this->uploadDir . '/.healthz-' . \bin2hex(\random_bytes(4));
-        if (false === @\file_put_contents($probe, 'ok')) {
-            return false;
-        }
-        @\unlink($probe);
-
-        return true;
+        return UploadsWritable::check($this->uploadDir);
     }
 }

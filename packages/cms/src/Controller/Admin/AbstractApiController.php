@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace Itk\Cms\Controller\Admin;
 
 use Itk\Cms\Content\ContentException;
+use Itk\Cms\I18n\ContentLocales;
 use Itk\Cms\I18n\I18n;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
+use Symfony\Contracts\Service\Attribute\Required;
 
 /**
  * Helpers shared by the controllers of the admin JSON API (/admin/api/*). Errors are ContentException / AccessDeniedException: ApiErrorListener turns them into { error, details? }.
@@ -16,6 +18,14 @@ use Symfony\Component\HttpFoundation\Request;
  */
 abstract class AbstractApiController
 {
+    protected ContentLocales $contentLocales;
+
+    #[Required]
+    public function setContentLocales(ContentLocales $contentLocales): void
+    {
+        $this->contentLocales = $contentLocales;
+    }
+
     protected function json(mixed $data, int $status = 200): JsonResponse
     {
         $response = new JsonResponse($data, $status);
@@ -23,6 +33,15 @@ abstract class AbstractApiController
         $response->headers->set('Cache-Control', 'no-store');
 
         return $response;
+    }
+
+    /** @return array{int, int, int} page, per-page size and offset */
+    protected function listPage(Request $request): array
+    {
+        $perPage = \max(1, \min(100, $request->query->getInt('perPage', 50)));
+        $page = \max(1, $request->query->getInt('page', 1));
+
+        return [$page, $perPage, \min($page - 1, \intdiv(\PHP_INT_MAX, $perPage)) * $perPage];
     }
 
     /**
@@ -55,15 +74,29 @@ abstract class AbstractApiController
      */
     protected function locale(Request $request, array $body = []): ?string
     {
-        $locale = $request->query->get('locale', $body['locale'] ?? null);
+        $locale = $request->query->has('locale') ? $request->query->get('locale') : ($body['locale'] ?? null);
         if (null === $locale || '' === $locale) {
             return null;
         }
-        if (!\is_string($locale) || !\preg_match('/^[A-Za-z]{2,8}(-[A-Za-z0-9]{1,8})?$/', $locale)) {
+        if (!\is_string($locale)) {
             throw ContentException::invalid(I18n::t('http.no_such_language'));
         }
 
-        return $locale;
+        return $this->contentLocales->assertUsable($locale);
+    }
+
+    /** @return array{string, ?string} the target and optional source of a new translation */
+    protected function translationInput(Request $request): array
+    {
+        if (!\is_string($request->query->all()['locale'] ?? null) || null === ($locale = $this->locale($request))) {
+            throw ContentException::invalid(I18n::t('http.no_such_language'));
+        }
+        $from = $this->body($request)['from'] ?? null;
+        if (null !== $from && !\is_string($from)) {
+            throw ContentException::invalid(I18n::t('content.translation_source_invalid'));
+        }
+
+        return [$locale, $from];
     }
 
     /**

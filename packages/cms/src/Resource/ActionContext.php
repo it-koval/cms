@@ -24,7 +24,8 @@ final class ActionContext
     }
 
     /**
-     * The ticked rows, or the open record.
+     * The records passed to the action. Row and form actions receive the current record.
+     * Bulk actions receive the selected records. A top action can run with no records.
      *
      * @return list<Record>
      */
@@ -33,7 +34,11 @@ final class ActionContext
         return $this->records;
     }
 
-    /** The values the person typed in the modal (already checked against its fields). @return array<string, mixed> */
+    /**
+     * The values the person typed in the modal (already checked against its fields).
+     *
+     * @return array<string, mixed>
+     */
     public function input(): array
     {
         return $this->input;
@@ -49,7 +54,7 @@ final class ActionContext
         return $this->resourceKey;
     }
 
-    /** 'item' (collection record) or 'page'. */
+    /** The action runner supplies 'item' for collection records. */
     public function kind(): string
     {
         return $this->kind;

@@ -1,0 +1,19 @@
+<!doctype html>
+<html>
+<head>
+    <title>{{ itk_seo({title: 'Site controller fixture'}).title }}</title>
+    {% if embed in ['metrika', 'both', 'metrika-single-quoted', 'metrika-double-quoted'] %}
+    <script>(function(m,e,t,r,i,k,a){})(window,document,"script","https://mc.yandex.ru/metrika/tag.js","ym");{% if embed == 'metrika-single-quoted' %}ym('12345678', 'init', {clickmap:true});{% elseif embed == 'metrika-double-quoted' %}ym("12345678", "init", {clickmap:true});{% else %}ym(12345678, "init", {clickmap:true});{% endif %}</script>
+    {% endif %}
+    {% if embed in ['ga', 'both'] %}
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-ABCD1234"></script>
+    <script>window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}gtag('config','G-ABCD1234');</script>
+    {% endif %}
+</head>
+<body>
+    {% if embed in ['metrika', 'both', 'metrika-single-quoted', 'metrika-double-quoted'] %}
+    <noscript><div><img src="https://mc.yandex.ru/watch/12345678" alt=""></div></noscript>
+    {% endif %}
+    <main>Site controller fixture</main>
+</body>
+</html>

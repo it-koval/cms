@@ -4,31 +4,58 @@ declare(strict_types=1);
 
 namespace Itk\Cms\Tests\Core;
 
+use Doctrine\DBAL\Connection;
 use Itk\Cms\Mcp\ApiTokenService;
 use Itk\Cms\Mcp\McpScopes;
 use Itk\Cms\Mcp\McpSettings;
 use Itk\Cms\Mcp\McpStdio;
+use Itk\Cms\Tests\App\DatabaseFaults;
+use Itk\Cms\Tests\App\RecordingLogger;
+use Itk\Cms\Tests\App\TestKernel;
 use Itk\Cms\Tests\Core\Fixture\McpSupport;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\Console\Tester\CommandTester;
+use Symfony\Component\HttpKernel\KernelInterface;
 
 /** itk:mcp: lines in, lines out, nothing else on the output; the key is checked for every line. */
 final class McpStdioTest extends KernelTestCase
 {
     use McpSupport;
 
+    private DatabaseFaults $faults;
+
+    /** @param array<string, mixed> $options */
+    protected static function createKernel(array $options = []): KernelInterface
+    {
+        return new TestKernel($options['environment'] ?? 'test', $options['debug'] ?? true, databaseFaults: true);
+    }
+
     protected function setUp(): void
     {
         self::bootKernel();
+        $faults = self::getContainer()->get(DatabaseFaults::class);
+        self::assertInstanceOf(DatabaseFaults::class, $faults);
+        $this->faults = $faults;
         $this->mcpBoot();
     }
 
     protected function tearDown(): void
     {
-        $this->mcpClean();
-        parent::tearDown();
+        try {
+            if (isset($this->faults)) {
+                $this->faults->reset();
+            }
+            TestRevokingStream::$beforeSecond = null;
+            TestRevokingStream::$lines = [];
+            if (\in_array('testrevoking', \stream_get_wrappers(), true)) {
+                \stream_wrapper_unregister('testrevoking');
+            }
+            $this->mcpClean();
+        } finally {
+            parent::tearDown();
+        }
     }
 
     /**
@@ -118,6 +145,44 @@ final class McpStdioTest extends KernelTestCase
         self::assertStringContainsString('revoked', (string) \stream_get_contents($err));
     }
 
+    #[Test]
+    public function settingsChangedByAnotherProcessAreSeenByTheNextStdioCommand(): void
+    {
+        $key = $this->mcpKey($this->mcpUser());
+        $db = self::getContainer()->get(\Doctrine\DBAL\Connection::class);
+        $other = \Doctrine\DBAL\DriverManager::getConnection($db->getParams());
+        $before = $db->fetchOne("SELECT setting_value FROM itk_setting WHERE setting_key = 'testTitle' AND locale = 'ru'");
+        $first = 'F2-first-' . \bin2hex(\random_bytes(5));
+        $second = 'F2-second-' . \bin2hex(\random_bytes(5));
+        $write = static function (string $value) use ($other): void {
+            $other->executeStatement("INSERT INTO itk_setting (setting_key, locale, setting_value) VALUES ('testTitle', 'ru', ?) ON CONFLICT (setting_key, locale) DO UPDATE SET setting_value = EXCLUDED.setting_value", [\json_encode($value)]);
+        };
+        $write($first);
+        $line = static fn (int $id): string => \json_encode(['jsonrpc' => '2.0', 'id' => $id, 'method' => 'tools/call', 'params' => ['name' => 'settings_get', 'arguments' => ['group' => 'test_settings', 'locale' => 'ru']]]) . "\n";
+        $in = $this->feed([$line(1), $line(2)]);
+        TestRevokingStream::$beforeSecond = static fn () => $write($second);
+        $out = \fopen('php://memory', 'w+');
+        $err = \fopen('php://memory', 'w+');
+        try {
+            self::assertSame(0, self::getContainer()->get(McpStdio::class)->serve($key['plain'], $in, $out, $err));
+            \rewind($out);
+            $answers = \array_map(static fn (string $line): array => \json_decode($line, true), \explode("\n", \trim((string) \stream_get_contents($out))));
+            self::assertCount(2, $answers);
+            self::assertSame($first, $answers[0]['result']['structuredContent']['groups'][0]['settings']['testTitle']['value']);
+            self::assertSame($second, $answers[1]['result']['structuredContent']['groups'][0]['settings']['testTitle']['value']);
+        } finally {
+            TestRevokingStream::$beforeSecond = null;
+            $other->executeStatement("DELETE FROM itk_setting WHERE setting_key = 'testTitle' AND locale = 'ru'");
+            if (false !== $before) {
+                $other->executeStatement("INSERT INTO itk_setting (setting_key, locale, setting_value) VALUES ('testTitle', 'ru', ?)", [$before]);
+            }
+            $other->close();
+            foreach ([$in, $out, $err] as $stream) {
+                \fclose($stream);
+            }
+        }
+    }
+
     private function killDatabaseConnection(): void
     {
         $connection = self::getContainer()->get(\Doctrine\DBAL\Connection::class);
@@ -165,21 +230,10 @@ final class McpStdioTest extends KernelTestCase
         return \fopen('testrevoking://in', 'r');
     }
 
-    /** Where the connection goes: a port nobody listens on (the database is starting up and refuses connections) or the right one again. */
-    private function pointConnectionAt(?int $port): void
-    {
-        $property = new \ReflectionProperty(\Doctrine\DBAL\Connection::class, 'params');
-        $params = $property->getValue(self::getContainer()->get(\Doctrine\DBAL\Connection::class));
-        self::$realPort ??= $params['port'] ?? 3306;
-        $params['port'] = $port ?? self::$realPort;
-        $property->setValue(self::getContainer()->get(\Doctrine\DBAL\Connection::class), $params);
-    }
-
-    private static ?int $realPort = null;
-
     private function closedPort(): int
     {
         $socket = \stream_socket_server('tcp://127.0.0.1:0');
+        self::assertIsResource($socket);
         $port = (int) \parse_url((string) \stream_socket_get_name($socket, false), \PHP_URL_PORT);
         \fclose($socket); // nobody listens there any more: a connection is refused, like a database that is not up yet
 
@@ -211,20 +265,20 @@ final class McpStdioTest extends KernelTestCase
         $pauses = 0;
         $stdio = $this->stdioWith(function (int $seconds) use (&$pauses): void {
             if (3 === ++$pauses) {
-                $this->pointConnectionAt(null); // the database is back
+                $this->faults->refusedPort = null; // the database is back
             }
         }, 10);
         // lost (the server closed it), then refused (the server is restarting), then back
         TestRevokingStream::$beforeSecond = function (): void {
             $this->killDatabaseConnection();
-            $this->pointConnectionAt($this->closedPort());
+            $this->faults->refusedPort = $this->closedPort();
         };
         $out = \fopen('php://memory', 'w+');
         $err = \fopen('php://memory', 'w+');
         try {
             $code = $stdio->serve($key['plain'], $in, $out, $err);
         } finally {
-            $this->pointConnectionAt(null);
+            $this->faults->refusedPort = null;
         }
         \rewind($out);
         \rewind($err);
@@ -247,14 +301,14 @@ final class McpStdioTest extends KernelTestCase
         }, 4);
         TestRevokingStream::$beforeSecond = function (): void {
             $this->killDatabaseConnection();
-            $this->pointConnectionAt($this->closedPort());
+            $this->faults->refusedPort = $this->closedPort();
         };
         $out = \fopen('php://memory', 'w+');
         $err = \fopen('php://memory', 'w+');
         try {
             $code = $stdio->serve($key['plain'], $in, $out, $err);
         } finally {
-            $this->pointConnectionAt(null);
+            $this->faults->refusedPort = null;
         }
         \rewind($out);
         \rewind($err);
@@ -266,21 +320,11 @@ final class McpStdioTest extends KernelTestCase
         self::assertSame(2, $pauses, 'the first retry is at once, the others wait');
     }
 
-    private function failNextQueries(int $times, int $code, ?string $state): TestFailingDriver
+    private function failNextQueries(int $times, int $code, ?string $state): void
     {
-        $connection = self::getContainer()->get(\Doctrine\DBAL\Connection::class);
-        $property = new \ReflectionProperty(\Doctrine\DBAL\Connection::class, 'driver');
-        $driver = new TestFailingDriver($property->getValue($connection), $times, $code, $state);
-        $property->setValue($connection, $driver);
-        $connection->close(); // the next query connects through it
-
-        return $driver;
-    }
-
-    private function realDriverAgain(TestFailingDriver $driver): void
-    {
-        $connection = self::getContainer()->get(\Doctrine\DBAL\Connection::class);
-        (new \ReflectionProperty(\Doctrine\DBAL\Connection::class, 'driver'))->setValue($connection, $driver->real);
+        $this->faults->failQueries($times, $code, $state);
+        $connection = self::getContainer()->get(Connection::class);
+        self::assertInstanceOf(Connection::class, $connection);
         $connection->close();
     }
 
@@ -303,25 +347,22 @@ final class McpStdioTest extends KernelTestCase
         $stdio = $this->stdioWith(static function () use (&$pauses): void {
             ++$pauses;
         }, 10);
-        $failing = null;
-        TestRevokingStream::$beforeSecond = function () use (&$failing, $code, $state): void {
-            $failing = $this->failNextQueries(3, $code, $state);
+        TestRevokingStream::$beforeSecond = function () use ($code, $state): void {
+            $this->failNextQueries(3, $code, $state);
         };
         $out = \fopen('php://memory', 'w+');
         $err = \fopen('php://memory', 'w+');
         try {
             $result = $stdio->serve($key['plain'], $in, $out, $err);
         } finally {
-            if (null !== $failing) {
-                $this->realDriverAgain($failing);
-            }
+            $this->faults->reset();
         }
         \rewind($out);
         \rewind($err);
         $answers = \array_map(static fn (string $l): array => \json_decode($l, true), \explode("\n", \rtrim((string) \stream_get_contents($out), "\n")));
 
         self::assertSame(0, $result, (string) \stream_get_contents($err));
-        self::assertSame(3, $failing->thrown, 'every failure went through the check of the key');
+        self::assertSame(3, $this->faults->thrown, 'every failure went through the check of the key');
         self::assertSame(2, $pauses, 'the first retry is at once, the others wait');
         self::assertSame([1, 2], \array_column($answers, 'id'), 'both messages were answered');
         self::assertSame('', (string) \stream_get_contents($err));
@@ -335,17 +376,16 @@ final class McpStdioTest extends KernelTestCase
         $stdio = $this->stdioWith(static function (): void {
             self::fail('there is nothing to wait for');
         }, 10);
-        $failing = null;
-        TestRevokingStream::$beforeSecond = function () use (&$failing): void {
-            $failing = $this->failNextQueries(5, 1054, '42S22');
+        TestRevokingStream::$beforeSecond = function (): void {
+            $this->failNextQueries(5, 1054, '42S22');
         };
         try {
             $stdio->serve($key['plain'], $in, \fopen('php://memory', 'w+'), \fopen('php://memory', 'w+'));
             self::fail('the error goes up as it did');
         } catch (\Doctrine\DBAL\Exception\DriverException) {
-            self::assertSame(1, $failing->thrown, 'one try, no more');
+            self::assertSame(1, $this->faults->thrown, 'one try, no more');
         } finally {
-            $this->realDriverAgain($failing);
+            $this->faults->reset();
         }
     }
 
@@ -372,18 +412,7 @@ final class McpStdioTest extends KernelTestCase
     #[Test]
     public function aRefusedKeyIsInTheAuditLogToo(): void
     {
-        $lines = [];
-        $logger = new class($lines) extends \Psr\Log\AbstractLogger {
-            /** @param list<array{string, string, array<string, mixed>}> $lines */
-            public function __construct(private array &$lines)
-            {
-            }
-
-            public function log($level, string|\Stringable $message, array $context = []): void
-            {
-                $this->lines[] = [(string) $level, (string) $message, $context];
-            }
-        };
+        $logger = new RecordingLogger();
         $c = self::getContainer();
         $stdio = new McpStdio($c->get(\Itk\Cms\Mcp\McpServer::class), $c->get(McpSettings::class), $c->get(ApiTokenService::class), $c->get(\Itk\Cms\Mcp\McpContextFactory::class), $c->get(\Doctrine\ORM\EntityManagerInterface::class), $c->get('doctrine'), $logger);
         $key = $this->mcpKey($this->mcpUser());
@@ -392,13 +421,14 @@ final class McpStdioTest extends KernelTestCase
         $code = $stdio->serve($key['plain'], $in, \fopen('php://memory', 'w+'), \fopen('php://memory', 'w+'));
 
         self::assertSame(1, $code);
-        self::assertCount(1, $lines);
-        self::assertSame('warning', $lines[0][0]);
-        self::assertSame('MCP sign-in refused: {reason}', $lines[0][1]);
-        self::assertSame('revoked', $lines[0][2]['reason']);
-        self::assertSame('stdio', $lines[0][2]['transport']);
-        self::assertSame($key['token']->id, $lines[0][2]['token']);
-        self::assertStringNotContainsString($key['plain'], \json_encode($lines));
+        self::assertCount(1, $logger->records);
+        $entry = $logger->records[0];
+        self::assertSame('warning', $entry['level']);
+        self::assertSame('MCP sign-in refused: {reason}', $entry['message']);
+        self::assertSame('revoked', $entry['context']['reason']);
+        self::assertSame('stdio', $entry['context']['transport']);
+        self::assertSame($key['token']->id, $entry['context']['token']);
+        self::assertStringNotContainsString($key['plain'], \json_encode($entry, \JSON_THROW_ON_ERROR));
     }
 
     #[Test]
@@ -411,59 +441,6 @@ final class McpStdioTest extends KernelTestCase
         self::assertSame('', $t->getDisplay(), 'nothing on the output');
         self::assertStringContainsString('No key', $t->getErrorOutput());
         self::assertTrue($command->getDefinition()->hasOption('token'));
-    }
-}
-
-/** @internal an error of the driver with the code and the SQLSTATE of PostgreSQL */
-final class TestDriverError extends \Doctrine\DBAL\Driver\AbstractException
-{
-}
-
-/** @internal a driver whose next queries fail, then it works again */
-final class TestFailingDriver extends \Doctrine\DBAL\Driver\Middleware\AbstractDriverMiddleware
-{
-    public int $thrown = 0;
-
-    public function __construct(public readonly \Doctrine\DBAL\Driver $real, private int $times, private readonly int $code, private readonly ?string $state)
-    {
-        parent::__construct($real);
-    }
-
-    public function connect(#[\SensitiveParameter] array $params): \Doctrine\DBAL\Driver\Connection
-    {
-        $failing = $this;
-
-        return new class(parent::connect($params), $failing) extends \Doctrine\DBAL\Driver\Middleware\AbstractConnectionMiddleware {
-            public function __construct(\Doctrine\DBAL\Driver\Connection $wrapped, private readonly TestFailingDriver $failing)
-            {
-                parent::__construct($wrapped);
-            }
-
-            public function prepare(string $sql): \Doctrine\DBAL\Driver\Statement
-            {
-                $this->failing->query();
-
-                return parent::prepare($sql);
-            }
-
-            public function query(string $sql): \Doctrine\DBAL\Driver\Result
-            {
-                $this->failing->query();
-
-                return parent::query($sql);
-            }
-        };
-    }
-
-    /** @throws TestDriverError while there are failures left */
-    public function query(): void
-    {
-        if ($this->times > 0) {
-            --$this->times;
-            ++$this->thrown;
-
-            throw new TestDriverError('The database says no', $this->state, $this->code);
-        }
     }
 }
 

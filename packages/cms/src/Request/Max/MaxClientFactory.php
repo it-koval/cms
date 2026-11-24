@@ -9,7 +9,11 @@ use MaxMessenger\Bot\MaxApiClient;
 use MaxMessenger\Bot\MaxApiConfig;
 use Symfony\Component\DependencyInjection\ParameterBag\ContainerBagInterface;
 
-/** Builds an admin connection without asking the server token's environment variable to exist. */
+/**
+ * Builds an admin connection without asking the server token's environment variable to exist.
+ *
+ * @internal
+ */
 final class MaxClientFactory
 {
     public function __construct(private readonly ?ContainerBagInterface $parameters = null)

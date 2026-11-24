@@ -6,6 +6,7 @@ namespace Itk\Cms\Controller\Site;
 
 use Itk\Cms\Content\CrawlerFiles;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
+use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\Attribute\AsController;
 use Symfony\Component\Routing\Attribute\Route;
@@ -30,12 +31,12 @@ final class CrawlerFilesController
     }
 
     #[Route('/llms.txt', name: 'itk_llms', methods: ['GET', 'HEAD'])]
-    public function llms(): Response
+    public function llms(?Request $request = null): Response
     {
-        return $this->answer(CrawlerFiles::LLMS);
+        return $this->answer(CrawlerFiles::LLMS, $request);
     }
 
-    private function answer(string $kind): Response
+    private function answer(string $kind, ?Request $request = null): Response
     {
         $headers = ['Content-Type' => 'text/plain; charset=UTF-8'];
         $static = $this->files->staticFile($kind);
@@ -46,6 +47,17 @@ final class CrawlerFilesController
             return $file;
         }
 
-        return new Response($this->files->body($kind), 200, $headers + ['Cache-Control' => 'public, max-age=600']);
+        $body = $this->files->body($kind);
+        $response = new Response($body, 200, $headers + ['Cache-Control' => 'public, max-age=600']);
+        if (CrawlerFiles::LLMS === $kind && $this->files->isMultilingual()) {
+            $response->headers->set('Cache-Control', 'public, max-age=0, must-revalidate');
+            $response->setEtag(\hash('sha256', $body));
+            // An IMS-only request gets the current body: dates cannot distinguish same-second edits.
+            if (null !== $request && $request->headers->has('If-None-Match')) {
+                $response->isNotModified($request);
+            }
+        }
+
+        return $response;
     }
 }

@@ -6,7 +6,11 @@ namespace Itk\Cms\Schema;
 
 use Itk\Cms\I18n\I18n;
 
-/** The format of a key (section, template, collection, settings group, form, menu area, field): the same in schema.php and in resource classes. */
+/**
+ * The format of a key (section, template, collection, settings group, form, menu area, field): the same in schema.php and in resource classes.
+ *
+ * @internal
+ */
 final class Key
 {
     /** Latin letters, digits, _ and -, the first one is a letter or a digit: the key goes into JSON paths of queries, file names and URLs. */

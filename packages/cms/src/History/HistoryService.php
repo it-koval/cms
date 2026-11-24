@@ -70,10 +70,28 @@ final class HistoryService
         $this->write(Revision::PAGE, $p->id, $p->template, $t->locale, $action, $this->snapshots->pageOf($p, $t), $before);
     }
 
-    /** The version of a page as the history sees it (take it before the change, pass it to page() as `$before`). @return array<string, mixed> */
+    /**
+     * The version of a page as the history sees it (take it before the change, pass it to page() as `$before`).
+     *
+     * @return array<string, mixed>
+     */
     public function pageState(Page $p, PageTranslation $t): array
     {
         return $this->snapshots->pageOf($p, $t);
+    }
+
+    public function pageTranslationRemoved(Page $p, PageTranslation $t): void
+    {
+        $snapshot = $this->snapshots->pageOf($p, $t) + [
+            'published' => $t->published,
+            'publishedUrl' => $t->publishedUrl,
+            'publishedAt' => $t->publishedAt?->format(\DATE_ATOM),
+            'updatedAt' => $t->updatedAt->format(\DATE_ATOM),
+            'awaiting' => $t->awaiting,
+            'returned' => $t->returned,
+            'migrated' => $t->migrated,
+        ];
+        $this->write(Revision::PAGE, $p->id, $p->template, $t->locale, Revision::DELETE_TRANSLATION, $snapshot, null);
     }
 
     /** Call before the page is removed (and flushed): the whole page goes to the trash. */
@@ -108,12 +126,23 @@ final class HistoryService
         $this->write(Revision::ITEM, $i->id, $collection, $locale, $action, $this->snapshots->itemOf($i, $t), $before, $summary);
     }
 
-    /** The version of a record as the history sees it (take it before the change, pass it to item() as `$before`); null when it has no such language. @return null|array<string, mixed> */
+    /**
+     * The version of a record as the history sees it (take it before the change, pass it to item() as `$before`); null when it has no such language.
+     *
+     * @return array<string, mixed>|null
+     */
     public function itemState(CollectionItem $i, string $locale): ?array
     {
         $t = $i->translations[$locale] ?? null;
 
         return null === $t ? null : $this->snapshots->itemOf($i, $t);
+    }
+
+    /** @param array<string, mixed> $t the version before it was taken off the site */
+    public function itemTranslationRemoved(CollectionItem $i, string $locale, array $t): void
+    {
+        $snapshot = $this->snapshots->itemOf($i, $t) + $t;
+        $this->write(Revision::ITEM, $i->id, $i->collection, $locale, Revision::DELETE_TRANSLATION, $snapshot, null);
     }
 
     /** Call before the record is removed (and flushed). */
@@ -141,8 +170,13 @@ final class HistoryService
      * @param array<string, mixed> $after and after it
      * @param list<string> $keys the keys the save touched
      */
-    public function settings(string $locale, array $before, array $after, array $keys, string $action = Revision::EDIT): void
+    public function settings(string $locale, array $before, array $after, array $keys, string $action = Revision::EDIT, bool $notifications = false): void
     {
+        if ($notifications) {
+            $this->write(Revision::SETTINGS, 'notifications', Revision::NOTIFICATION_SETTINGS_KEY, $locale, $action, $this->settingsOf('notifications', $after), $this->settingsOf('notifications', $before));
+
+            return;
+        }
         $groups = $this->settingsGroupOf();
         $touched = [];
         foreach ($keys as $k) {
@@ -155,9 +189,18 @@ final class HistoryService
         }
     }
 
-    /** The values of one group out of all the settings of a language. @param array<string, mixed> $all @return array<string, mixed> */
+    /**
+     * The values of one group out of all the settings of a language.
+     *
+     * @param array<string, mixed> $all
+     *
+     * @return array<string, mixed>
+     */
     public function settingsOf(string $group, array $all): array
     {
+        if ('notifications' === $group) {
+            return \array_intersect_key($all, \array_flip(Schema::CORE_SETTING_KEYS));
+        }
         $own = \array_keys(\array_filter($this->settingsGroupOf(), static fn (string $g): bool => $g === $group));
 
         return \array_intersect_key($all, \array_flip($own));
@@ -210,7 +253,7 @@ final class HistoryService
     private function write(string $kind, string $id, string $key, string $locale, string $action, array $snapshot, ?array $before, ?array $summary = null): void
     {
         $edit = Revision::EDIT === $action || Revision::RESTORE === $action;
-        $last = $this->revisions->latest($kind, $id, $locale);
+        $last = $this->revisions->latest($kind, $id, $locale, Revision::SETTINGS === $kind && Revision::NOTIFICATION_SETTINGS_KEY === $key ? $key : null);
 
         if ($edit && null !== $before && Json::same($before, $snapshot) && (null === $last || Json::same($last->snapshot, $snapshot))) {
             return; // nothing changed
@@ -255,11 +298,15 @@ final class HistoryService
         if (null !== $last && '' === $r->title) {
             $r->title = $last->title;
         }
-        $this->trim($kind, $id, $locale);
         $this->em->persist($r);
+        $this->trim($kind, $id, $locale);
     }
 
-    /** The version an object had before its first recorded change. */
+    /**
+     * The version an object had before its first recorded change.
+     *
+     * @param array<string, mixed> $before
+     */
     private function baseline(string $kind, string $id, string $key, string $locale, array $before): Revision
     {
         if (Revision::PAGE === $kind && \is_string($before['template'] ?? null) && '' !== $before['template']) {
@@ -279,12 +326,21 @@ final class HistoryService
         return \time() - $r->updatedAt->getTimestamp() < self::MERGE_SECONDS;
     }
 
-    /** Leaves room for one more entry: an object keeps its newest `keep`. */
+    /** An object keeps its newest entries, including those pending the caller's flush. */
     private function trim(string $kind, string $id, string $locale): void
     {
-        $drop = $this->revisions->beyond($kind, $id, $locale, \max(1, $this->keep) - 1);
-        if ([] !== $drop) {
-            $this->revisions->deleteIds($drop);
+        $pending = [];
+        foreach ($this->em->getUnitOfWork()->getScheduledEntityInsertions() as $entry) {
+            if ($entry instanceof Revision && $entry->kind === $kind && $entry->resourceId === $id && $entry->locale === $locale) {
+                $pending[] = $entry;
+            }
+        }
+        $keep = \max(1, $this->keep);
+        foreach (\array_slice($pending, 0, \max(0, \count($pending) - $keep)) as $entry) {
+            $this->em->remove($entry);
+        }
+        foreach ($this->revisions->beyond($kind, $id, $locale, \max(0, $keep - \count($pending))) as $revisionId) {
+            $this->em->remove($this->em->getReference(Revision::class, $revisionId));
         }
     }
 

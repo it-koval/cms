@@ -5,7 +5,7 @@
 // Shows the magenta «Изменено / Отменить изменение» marks (settings differ from the saved ones) and errors passed by the view.
 // `marks` (sites with 2+ languages): before every run of fields of one kind a caption says whether they are the TEXTS of the content language
 // (field.tr: «Тексты на английском») or shared by all languages («Одно для всех языков»).
-import { provide } from 'vue'
+import { nextTick, provide, reactive, ref } from 'vue'
 import FieldRenderer from '@/components/form/fields/FieldRenderer.vue'
 import FieldLayout from '@/components/form/FieldLayout.vue'
 import Icon from '@/components/ui/Icon.vue'
@@ -14,7 +14,7 @@ import { t } from '@/i18n/index.js'
 import { tag } from '@/utils/locales.js'
 import { SHARED_LABEL, textsLabel } from './langText.js'
 
-defineProps({
+const props = defineProps({
   sections: { type: Array, required: true },
   data: { type: Object, required: true },
   changed: { type: Object, required: true }, // Set of changed field keys
@@ -25,6 +25,38 @@ defineProps({
 })
 const emit = defineEmits(['set', 'revert'])
 provide('formId', 'set')
+const root = ref(null)
+const open = reactive({})
+provide('schemaForm', { open })
+
+async function focusField(path) {
+  let fields = props.sections.flatMap((section) => section.fields)
+  let rest = String(path)
+  let base = ''
+  while (rest) {
+    const field = fields.find((f) => rest === f.k || rest.startsWith(f.k + '.'))
+    if (!field) return false
+    const row = field.t === 'repeater' && /^\.(\d+)\.(.+)$/.exec(rest.slice(field.k.length))
+    if (!row) break
+    let data = props.data
+    for (const part of (base + field.k).split('.')) data = data?.[part]
+    if (data?.[Number(row[1])]) open[base + field.k] = data[Number(row[1])]._id
+    base += field.k + '.' + row[1] + '.'
+    rest = row[2]
+    fields = field.sub || []
+  }
+  await nextTick()
+  await nextTick()
+  const box = root.value?.querySelector(`[data-field-path="${CSS.escape(path)}"]`)
+  if (!box) return false
+  box.scrollIntoView({ block: 'center', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' })
+  box.classList.add('hl')
+  setTimeout(() => box.classList.remove('hl'), 1200)
+  const control = box.querySelector('[contenteditable="true"],input,textarea,select,[data-focus-target]')
+  if (!props.readonly) control?.focus({ preventScroll: true })
+  return true
+}
+defineExpose({ focusField })
 
 /** Neighbouring fields of the same kind go under one caption: [{ tr, fields }]. */
 function runs(fields) {
@@ -40,7 +72,7 @@ function runs(fields) {
 </script>
 
 <template>
-  <div>
+  <div ref="root">
     <ReadOnlyNote v-if="readonly" :text="t('settings.view_only_card', { title: sections[0] ? sections[0].title : '' })" />
     <div :class="{ 'ro-zone': readonly }" :inert="readonly || undefined">
       <section v-for="s in sections" :id="'card-' + s.key" :key="s.key" class="sheet set-sec set-card" :aria-labelledby="'sec-' + s.key">

@@ -30,4 +30,10 @@ final class Record
     {
         return $this->fields[$key] ?? $this->meta[$key] ?? $default;
     }
+
+    /** @return array{fields: array<string, mixed>, meta: array<string, mixed>, status: string} */
+    public function snapshot(): array
+    {
+        return ['fields' => $this->fields, 'meta' => $this->meta, 'status' => $this->status];
+    }
 }

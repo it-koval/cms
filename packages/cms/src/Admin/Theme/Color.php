@@ -7,6 +7,8 @@ namespace Itk\Cms\Admin\Theme;
 /**
  * Colour maths for the admin theme: hex <-> OKLCH (Björn Ottosson's OKLab) and the WCAG contrast ratio.
  * The same formulas are used by admin/src/utils/colorTools.js for the picker's own readout; the palette itself is only ever made here.
+ *
+ * @internal
  */
 final class Color
 {

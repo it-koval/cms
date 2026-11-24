@@ -20,10 +20,10 @@
 // RIGHTS (area col:<key>): without «Править» there is no «Добавить», «Изменить порядок», «Дублировать» and the switch is off; without «Удалять» the row menu has no «Удалить»;
 // a version that waits for publication wears a «Ждёт публикации» chip. Actions the person may not run are not sent by the server at all.
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { onBeforeRouteLeave, onBeforeRouteUpdate, useRouter } from 'vue-router'
 import { api } from '@/api/index.js'
 import { PREVIEW, thumbUrl } from '@/utils/media.js'
-import { app, can, refreshCounters, setContentLocale } from '@/stores/app.js'
+import { app, can, refreshCounters, useLocaleGuard } from '@/stores/app.js'
 import Icon from '@/components/ui/Icon.vue'
 import Popover from '@/components/ui/Popover.vue'
 import StatusChip from '@/components/ui/StatusChip.vue'
@@ -48,12 +48,14 @@ import { useConfirm } from '@/components/ui/useConfirm.js'
 import { useToast } from '@/components/ui/useToast.js'
 import { fmtUpdated } from '@/utils/format.js'
 import { htmlToText } from '@/utils/html.js'
-import { isMain, isMulti, pathPrefix } from '@/utils/locales.js'
+import { isMain, isMulti, pathPrefix, withLang } from '@/utils/locales.js'
 import { freshIds, labelsOf, countText, pickFields, statusOf, titleOf, toggleLabelOf, toggleNote, dataFields } from './labels.js'
 import { cap, onLang, siteIn, toLang, up, verAcc } from '@/utils/langWords.js'
 import { t } from '@/i18n/index.js'
 
 const props = defineProps({ cfg: { type: Object, required: true } })
+const LOC = app.locale
+const COL = props.cfg.key
 const router = useRouter()
 const confirm = useConfirm()
 const toast = useToast()
@@ -101,9 +103,12 @@ const rows = ref([])
 const total = ref(0)
 const facets = ref({})
 const metrics = ref([])
-const wholeTotal = ref((app.collections.find((c) => c.key === props.cfg.key) || {}).count || 0) // all records of the collection, whatever the filters
-const translatedCount = ref(0) // records that have a version in the language on screen
+const counter = computed(() => app.collections.find((c) => c.key === COL))
+const unfilteredTotal = ref(0)
+const wholeTotal = computed(() => counter.value?.count ?? unfilteredTotal.value)
+const translatedCount = computed(() => counter.value?.locales?.[LOC]?.count ?? Object.entries(facets.value.status || {}).filter(([status]) => status !== 'missing').reduce((n, [, count]) => n + count, 0))
 const loaded = ref(false)
+const loadError = ref('')
 const refreshing = ref(false)
 const adding = ref(false)
 let seq = 0
@@ -114,40 +119,43 @@ onBeforeUnmount(() => { alive = false; clearTimeout(debounce); window.removeEven
 const nFilters = computed(() => activeCount(filter.value))
 const filtered = computed(() => !!q.value.trim() || nFilters.value > 0)
 
-// every record that matches (up to 2000) for the views that have no pages; the tree wants the order of the site
+// every record that matches for the views that have no pages; the tree wants the order of the site
 async function queryAll(base) {
   const params = { ...base, page: 1, perPage: 200, ...(view.value === 'tree' ? { sort: 'position' } : {}) }
   const first = await api.collections.query(props.cfg.key, params)
-  let items = first.items
-  for (let p = 2; items.length < first.total && p <= 10; p++) {
+  const records = new Map(first.items.map((row) => [row.id, row]))
+  const pages = Math.ceil(first.total / first.perPage)
+  let total = first.total
+  for (let p = 2; p <= pages; p++) {
     const more = await api.collections.query(props.cfg.key, { ...params, page: p })
+    total = Math.max(total, more.total)
     if (!more.items.length) break
-    items = items.concat(more.items)
+    for (const row of more.items) records.set(row.id, row)
   }
-  return { ...first, items, page: 1, perPage: Math.max(1, items.length) }
+  return { ...first, items: [...records.values()], total, page: 1, perPage: Math.max(1, records.size) }
 }
 async function load() {
+  if (!alive) return
   const my = ++seq
   refreshing.value = true
   try {
-    const base = { ...ls.params(), locale: app.locale }
+    const base = { ...ls.params(), locale: LOC }
     const res = wide.value ? await queryAll(base) : await api.collections.query(props.cfg.key, base)
     if (!alive || my !== seq) return
     // a page that no longer exists (records were deleted, the filter narrowed): the last one
     const last = Math.max(1, Math.ceil(res.total / res.perPage))
     if (res.page > last && res.total > 0) { page.value = last; return }
+    loadError.value = ''
     rows.value = res.items
     total.value = res.total
     facets.value = res.facets || {}
     metrics.value = res.metrics || []
-    if (!filtered.value) wholeTotal.value = res.total
-    translatedCount.value = Object.values(facets.value.status || {}).reduce((a, n) => a + n, 0)
+    if (!filtered.value) unfilteredTotal.value = res.total
     // the ticks of rows that are gone (deleted, filtered out and not on this page) are dropped
     if (selected.value.size && res.total === 0) selected.value = new Set()
     loaded.value = true
   } catch (e) {
     if (!alive || my !== seq) return
-    loaded.value = true
     // a saved filter or sort the server no longer accepts (the schema changed): start clean instead of failing every visit
     if (e.status === 422 && (nFilters.value || sort.value)) {
       toast.error(t('collections.cl_filters_stale'))
@@ -155,7 +163,8 @@ async function load() {
       ls.state.sort = ''
       return
     }
-    toast.error(e.message || t('collections.cl_load_failed'))
+    loaded.value = true
+    loadError.value = e.message || t('collections.cl_load_failed')
   } finally {
     if (alive && my === seq) refreshing.value = false
   }
@@ -241,7 +250,7 @@ const thumbOf = (r) => {
 const openPath = (r) => `/collections/${props.cfg.key}/${r.id}`
 const open = (r) => router.push(openPath(r))
 function onRow(e, r) {
-  if (e.target.closest('a,button,label,input')) return
+  if (e.target.closest('a,button,label,input,select,textarea')) return
   open(r)
 }
 
@@ -261,8 +270,7 @@ async function add(extra = {}) {
     const rec = await api.collections.create(props.cfg.key, { ...initialData(), ...extra })
     refreshCounters()
     if (!IS_MAIN) toast.show(t('collections.cl_created_other', { lang: onLang(mainLang.value), version: up(verAcc(app.locale)) }))
-    setContentLocale(app.languages.main) // a new record is born in the main language
-    router.push({ path: openPath(rec), query: { new: '1' } })
+    router.push(withLang(openPath(rec) + '?new=1', app.languages.main))
   } catch (e) {
     toast.error(e.message || t('collections.cl_create_failed'))
   } finally {
@@ -280,9 +288,8 @@ async function duplicate(r) {
     data[props.cfg.titleField] = tf && tf.max ? copy.slice(0, tf.max) : copy
     const rec = await api.collections.create(props.cfg.key, data)
     refreshCounters()
-    setContentLocale(app.languages.main) // the copy is a new record: it is born in the main language
     toast.show(MULTI ? t('collections.cl_copied_multi', { lang: onLang(mainLang.value) }) : t('collections.cl_copied'))
-    router.push({ path: openPath(rec), query: { new: '1' } })
+    router.push(withLang(openPath(rec) + '?new=1', app.languages.main))
   } catch (e) {
     toast.error(e.message || t('collections.cl_copy_failed'))
   }
@@ -311,7 +318,7 @@ const toggleName = computed(() => toggleLabelOf(props.cfg))
 async function toggle(r, ev) {
   const field = props.cfg.toggleField
   const val = ev.target.checked
-  const patch = async (v) => { await api.collections.update(props.cfg.key, r.id, { [field]: v }, app.locale); await load(); refreshCounters() }
+  const patch = async (v) => { await api.collections.update(COL, r.id, { [field]: v }, LOC); await load(); refreshCounters() }
   try {
     await patch(val)
     toast.show(toggleNote(titleOf(props.cfg, r), toggleName.value, val), {
@@ -337,7 +344,7 @@ async function patchRow(r, patch, done) {
   rows.value = rows.value.map((x) => (x.id === r.id ? { ...x, ...patch } : x))
   wideBusy.value = true
   try {
-    await api.collections.update(props.cfg.key, r.id, patch, app.locale)
+    await api.collections.update(COL, r.id, patch, LOC)
     await load()
     refreshCounters()
     const live = r.status === 'published'
@@ -365,8 +372,14 @@ function kanMove({ item, to }) {
 }
 
 const treeNodes = computed(() => T.nest(rows.value))
-const treeOff = computed(() => !canEdit.value || filtered.value || wideBusy.value)
+const incomplete = computed(() => wide.value && rows.value.length < total.value)
+const treeIncomplete = computed(() => {
+  const ids = new Set(rows.value.map((row) => row.id))
+  return incomplete.value || rows.value.some((row) => row.parentId && !ids.has(row.parentId))
+})
+const treeOff = computed(() => !canEdit.value || filtered.value || wideBusy.value || treeIncomplete.value || !!loadError.value)
 async function treeMove(ev) {
+  if (treeOff.value) return
   const before = treeNodes.value
   wideBusy.value = true
   try {
@@ -393,6 +406,15 @@ const orderable = computed(() => !!props.cfg.sortable && isCards.value && loaded
 const canReorder = computed(() => canEdit.value && canPublish.value && orderable.value)
 const cards = computed(() => (reorder.on ? reorder.list : rows.value))
 const dirty = computed(() => reorder.list.some((r, i) => r.id !== reorder.start[i]))
+let pendingOrder = null
+async function mayLeaveOrder() {
+  if (pendingOrder) await pendingOrder
+  if (!dirty.value) return true
+  return confirm({ title: t('settings.leave_title'), message: t('collections.cl_order_leave_message'), confirmLabel: t('settings.leave_confirm'), cancelLabel: t('settings.stay'), danger: true })
+}
+useLocaleGuard(mayLeaveOrder)
+onBeforeRouteLeave(mayLeaveOrder)
+onBeforeRouteUpdate((to, from) => to.params.col === from.params.col ? true : mayLeaveOrder())
 const gridEl = ref(null)
 const reorderBtn = ref(null)
 const reorderNote = computed(() => {
@@ -406,7 +428,7 @@ async function startReorder() {
   if (reorder.on || reorder.busy || !canReorder.value) return
   reorder.busy = true
   try {
-    const all = await api.collections.list(props.cfg.key, { locale: app.locale }) // the whole list, whatever the search and the filter were
+    const all = await api.collections.list(props.cfg.key, { locale: LOC }) // the whole list, whatever the search and the filter were
     if (!alive) return
     if (all.length < 2) { load(); return }
     menu.value = { ...menu.value, open: false }
@@ -433,8 +455,12 @@ const cancelReorder = () => { if (reorder.on && !reorder.saving) leaveReorder(re
 function onKey(e) {
   if (e.key === 'Escape' && reorder.on && !reorder.saving && !reorder.dragId && !e.defaultPrevented) cancelReorder()
 }
-async function saveReorder() {
-  if (!reorder.on || !dirty.value || reorder.saving) return
+function saveReorder() {
+  if (!reorder.on || !dirty.value || reorder.saving) return pendingOrder
+  pendingOrder = commitOrder().finally(() => { pendingOrder = null })
+  return pendingOrder
+}
+async function commitOrder() {
   const prev = [...reorder.start]
   reorder.saving = true
   try {
@@ -453,7 +479,7 @@ async function restoreOrder(ids) {
     await api.collections.reorder(props.cfg.key, ids)
     if (reorder.on) {
       // the undo came while a new reorder mode is open: drop that mode (its starting order is stale now) and show the restored list
-      const all = await api.collections.list(props.cfg.key, { locale: app.locale })
+      const all = await api.collections.list(props.cfg.key, { locale: LOC })
       if (!alive) return
       leaveReorder(all)
     } else {
@@ -585,7 +611,7 @@ const runRow = (a) => { const r = menu.value.row; menu.value.open = false; if (r
       <div v-if="!loaded" class="cl-pad"><Skeleton :rows="6" /></div>
 
       <!-- nothing in the collection yet -->
-      <EmptyState v-else-if="!total && !filtered" :icon="cfg.icon" :title="cfg.empty.title" :text="canEdit ? cfg.empty.text : t('collections.cl_no_records')">
+      <EmptyState v-else-if="!loadError && !total && !filtered" :icon="cfg.icon" :title="cfg.empty.title" :text="canEdit ? cfg.empty.text : t('collections.cl_no_records')">
         <button v-if="canEdit" type="button" :class="['btn primary', { loading: adding }]" @click="add()"><Icon name="plus" size="s16" />{{ cfg.newLabel }}</button>
         <p v-if="MULTI && canEdit" class="cl-addnote c">{{ addNote }}</p>
       </EmptyState>
@@ -617,12 +643,16 @@ const runRow = (a) => { const r = menu.value.row; menu.value.open = false; if (r
           <span v-else-if="orderable && L.orderHint" class="grow">{{ L.orderHint }}</span>
         </div>
 
+        <div v-if="loadError" class="cl-pad alert err-a" role="alert"><Icon name="alert" size="s16" /><span>{{ loadError }}</span><button type="button" class="btn" :disabled="refreshing" @click="load">{{ t('settings.retry') }}</button></div>
+        <template v-else>
+        <div v-if="incomplete || (view === 'tree' && treeIncomplete)" class="alert warn-a" role="status"><Icon name="alert" size="s16" /><span>{{ t(view === 'tree' ? 'collections.cl_tree_incomplete' : 'collections.cl_incomplete', { loaded: rows.length, total }) }}</span><button type="button" class="btn sm" :disabled="refreshing" @click="load">{{ t('ui.retry') }}</button></div>
+
         <!-- the key to the short chips of the cards (the table spells the words out) -->
         <div v-if="MULTI && isCards && !reorder.on && rows.length" class="cl-key">
           <span class="cl-k pub"><i />{{ t('collections.cl_key_published') }}</span><span class="cl-k chg"><i />{{ t('collections.cl_key_changed') }}</span><span class="cl-k off"><i />{{ t('collections.cl_key_missing') }}</span>
         </div>
 
-        <EmptyState v-if="!reorder.on && !rows.length" icon="search" :title="t('collections.cl_nothing_title')" :text="t('collections.cl_nothing_text')">
+        <EmptyState v-if="!reorder.on && !rows.length && !incomplete" icon="search" :title="t('collections.cl_nothing_title')" :text="t('collections.cl_nothing_text')">
           <button type="button" class="btn" @click="resetFilters">{{ t('collections.cl_reset_filters') }}</button>
         </EmptyState>
 
@@ -740,7 +770,7 @@ const runRow = (a) => { const r = menu.value.row; menu.value.open = false; if (r
                 <b v-else>{{ titleOf(cfg, r) }}</b>
                 <p v-if="subLine(r)" class="cl-clip">{{ subLine(r) }}</p>
                 <span class="so">
-                  <LangChips v-if="MULTI" :cfg="cfg" :row="r" compact />
+                  <LangChips v-if="MULTI" :cfg="cfg" :row="r" compact :interactive="!reorder.on" />
                   <StatusChip v-else v-bind="statusOf(cfg, r)" />
                   <span v-if="awaitingOf(r)" class="chip warn">{{ t('collections.awaiting') }}</span>
                   <template v-if="Array.isArray(r.soc)">
@@ -757,6 +787,8 @@ const runRow = (a) => { const r = menu.value.row; menu.value.open = false; if (r
             </div>
           </div>
         </div>
+
+        </template>
 
         <ListPager v-if="!reorder.on && rows.length && !wide" v-model:page="page" v-model:per-page="perPage" :total="total" />
       </template>

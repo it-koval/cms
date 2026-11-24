@@ -25,6 +25,8 @@ use Symfony\Component\HttpKernel\Kernel;
  *     updates { enabled, current, latest, hasUpdate, checkedAt, message },
  *     checks [{name, status, message}] }
  * `status` is the worst of the checks (a check that is `off` ranks like `ok`), the disks, and «warn» when something sits in the failed queue or a request was not delivered.
+ *
+ * @internal
  */
 final class HealthService
 {
@@ -51,16 +53,17 @@ final class HealthService
         private readonly iterable $checks = [],
         #[AutowireIterator('scheduler.schedule_provider', indexAttribute: 'name')]
         private readonly iterable $schedules = [],
+        private readonly ?Doctor $doctor = null,
     ) {
     }
 
     /** @return array<string, mixed> */
-    public function report(bool $refreshUpdates = false): array
+    public function report(bool $refreshUpdates = false, bool $includeLocaleChecks = true): array
     {
         $messenger = ['queues' => $this->messenger->queues(), 'failed' => $this->messenger->failed()];
         $requests = $this->failedRequests();
         $disk = $this->disk();
-        $checks = $this->runChecks();
+        $checks = $this->runChecks($includeLocaleChecks);
         $versions = $this->versions();
 
         $status = HealthResult::OK;
@@ -85,22 +88,30 @@ final class HealthService
     }
 
     /**
-     * Sends a request whose delivery failed to its messengers again, right now: to the one asked for, else to each that failed.
+     * Sends a failed request to its messengers again, queueing a channel above 20 formatted parts: to the one asked for, else to each that failed.
      *
-     * @return array{delivery: string, error: string, channels: list<array{channel: string, state: string, error: ?string}>}
+     * @return array{delivery: string, queuedChannels: list<string>, error: string, channels: list<array{channel: string, state: string, error: ?string}>, httpStatus: int}
      */
     public function resendRequest(string $id, ?string $channel = null): array
     {
-        $r = $this->requests->resend($id, $channel);
+        $result = $this->requests->resendResult($id, $channel);
+        $r = $result['request'];
 
         return [
             'delivery' => $r->delivery,
+            'queuedChannels' => $result['queuedChannels'],
+            'outcomes' => \array_map(static fn (array $outcome): array => [...$outcome, 'error' => null === $outcome['error'] ? null : MessengerMonitor::scrub($outcome['error'])], $result['outcomes']),
+            'httpStatus' => $result['status'],
             'error' => MessengerMonitor::scrub((string) $r->deliveryError),
             'channels' => \array_map(static fn (array $c): array => [...$c, 'error' => null === $c['error'] ? null : MessengerMonitor::scrub($c['error'])], $this->requests->channels($r)),
         ];
     }
 
-    /** Asks the update source again, without waiting for the 12 hours to pass. @return array<string, mixed> */
+    /**
+     * Asks the update source again, without waiting for the 12 hours to pass.
+     *
+     * @return array<string, mixed>
+     */
     public function refreshUpdates(): array
     {
         return $this->updates->check($this->versions()['itk'], true);
@@ -118,6 +129,8 @@ final class HealthService
                 'dt' => $r->createdAt->setTimezone(new \DateTimeZone('UTC'))->format('Y-m-d\TH:i:s\Z'),
                 'form' => $this->schema->form($r->form)?->formTitle() ?? $r->form, // no name or phone: this screen is for developers
                 'error' => MessengerMonitor::scrub((string) $r->deliveryError),
+                'queuedChannels' => $r->queuedChannels(),
+                'canResend' => [] !== \array_filter($r->channelStates(), static fn (array $state, string $channel): bool => SiteRequest::DELIVERY_FAILED === $state['state'] && !\in_array($channel, $r->queuedChannels(), true), \ARRAY_FILTER_USE_BOTH),
             ];
         }
 
@@ -167,7 +180,7 @@ final class HealthService
             }
             $out[] = [
                 'key' => $key, 'label' => $label, 'free' => (int) $free, 'total' => (int) $total, 'usedPct' => (int) \round(($total - $free) / $total * 100),
-                'status' => $free < self::DISK_FAIL ? HealthResult::FAIL : ($free < self::DISK_WARN ? HealthResult::WARN : HealthResult::OK),
+                'status' => 'uploads' === $key && !UploadsWritable::check($path) ? HealthResult::FAIL : ($free < self::DISK_FAIL ? HealthResult::FAIL : ($free < self::DISK_WARN ? HealthResult::WARN : HealthResult::OK)),
             ];
         }
 
@@ -199,7 +212,7 @@ final class HealthService
      *
      * @return list<array{name: string, status: string, message: string}>
      */
-    private function runChecks(): array
+    private function runChecks(bool $includeLocaleChecks = true): array
     {
         $list = [];
         foreach ($this->checks as $check) {
@@ -229,6 +242,10 @@ final class HealthService
             } catch (\Throwable $e) {
                 $out[] = ['name' => $check->name(), 'status' => HealthResult::FAIL, 'message' => I18n::t('ops.health_check_failed', ['error' => MessengerMonitor::scrub($e->getMessage())])];
             }
+        }
+
+        foreach ($includeLocaleChecks ? ($this->doctor?->localeChecks() ?? []) : [] as [$name, $result]) {
+            $out[] = ['name' => $name, 'status' => $result->status, 'message' => $result->message];
         }
 
         return [...$out, ...$broken];

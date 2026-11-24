@@ -11,6 +11,7 @@ use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
 
+/** @internal */
 #[AsCommand(name: 'itk:make:plugin', description: 'ops.cmd_make_plugin_description')]
 final class MakePluginCommand extends AbstractMakeCommand
 {

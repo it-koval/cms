@@ -6,7 +6,7 @@ English | [Русский](README.ru.md)
 
 A site describes its structure in PHP (the `config/itk/schema.php` file or resource classes) and renders it with its own Twig templates. The bundle knows nothing about a specific site. The built admin panel ships inside the package, so the site does not need Node.
 
-Version 0.2.2, MIT license. Source code: [github.com/it-koval/cms](https://github.com/it-koval/cms).
+Version 0.3.0, MIT license. Source code: [github.com/it-koval/cms](https://github.com/it-koval/cms).
 
 ## Contents
 
@@ -37,8 +37,9 @@ Version 0.2.2, MIT license. Source code: [github.com/it-koval/cms](https://githu
 | What | Version |
 |---|---|
 | PHP | 8.3 or newer. Extensions `ctype`, `dom`, `gd` with WebP, `json`, `mbstring`, `pdo_pgsql`, `sodium`. Optional: `exif` (rotates JPEG by EXIF) and `intl` (Cyrillic domains in the page cache) |
-| Symfony | 7.4 or 8 (Symfony 8 requires PHP 8.4) |
-| Doctrine | ORM 3, DBAL 4 |
+| Symfony | 7.4.23 or newer 7.4, or 8.1.11 and newer (Symfony 8 requires PHP 8.4; 8.0 is not supported) |
+| Doctrine | ORM 3.8 or newer, DBAL 4.6 or newer |
+| Twig | 3.31.1 or newer |
 | PostgreSQL | 16 or newer with the pgvector extension 0.8 or newer |
 | Node | 22 or newer, only for the optional critical CSS. The admin panel ships prebuilt. Building it from source uses Node 24 (see [CONTRIBUTING.md](https://github.com/it-koval/cms/blob/main/CONTRIBUTING.md)) |
 
@@ -46,7 +47,7 @@ Composer requires only PHP 8.3. The **Site status** screen warns when the PHP pa
 
 **pgvector is mandatory.** A core migration runs `CREATE EXTENSION IF NOT EXISTS vector` and stops with an explanation if the extension is missing or older than 0.8. The `pgvector/pgvector:pg17` image includes the extension. On another server, install it by following the [pgvector instructions](https://github.com/pgvector/pgvector#installation).
 
-**Only PostgreSQL is supported.** MySQL, MariaDB and SQLite are not supported. On another database, and on PostgreSQL older than 16, the core migration stops and creates nothing. Create the database with `UTF8` encoding and a UTF-8 locale. Case-insensitive search relies on `lower()`, which folds Cyrillic correctly only in such a locale.
+**Only PostgreSQL 16 or newer is supported.** The core migration checks the database before creating tables. Create the database with `UTF8` encoding and a UTF-8 locale. Case-insensitive search relies on `lower()`, which folds Cyrillic correctly only in such a locale.
 
 ## Installation
 
@@ -135,7 +136,11 @@ Next, describe the site structure in `config/itk/schema.php` (see [Site schema](
 
 In a project without Symfony Flex, add `Itk\Cms\ItkCmsBundle::class => ['all' => true]` to `config/bundles.php`. FrameworkBundle, TwigBundle, SecurityBundle, DoctrineBundle and DoctrineMigrationsBundle must be there too.
 
-Import the routes as in the quick start. `site.php` declares the public routes: `POST /request/{form}`, `/sitemap.xml`, `/robots.txt`, `/llms.txt`, the IndexNow key file, image copies, `POST /mcp`, `/healthz`, and the page route with priority -1000. Any site route therefore wins over the page route.
+Import the routes as in the quick start. `site.php` registers the site endpoints.
+
+- `POST /request/{form}` submits a form. `POST /mcp` serves authenticated MCP calls when the feature is enabled.
+- `GET` and `HEAD` serve `/healthz`, `/sitemap.xml`, `/robots.txt`, `/llms.txt`, the IndexNow key at `/{key}.txt`, and image variants at `{upload_url}/_v/w{width}/{path}` and `{upload_url}/_v/w{width}-r{a}x{b}/{path}`.
+- `GET` and `HEAD /{path}` serve pages. This catch-all has priority `-1000`, so site routes with the default priority match first.
 
 #### Security (`security.yaml`)
 
@@ -182,16 +187,16 @@ security:
 - The `itk_mcp` firewall is mandatory. Without it, an enabled MCP server returns 500 with the code `mcp_firewall_not_configured`, and `itk:doctor` and **Site status** warn about it in advance.
 - `(/|$)` at the end of the pattern keeps other paths such as `/administrator` out of the rule.
 - `login_throttling` limits password guessing. `enable_csrf` on logout stops another page from signing the administrator out.
-- If the admin panel is not at `/admin`, change `^/admin` in the firewall `pattern` and in both `access_control` lines. The bundle does not change this file. **Without these rules the admin sign-in does not open, and collection actions (`POST {admin}/api/resources/{collection}/actions/{action}`) run without a sign-in check.** Example: with `itk_cms.admin_path: /cp` write `^/cp`; when the routes are imported with `prefix: /cp` write `^/cp/admin`.
+- If the admin panel is mounted at another path, update the firewall `pattern` and both `access_control` rules. Use `^/cp` for `itk_cms.admin_path: /cp`. Use `^/cp/admin` when importing the routes with `prefix: /cp`. Collection actions require sign-in and the relevant permission even without those access rules.
 - In production, `APP_SECRET` must be unique and non-empty. The admin CSRF token, the encryption of secrets (two-step sign-in secrets, bot tokens, SMTP password, Yandex Webmaster token), the IndexNow key and the URL hashes in requests depend on it. Flex puts an empty `APP_SECRET=` line in `.env` and a working development value in `.env.dev`. With an empty secret, `/admin` returns 500 with the text `APP_SECRET is empty`, and `itk:install` prints a warning. To keep it in the Symfony vault, see [Secrets in production](#secrets-in-production-symfony-vault).
 - Behind a proxy or CDN, set `framework.trusted_proxies`. Otherwise all visitors appear to come from one address for the form and sign-in limits.
-- In production, set `framework.trusted_hosts` or the `itk_cms.public_url` option. Links in e-mails and the page cache depend on them.
+- Set `itk_cms.public_url` to the full origin for password and invitation links. Set `framework.trusted_hosts` to constrain incoming hosts.
 
 #### Secrets in production (Symfony vault)
 
 The bundle reads its settings through `%env()%`, so a value can come from the [Symfony secrets vault](https://symfony.com/doc/current/configuration/secrets.html) as well as from the environment. The bundle needs nothing extra for this. The site decides which variables go into the vault and how the decryption key reaches the server.
 
-- A site usually keeps `APP_SECRET`, `DATABASE_URL` and `MAILER_DSN` in the vault, and also `TELEGRAM_DSN` if Telegram is set up on the server. A bot token entered in **Settings → Notifications** wins over `TELEGRAM_DSN`, and then the variable is not needed. Bot tokens, the SMTP password and the Yandex Webmaster token entered in the admin panel are kept in the database, sealed with `APP_SECRET`. They do not go into the vault.
+- A site usually keeps `APP_SECRET`, `DATABASE_URL` and `MAILER_DSN` in the vault, and also `TELEGRAM_DSN` if Telegram is set up on the server. A bot token entered in **Settings → Bots** wins over `TELEGRAM_DSN`, and then the variable is not needed. Bot tokens, the SMTP password and the Yandex Webmaster token entered in the admin panel are kept in the database, sealed with `APP_SECRET`. They do not go into the vault.
 - Create the keys of an environment with `php bin/console secrets:generate-keys --env=prod` and add values with `php bin/console secrets:set DATABASE_URL --env=prod`. Commit `config/secrets/prod/` without the private key `prod.decrypt.private.php`. Flex ignores only the `prod` key. For another environment, such as `stage`, add `*.decrypt.private.php` to `.gitignore`. The Docker kit keeps the private key out of the image.
 - On the server, pass the private key in the `SYMFONY_DECRYPTION_SECRET` variable. Get its value with `php -r 'echo base64_encode(require "config/secrets/prod/prod.decrypt.private.php");'`.
 - A real environment variable and a non-empty line in `.env` or `.env.*.local` win over the vault. An empty line, such as the `APP_SECRET=` that Flex puts in `.env`, does not, and Symfony then reads the vault.
@@ -233,7 +238,7 @@ Run the worker under supervisor or systemd: `php bin/console messenger:consume a
 
 1. Configure the bundle in `config/packages/itk_cms.yaml`. All options are optional. The full list is in [Configuration reference](#configuration-reference).
 2. Run `php bin/console doctrine:migrations:migrate`. The bundle registers its own migrations, `Itk\Cms\Migrations`.
-3. Run `php bin/console itk:install --email=you@example.com --site-name="My site" --domain=example.com`. The command is safe to run again. It creates the built-in roles, the menu areas from the schema, the default settings, the queue table (for transports that can set themselves up, such as `doctrine://`), the home page and the first administrator. The command asks for the password. You can also pass it with `--password` or the `ITK_ADMIN_PASSWORD` variable. `--name` sets the administrator's name, `--no-home` skips the home page.
+3. Run `php bin/console itk:install --email=you@example.com --site-name="My site" --domain=example.com`. The command is safe to run again. It creates the built-in roles, the menu areas from the schema, the default settings, the queue table, the home page and the first administrator. It asks for a password of 10 to 200 characters with hidden input. For automation, pass a readable file with `--password-file`. `--name` sets the administrator's name. `--no-home` skips the home page.
 4. Run `php bin/console assets:install`. The admin files become available at `/bundles/itkcms/admin/`. Flex does this on `composer install` and `composer update`.
 5. Run `doctrine:schema:validate` and `doctrine:migrations:diff` only after `itk:install`. `itk:install` creates the `messenger_messages` table. Before that step, `validate` reports a mismatch, and `diff` writes the creation of that table into the site's migration.
 
@@ -320,7 +325,7 @@ Core templates: `home`, `default`, `blog`, `blog_category`, `blog_article`. A si
 
 **The H1 heading.** The first visible section of the `SectionType::FIRST_SCREEN` group gets the `is_h1` variable in its template. The H1 of that section is the field from `->h1('field')` or the first `headline` field. A group is the literal string passed to `group()`, and the admin panel shows it as written. Use `SectionType::FIRST_SCREEN` for the first-screen group. The admin panel shows this group and the default group in the interface language. A page template with `->h1('field')` owns the H1 itself. Only that field gets the **Page heading (H1)** label. If the H1 field has the `headline` type, the page title equals its first line as plain text.
 
-**Content in one language.** For now, site content is kept in one language, `main_locale`. The admin language is set separately (see [Admin language](#admin-language)).
+**Content languages.** Set `main_locale` for the primary content language and `locales` to list the languages available to editors. See [Content language configuration](#content-language-configuration) and [Admin language](#admin-language).
 
 ### Collections
 
@@ -335,14 +340,16 @@ A collection is a list of records with fields: reviews, tours, staff. Records ar
 | `defaultSort([...])`, `perPage(int)` | The default sort and the list page size (50) |
 | `filters(...)`, `actions(...)`, `metrics(...)` | Filters, actions and metrics |
 | `tree()` | Records nest inside each other |
-| `singleton('main')` | A collection of one record with this id |
+| `singleton('main')` | A collection of one record with this id. Reads return initial values until the first explicit save creates the row |
 | `view('matrix')`, `matrix([...])` | A table editor for one record: `colFields`, `rowKinds`, `rowLabel` |
 | `singular()`, `newLabel()`, `icon()`, `describe()`, `emptyState()` | Labels and the icon in the admin panel |
 | `menu(...)`, `visibleWhen(fn)` | The place in the admin menu and visibility, see [Admin menu](#admin-menu) |
 
+Use a business field such as `stage` for a kanban column. Collection fields cannot use metadata keys from `Collection::RESERVED_KEYS`. Admin, PHP and MCP share value validation. A custom field can implement `Itk\Cms\Field\ValueValidatingFieldInterface` and return translated errors from `validationErrors()`.
+
 ### Menus
 
-`menuArea()` declares menu areas. Items are edited in **Settings** → **Menus** (the `set:menus` permission). An item leads to a page or to a URL. Items are dragged by the handle on the left, and the area `depth` limits nesting. In a template, `menu('header')` outputs the menu. Only published pages appear in the menu.
+`menuArea()` declares menu areas. Items are edited in **Settings** → **Menus** (the `set:menus` permission). An item leads to a page or to a URL. Items are dragged by the handle on the left, and the area `depth` limits nesting. In a template, `itk_menu('header')` outputs the menu. Only published pages appear in the menu.
 
 ### Settings
 
@@ -354,6 +361,8 @@ A settings group is a form in **Settings** with its own fields. Settings keys ar
 | `analytics` (**Analytics and webmaster tools**) | `yandexMetrikaId`, `yandexMetrikaWebvisor`, `googleAnalyticsId`, `yandexVerification`, `googleVerification`, `indexNow` |
 
 A site extends a built-in group with `$s->settings('site')->fields(...)`. A site field with the key of a built-in field replaces the core field, whichever group the site declares it in.
+
+Set `domain` to a hostname or an HTTP(S) origin. A path, query or fragment is invalid. `itk_cms.public_url` alone supplies the origin for the sitemap, IndexNow and Webmaster. International hostnames are written as ASCII in URLs. Internal settings such as SMTP and bot credentials use a separate `itk:` namespace.
 
 Site code reads settings with the `Itk\Cms\Settings\Settings` service. The value comes in the field's type:
 
@@ -368,7 +377,7 @@ $settings->get('siteName', locale: 'en'); // for fields with translatable()
 $settings->all();                         // all settings of the language
 ```
 
-The call's default is used when the setting is not in the schema or is empty. `false` and `0` count as real values. Until the setting is saved, the field's `default()` is read. The `settings()` Twig function uses the same service. `canSee()` restrictions do not apply to this service.
+The call's default is used when the setting is not in the schema or is empty. `false` and `0` count as real values. Until the setting is saved, the field's `default()` is read. The `itk_settings()` Twig function uses the same service. `canSee()` restrictions do not apply to this service.
 
 ### Media library and images
 
@@ -381,7 +390,7 @@ Originals are stored at `{upload_url}/Y/m/name.jpg` (by default `/uploads/media`
 - In `article` and `description` fields, `<img src="/uploads/…">` tags get on output the `src` of the 960 copy, a `srcset` up to 1920, `sizes`, `loading="lazy"` and `decoding="async"`. The database keeps the original HTML.
 - `php bin/console itk:media:warm [--width=640 --width=1280]` creates copies of all images in advance, for example after an import.
 
-**Crops and focal point.** A media library file has a focal point and saved crops for aspect ratios (**Media library** → file → **Crop and focal point**). A crop URL is `{upload_url}/_v/w{width}-r{A}x{B}/Y/m/name.webp`, and `media_url(image, 960, '16:9')` returns it. Without a saved crop, the largest frame of that ratio around the focal point is used. Allowed ratios are those in `images.ratios` and those for which the file has a saved crop. Write the ratio unreduced (`16x9`, not `32x18`), otherwise you get 404. The browser caches a crop for a day, not a year, because the crop can be redrawn.
+**Crops and focal point.** A media library file has a focal point and saved crops for aspect ratios (**Media library** → file → **Crop and focal point**). A crop URL is `{upload_url}/_v/w{width}-r{A}x{B}/Y/m/name.webp`, and `itk_media_url(image, 960, '16:9')` returns it. Without a saved crop, the largest frame of that ratio around the focal point is used. Allowed ratios are those in `images.ratios` and those for which the file has a saved crop. Write the ratio unreduced (`16x9`, not `32x18`), otherwise you get 404. The browser caches a crop for a day, not a year, because the crop can be redrawn.
 
 **Folders.** Folders nest up to 6 levels, and a name is unique among siblings. A folder with content can be deleted only by moving the content to another folder or to the top level. API (the `media` area): `GET|POST media-folders`, `PATCH|DELETE media-folders/{id}` (`?moveTo=<id>|root`), `GET media?folder=<id>|none`, `PATCH media/{id} {folderId}`, `POST media/move {ids, folderId}`.
 
@@ -389,46 +398,53 @@ Originals are stored at `{upload_url}/Y/m/name.jpg` (by default `/uploads/media`
 
 ### Twig templates
 
+Place overrides in `templates/bundles/ItkCmsBundle/`. To extend the original bundle template from an override, use `@!ItkCms/…`. Admin and preview assets use the default Symfony Asset package when available, including its base path or CDN.
+
 The site puts its templates in `templates/`:
 
 - `layout.html.twig` is the layout. It declares `{% block content %}`. `{% block title %}` is convenient for `<title>`.
 - `pages/<template>.html.twig` renders a page of its template. Without it, `pages/default.html.twig` is used.
 - `sections/<section>.html.twig` renders a section. Variables: `section`, `page`, `is_h1`.
 
-A page template has access to `page` (`id`, `parentId`, `template`, `locale`, `title`, `url`, `seo`, `fields`, `sections`, `h1Id`) and `site` (the settings, plus `name`, `domain`, `locale`).
+A page template has access to `page` (`id`, `parentId`, `template`, `locale`, `html_lang`, `og_locale`, `translations`, `title`, `url`, `seo`, `fields`, `sections`, `h1Id`) and `site` (the settings, plus `name`, `domain`, `locale`).
+
+To make a record or setting clickable in the page preview, use `itk_field(record, 'title')` on a row from `itk_collection()` or `itk_listing()`, and `itk_field(site, 'phone')` or `itk_field(itk_settings(), 'phone')` for a setting. Use `itk_field_attrs()` on the surrounding element for custom markup. A click opens the field in the preview language when the editor has access.
 
 ### Twig functions
 
+All bundle Twig functions use the `itk_` prefix. To upgrade to 0.3.0, rename the old calls with the command in the [upgrade guide](https://github.com/it-koval/cms/blob/main/UPGRADE.md#twig-functions).
+
 | Function | What it does |
 |---|---|
-| `render_sections(page)` | Renders the visible sections through `sections/<type>.html.twig` |
+| `itk_render_sections(page)` | Renders the visible sections through `sections/<type>.html.twig` |
 | `itk_field(section\|page, 'key')` | The field value. `headline` and formatted text come as safe HTML, `text` as escaped text, everything else as data. In preview, wraps the value in markup for highlighting |
 | `itk_field_attrs(section\|page, 'key')` | Preview attributes for non-text fields |
 | `itk_section_attrs(section)`, `itk_section_class(section)` | Attributes of the section root and the `chg` class for a changed section, in preview only |
 | `itk_is_preview()` | `true` while the admin panel shows a draft |
-| `menu('header')` | The area items: `label`, `kind`, `url`, `active`, `open`, `children` |
-| `settings('phone')`, `settings('phone', 'none')`, `settings()` | Settings |
-| `page_url(link)` | A safe URL from a **Link** field value, a page or a page id |
-| `listing(page)` | The published pages or records that the page collects. Each row has `parentId` |
+| `itk_menu('header')` | The area items: `label`, `kind`, `url`, `active`, `open`, `children` |
+| `itk_settings('phone')`, `itk_settings('phone', 'none')`, `itk_settings()` | Settings |
+| `itk_page_url(link)` | A safe URL from a **Link** field value, a page or a page id |
+| `itk_listing(page)` | The published pages or records that the page collects. Each row has `parentId` |
 | `itk_pages({...})`, `itk_page(id)`, `itk_collection(key, {...})` | Public data reading, see the section below |
-| `media_url(image[, width[, ratio]])` | The image URL, its WebP copy of the nearest allowed width not smaller than the given one, or a crop of the ratio |
-| `media_srcset(image[, maxWidth[, ratio]])` | A `srcset` value up to the original or up to the first copy that covers `maxWidth`. Empty for GIF, SVG and external URLs |
-| `media_width(image)` | The width of the original in pixels, or `null` |
-| `media_ratio(width, height)` | The ratio key of a slot in the layout: `media_ratio(700, 250)` returns `'14:5'` |
+| `itk_media_url(image[, width[, ratio]])` | The image URL, its WebP copy of the nearest allowed width not smaller than the given one, or a crop of the ratio |
+| `itk_media_srcset(image[, maxWidth[, ratio]])` | A `srcset` value up to the original or up to the first copy that covers `maxWidth`. Empty for GIF, SVG and external URLs |
+| `itk_media_width(image)` | The width of the original in pixels, or `null` |
+| `itk_media_ratio(width, height)` | The ratio key of a slot in the layout: `itk_media_ratio(700, 250)` returns `'14:5'` |
 | `itk_img(image, {...})` | A ready `<img>` with `srcset`, `sizes`, `alt`, `loading="lazy"`, `decoding="async"`. Wrapped in `<picture>` when AVIF is supported |
 | `itk_seo({...})` | Meta tags of the current URL, see [SEO rules for URLs](#seo-rules-for-urls) |
 | `itk_cache(300)`, `itk_cache(false)` | The lifetime of the entry in the page cache, see [Page cache](#page-cache) |
 | `itk_stylesheets({nonce: x})` | The site stylesheets, see [Critical CSS](#critical-css) |
+| `itk_asset('preview.js')` | URL of a file in `bundles/itkcms/`. Uses the site's Symfony Asset package or the request base path |
 | `itk_t('area.key', {...})`, `itk_locale()` | Text and language of the admin interface. For your own sign-in pages and e-mails |
 | `itk_admin_font()` | The `@font-face` rules of the admin font for your own sign-in pages |
 
 `itk_img` options: `sizes`, `class`, `width`, `height`, `loading`, `alt`, `ratio`, `src_width` (the width of `src`, by default `width`, otherwise 960), `max_width` (the widest image in device pixels, by default `2 × width`), `attrs` (an array of attributes or `itk_field_attrs(...)`). `sizes` defaults to `(max-width: {width}px) 100vw, {width}px`.
 
-A ratio that is in neither `images.ratios` nor the file's crops does not break the page. The whole image is used, and a warning goes to the log. To make an image fit the shape of its slot, write `media_url(img, 700, media_ratio(700, 250))`.
+A ratio that is in neither `images.ratios` nor the file's crops does not break the page. The whole image is used, and a warning goes to the log. To make an image fit the shape of its slot, write `itk_media_url(img, 700, itk_media_ratio(700, 250))`.
 
 ### Public data reading
 
-`itk_pages`, `itk_page` and `itk_collection` read only published content, and read it the same way for everyone. A guest and a signed-in administrator see the same thing. Each call makes one query. Site code reads the same data with `Itk\Cms\Content\ContentReader`.
+`itk_pages`, `itk_page` and `itk_collection` read only published content, and read it the same way for everyone. A guest and a signed-in administrator see the same thing. `itk_pages` and `itk_collection` each make one database query per call. All `itk_page` lookups share one query per language per visitor request. Site code reads the same data with `Itk\Cms\Content\ContentReader`.
 
 ```twig
 {% for c in itk_pages({template: 'blog_category'}) %}<a href="{{ c.url }}">{{ c.title }}</a>{% endfor %}
@@ -437,18 +453,18 @@ A ratio that is in neither `images.ratios` nor the file's crops does not break t
 {% for t in itk_collection('tours', {where: {state: 'open', seats: {from: 5}, level: ['easy', 'mid']}, sort: '-start', limit: 10, offset: 20}) %}…{% endfor %}
 ```
 
-- `itk_pages` returns rows `{id, parentId, template, locale, title, url, seo, fields, position, publishedAt}`. Parameters: `template` (a key or a list), `parent` (a page id, direct children only; an empty value is an error), `limit`, `sort`. `sort` accepts `position` (the default), `createdAt`, `publishedAt`, `title`, `url` and `fields.<key>`. A `-` sign means descending order. Write several keys as a list or comma-separated. A numeric field sorts as a number. Rows have no sections. `listing()` returns those.
+- `itk_pages` returns rows `{id, parentId, template, locale, title, url, seo, fields, position, publishedAt}`. Parameters: `template` (a key or a list), `parent` (a page id, direct children only; an empty value is an error), `limit`, `sort`. `sort` accepts `position` (the default), `createdAt`, `publishedAt`, `title`, `url` and `fields.<key>`. A `-` sign means descending order. Write several keys as a list or comma-separated. A numeric field sorts as a number. Rows have no sections. `itk_listing()` returns those.
 - `itk_page(id)` returns the same kind of row, or `null`. All pages of the language are read in one query per visitor request, so a loop with `itk_page(a.parentId)` does not run a query for each article.
 - `itk_collection(key)` returns records in order. Parameters: `where` (`{field: value}`; a list means any of the values, `true` and `false` for a toggle, `{from, to}` for a number or a date such as `2026-11-30`), `sort` (`position`, `createdAt` or a field), `limit`, `offset`. A record comes as `{id, ...fields}`.
-- An invalid parameter, field or template throws `\InvalidArgumentException` with a list of what is allowed.
+- In PHP, `ContentReader` throws `\InvalidArgumentException` for an invalid parameter, field or template. In Twig, invalid `itk_pages` or `itk_collection(key, options)` calls throw `\LogicException` in strict mode. In soft mode they return `[]` and log a warning. Pass `{}` as options to check a collection key without filters.
 
 ### Strict mode
 
-The `itk_cms.strict` option (equal to `kernel.debug` by default) makes template errors loud. An exception is then thrown for an unknown key in `itk_field` (with a hint listing the allowed keys), an unknown key inside a repeater, a section type that is not in the schema, a section without a template, and an invalid call of `itk_pages` or `itk_collection`. With `strict: false`, the page renders, and one warning per error per request goes to the log. A path into a value without subfields (`image.src`) is not an error. The admin preview never throws: a section without a template shows as a grey frame.
+The `itk_cms.strict` option (equal to `kernel.debug` by default) makes template errors loud. An exception is then thrown for an unknown key in `itk_field` (with a hint listing the allowed keys), an unknown key inside a repeater, a section type that is not in the schema, a section without a template, and an invalid call of `itk_pages` or `itk_collection(key, options)`. With `strict: false`, the page renders, and one warning per error per request goes to the log. A path into a value without subfields (`image.src`) is not an error. In the admin preview, field and section checks are softened, and a section without a template shows as a grey frame. Invalid content-reading calls still follow `strict`.
 
 ### Safe URLs
 
-`page_url()` returns only a safe URL: a site path (`/blog`, but not `//host`), a page URL by id, `http(s)://`, `mailto:`, `tel:` and `#anchor`. A URL with another scheme (`javascript:`, `data:`) becomes an empty string. The **Link** field is checked by the same rule on save. The rule is the same for pages, records, settings and menu items.
+`itk_page_url()` returns only a safe URL: a site path (`/blog`, but not `//host`), a page URL by id, `http(s)://`, `mailto:`, `tel:` and `#anchor`. A URL with another scheme (`javascript:`, `data:`) becomes an empty string. The **Link** field is checked by the same rule on save. The rule is the same for pages, records, settings and menu items.
 
 The `Itk\Cms\Support\Url` class gives these checks to site code: `safeLocalPath()`, `isLocalPath()`, `cleanPageRef()`, `cleanLinkUrl()`, `safeHref()`. `Url::safeLocalPath($path)` returns a path that is safe to put in `Location` or `href`. It keeps exactly one `/` at the start, reads `\` as `/`, and removes tabs and line breaks. Pass through it any part of a URL from the request that goes into a redirect:
 
@@ -473,7 +489,7 @@ A field is an object from `Itk\Cms\Field\` with chained methods. The label comes
 | `Select` | `select` | One option: `->options(['open' => 'Open'])` | string |
 | `Date`, `DateTime` | `date`, `dateTime` | `2026-11-30`, `2026-11-30T18:00` | string |
 | `Image` | `image` | An image | `{src, alt}` |
-| `Photos` | `photos` | A list of photos. An item is a URL string or `{src, alt}`. In a template, write `{{ p.src ?? p }}` | list |
+| `Photos` | `photos` | Photos with individual alt text. An item is a URL string or `{src, alt}`. Use `p.src ?? p` for the URL and `p.alt ?? ''` for the alt text | list |
 | `Link` | `link` | A link to a page or a URL | `{kind, page, url}` |
 | `Repeater` | `repeater` | A list of items: `->fields(...)` | list, each item has `_id` |
 | `Relation` | `relation` | A link to a collection record: `->to('destinations')`, `->multiple()` | id or list of ids |
@@ -488,13 +504,14 @@ All methods return the field, and you can call them in any order.
 | Method | What it does |
 |---|---|
 | `required()`, `max(int)`, `rows(int)` | Required, length, height of the input |
+| `lineBreak(false)` | Disable line breaks in a headline. The default and `lineBreak()` allow them |
 | `hint(string)` | Help text under the field. Alias: `help()` |
 | `default($v)` | The value for a new record. Alias: `initial()` |
 | `pattern($regex, $message)` | Server-side check of a site form value |
 | `inputType(string)` | The HTML input type, for example `email` |
 | `translatable()` | The setting is stored separately for each language |
-| `readonly()` | The editor sees the value but cannot change it. The server ignores the editor's value. Code and hooks can write it |
-| `canSee('set:users' \| 'col:tours:edit' \| fn (Viewer $v): bool)` | Who can see the field. For everyone else, the server leaves the field out of the schema, records and history, and does not accept its value |
+| `readonly()` | The editor can see a top-level field but cannot change it. Code and hooks can write it |
+| `canSee('set:users' \| 'col:tours:edit' \| fn (Viewer $v): bool)` | Who can see and submit a top-level field. The server omits the field from the schema, records and history for other viewers |
 | `raw()` | Multi-line text is output as raw HTML with scripts. Only a person with the permission to manage users can add or change the value. Nobody can do it through MCP |
 | `half()` | The field takes half a form row. Two neighboring fields with `half()` stand side by side |
 | `section('Heading')` | A form section heading before the field |
@@ -503,7 +520,7 @@ All methods return the field, and you can call them in any order.
 | `variant()` | A `Select` field becomes the section style option of the section |
 | `noun()`, `addLabel()` | The noun for a repeater item and the label of the add button |
 
-`readonly()` and `canSee()` apply to collection records, template fields, section fields (top level) and settings. In settings, values of a group for which the person lacks the **View** level of the `set:<group>` permission are not returned either.
+`readonly()` and `canSee()` apply to top-level fields in collection records, templates, sections and settings. They do not enforce read or write access for nested fields, including fields inside a `Repeater`. Store restricted values in a separate top-level field. `itk:schema:lint` reports nested declarations of these options. Viewing a settings group's values also requires **View** on `set:<group>`.
 
 ### Repeater row
 
@@ -576,7 +593,7 @@ A class with the key of a core template (`blog_article`) changes that template. 
 
 ### Hooks and events
 
-Each operation on a collection record or a page goes like this: first a Symfony event, then a method of the resource class. For a page, the resource is the class of its template, and `kind` is `page`. For a record, the resource is the collection class, and `kind` is `item`.
+Each object lifecycle operation on a collection record or a page goes like this: first a Symfony event, then a method of the resource class. For a page, the resource is the class of its template, and `kind` is `page`. For a record, the resource is the collection class, and `kind` is `item`.
 
 | Moment | Event (`Itk\Cms\Event\`) | Class method |
 |---|---|---|
@@ -586,12 +603,14 @@ Each operation on a collection record or a page goes like this: first a Symfony 
 | Delete | `RecordDeleting`, `RecordDeleted` | `beforeDeleting(Record, Context)`, `afterDeleted(Record, Context)` |
 | Publish | `RecordPublishing`, `RecordPublished` | `beforePublishing(Record, Context)`, `afterPublished(Record, Context)` |
 | Unpublish | `RecordUnpublishing`, `RecordUnpublished` | `beforeUnpublishing(Record, Context)`, `afterUnpublished(Record, Context)` |
+| Translation added or removed (after commit) | `RecordTranslationAdded`, `RecordTranslationRemoved` | |
 | Page template change | `PageTemplateChanged` (`from` is the old template, `resourceKey` the new one) | |
 | Several records at once | `MassAction` (`action`: `delete`, `publish`, `unpublish`; `phase`: `before`, `after`) | `beforeMassDeleting`, `afterMassDeleted`, `beforeMassPublishing`, `afterMassPublished`, `beforeMassUnpublishing`, `afterMassUnpublished` (`array $records, Context`) |
 
 - An event has `resourceKey`, `kind`, `record` (`null` in `RecordCreating`), `data` and `viewer`. You can change `data` in `RecordCreating` and `RecordUpdating`, and the changed data is saved.
+- `RecordTranslationAdded` and `RecordTranslationRemoved` extend `RecordEvent` and carry the operation language in `locale` (also in `record->locale`). They are dispatched only after the transaction commits. Adding or removing a translation does not call the object create/delete events or the resource lifecycle hooks. Removing a live translation still calls `RecordUnpublishing` / `RecordUnpublished` and the corresponding unpublish hooks.
 - `Record` is `{id, kind, resourceKey, locale, fields, status, meta}` with a `get($key)` method. For a page, `fields` holds the template fields, and `meta` holds `title`, `url`, `parentId`, `template`.
-- `Context` holds `viewer`, `locale`, `kind`, `resourceKey`. `Viewer` is either a person with permissions (`can('col:tours', 'publish')`, `allows('set:users')`, `user()`, `role()`) or the system (console, import, queue: `isSystem()`, everything is allowed).
+- `Context` holds `viewer`, `locale`, `kind`, `resourceKey`. `Viewer` is either a person with permissions (`can('col:tours', 'publish')`, `allows('set:users')`, `user()`, `role()`) or the system (console, queue). For the system, `isSystem()` returns true and everything is allowed.
 - Any `before…` can throw `Itk\Cms\Content\ContentException`. The change is cancelled, and the editor sees the exception text. `after…` runs after the save, and an exception in it rolls nothing back.
 - A mass operation first calls the shared `before` once. Then each record goes through its own `before…` and the database write, all in one transaction. The `after…` of each record and the shared `afterMass…` run after the transaction, and only if it did not roll back.
 - The core removes `readonly()` fields and fields hidden by `canSee()` from the person's data before the events. Values added by a hook are saved.
@@ -600,6 +619,8 @@ Each operation on a collection record or a page goes like this: first a Symfony 
 - Returning an unpublished page to the site calls `RecordPublished` and `afterPublished` without `before…`.
 
 ```php
+use Itk\Cms\Support\Slug;
+
 // CollectionResource: flat data
 public function beforeCreating(array $data, Context $ctx): array
 {
@@ -656,9 +677,9 @@ GET {admin}/api/collections/tours?q=altai&filter[state]=open&filter[start][from]
 → { items, total, page, perPage, facets: { state: { open: 4, full: 3 } }, metrics: [{ label, kind, value }] }
 ```
 
-- The response with `items` and `total` comes when the request has `page`, `perPage`, `sort`, `filter` or `envelope=1`. Without them, the response is a plain list of rows.
+- The response is always `{ items, total, page, perPage, facets, metrics }`, including a request without query parameters. See **Collection lists** in the JSON API section below.
 - `sort` takes comma-separated keys, and `-` means descending. You can sort by fields with `sortable()`, and by `status`, `updatedAt`, `createdAt`, `position`. Without `sort`, `defaultSort()` applies, otherwise the manual order.
-- `q` searches the fields with `searchable()`, or, without them, the title and the second line. A field hidden by `canSee()` can be neither filtered nor sorted (422).
+- With `filter`, `q` searches visible fields marked `searchable()` or defaults to the title and second line if none are marked. A field hidden by `canSee()` cannot be filtered or sorted (422).
 - `perPage` defaults to 50, at most 200. `facets` counts records by the values of the `Select`, `Multi`, `Toggle` and `status` filters across the whole collection.
 - Metrics (`Metric::count('Total')`, `Metric::count('Published', filter: ['status' => 'published'])`, `Metric::sum('Seats', 'seats')`) are computed over the whole collection, not over the current filter.
 - The server remembers filters and the list view per person: `GET|PUT|DELETE {admin}/api/prefs/{key}`. The key is up to 100 characters of letters, digits and `. _ : -`, and the value is up to 16 KB of JSON.
@@ -737,6 +758,66 @@ The bundle recognizes the admin panel by the route names `itk_admin_*` and `itk_
 
 The `Itk\Cms\Admin\AdminPath` service tells where the admin panel is (`base()`, `to('/api/me')`), taking the import `prefix` into account. Links in e-mails are built through it.
 
+#### Requests and media lists
+
+`GET /admin/api/requests` and `GET /admin/api/media` return `{ items, total, page, perPage, nextCursor, previousCursor }`. Use `page` (starting at 1) and `perPage` (default 50, range 1–100). `total` counts all matches. Both lists sort by creation time and ID, descending. For adjacent pages, pass `nextCursor` or `previousCursor` as `cursor` with the same filters and page size. The cursor takes precedence over the offset implied by `page`, and is `null` in a direction with no more results. Requests using only a page number select by current position in the matching list.
+
+- Requests support `status`, `form`, `q`, `period`, `from`, `to` and `locale`. `GET /admin/api/requests/counts` gives site-wide totals.
+- Media supports `q` for a literal substring in the title, original filename or alt text, `type=img|pdf`, and `folder` (a folder ID, `none` for unfiled files, or omitted for all files).
+- `GET /admin/api/dashboard` includes up to eight rows in `newRequests` and reports the full count in `newRequestCount`. All new requests are available through `GET /admin/api/requests?status=new`.
+
+#### Collection lists
+
+`GET /admin/api/collections/{col}` always returns `{ items, total, page, perPage, facets, metrics }`. `items` contains the current page of rows. `total` counts matching rows before pagination. Read `items` and request the remaining pages up to `ceil(total / perPage)`.
+
+| Query parameter | Meaning |
+|---|---|
+| `q` | Case-insensitive substring search. Without `filter`, searches the visible title and second line (`titleField()` and `subField()`). With `filter`, uses the collection's visible search fields |
+| `status` | Omit or leave empty to include all statuses. `draft` includes drafts and published versions with unpublished changes. `published` includes published versions without unpublished changes. `missing` includes records with no version in the selected language. Other values return `422` |
+| `onlyTranslated` | Boolean such as `1` or `true`. Excludes records with no version in the selected language before counting and pagination |
+| `filter` | Pass field filters such as `filter[state]=open`, `filter[level]=mid,hard`, or `filter[start][from]=2026-11-01`. `Multi` and `Relation` accept arrays. Date and number bounds are inclusive and either bound can be omitted. `filter[status]` matches the stored status |
+| `sort` | Comma-separated keys such as `-start,title`. A leading `-` means descending. Allowed keys are visible fields with `sortable()`, plus `status`, `updatedAt`, `createdAt` and `position`. Defaults to `defaultSort()` when configured, or the manual order |
+| `page` | Page number starting at 1, which is also the default |
+| `perPage` | Page size set by the collection's `perPage()` by default (50). Values above 200 are capped at 200 |
+| `locale` | Content language. Defaults to the main language. A code outside an explicitly configured list returns `422` |
+| `envelope` | Accepted for compatibility. Every value and omission return the same response shape |
+
+Filters, search, status and translation selection apply before counting and pagination. `facets` contains counts for the collection's `Select`, `Multi`, `Toggle` and `status` filters. `metrics` contains the configured metrics. Both are computed over the whole collection.
+
+#### Page and record translations
+
+Each translation belongs to the same page or collection record. Creating a translation keeps its `id`, template, parent and position. The target language is the `locale` query parameter on creation and the final path segment on deletion.
+
+| Request | JSON body | Success response |
+|---|---|---|
+| `POST /admin/api/pages/{id}/translations?locale=kk` | `{"from":"ru"}` or `{"from":null}` | `201`, a flat page draft with the same `id` and `locale: "kk"` |
+| `DELETE /admin/api/pages/{id}/translations/{locale}` | None | `200 {"ok":true}` |
+| `POST /admin/api/collections/{col}/{id}/translations?locale=kk` | `{"from":"ru"}` or `{"from":null}` | `201`, a flat record draft with the same `id` and `locale: "kk"` |
+| `DELETE /admin/api/collections/{col}/{id}/translations/{locale}` | None | `200 {"ok":true}` |
+
+`from` selects the existing draft to copy, subject to field permissions. Pass `null` to use schema defaults for fields and sections; a page still takes its title and the basis of its address from the main translation. Each translation starts as an unpublished draft with no pending approval. New page addresses use the target language prefix. An occupied path gets an available suffix, while an occupied language homepage returns `409`.
+
+Creation requires `edit` and deletion requires `delete` on the template or collection. Both require sign-in and the CSRF header described above. Deletion removes the selected translation and records its snapshot in history as `delete_locale`. This audit entry is not a current version, is not placed in the trash and cannot be restored; create a new translation instead. To remove the last version, delete the whole page or record.
+
+- `404` if the page or record is missing, or the translation to delete is missing.
+- `409` if the target translation already exists, its address conflicts, or the operation would delete the main or last version.
+- `422` if the target language is missing or disabled, `from` is invalid or selects a missing draft, or the address is invalid.
+- `401` if sign-in is required. `403` if the user lacks permission.
+
+Errors use `{error, details?}`. Existing responses for a missing translation retain `details.code: "no_translation"`. Reading a draft in a language without a translation still returns the read response wrapper with `translated: false` and `page: null` or `item: null`.
+
+Trusted site PHP code can use the same public operations on `Itk\Cms\Content\PageService` and `Itk\Cms\Content\CollectionService`. `addTranslation()` requires the source argument, a language code or `null`, and returns the flat draft as an array. `removeTranslation()` returns `void`.
+
+```php
+$pages->addTranslation($id, 'kk', 'ru');
+// Or: $pages->addTranslation($id, 'kk', null);
+$pages->removeTranslation($id, 'kk');
+
+$collections->addTranslation('tours', $id, 'kk', 'ru');
+// Or: $collections->addTranslation('tours', $id, 'kk', null);
+$collections->removeTranslation('tours', $id, 'kk');
+```
+
 ### Roles and permissions
 
 A permission is a pair of an area and an action. Actions: `view` (**View**), `edit` (**Edit**), `publish` (**Publish**), `delete` (**Delete**). `publish` and `delete` include `edit`, and `edit` includes `view`. The role matrix in **Settings** → **Users and roles** → **Roles** is built from the schema areas and picks up new rows automatically.
@@ -750,7 +831,8 @@ A permission is a pair of an area and an action. Actions: `view` (**View**), `ed
 | `set:<group>` | A settings group, including `set:site` and `set:analytics` |
 | `set:menus`, `set:redirects`, `set:seo` | Menus, redirects, SEO rules, `robots.txt` and `llms.txt` |
 | `set:notifications`, `set:mail`, `set:bots` | Notification recipients, mail server, bot tokens |
-| `set:theme`, `set:languages`, `set:users`, `set:mcp` | Admin appearance, languages, users and roles, AI assistants |
+| `set:theme`, `set:users`, `set:mcp` | Admin appearance, users and roles, AI assistants |
+| `set:languages` | Reserved permission. The site developer sets the available languages in `itk_cms.locales`. |
 | `templates` | Viewing templates |
 | `dev` | The **For developers** section: **Site status** |
 | `action:<collection>:<action>` | Running an action with `permission()` |
@@ -761,7 +843,7 @@ Built-in roles:
 |---|---|
 | `admin` (**Administrator**) | All areas |
 | `editor` (**Editor**) | Pages and collections in full, the media library in full, viewing requests |
-| `author` (**Author**) | Viewing and editing pages of article templates (templates with `card(date: …)`), viewing and editing the media library |
+| `author` (**Author**) | Viewing and editing pages from templates marked with `forAuthors()`, viewing and editing the media library |
 | `requests` (**Requests**) | Viewing and editing requests |
 
 Symfony gives every signed-in person the `ROLE_ITK_USER` role. In code, `Itk\Cms\Security\Access` and `PermissionVoter` (the `itk` attribute) check permissions.
@@ -774,7 +856,7 @@ Symfony gives every signed-in person the `ROLE_ITK_USER` role. In code, `Itk\Cms
 - All unused links of a person expire when the person's password is set in any way, their e-mail changes, or they are blocked.
 - **Console.** `php bin/console itk:user:password name@example.com` asks for the password with hidden input. `--password=…` leaves the password in the shell history.
 
-Links in e-mails are built from the trusted site address (`Mail\PublicUrl`) in this order: the `itk_cms.public_url` option; the request address, if `framework.trusted_hosts` is set; the **Site address** setting (`domain`, `https://` by default); the request address as is, only in debug. The raw `Host` header is not used in production. Without a trusted address no link is created: **Forgot your password?** writes an error to the log, and invitation and reset return a one-time password. In production, set `public_url` or `trusted_hosts`, because anyone with the `set:site` permission can change the **Site address** setting.
+Password and invitation links use the configured `itk_cms.public_url`, such as `https://example.com`. Include the port if the site uses a custom one. Without this configuration, **Forgot your password?** records a configuration error, and admin invitation and reset return a one-time password. **Site status** and `itk:doctor` report the missing address.
 
 ### Two-step sign-in
 
@@ -783,15 +865,15 @@ The second step is a one-time code from an app (TOTP per RFC 6238: SHA-1, 6 digi
 - **Turning it on.** **My profile** → **Two-step sign-in**: a QR code and a key for manual entry, confirmation with the first code, 10 recovery codes. The codes are shown once, and each works once. Turning it off and getting new recovery codes require the password.
 - **Sign-in.** After the password, `/admin/login/otp` opens. Until the code is entered, only this page and sign-out work in the admin panel.
 - **Mandatory for a role.** The **Require two-step sign-in** checkbox in **Settings** → **Users and roles** → **Roles** (`Role::require2fa`). A person with such a role and no factor sees only the setup dialog. Everything else returns 403 with `details.code = '2fa_enrol'`. That person cannot turn the factor off (409).
-- **Attempts.** Five wrong codes in a row lock the factor for 15 minutes (429, `details.code = '2fa_locked'`). A code works once, with a window of ±1 step.
+- **Attempts.** Five wrong codes in a row lock the factor for 15 minutes (429, `details.code = '2fa_locked'`). A per-user limiter (`framework.rate_limiter.itk_two_factor`) also counts attempts. A code works once, with a window of ±1 step.
 - **Storage.** The secret is encrypted with `sodium_crypto_secretbox` using a key from `APP_SECRET`. Recovery codes are stored as HMAC-SHA256.
-- **Changing `APP_SECRET`** makes the secrets and recovery codes unreadable. People with the factor turned on cannot sign in until their factor is reset.
+- **Changing `APP_SECRET`** makes the secrets and recovery codes unreadable. People with the factor turned on cannot sign in until their factor is reset. Site Health and `itk:doctor` report unreadable keys without showing any account details.
 - **Reset.** An administrator clicks **Settings** → **Users and roles** → **Users** → **Reset two-step sign-in** (`POST users/{id}/reset-2fa`, the **Edit** level of `set:users`, not for yourself). If nobody can sign in: `php bin/console itk:user:reset-2fa name@example.com`.
 - **API.** `GET 2fa`, `POST 2fa/setup`, `POST 2fa/enable {code}`, `POST 2fa/recovery-codes {password}`, `POST 2fa/disable {password}`. These act only on yourself and need no special permissions.
 
 ### History and trash
 
-Every saved edit of a page, a record, a settings group and a menu is written to `itk_revision`: who, when, what changed, and the whole version. The core services write it in the same transaction as the edit. Edits from the console, imports and the queue are signed **System**. Edits through MCP are signed with the key name.
+Every saved edit of a page, a record, a settings group and a menu is written to `itk_revision`. It stores who made the edit, when, what changed, and the whole version. The core services write it in the same transaction as the edit. Edits from the console and the queue are signed **System**. Edits through MCP are signed with the key name.
 
 - Autosaves by one person with a gap of less than 10 minutes merge into one entry. An edit without changes leaves no entry.
 - Actions: `create`, `edit`, `publish`, `unpublish`, `revert`, `delete`, `restore`.
@@ -805,7 +887,7 @@ Every saved edit of a page, a record, a settings group and a menu is written to 
 
 A page and a collection record return a `version` field, a hash of the draft. The admin autosave sends it as `baseVersion`. If the draft changed in the meantime (another person, an assistant through MCP, a move in the tree), the server writes nothing and returns `409` with `details.code: "conflict"` and `details.current` (`version`, `by`, `at`, `via`, `viaName`). The editor stops autosave and asks: **Show the new version** or **Keep my edits**.
 
-A request without `baseVersion` is not checked: MCP tools, the console, site code, `PATCH` and publication work by the "last write wins" rule. MCP tools that change a page or a record run one at a time per object under a PostgreSQL advisory lock.
+Publication also checks `baseVersion` and returns `409` for a stale draft. A request without `baseVersion` is not checked: MCP tools, the console, site code and `PATCH` use "last write wins"; publication does too if the version is omitted. MCP tools that change a page or a record run one at a time per object under a PostgreSQL advisory lock.
 
 A collection record response always carries the service keys `id`, `locale`, `translated`, `status`, `updatedAt`, `awaiting`, `returned`, `changed`, `changes` and `version`. Do not give collection fields these names. `itk:schema:lint` and `itk:doctor` report the `version` key as an error.
 
@@ -871,7 +953,7 @@ A URL rule sets the title, description, indexing (`robots`), canonical URL and s
 - Among matching rules, the most specific one wins: more parameters, `exact` before `prefix`, a longer path, a rule in the request's language, a newer rule.
 - A tag value comes from the rule, then from the page SEO, then from the page title (only `title`), then from the `itk_seo()` argument. Relative `canonical` and `ogImage` become full URLs. Rules do not apply on an error page.
 
-The layout outputs the tags with `itk_seo()`. It works in any template and returns `{title, description, robots, canonical, ogImage, rule}`:
+The layout outputs the tags with `itk_seo()`. It works in any template and returns `{title, description, robots, canonical, ogImage, rule, alternates}`:
 
 ```twig
 {% set seo = itk_seo({title: 'My site', robots: 'index,follow'}) %}
@@ -879,14 +961,14 @@ The layout outputs the tags with `itk_seo()`. It works in any template and retur
 {% if seo.canonical != '' %}<link rel="canonical" href="{{ seo.canonical }}">{% endif %}
 ```
 
-API: `GET seo-rules?q=&locale=`, `POST seo-rules`, `PATCH|DELETE seo-rules/{id}`. `GET seo-rules/check?path=&locale=` shows what answers the URL (a site route, a redirect, a CMS page or 404), which rules match, and where each tag comes from.
+The API offers `GET seo-rules?q=&locale=`, `POST seo-rules` and `PATCH|DELETE seo-rules/{id}`. `GET seo-rules/check?path=&locale=` shows what answers the URL, the matching rules and the sources of the page's tags. Its `locale` filter applies only to the rules list. The URL's language determines the metadata.
 
 ### sitemap.xml
 
 The core serves `GET /sitemap.xml` from the published pages. The site does not need to write a sitemap.
 
 - The sitemap includes published pages, each with `<loc>` and `<lastmod>`. Pages with indexing turned off (in the page SEO or by a URL rule) are left out. Collection records are not included.
-- URLs are built from the **Site address** setting (`domain`), not from the `Host` header. Without a scheme, `https://` is used. Until the address is set, `/sitemap.xml` returns 404.
+- In every language mode, URLs use the normalized `itk_cms.public_url` when valid, then the **Site address** setting (`domain`). A `domain` without a scheme uses `https://`. The generated route returns 404 when its base is missing. [Multilingual indexing and operations](#multilingual-indexing-and-operations)
 - The sitemap is cached for an hour. The cache is cleared when a page is published, unpublished, changed or deleted, and when a URL rule changes.
 - A site's own `public/sitemap.xml` file wins, because the web server serves it before PHP.
 
@@ -895,8 +977,8 @@ The core serves `GET /sitemap.xml` from the published pages. The site does not n
 The core serves `GET /robots.txt` and `GET /llms.txt` (a site description for AI services in the [llmstxt.org](https://llmstxt.org) format). The text is edited in **Settings** → **SEO** → **robots.txt and llms.txt** (the `set:seo` area), and the edits go into history.
 
 - The response comes from the first of these that exists: a file in the site's `public/`, a custom text from the admin panel, the standard text.
-- The standard `robots.txt` opens the site and closes the admin path, `/request/` and `/mcp`. It adds the `Sitemap:` line when the **Site address** is set.
-- The standard `llms.txt` is built from published pages by the same rules as the sitemap: `# Site name`, `> SEO description of the home page`, then `## Pages` and a `- [Title](url): description` line for each page.
+- The standard `robots.txt` opens the site and closes the admin path, `/request/` and `/mcp`. It adds the `Sitemap:` line when the sitemap has a base URL.
+- The standard `llms.txt` has a site title, the SEO description of the home page if available, and one `- [Title](url): description` line per indexable page. Single-language sites use one `## Pages` section. Multilingual sites use a section per language.
 - A custom text is up to 64 KB. An empty field, the **Back to the standard text** button, and a text equal to the standard one all return the standard text.
 - You cannot create a page with the URL `/robots.txt` or `/llms.txt`.
 - The **AI search** line on **Site status** warns if `robots.txt` closes at least one AI bot: OAI-SearchBot, Claude-SearchBot, PerplexityBot, Googlebot, Bingbot, YandexBot, YandexAdditional, YandexAdditionalBot, ChatGPT-User, Claude-User, Perplexity-User, GPTBot, ClaudeBot, Google-Extended.
@@ -939,20 +1021,131 @@ final class ProductMarkup
 
 ### Analytics and verification codes
 
-The owner enters counter IDs and verification codes in **Settings** → **Analytics and webmaster tools** (the `set:analytics` area, by default only the administrator has it). The core puts them on the pages.
+The owner enters counter IDs and verification codes in **Settings** → **General** → **Analytics and webmaster tools** (the `set:analytics` area, by default only the administrator has it). The core puts them on public pages.
 
 | Field | Format |
 |---|---|
-| Yandex Metrika: counter ID (`yandexMetrikaId`) | 4 to 12 digits |
+| Yandex Metrika counter ID (`yandexMetrikaId`) | 4 to 12 digits |
 | Webvisor (`yandexMetrikaWebvisor`) | A toggle. Works when a counter is set |
 | Google Analytics 4 (`googleAnalyticsId`) | `G-XXXXXXXXXX` |
 | Yandex Webmaster, Google Search Console (`yandexVerification`, `googleVerification`) | The code from the meta tag, or the whole meta tag. Latin letters, digits, `-` and `_`, 8 to 120 characters |
 
-- Meta tags and scripts go before the first `</head>`, and the Metrika `<noscript>` after `<body>`.
-- The tags go into CMS pages and pages of site controllers: the main request, status 200 or 404, `text/html`, an ordinary `Response`. The preview, the admin panel, the API, MCP, the profiler, 304, redirects, streamed and compressed responses are not changed.
-- The core does not add a counter or a meta tag that is already in the HTML with the same ID or code.
+Set `itk_cms.analytics.start` in `config/packages/itk_cms.yaml`. This option has no control in the admin panel.
+
+```yaml
+itk_cms:
+    analytics:
+        start: manual # auto by default
+```
+
+- `auto` starts configured counters when the bundle loader runs. Metrika's `<noscript>` pixel follows the opening `<body>` and can send a request when JavaScript is disabled.
+- `manual` waits for the site's call to `window.itkAnalytics.start()`. The bundle makes no requests or preliminary connections to Yandex or Google before that call and outputs no `<noscript>` pixel.
+- Both modes output verification meta tags, including when no counter is configured. Distinct Yandex verification codes are preserved, and identical tags are deduplicated.
+
+When at least one valid counter is configured, a single versioned external `defer` loader, marked with `data-itk-analytics`, goes before the first `</head>`. Its URL follows the site's asset configuration and base path. Its `data-*` attributes carry the mode, validated IDs and Webvisor flag. The loader needs no executable inline script.
+
+The browser API is available after the loader runs. `window.itkAnalytics.start()` starts all configured counters. `window.itkAnalytics.start(['ga'])` starts only GA. The allowed keys are `metrika` and `ga`. Unknown and unconfigured keys are skipped. Repeated or overlapping calls initialize each counter once per page.
+
+After beginning initialization of new counters, the loader dispatches `itk-analytics:started` on `document` with `bubbles: true` and `detail.counters`, for example `['ga']`. Listeners on both `document` and `window` receive it. A call that starts no new counter emits no event. The event records initialization starting, without waiting for provider downloads or delivery.
+
+In `auto`, the event can fire while the loader runs, before a later deferred site script runs. Check `window.itkAnalytics?.started` before subscribing. The array lists the counters this loader has started. Check for the specific key your code needs.
+
+**Migrating early calls from 0.2.** Even in `auto`, `ym`, `dataLayer` and `gtag` may be undefined during HTML parsing or in a deferred site script that precedes the loader. Move those calls into `DOMContentLoaded` handlers in `auto`, or wait for the required counter as below. In `manual`, the site controls when counters start. Save this example as `public/js/analytics-events.js` and include it with `defer` in the site's layout. Replace the GA ID and event with the site's values.
+
+```js
+function whenCounterStarts(counter, callback) {
+    if (window.itkAnalytics?.started.includes(counter)) {
+        callback();
+        return;
+    }
+
+    function onStarted(event) {
+        if (!event.detail.counters.includes(counter)) return;
+        document.removeEventListener('itk-analytics:started', onStarted);
+        callback();
+    }
+
+    document.addEventListener('itk-analytics:started', onStarted);
+}
+
+whenCounterStarts('ga', () => {
+    window.gtag('event', 'contact_view', { send_to: 'G-XXXXXXXXXX' });
+});
+```
+
+For Metrika, use the `metrika` key and call `window.ym` with the site's counter ID inside the callback. To keep early calls in `auto`, define queue stubs in an external script that executes before both the loader and the calls. A synchronous script in `<head>` works. The loader preserves existing `ym`, `dataLayer` and `gtag` queues. Limit the stubs to queuing calls.
+
+```js
+if (!window.ym) {
+    window.ym = function () {
+        (window.ym.a = window.ym.a || []).push(arguments);
+    };
+    window.ym.l = Date.now();
+}
+window.dataLayer = window.dataLayer || [];
+window.gtag = window.gtag || function () {
+    window.dataLayer.push(arguments);
+};
+```
+
+For a site's own consent banner, include an external script in the site's Twig layout and use its existing accept button. Use `defer` as shown, or place a synchronous script after the closing `</head>` and after the banner markup. This ensures the script can find the loader tag and the button in the DOM. This example uses a button with `id="accept-analytics"` in `<body>`.
+
+```twig
+{# In <head> with defer. #}
+<script src="{{ app.request.basePath }}/js/analytics-consent.js" defer></script>
+{# In <body>. #}
+<button type="button" id="accept-analytics">Allow analytics</button>
+```
+
+Save the following code as `public/js/analytics-consent.js`. It waits for the bundle script if the site's script runs first. Finding the script by its attribute also works when the site is served from a subdirectory.
+
+```js
+function startAnalytics(counters) {
+    if (window.itkAnalytics) {
+        window.itkAnalytics.start(counters);
+        return;
+    }
+
+    document.querySelector('script[data-itk-analytics]')
+        ?.addEventListener('load', () => {
+            window.itkAnalytics?.start(counters);
+        }, { once: true });
+}
+
+document.getElementById('accept-analytics')?.addEventListener('click', () => {
+    startAnalytics();
+    // Use startAnalytics(['ga']) for a choice that allows only GA.
+});
+```
+
+The site implements the banner, stores the visitor's choice and calls the same function on later visits only when that choice permits analytics. On revocation, update the stored choice and reload the page without calling `start()`. The CMS does not stop counters already running on the current page. Before enabling `manual`, remove direct counter scripts, pixels, tag-manager triggers and analytics `preconnect` or `dns-prefetch` links from the site's templates and scripts so they cannot contact providers before the site's choice.
+
+For a CSP based on source allowlists, allow the bundle and site scripts from their actual asset origin in `script-src`. The following table is a starting allowlist for the standard provider integrations. Include only the providers and features the site uses.
+
+| Directive | Provider sources and scope |
+|---|---|
+| `script-src` | `https://mc.yandex.ru` for Metrika's `tag.js`, `https://www.googletagmanager.com` for GA's `gtag/js` |
+| `connect-src` | `https://mc.yandex.ru` and `https://mc.yandex.com` for Metrika collection, `https://*.google-analytics.com` for GA collection including regional endpoints |
+| `img-src` | `https://mc.yandex.ru` for the Metrika pixel in `auto`, and the relevant collection origins above if the provider uses image requests |
+| `frame-src` | When Webvisor uses frames, allow the frame origins required by the enabled recording and playback features |
+
+Provider endpoints can vary with region, Webvisor features, Google Signals, advertising integrations and custom collection endpoints. The table covers the bundle's standard script URLs and common collection origins. Check the site's CSP reports and browser network log with its actual provider settings to complete the allowlist, including any Webvisor frame origins. The CMS does not change the site's CSP or grant provider origins automatically.
+
+With `script-src 'nonce-…' 'strict-dynamic'`, authorize the loader with a nonce. The site must generate an unpredictable nonce for each response, set the trusted Symfony request attribute `csp_nonce` before rendering (for example, in an early `kernel.request` listener), and put the same nonce in the response's CSP. The CMS copies the server-set attribute to the loader tag. With `strict-dynamic`, the trusted loader can load the provider scripts it creates. The `connect-src`, `img-src` and applicable `frame-src` rules still apply.
+
+Use the same nonce on the site's own scripts.
+
+```twig
+<script src="{{ app.request.basePath }}/js/analytics-consent.js"
+        nonce="{{ app.request.attributes.get('csp_nonce') }}" defer></script>
+{{ itk_stylesheets({nonce: app.request.attributes.get('csp_nonce')}) }}
+```
+
+A request with `csp_nonce` bypasses the CMS page HTML cache and conditional ETag handling to keep each response's nonce fresh. Configure any site-owned or upstream response cache accordingly. Pass the nonce explicitly to the stylesheet helper. See [Critical CSS](#critical-css).
+
+- The tags go into CMS pages and pages of site controllers for the main request with status 200 or 404, `text/html` and an ordinary `Response`. Preview, admin, API, MCP, profiler, 304, redirects, streamed and compressed responses are excluded.
+- In `auto`, the core skips a counter already present in the HTML with the same ID. Verification tags are deduplicated by name and code in both modes.
 - An invalid value is not output to the site. **Site status** shows it marked as **warning**.
-- Cookie consent stays the site's job: the counters load right away. If the law requires consent, leave these fields empty and add the counters with your own code. A strict site CSP must allow `mc.yandex.ru` and `googletagmanager.com`. The core does not mark the inline scripts with a `nonce`.
 
 ### Yandex Webmaster
 
@@ -972,10 +1165,10 @@ The owner pastes a Yandex OAuth token once on the **Today** screen. After that, 
 The **IndexNow: tell search engines** toggle (`indexNow`) is in the **Analytics and webmaster tools** group. When it is on, the core tells Yandex and Bing about a changed page URL using the [IndexNow](https://www.indexnow.org/) protocol: publication, a new URL (both the old and the new one are sent), unpublication, deletion, restoration.
 
 - The URLs of pages from the sitemap are sent. Collection records are not sent.
-- The worker collects up to 100 URLs and sends them in one request. The full URL is built from the **Site address** at the moment of sending.
+- The worker collects up to 100 URLs and sends them in one request. At send time it uses a valid `itk_cms.public_url` first, then the **Site address** setting (`domain`). The selected origin must be public.
 - Responses `200` and `202` count as success. `429`, `5xx` and a dropped connection are retried by the `retry_strategy` of the `async` transport. Other `4xx` go straight to the failure transport.
 - The key is computed from the site address and `APP_SECRET`, and nothing is stored. The key file `GET /{key}.txt` responds while the toggle is on.
-- Nothing is sent while the **Site address** is empty or not public, or without `symfony/http-client`.
+- Sending requires a public configured origin and `symfony/http-client`.
 - The `indexnow.endpoint` option sets the receiver URL (by default `https://yandex.com/indexnow`). IndexNow search engines pass the notifications to each other. Google does not support IndexNow.
 
 ## Requests and notifications
@@ -986,11 +1179,19 @@ A form is described in the schema: `$s->form('call', 'Call request')->fields(...
 
 The site sends the form to `POST /request/{form}`. The hidden `itk_hp` field (a trap for bots) must be empty. The response is `{"success": true}` or `{"success": false, "message": "…", "errors": {...}}`. The limit is 10 requests in 15 minutes from one address (`framework.rate_limiter.itk_request_form`, the site can override it).
 
+The request body limit is 256 KiB by default (`itk_cms.requests.max_body`, in bytes). Larger submissions return HTTP 413. JSON accepts one object with up to 1,000 scalar or null values. Malformed JSON and nested values return HTTP 422. For conventional form posts, the CMS uses the fields declared in the schema.
+
+The Docker kit buffers public `/request/{form}` bodies in nginx and enforces `client_max_body_size 256k`, including chunked requests. If you change `max_body`, set the matching nginx limit and ensure PHP's `post_max_size` accommodates the permitted body. With another proxy, enforce the form limit before passing multipart bodies to PHP.
+
 The request is saved and appears in the **Requests** section (the `requests` area). Then the `request.new` notification goes to the channels: the admin bell, Telegram, MAX and e-mail. A request has its own status for each messenger (`channels`). The overall `delivery` status is `failed` if the request did not reach at least one messenger, otherwise `sent` if it reached at least one. A messenger that is not connected leaves the status at `pending`, which is not a failure. To retry undelivered requests, use the button in the admin panel or `php bin/console itk:requests:resend`. The request JSON also has `sendable`: the messengers that never got the request and can take it now (connected, on, with a chat for the form). The request drawer shows **Send to MAX** or **Send to Telegram** for each of them and calls `POST requests/{id}/resend {channel}`.
 
-**Long fields.** The length of a value is counted in characters after trimming and removing tags. A line break from a browser form counts as two (`\r\n`). A value longer than the `max()` of its field is refused with an error for that field, and no request is created. A field without `max()` keeps the first 1001 characters without an error, so set `max()` on every field that can be long. Only an HTML tag is removed: a lowercase element name with `name="value"` attributes. Any other `<` is text and gets a space after it (`<500` is saved as `< 500`), so a value never holds the start of a tag. The space counts towards `max()`. The request card and the e-mail show the whole value. The bell shows one short line. The MCP tool `request_get` shows up to 500 characters of each value under `data` and 2000 of `message`, and marks a cut with `…`.
+**Long fields.** The length of a value is counted in characters after trimming and removing tags. A browser form line break (`\r\n`) counts as two characters. Each field defaults to `max(1000)`. A longer value returns HTTP 422 with a field error. `itk:schema:lint` and **Site status** flag fields without an explicit `max()`. Only HTML tags are removed. Other occurrences of `<` get a following space (for example, `<500` becomes `< 500`), which counts towards `max()`. The request card and e-mail show the whole value. The bell shows one short line. MCP `request_get` shows up to 6,000 characters per form value and marks a cut with `…`.
 
-A text too long for one message (4096 characters in Telegram after reading the HTML, 4000 characters of HTML in MAX) is sent as several messages in order, cut at line breaks. The worker waits 1 second between them, and 3.1 seconds in Telegram when there are more than 20 (a group takes 20 a minute). The pause is counted within one request: several long requests in a row can still exceed that limit, then send the undelivered ones again a minute later. **Send again** in the admin panel waits the same way. With more than 20 messages the page can time out while the delivery goes on, so open the request again before you press the button a second time. If one of them is refused, the following ones are not sent to that chat, the request is marked as not delivered, and the error names the part. A retry sends every message from the first to every chat of that messenger, so a chat may show some of them twice.
+A text too long for one message is split at line breaks. Telegram allows 4,096 visible characters. MAX allows 4,000 HTML characters. Parts go out in order with a one-second pause, or 3.1 seconds for Telegram deliveries of more than 20 parts. A resend of up to 20 parts per channel runs in the request. If a channel needs more than 20 parts, the worker sends them and the API returns HTTP 202 with `queuedChannels` after the queue accepts the job. The admin panel shows **Queued**.
+
+A rejected part stops that chat's delivery and the error shows which part failed. Retries of the current operation use its saved text and skip parts already accepted for each recipient. A manual resend after a fully refused attempt renders fresh text. The built-in `async` transport retries confirmed failures after 60, 120 and 240 seconds, then moves them to the failure transport. Transport settings supplied by the site take precedence. An unknown result also appears as a delivery error. That part waits for operator review while confirmed refusals can still retry. Check the destination and run `itk:requests:resolve <request> <telegram|max> <recipient> <sent|rejected>` for the affected chat. Use `sent` only after confirming acceptance or `rejected` only after confirming refusal. Then use the request's resend action to continue with outstanding parts.
+
+Place `--` before a negative chat ID, as in `itk:requests:resolve 123 telegram -- -100123456 sent`.
 
 The **Requests** screen has a **Board** view with the columns **New**, **In progress** and **Closed**.
 
@@ -1031,14 +1232,14 @@ MAX (max.ru) works alongside Telegram and independently of it.
 
 The **MAX** switch (`maxOn`) and the `itk_cms.max.enabled: false` option work the same way as for Telegram. The **Test** button sends a test message. A MAX failure does not change the Telegram status, and the other way round.
 
-Recipients are stored in the `tgOn`, `tgRoutes`, `maxOn`, `maxRoutes` and `mailRoutes` settings (the `set:notifications` area). `GET settings` returns them together with the flags `tgFallback`, `maxFallback` (a chat is set in the configuration), `maxReady` and `mailReady`. `POST settings/telegram-test` and `POST settings/max-test {form?, chatId?}` send a test message.
+The `set:notifications` area uses `forms` (accept new requests), `tgOn`, `tgRoutes`, `maxOn`, `maxRoutes` and `mailRoutes`. Read and update them through `GET settings?scope=notifications` and `PATCH settings?scope=notifications`. The response also includes `tgFallback`, `maxFallback` (a chat is set in the configuration), `tgReady`, `maxReady` and `mailReady`. `POST settings/telegram-test` and `POST settings/max-test {form?, chatId?}` send a test message.
 
 ### Bots
 
 In **Settings** → **Bots** (the `set:bots` area, by default only the administrator has it) you set the Telegram and MAX tokens without editing files or restarting. A token from the admin panel wins over the server token. Without either, the messenger is not connected.
 
 - The tokens are stored encrypted with a key from `APP_SECRET` in the `telegramBot` and `maxBot` settings. Do not declare schema fields with these keys. The tokens never appear in `GET settings`, history, the export or MCP. After `APP_SECRET` changes, the token from the admin panel counts as unset.
-- `GET {admin}/api/settings/bots` returns, for `telegram` and `max`, the fields `tokenSet`, `source` (`admin`, `server` or `null`), `ready` and `problem`.
+- `GET {admin}/api/settings/bots` returns, for `telegram` and `max`, the fields `tokenSet`, `source` (`admin`, `server` or `null`) and `ready`; `problem` appears only when a problem is found.
 - `PUT {admin}/api/settings/bots {telegram?: {token?, clear?}, max?: {token?, clear?}}`. An empty `token` keeps the old one, and `clear: true` removes the admin token. A Telegram token must match `^\d{5,20}:[A-Za-z0-9_-]{30,}$`. A MAX token has no spaces and is up to 512 characters. The token is never returned.
 
 `@BotFather` issues the Telegram token. The MAX partner platform business.max.ru or dev.max.ru issues the MAX token.
@@ -1062,11 +1263,17 @@ The sender address comes from **Settings** → **Mail**. With only `MAILER_DSN` 
 - `GET {admin}/api/settings/mail` returns the fields, `passwordSet`, `configured`, `source` (`settings`, `env`, `none`), `problem` and `last` (the result of the last sending).
 - `PUT {admin}/api/settings/mail` saves the settings.
 - `POST {admin}/api/settings/mail-test {to?}` sends a test e-mail right away, without the queue. The server's refusal reason comes in the response (502). At most 10 e-mails per hour per person (429).
-- `ssl` uses `smtps://`, `starttls` requires TLS, and `none` turns it off. The SMTP dialog is not logged.
+- `ssl` uses `smtps://` and `starttls` requires TLS. Choose either when saving a password. `none` is available for servers without a password. The SMTP dialog is excluded from logs. If the active `MAILER_DSN` uses password authentication with optional TLS, `itk:doctor` and **Site status** show a warning. Use `smtps://` or set `require_tls=1` on `smtp://`.
 
-**Errors.** An e-mail that was not sent after all retries stays in the failure transport, and a `mail.failed` notification comes to the bell. An e-mail with a "set a password" link is stored there whole, link included. Clean the failure transport (`messenger:failed:remove`) and do not give outsiders access to it.
+**Errors.** A delivery that exhausts its retries raises a `mail.failed` notification. Messenger retains the failed job only if a failure transport is configured. The worker creates a one-time link for each password reset or invitation attempt and revokes it if the attempt fails.
+
+Request emails track SMTP acceptance and warnings per recipient. If acceptance is uncertain, check the SMTP server and run `itk:requests:mail:resolve <request> <recipient> <sent|rejected>`. After `sent`, a replay of the envelope is acknowledged without sending. After `rejected`, use the addressed retry printed by the command, `itk:requests:resend <id> --channel=mail --recipient=<address>`. Use this retry with `failure_transport: null` as well. If `mail:resolve` finds a matching failed envelope, it also prints a retry command with the transport name and envelope ID.
+
+For an aggregate mail warning left by 0.2.2, verify SMTP acceptance and run `itk:requests:mail:resolve <request> <recipient> sent` for each confirmed recipient. The command can record acceptance even when the old send has no checkpoint. Old warnings contain no complete recipient list, and routes may have changed, so recipient acceptance does not close the aggregate. After checking every original recipient and settling any failures, run `itk:requests:mail:resolve <request> --legacy-checked` to close the old aggregate warning. This only removes the aggregate warning; it does not change recipient warnings, delivery checkpoints or queued jobs.
 
 **Request e-mails.** **Settings** → **Notifications** → **Emails about new requests** (`mailRoutes`, the `set:notifications` area): comma-separated addresses for all forms and a separate list for each form, up to 10 addresses. Each address gets an e-mail with the form fields and a link to the request.
+
+Custom request filters use calendar dates in `YYYY-MM-DD` format. Telegram and MAX delivery events run after the CMS saves the outcome.
 
 **E-mail templates.** `@ItkCms/email/layout.html.twig` and the pairs `reset_password`, `invite`, `request`, `test` (`.html.twig` and `.txt.twig`). The site overrides any file with its own file in `templates/email/`, for example `templates/email/layout.html.twig`. Inside, you can extend the bundle template: `{% extends '@ItkCms/email/reset_password.html.twig' %}`.
 
@@ -1091,7 +1298,7 @@ $notifier->notify(new Notification(
 - **`DatabaseChannel`** stores the notification for the bell. A person sees the notifications that match their permissions and role and were sent after they registered. `php bin/console itk:notifications:prune [--days=90] [--dry-run]` deletes old ones. Put it in cron.
 - **`TelegramChannel`, `MaxChannel`, `EmailChannel`** deliver only `request.new`.
 - **Core events:** `request.new` (a new request, for the `requests` permission), `telegram.failed` and `max.failed` (a request did not get through), `mail.failed` (an e-mail was not sent). A failure notification is removed when delivery succeeds.
-- **Delivery outcome** comes as the Symfony event `Itk\Cms\Event\RequestDelivery { request, delivered, error, cancelled, channel }`. `channel` is `telegram` or `max`.
+- **Delivery outcome** comes as the Symfony event `Itk\Cms\Event\RequestDelivery { request, delivered, error, cancelled, channel }` after the status is committed. `channel` is `telegram` or `max`. Listeners that edit the request reload it by ID and save explicitly.
 - **Language.** `new Notification(title: …)` stores ready text. `Notification::translated(type: …, titleKey: 'area.key', titleParams: [...])` stores a key, and each reader sees the title in their own language.
 - **API.** `GET notifications?unread=1&limit=&offset=`, `POST notifications/read { ids } | { all: true }`. Each person reads only their own.
 
@@ -1119,6 +1326,8 @@ The knowledge base is a pgvector table with the text of published pages and reco
 Add `itk:knowledge-base:sync` to the deploy script. The command queues only what went stale after the deploy (schema, configuration, model).
 
 **What is indexed.** Pages from the sitemap (published, without `noindex`) and published collection records, except `exclude_templates` and `exclude_collections`. From each version, the text a visitor sees is taken: the title, the SEO description, the template fields, the visible sections in order. `Text`, `Textarea`, `Headline`, `Description` and `Article` give text. `Select` gives "label: option", `Image` and `Photos` give `alt`, and each `Repeater` row gives a separate block. `Number`, `Toggle`, `Date`, `Link`, `Relation`, `Note`, and `variant()`, `raw()` and `canSee()` fields are not indexed.
+
+Custom fields contribute when they implement `PublicFieldInterface`, report public visibility and provide a supported field type. Search vectors use up to 256 cache slots with a 24-hour lifetime. A slot collision replaces the previous entry.
 
 **Chunks.** The blocks of one section are combined into chunks of about 1200 characters, at most 2000. A chunk does not cross a section boundary, so a hit has an exact `sectionId`. The page title and the block heading are sent to the embedder before the chunk text.
 
@@ -1175,6 +1384,8 @@ The rules the first screen needs go straight into `<head>`, and the full stylesh
 
 **How to turn it on.** You need Node 22 or newer and Chrome or Chromium on the server.
 
+Run Chrome as a non-root user with its sandbox available. The browser verifies TLS and can fetch only the local render server. Serve critical assets from the site's `public/` directory. External resources are unavailable during extraction.
+
 1. In the project root, run `npm install crittr`. Puppeteer downloads Chrome for the user who ran the command. To use the system Chrome, set the `chrome` option.
 2. Turn on the option and list the stylesheets:
 
@@ -1207,7 +1418,7 @@ In all other cases (turned off, not ready yet, failed, preview, a site controlle
 - A result larger than `max_kb` counts as a failure. If the CSS has `!important` or `@layer`, the worker writes a warning, because crittr loses them.
 - The generator does not work with the `sync` transport.
 
-**CSP.** `<style>` requires `style-src 'unsafe-inline'` or a nonce. `{{ itk_stylesheets({nonce: nonce}) }}` puts the `nonce` on each `<style>` and on the link. A nonce does not cover the `onload` attribute. For it, allow the handler hash: `script-src 'unsafe-hashes' 'sha256-MhtPZXr7+LpJUY5qtMutB+qWfQtMaPccfe7QXtCcEYc='`. Without this, the full stylesheet stays at `media="print"`.
+**CSP.** Pass `{{ itk_stylesheets({nonce: nonce}) }}` to put the nonce on each critical `<style>` and use regular links for the full stylesheets. Allow the stylesheet source in the site's CSP.
 
 **In Docker**, the image is built with Node and Chromium with the `CRITICAL_CSS=1` argument (see [Critical CSS in Docker](#critical-css-in-docker)).
 
@@ -1289,6 +1500,7 @@ The server supports protocol versions `2025-11-25`, `2025-06-18`, `2025-03-26` a
 
 - `site_schema` without arguments gives an overview, and with `kind` and `key` the full description of one section. The `itk://schema` resource returns the same.
 - `settings_get` does not return passwords, tokens, the mail server, chats or notification addresses.
+- `requests_list` and `media_search` accept `offset` (default 0), `limit` (default 20 for requests and 30 for media, maximum 100), and an optional `cursor` that takes precedence over `offset`. Both return `{ items, total, offset, limit, hasMore, nextCursor, previousCursor }`. Pass `nextCursor` as `cursor` with the same filters to continue through rows ordered by creation time and ID, descending.
 - `media_upload` accepts a base64 file of up to 5 MB. The server does not download files by URL.
 - `page_unpublish` leaves the page as a draft. The home page cannot be unpublished.
 - Through MCP you cannot delete pages, records, files or rules, change users, roles, keys, settings or redirects, or restore versions.
@@ -1390,18 +1602,24 @@ Each line is `ok`, `off`, `warning` or `ERROR`. `off` marks a module that is not
 
 ### /healthz
 
-`GET /healthz` is an open URL for a load balancer: `{"status":"ok"}` (200) or `{"status":"fail"}` (503). It checks that the database responds and that a file can be written to `upload_dir`. You cannot create a page with the URL `/healthz`.
+`GET /healthz` is a public endpoint for a load balancer. It returns `{"status":"ok"}` (200) or `{"status":"fail"}` (503). `HEAD /healthz` returns the same status without a body. The endpoint checks database connectivity and write access to `upload_dir` and reserves the `/healthz` path.
 
 ## Console commands
 
 | Command | What it does |
 |---|---|
-| `itk:install` | Prepares the site: roles, menu areas, default settings, the queue table, the home page, the first administrator. Options `--email`, `--password`, `--name`, `--site-name`, `--domain`, `--no-home` |
+| `itk:install` | Prepares site roles, menus, settings, the message queue, the home page and the first administrator. The first password must be 10 to 200 characters. Options include `--email`, `--password-file`, `--name`, `--site-name`, `--domain` and `--no-home` |
 | `itk:doctor [--ci]` | Checks the site |
 | `itk:schema:lint` | Checks the schema and the Twig templates |
 | `itk:user:password <email> [--password=]` | Sets a password |
 | `itk:user:reset-2fa <email>` | Resets two-step sign-in |
-| `itk:requests:resend` | Queues all undelivered requests |
+| `itk:requests:resend` | Queues new attempts for requests with confirmed messenger delivery failures |
+| `itk:requests:resend <request> --channel=<telegram\|max>` | Retries outstanding parts of the selected messenger delivery |
+| `itk:requests:resend <request> --channel=mail --recipient=<address>` | Queues a new attempt for one rejected request email |
+| `itk:requests:recover` | Publishes due request delivery jobs and recovers pending delivery events, up to 500 of each per run |
+| `itk:requests:resolve <request> <telegram\|max> <recipient> <sent\|rejected>` | Records a verified outcome for an unresolved messenger part |
+| `itk:requests:mail:resolve <request> <recipient> <sent\|rejected>` | Records a verified SMTP outcome for one request and recipient |
+| `itk:requests:mail:resolve <request> --legacy-checked` | Closes an old aggregate mail warning after operator verification |
 | `itk:media:warm [--width=]` | Creates copies of the media library images |
 | `itk:cache:clear` | Clears the page cache |
 | `itk:critical-css:generate` | Queues pages without ready critical CSS. `--all` for all pages, `--page=<id>`, `--locale=`, `--dry-run`, `--now` in this process with a failure report |
@@ -1413,6 +1631,7 @@ Each line is `ok`, `off`, `warning` or `ERROR`. `off` marks a module that is not
 | `itk:make:template`, `itk:make:section`, `itk:make:collection`, `itk:make:settings`, `itk:make:field`, `itk:make:plugin` | Code generators, see [Code generators](#code-generators) |
 
 Cron usually runs `itk:history:prune`, `itk:notifications:prune` and `cache:pool:prune` once a day.
+Schedule `itk:requests:recover` on your site if recovery must run independently of the Messenger worker.
 
 ## Configuration reference
 
@@ -1421,11 +1640,13 @@ All options are set in `config/packages/itk_cms.yaml` and are optional.
 | Option | Default | What it does |
 |---|---|---|
 | `schema_file` | `%kernel.project_dir%/config/itk/schema.php` | The site schema file |
-| `main_locale` | `ru` | The content language |
+| `main_locale` | `ru` | The main content language. With `locales`, spaces at the ends are removed and letters are lowercased |
+| `locales` | Omitted | Content languages and their names, keyed by code. See [Content language configuration](#content-language-configuration) |
 | `admin_locale` | `en` | The default admin language. Must be in `admin_locales` |
 | `admin_locales` | `[en, ru, kk]` | The languages a person chooses from |
 | `admin_path` | `/admin` | The admin path. The format is checked at startup |
 | `public_url` | `null` | The site address for links in e-mails, for example `https://example.com`. `%env(PUBLIC_URL)%` works |
+| `requests.max_body` | `262144` | Public form submission body limit in bytes |
 | `strict` | `null` (as `kernel.debug`) | Strict template mode |
 | `blog` | `true` | `false` removes the blog templates |
 | `security_headers` | `true` | Security headers on public routes |
@@ -1469,6 +1690,91 @@ All options are set in `config/packages/itk_cms.yaml` and are optional.
 | `max.chat_ids` | `''` | Fallback MAX chats, comma-separated integers |
 | `update_source` | `null` | The URL for checking for a new version |
 
+### Content language configuration
+
+```yaml
+itk_cms:
+  main_locale: ru
+  locales:
+    ru: { name: Русский }
+    kk: { name: Қазақша }
+    tr: { name: Türkçe }
+    zh: { name: 中文, html_lang: zh-CN, og_locale: zh_CN }
+    en: { name: English }
+```
+
+- Language codes are 2 or 3 lowercase Latin letters. Each language needs a non-empty `name`. An explicitly configured list must be non-empty and include `main_locale`. A code must not conflict with a reserved system path segment (for example `mcp`) or the first segment of `admin_path` (including when the conflicting code is the main language).
+- `html_lang` defaults to the code. It accepts 2 or 3 lowercase Latin letters with an optional hyphen and 2 to 8 letters or digits, as in `zh-CN`. Each language must have a distinct resulting tag.
+- `og_locale` accepts 2 or 3 lowercase Latin letters, an underscore and 2 uppercase Latin letters, as in `zh_CN`. The service can derive it from the region in `html_lang`. It returns `null` when neither is present.
+- The admin lists the main language first and then follows the configuration order. When `locales` is omitted, the admin lists only the main language and the API still accepts legacy language codes. An explicit list restricts API inputs to the listed languages. An explicit empty list is rejected; omit `locales` for legacy behavior.
+- On a site with multiple configured languages, addresses for the main language have no language prefix. Other versions use `/{code}`. For example, the Kazakh home page uses `/kk`, and other Kazakh pages use paths such as `/kk/about`. The server checks the language prefix when creating a translation, changing its address (including a restore that changes the address), and publishing. Saving other fields without changing the address remains possible for legacy pages with an incompatible prefix.
+
+Inject `Itk\Cms\I18n\ContentLocales` to read the site's language codes, display names, path prefixes and metadata.
+
+#### Editing translations in the admin
+
+- In **Pages** or a collection list, select the language next to a page or record to open that version. A missing version offers **Copy from…** and **Start with a blank page** or **Start with an empty record**. Both create a draft that you can edit and publish in that language. On narrow screens, the language and its status may appear in a single picker.
+- Use the language picker in an editor, in the translatable **Settings**, or in **Settings → Menus**. An unset translation opens empty. Fields marked **Same for all languages** have one shared value. Save settings and menus with **Save**.
+- In a page or record editor, open **History** and select **This language** or **All languages**. Each revision shows its language. Restoring a revision updates that language’s draft. Publish it when it is ready to go live.
+
+#### Public pages and forms
+
+The public route serves each published version at its language's address. Only a whole first segment selects a language, so `/kk/about` selects Kazakh and `/kk-news` stays in the main language. Draft versions return `404` at their public addresses. A canonical slash redirect keeps the original query string, including repeated parameters. Moving a version on a multilingual site creates an automatic redirect only if the old address served that version and no other live version serves it.
+
+In Twig, `page.locale` is the version's language code, `page.html_lang` is the tag for `<html lang>`, and `page.og_locale` is the Open Graph locale or `null`. With `itk_cms.locales` configured, Twig's `|trans` uses the version's language. `page.translations` lists the published versions that route to their own language as `{code, name, url}`. The main language comes first, followed by the configuration order. A language switcher can use those URLs directly. Use `itk:doctor` to find legacy addresses that need a different prefix.
+
+```twig
+{% if page.translations|length > 1 %}
+    <ul>
+        {% for version in page.translations %}
+            <li><a href="{{ version.url }}"{% if version.code == page.locale %} aria-current="page"{% endif %}>{{ version.name }}</a></li>
+        {% endfor %}
+    </ul>
+{% endif %}
+```
+
+Menus, `site`, `itk_settings()`, `itk_listing()`, `itk_pages()`, `itk_collection()` and `itk_page_url()` use the page's language. A menu link to a page requires a published version in that language. Literal URL links keep their address. Translatable settings read the current language without fallback to the main language. Shared settings have one value across languages, and unsaved settings use their schema defaults.
+
+On a site with `itk_cms.locales`, `POST /request/{form}` records a supported explicit `?locale=`. If that code is stale or unsupported, a valid submission is saved in the main language and the server logs a warning. Without the parameter, the form uses the decoded page address from a same-origin `Referer`. The default port may be present or omitted. With no same-origin referrer the form uses the main language. To pass the language explicitly, use `action="/request/callback?locale={{ page.locale }}"` on the form. For AJAX, submit the form data to the same address.
+
+Form messages, including `429`, use the submission language whenever the bundle provides a translation. This also applies to sites without `itk_cms.locales`. `admin_locales` controls the admin interface.
+
+```twig
+<form id="callback" action="/request/callback?locale={{ page.locale }}" method="post">
+    {# Form fields #}
+</form>
+```
+
+```js
+const form = document.getElementById('callback');
+const response = await fetch(form.action, { method: 'POST', body: new FormData(form) });
+const result = await response.json();
+```
+
+#### Multilingual indexing and operations
+
+With two or more configured content languages, `itk_seo().alternates` contains `{hreflang, href}` for the indexable published versions of the same page, including the current version. Language tags use `html_lang`, so `zh` may produce `zh-CN`. The main version comes first, followed by configuration order. At least two indexable versions are required. `x-default` points to the main version when it is published and indexable. Preview and a current `noindex` page expose no SEO alternatives. The language switcher can still use `page.translations` to link to published `noindex` versions.
+
+Absolute SEO links and the SEO base check in `itk:doctor` use a valid normalized `itk_cms.public_url`, then the `domain` site setting. `framework.trusted_hosts` and debug mode have no effect on the SEO origin. Without a valid configured origin, public pages use relative language links and omit generated `hreflang` and canonical URLs. The generated sitemap returns `404`, and generated `llms.txt` uses relative links. In every language mode, a live page with a configured origin uses its own absolute canonical URL if the page SEO, a rule and the `itk_seo()` defaults leave it empty.
+
+The stock layout prints the links after the canonical and emits `og:locale` when the language has an Open Graph locale. A custom layout can use the same loop.
+
+```twig
+{% set seo = itk_seo() %}
+{% if seo.canonical != '' %}<link rel="canonical" href="{{ seo.canonical }}">{% endif %}
+{% for alternate in seo.alternates %}
+    <link rel="alternate" hreflang="{{ alternate.hreflang }}" href="{{ alternate.href }}">
+{% endfor %}
+```
+
+One `/sitemap.xml` lists all enabled, indexable published versions and adds `xhtml:link` with the same alternates as HTML. Generated `/llms.txt` groups page titles, descriptions and links under language names in configuration order, omitting empty languages. Publishing, moving, unpublishing or deleting a version invalidates both files after commit. Generated multilingual responses revalidate with content ETags, including for changes within one second. Date-only conditional requests receive the current body. A site's `public/sitemap.xml` or `public/llms.txt` takes precedence. Saved SEO text takes precedence over generated `llms.txt`.
+
+IndexNow uses the affected language's full path. Moves include the old and new addresses when eligible, and republishing at the same address queues one notification. Unpublishing and deleting use the last live address. Deleting a page covers its indexable live versions at their own language addresses. Critical CSS uses the full path of each version served in its language, including pages with `noindex`.
+
+Run `php bin/console itk:doctor --ci` to check the main language and prefixes, home pages, conflicting paths, the SEO base, manual crawler files, and empty settings or menu areas by language. A missing main home page is an error. A missing secondary home page is a warning.
+
+### Rate limits
+
 The bundle sets the limits in `framework.rate_limiter`, and the site can override them under the same names:
 
 | Limiter | Value |
@@ -1501,10 +1807,10 @@ final class ToursExtension implements ItkExtensionInterface
 }
 ```
 
-- `Registry` is called once per request. Classes come from the container if they are there, otherwise they are created without arguments.
+- Each extension registers on first use of `Registry`, once per registry instance. Classes come from the container if they are there, otherwise they are created without arguments.
 - `twigPaths()` adds folders to Twig, including for the console and `lint:twig`.
 - `NavItem` is an admin menu item that is not a collection. `to` is a route of the admin client. The default group is **Plugins** (`order` 800).
-- `adminAssets()` loads scripts as `<script type="module">` and styles after the main admin code. It accepts `/…` and `http(s)://…` URLs. A plugin calls `window.ITK.registerPlugin({ fields, panels, actions, previews })` and gets `window.ITK.vue`, `http`, `toast`, `confirm`, `i18n`, `ui` (including `SortableTree` and `KanbanBoard`). Details are in [admin/src/README.md](https://github.com/it-koval/cms/blob/main/admin/src/README.md).
+- `adminAssets()` adds CSS after the main admin stylesheet in `<head>`; its module scripts start after the interface language and `window.ITK` are ready, before the main admin app mounts. It accepts `/…` and `http(s)://…` URLs. A plugin calls `window.ITK.registerPlugin({ fields, panels, actions, previews })` and gets `window.ITK.vue`, `http`, `toast`, `confirm`, `i18n`, `ui` (including `SortableTree` and `KanbanBoard`). Details are in [admin/src/README.md](https://github.com/it-koval/cms/blob/main/admin/src/README.md).
 
 ### Code generators
 
@@ -1529,10 +1835,10 @@ The commands create a ready class in the site and, where needed, a Twig or JS st
 
 ```
 php bin/console itk:make:collection --from=form.json
-php bin/console itk:make:collection --from=table:table_name [--import] [--publish] [--map=…]
+php bin/console itk:make:collection --from=table:table_name [--map=…]
 ```
 
-The JSON description: `{"key": "tours", "title": "Tours", "singular": "tour", "icon": "map", "fields": [{"key": "city", "label": "City", "type": "text", "required": true, "max": 80}], "rows": [{"id": 1, "city": "Perm"}]}`. Types: `text`, `textarea`, `description`, `headline`, `article`, `number`, `toggle`, `select` (with `"options"`), `date`, `datetime`, `image`, `photos`, `link`. `rows` are needed only for `--import`. Add a repeater or a relation to the class by hand.
+The command accepts a JSON description such as `{"key": "tours", "title": "Tours", "singular": "tour", "icon": "map", "fields": [{"key": "city", "label": "City", "type": "text", "required": true, "max": 80}]}`. Supported types are `text`, `textarea`, `description`, `headline`, `article`, `number`, `toggle`, `select` (with `"options"`), `date`, `datetime`, `image`, `photos` and `link`. Add a repeater or a relation to the class by hand.
 
 From a PostgreSQL table, the columns become fields. Write a table in another schema as `table:schema.table`. `--connection=name` sets another Doctrine connection.
 
@@ -1547,10 +1853,11 @@ From a PostgreSQL table, the columns become fields. Write a table in another sch
 | `time` | `Text` |
 | an enum type (`CREATE TYPE … AS ENUM`) | `Select` |
 
-- Other types are skipped with an explanation. `NOT NULL` without a default gives `required()`. The label comes from the column comment or the name. The primary key does not become a field.
+- Other types are skipped with an explanation. `NOT NULL` without a default gives `required()`. The label comes from the column comment or the name. A single-column primary key is skipped by default.
 - `--map=column:field[:type],…` renames a column or changes its type. `column:-` skips the column.
-- `--strip-prefix=old_` drops the start of the table name when the key is chosen. `--id=column` sets the row key if there is no primary key or it is composite.
-- `--import` moves the rows into records as drafts, with the usual checks and hooks. A repeat run updates its own records instead of creating new ones. `--publish` publishes the records right away. A row without a required field stays a draft and goes into the report.
+- `--strip-prefix=old_` drops the start of the table name when the key is chosen. `--id=column` omits the specified identifier column from the generated fields.
+
+Move records from the old site with your own script when migrating the database dump.
 
 ## Docker
 
@@ -1561,7 +1868,8 @@ The package ships a ready Docker kit in `vendor/itk/cms/docker`. You copy it int
 | `compose.yaml` | The services `php` (php-fpm), `nginx`, `worker`, `database` (PostgreSQL 17 with pgvector) and `mailer` (Mailpit). Ports are open only on `127.0.0.1` |
 | `Dockerfile` | The stages `php_base`, `php_dev`, `php_prod`, PHP extensions, Composer, health check |
 | `Dockerfile.dockerignore` | What stays out of the image: `.git`, `vendor`, `node_modules`, `var`, `public/uploads`, `public/bundles`, `.env.local`, `.env.*.local`, `.env.local.php`, the secrets decryption key, `compose.override.yaml` |
-| `nginx/default.conf` | Static files, caching of build files, headers, passing to `index.php` |
+| `nginx/default.conf` | Static files, caching, headers, a route-specific request body limit, and forwarding to `index.php` |
+| `chrome-seccomp.json` | Docker Engine 27.5.1 default seccomp policy with three additional rules for Chromium namespaces |
 | `php/conf.d/10-app.ini`, `php/php-fpm.d/zz-app.conf` | PHP and php-fpm settings |
 | `php/docker-entrypoint.sh` | On `php` start: `composer install`, `assets:install`, waiting for the database, migrations, `itk:install` |
 
@@ -1598,11 +1906,11 @@ The host needs only Docker.
    | `COMPOSE_PROJECT_NAME` | the directory name | The project name. Each site has its own |
    | `PHP_VERSION` | `8.4` | The PHP version |
    | `CRITICAL_CSS` | `0` | `1` adds Node 22 and Chromium to the image |
-   | `ADMIN_EMAIL`, `ADMIN_PASSWORD` | empty | If both are set, the administrator is created at start |
+   | `ADMIN_EMAIL` | empty | First administrator e-mail for automatic setup with a mounted secret |
    | `SITE_NAME`, `SITE_DOMAIN` | empty | The name and domain for `itk:install` |
    | `UID`, `GID` | `1000` | The container user. On Linux, set your own values in `.env` (`id -u`, `id -g`) |
 
-   Do not write the administrator password into `.env`: it would end up in git and in the `php_prod` image. Pass it once from the shell, or create the administrator in step 6.
+   For automatic setup, uncomment the `itk_admin_password` secret blocks in `compose.yaml`. Set `ITK_ADMIN_PASSWORD_FILE` to the path of a password file outside the project and readable by the container user. Compose mounts it at `/run/secrets/itk_admin_password` in `php`.
 
 5. Start:
 
@@ -1613,7 +1921,7 @@ The host needs only Docker.
 
    To turn off migrations and `itk:install` at start, set `AUTO_MIGRATE: "0"` in the `environment` of the `php` service.
 
-6. Create the administrator if you did not set `ADMIN_EMAIL` and `ADMIN_PASSWORD`:
+6. Use the interactive installer if the automatic setup was skipped.
 
    ```bash
    docker compose exec php bin/console itk:install --email=you@example.com --site-name="My site" --domain=example.com
@@ -1636,7 +1944,9 @@ The `worker` service is built from the same image and runs `messenger:consume as
 
 ### Critical CSS in Docker
 
-Node, crittr and Chrome must be in the same image as PHP: php-fpm runs the check, and the worker computes the pages.
+Node, crittr and Chrome must be in the same image as PHP. The dev and production Compose files attach `docker/chrome-seccomp.json` to `php` and `worker` regardless of the `CRITICAL_CSS` build argument. The profile starts from the Docker Engine 27.5.1 built-in profile and permits the `clone` and `unshare` flags needed for user, PID, network and mount namespaces. Run Chromium as an unprivileged user with Linux user namespaces available.
+
+The renderer serves files whose resolved paths are inside the site's `public/`. Copy needed assets there when links in `public/` point elsewhere.
 
 1. Build the image with Node and Chromium:
 
@@ -1653,23 +1963,16 @@ Node, crittr and Chrome must be in the same image as PHP: php-fpm runs the check
 
 ### Production build
 
-```bash
-docker build -f docker/Dockerfile --target php_prod --build-arg CRITICAL_CSS=1 -t mysite:1.0 .
-```
+Use `docker/compose.prod.yaml` for a production site. It builds `php_prod` with production dependencies and packages the admin files in the nginx image. PHP-FPM and the worker share the app image. The deployment runs migrations and `itk:install` as separate commands.
 
-- The `php_prod` stage installs dependencies without dev packages (`composer install --no-dev`, plus `npm ci --omit=dev` with `CRITICAL_CSS=1`) and turns on `php.ini-production`.
-- Pass `APP_SECRET`, `DATABASE_URL` and `MAILER_DSN` through the container environment, or keep them in the Symfony vault and pass only `SYMFONY_DECRYPTION_SECRET` (see [Secrets in production](#secrets-in-production-symfony-vault)). The `.env` from git goes into the image, so keep only default values in it.
-- The image has no admin files (`public/bundles`). The entrypoint puts them in place at start. Give nginx a shared volume, or run `assets:install public` in your own build stage.
-- Migrations and `itk:install` run on each `php` start. With several replicas, set `AUTO_MIGRATE=0` and run the migrations as a separate job.
-- The worker starts from the same image with `SKIP_ENTRYPOINT=1` and the worker command.
-- The kit's `compose.yaml` is meant for development. The site describes its production orchestration itself.
+Pass production secrets at runtime through the environment or the [Symfony vault](#secrets-in-production-symfony-vault). The build copies the committed `.env`, so keep only defaults in it. See the [deployment and rollback guide](https://github.com/it-koval/cms/blob/main/docs/DEPLOY.md).
 
 ### Updating the kit
 
 The kit belongs to the site, and `composer update` does not change it. After a package update, compare the files and carry over the changes you need:
 
 ```bash
-docker compose exec php composer update itk/cms
+docker compose exec php composer update itk/cms --with-all-dependencies
 diff -r -x compose.yaml vendor/itk/cms/docker docker && diff vendor/itk/cms/docker/compose.yaml compose.yaml
 docker compose up -d --build
 ```
@@ -1685,7 +1988,7 @@ Agents read instructions from the project root, so reference the file in the sit
 
 ## Public API and compatibility
 
-[UPGRADE.md](https://github.com/it-koval/cms/blob/main/UPGRADE.md) lists the public API and the upgrade rules between versions. Classes marked `@internal` in the docblock can change in any version, and PHPStan and IDEs warn when you use them. A site reads pages and collections through `ContentReader` and the Twig functions, not through repositories.
+[API.md](API.md) is the authoritative public API contract: it lists every public PHP type and the supported `PageService` operations, including translations. [UPGRADE.md](https://github.com/it-koval/cms/blob/main/UPGRADE.md) describes compatibility rules and release-specific migration steps. Unlisted types and members marked `@internal` are implementation details and may change in a minor release. A site reads pages and collections through `ContentReader` and the Twig functions, not through repositories.
 
 ## Developing and testing the bundle
 
@@ -1694,7 +1997,8 @@ The [it-koval/cms](https://github.com/it-koval/cms) monorepo holds the bundle (`
 ## Other documents
 
 - [CHANGELOG.md](https://github.com/it-koval/cms/blob/main/CHANGELOG.md): changes by version.
-- [UPGRADE.md](https://github.com/it-koval/cms/blob/main/UPGRADE.md): upgrading between versions and the boundary of the public API.
+- [API.md](API.md): the public API contract.
+- [UPGRADE.md](https://github.com/it-koval/cms/blob/main/UPGRADE.md): compatibility rules and upgrading between versions.
 - [CONTRIBUTING.md](https://github.com/it-koval/cms/blob/main/CONTRIBUTING.md): how to contribute.
 - [SECURITY.md](https://github.com/it-koval/cms/blob/main/SECURITY.md): how to report a vulnerability.
 - [SITE-AGENTS.md](SITE-AGENTS.md): rules for an AI agent in the site project.

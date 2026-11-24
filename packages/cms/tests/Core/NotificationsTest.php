@@ -131,6 +131,7 @@ final class NotificationsTest extends KernelTestCase
         self::assertSame(1, $this->em->getRepository(StoredNotification::class)->count(['title' => 'Второе']));
 
         $this->expectException(\InvalidArgumentException::class);
+        // @phpstan-ignore argument.type (Verify the runtime guard for extensions without static analysis.)
         (new Registry([]))->notificationChannels(\stdClass::class);
     }
 
@@ -281,15 +282,26 @@ final class NotificationsTest extends KernelTestCase
         self::assertTrue($ok->supports($note));
         self::assertFalse($ok->supports(new Notification(Notification::TELEGRAM_FAILED, 'Сбой', payload: ['requestId' => $r->id])), 'only new requests go to Telegram');
         $ok->send($note);
-        self::assertEquals([new SendRequestNotification($r->id)], $queued->sent);
+        self::assertCount(1, $queued->sent);
+        self::assertInstanceOf(SendRequestNotification::class, $queued->sent[0]);
+        self::assertSame($r->id, $queued->sent[0]->requestId);
+        self::assertSame('telegram', $queued->sent[0]->channel);
+        self::assertNotNull($queued->sent[0]->jobId);
         $this->em->refresh($r);
         self::assertSame(RequestEntity::DELIVERY_PENDING, $r->delivery);
+        self::assertSame(['telegram'], $r->queuedChannels());
+        $ok->send($note);
+        self::assertCount(1, $queued->sent, 'an active job cannot be queued twice');
 
-        (new TelegramChannel($this->em, $down, $events, new NullLogger(), $telegram))->send($note);
-        $this->em->refresh($r);
-        self::assertSame(RequestEntity::DELIVERY_FAILED, $r->delivery);
-        self::assertStringContainsString('очередь недоступна', (string) $r->deliveryError);
-        self::assertContains('Заявка №' . $r->id . ' не дошла в Telegram', $this->titles($admin), 'the failure reaches the bell');
+        $rejected = $this->request();
+        $rejectedNote = new Notification(Notification::REQUEST_NEW, 'Новая заявка №' . $rejected->id, payload: ['requestId' => $rejected->id]);
+        (new TelegramChannel($this->em, $down, $events, new NullLogger(), $telegram))->send($rejectedNote);
+        $this->em->refresh($rejected);
+        self::assertSame(RequestEntity::DELIVERY_FAILED, $rejected->delivery);
+        self::assertSame(['telegram'], $rejected->queuedChannels(), 'a dispatch exception can follow acceptance; the durable original job stays valid');
+        self::assertNotNull($rejected->deliveryError);
+        self::assertStringNotContainsString('очередь недоступна', (string) $rejected->deliveryError, 'broker diagnostics are not exposed in the admin');
+        self::assertContains('Заявка №' . $rejected->id . ' не дошла в Telegram', $this->titles($admin), 'the failure reaches the bell');
     }
 
     #[Test]
@@ -343,7 +355,7 @@ final class NotificationsTest extends KernelTestCase
             self::assertSame(0, $this->em->getRepository(StoredNotification::class)->count(['dedupeKey' => 'telegram.failed:' . $r->id]));
         } finally {
             foreach (['tgRoutes' => [$routesWereSet, $routesBefore], 'tgOn' => [$tgOnWasSet, $tgOnBefore]] as $key => [$was, $value]) {
-                $this->em->createQuery('DELETE FROM Itk\Cms\Entity\Setting s WHERE s.key = :k')->setParameter('k', $key)->execute();
+                $settings->remove($key);
                 if ($was) {
                     $settings->set($key, $value);
                 }

@@ -13,6 +13,7 @@ use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpKernel\Attribute\AsController;
 use Symfony\Component\Routing\Attribute\Route;
 
+/** @internal */
 #[AsController]
 #[Route('/api/settings/bots', name: 'itk_api_bots_')]
 final class BotsController extends AbstractApiController

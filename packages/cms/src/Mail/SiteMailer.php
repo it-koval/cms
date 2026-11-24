@@ -7,7 +7,7 @@ namespace Itk\Cms\Mail;
 use Itk\Cms\Content\ContentException;
 use Itk\Cms\I18n\I18n;
 use Psr\Log\LoggerInterface;
-use Symfony\Component\DependencyInjection\Attribute\Autowire;
+use Symfony\Component\Mailer\Exception\TransportExceptionInterface;
 use Symfony\Component\Messenger\MessageBusInterface;
 use Symfony\Component\Mime\Address;
 use Symfony\Component\Mime\Email;
@@ -15,13 +15,14 @@ use Symfony\Component\Mime\Email;
 /**
  * Sends letters of the site: to the queue (a page does not wait for the mail server) or at once (the «Отправить тестовое письмо» button shows the real error).
  * The connection is built from «Настройки → Почта» at the moment of sending (MailerFactory). Errors are cleaned of passwords before they are kept, logged or shown.
+ *
+ * @internal
  */
 final class SiteMailer
 {
     public function __construct(
         private readonly MailerFactory $factory,
         private readonly MailStatus $status,
-        #[Autowire(service: 'messenger.bus.default')]
         private readonly MessageBusInterface $bus,
         private readonly LoggerInterface $logger,
     ) {
@@ -66,8 +67,9 @@ final class SiteMailer
     {
         $route = $this->factory->route();
         if (null === $route) {
-            $this->failed($mail, $this->factory->problem() ?? I18n::t('http.mail_not_configured'));
+            $this->failed($mail, $this->factory->problem() ?? I18n::t('http.mail_not_configured'), safeToRetry: true);
         }
+        $guardRequestDelivery = SendMail::REQUEST === $mail->kind;
         try {
             $email = (new Email())
                 ->from($route->from)
@@ -75,27 +77,35 @@ final class SiteMailer
                 ->subject($mail->subject)
                 ->text($mail->text)
                 ->html($mail->html);
-            $this->factory->transport($route)->send($email);
+            $this->factory->transport($route, $guardRequestDelivery)->send($email);
         } catch (\Throwable $e) {
-            $this->failed($mail, $this->reason($e, $route->secrets), $route->secrets);
+            // Guarded leaves expose only confirmed refusals as transport exceptions. A compound transport may aggregate them under code 0.
+            $rejected = $e instanceof TransportExceptionInterface && ($guardRequestDelivery || ($e->getCode() >= 400 && $e->getCode() <= 599));
+            $this->failed($mail, $this->reason($e, $route->secrets, $route->usernames), $route->secrets, $route->usernames, $rejected);
         }
         $this->status->sent();
     }
 
-    /** @param list<string> $secrets */
-    private function failed(SendMail $mail, string $reason, array $secrets = []): never
+    /**
+     * @param list<string> $secrets
+     * @param list<string> $usernames
+     */
+    private function failed(SendMail $mail, string $reason, #[\SensitiveParameter] array $secrets = [], #[\SensitiveParameter] array $usernames = [], bool $safeToRetry = false): never
     {
-        $reason = DsnBuilder::clean($reason, $secrets);
+        $reason = DsnBuilder::clean($reason, $secrets, $usernames);
         $this->logger->error('Could not send a {kind} letter: {error}', ['kind' => $mail->kind, 'error' => $reason]);
         $this->status->failed($mail->kind, $reason);
 
-        throw new MailDeliveryException($reason);
+        throw new MailDeliveryException($reason, $safeToRetry);
     }
 
-    /** @param list<string> $secrets */
-    private function reason(\Throwable $e, array $secrets): string
+    /**
+     * @param list<string> $secrets
+     * @param list<string> $usernames
+     */
+    private function reason(\Throwable $e, #[\SensitiveParameter] array $secrets, #[\SensitiveParameter] array $usernames = []): string
     {
-        $text = DsnBuilder::clean(\trim(\preg_replace('/\s+/', ' ', $e->getMessage()) ?? $e->getMessage()), $secrets);
+        $text = DsnBuilder::clean(\trim(\preg_replace('/\s+/', ' ', $e->getMessage()) ?? $e->getMessage()), $secrets, $usernames);
 
         return '' === $text ? I18n::t('http.mail_rejected') : \mb_substr($text, 0, 300);
     }

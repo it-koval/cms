@@ -29,6 +29,8 @@ final class MailSettingsTest extends WebTestCase
 
     private KernelBrowser $client;
     private string $csrf = '';
+    /** @var list<string> */
+    private array $createdUserIds = [];
 
     protected function setUp(): void
     {
@@ -41,7 +43,9 @@ final class MailSettingsTest extends WebTestCase
     {
         $this->wipeMailSettings();
         $em = self::getContainer()->get(EntityManagerInterface::class);
-        $em->createQuery('DELETE FROM Itk\Cms\Entity\User u WHERE u.email LIKE :e')->setParameter('e', 'test-%@example.com')->execute();
+        if ([] !== $this->createdUserIds) {
+            $em->createQuery('DELETE FROM Itk\Cms\Entity\User u WHERE u.id IN (:ids)')->setParameter('ids', $this->createdUserIds)->execute();
+        }
         $this->mailpitWipe('test-mail-test@example.com');
         $this->restoreMailerEnv();
         parent::tearDown();
@@ -49,7 +53,9 @@ final class MailSettingsTest extends WebTestCase
 
     private function signIn(string $role = 'admin', string $email = 'test-mail-admin@example.com'): User
     {
+        $email = \str_replace('@', '-' . \bin2hex(\random_bytes(5)) . '@', $email);
         $user = self::getContainer()->get(UserManager::class)->create($email, 'Тест почты', $role, self::PASSWORD);
+        $this->createdUserIds[] = $user->id;
         $this->client->loginUser($user, 'itk_admin');
         $this->client->request('GET', '/admin');
         self::assertResponseIsSuccessful();
@@ -104,14 +110,15 @@ final class MailSettingsTest extends WebTestCase
     #[Test]
     public function aSecretIsCutOutOfAnyTextInEveryForm(): void
     {
-        $text = 'AUTH failed for ' . self::SECRET . ' / ' . \rawurlencode(self::SECRET) . ' / ' . \base64_encode(self::SECRET);
+        $lowercaseEscape = \str_replace('%3A', '%3a', \rawurlencode(self::SECRET));
+        $text = 'AUTH failed for ' . self::SECRET . ' / ' . \rawurlencode(self::SECRET) . ' / ' . \base64_encode(self::SECRET) . ' / ' . $lowercaseEscape;
 
         $clean = DsnBuilder::clean($text, [self::SECRET, '']);
 
         self::assertStringNotContainsString(self::SECRET, $clean);
         self::assertStringNotContainsString(\rawurlencode(self::SECRET), $clean);
         self::assertStringNotContainsString(\base64_encode(self::SECRET), $clean);
-        self::assertSame('AUTH failed for *** / *** / ***', $clean);
+        self::assertSame('AUTH failed for *** / *** / *** / ***', $clean);
     }
 
     #[Test]
@@ -143,7 +150,7 @@ final class MailSettingsTest extends WebTestCase
         // in the database it is sealed, not text
         $em = self::getContainer()->get(EntityManagerInterface::class);
         $em->clear();
-        $row = $em->getRepository(Setting::class)->find(['key' => 'mail', 'locale' => '*']);
+        $row = $em->getRepository(Setting::class)->find(['key' => MailSettings::KEY, 'locale' => Setting::ALL]);
         self::assertNotNull($row);
         self::assertStringStartsWith('v1.', $row->value['password']);
         self::assertStringNotContainsString(self::SECRET, (string) \json_encode($row->value));
@@ -253,7 +260,7 @@ final class MailSettingsTest extends WebTestCase
         $this->signIn();
         // nobody listens on port 1: the connection is refused, the login and password are in the DSN
         $this->api('PUT', 'settings/mail', [
-            'enabled' => true, 'host' => '127.0.0.1', 'port' => 1, 'encryption' => 'none', 'username' => 'robot', 'password' => self::SECRET, 'fromAddress' => 'test-site@example.com',
+            'enabled' => true, 'host' => '127.0.0.1', 'port' => 1, 'encryption' => 'starttls', 'username' => 'robot', 'password' => self::SECRET, 'fromAddress' => 'test-site@example.com',
         ]);
 
         $fail = $this->api('POST', 'settings/mail-test', ['to' => 'test-mail-test@example.com'], 502);
@@ -302,6 +309,27 @@ final class MailSettingsTest extends WebTestCase
     }
 
     #[Test]
+    public function anExistingUnencryptedSmtpPasswordIsReportedAndCannotBeUsed(): void
+    {
+        $this->signIn(email: 'test-f1-mail-' . \bin2hex(\random_bytes(8)) . '@example.com');
+        $this->api('PUT', 'settings/mail', [
+            'enabled' => true, 'host' => 'smtp.example.test', 'encryption' => 'starttls',
+            'username' => 'fixture', 'password' => self::SECRET, 'fromAddress' => 'site@example.test',
+        ]);
+        $em = self::getContainer()->get(EntityManagerInterface::class);
+        $row = $em->find(Setting::class, ['key' => MailSettings::KEY, 'locale' => Setting::ALL]);
+        $row->value['encryption'] = 'none'; // simulate the setting written by the previous version
+        $em->flush();
+
+        $state = $this->api('GET', 'settings/mail');
+        self::assertTrue($state['passwordSet']);
+        self::assertFalse($state['configured']);
+        self::assertStringContainsString('STARTTLS', $state['problem']);
+        $this->api('POST', 'settings/mail-test', ['to' => 'never-sent@example.test'], 422);
+        self::assertTrue($this->api('PUT', 'settings/mail', ['encryption' => 'starttls'])['configured']);
+    }
+
+    #[Test]
     public function theAddressesForRequestLettersLiveInNotificationsWithItsRights(): void
     {
         $this->signIn();
@@ -328,7 +356,7 @@ final class MailSettingsTest extends WebTestCase
     {
         $text = 'Expected response code 250 but got code "535", with message "535 Authentication failed for a".';
 
-        self::assertSame($text, DsnBuilder::clean($text, ['a', 'ab', 'abc', '']), 'one to three signs are left alone');
+        self::assertSame($text, DsnBuilder::clean($text, [], ['a', 'ab', 'abc', '']), 'short usernames are left alone; known passwords are always removed');
         self::assertSame('failed for ***', DsnBuilder::clean('failed for pass', ['pass']));
     }
 
@@ -386,7 +414,7 @@ final class MailSettingsTest extends WebTestCase
         $status->failed('reset', 'Не вышло: сервер ответил отказом');
         self::assertSame('Не вышло: сервер ответил отказом', $status->get()['error']);
         self::assertNotNull($status->get()['errorAt']);
-        $row = $em->getRepository(Setting::class)->find(['key' => 'mailStatus', 'locale' => '*']); // the manager now remembers this row
+        $row = $em->getRepository(Setting::class)->find(['key' => 'itk:mailStatus', 'locale' => '*']); // the manager now remembers this row
         self::assertNotNull($row);
         $status->sent();
 

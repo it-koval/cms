@@ -16,6 +16,7 @@ final class SectionType
     public const FIRST_SCREEN = 'Первый экран'; // i18n-ignore: a service identifier, matched against the group of a section and the value of the library filter
 
     private ?string $group = null;
+    private ?bool $firstScreen = null;
     private string $short;
     private string $tone = 'white';
     private int $height = 90;
@@ -143,7 +144,20 @@ final class SectionType
 
     public function isFirstScreen(): bool
     {
-        return self::FIRST_SCREEN === $this->group;
+        return $this->firstScreen ?? self::FIRST_SCREEN === $this->group;
+    }
+
+    /** Explicitly marks a section as carrying the page H1, independently of its display group. */
+    public function firstScreen(bool $firstScreen = true): self
+    {
+        $this->firstScreen = $firstScreen;
+
+        return $this;
+    }
+
+    public function declaredH1Field(): ?string
+    {
+        return $this->h1Field;
     }
 
     /** @return list<FieldInterface> all fields incl. readonly notes */
@@ -190,6 +204,7 @@ final class SectionType
             'name' => $this->name,
             'short' => $this->short,
             'group' => $this->groupName(),
+            'firstScreen' => $this->isFirstScreen(),
             'tone' => $this->tone,
             'h' => $this->height,
             'sil' => $this->silhouette,

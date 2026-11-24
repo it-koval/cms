@@ -13,6 +13,8 @@ use Symfony\Component\DependencyInjection\Attribute\Autowire;
  * Builds the site schema: the core templates, then config/itk/schema.php (optional), then the resource classes
  * (src/Itk/…, classes of extensions). One key described in two places is an error that names both.
  * In debug the built schema is checked too (Schema::validate()): a mistake of the site stops the page at once and says what to change.
+ *
+ * @internal
  */
 final class SchemaLoader
 {

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Itk\Cms\Tests\Core;
 
+use Doctrine\Bundle\DoctrineBundle\DataCollector\DoctrineDataCollector;
 use Doctrine\ORM\EntityManagerInterface;
 use Itk\Cms\Content\SettingsService;
 use Itk\Cms\Entity\PasswordReset;
@@ -38,6 +39,12 @@ final class PasswordRecoveryTest extends WebTestCase
     private int $n = 0;
     /** @var list<SendMail> letters put into the queue by the pages (the in-memory queue of a test is emptied after every request) */
     private array $sent = [];
+
+    /** @param array<string, mixed> $options */
+    protected static function createKernel(array $options = []): \Symfony\Component\HttpKernel\KernelInterface
+    {
+        return new \Itk\Cms\Tests\App\TestKernel('test', true, itk: ['public_url' => 'http://localhost']);
+    }
 
     protected function setUp(): void
     {
@@ -108,9 +115,8 @@ final class PasswordRecoveryTest extends WebTestCase
     {
         $handler = self::getContainer()->get(RequestPasswordLinkHandler::class);
         foreach ($this->queuedRequests() as $request) {
-            $handler($request);
+            \array_push($this->sent, ...$this->capturePasswordMail(static fn () => $handler($request)));
         }
-        \array_push($this->sent, ...$this->queuedMail());
     }
 
     /** @return array{0: string, 1: string} the page of the link: its token and the CSRF token of its form */
@@ -439,7 +445,9 @@ final class PasswordRecoveryTest extends WebTestCase
         $profile = $this->client->getProfile();
         self::assertNotFalse($profile, 'the profiler is on');
         $out = [];
-        foreach ($profile->getCollector('db')->getQueries() as $queries) {
+        $collector = $profile->getCollector('db');
+        self::assertInstanceOf(DoctrineDataCollector::class, $collector);
+        foreach ($collector->getQueries() as $queries) {
             foreach ($queries as $q) {
                 if (\preg_match('/^\s*(INSERT|UPDATE|DELETE)\b/i', (string) $q['sql'])) {
                     $out[] = \trim((string) \preg_replace('/\s+/', ' ', (string) $q['sql']));
@@ -489,18 +497,18 @@ final class PasswordRecoveryTest extends WebTestCase
         self::getContainer()->get(EntityManagerInterface::class)->flush();
         $handler = self::getContainer()->get(RequestPasswordLinkHandler::class);
 
-        $handler(new RequestPasswordLink($known->email, 'https://site.example'));
-        $handler(new RequestPasswordLink($blocked->email, 'https://site.example'));
-        $handler(new RequestPasswordLink('test-rec-nobody@example.com', 'https://site.example'));
-
-        $mails = $this->queuedMail();
+        $mails = $this->capturePasswordMail(static function () use ($handler, $known, $blocked): void {
+            $handler(new RequestPasswordLink($known->email, 'https://site.example', true));
+            $handler(new RequestPasswordLink($blocked->email, 'https://site.example', true));
+            $handler(new RequestPasswordLink('test-rec-nobody@example.com', 'https://site.example', true));
+        });
         self::assertCount(1, $mails);
         self::assertSame($known->email, $mails[0]->to);
         self::assertStringStartsWith('https://site.example/admin/reset-password/', $this->linkIn($mails[0]));
     }
 
     #[Test]
-    public function aForgedHostDoesNotDecideWhereTheLinkLeadsWhenTheSiteHasADomain(): void
+    public function anEditableDomainAndForgedHostCannotProvideThePasswordLinkBase(): void
     {
         $this->useMailpit();
         $settings = self::getContainer()->get(SettingsService::class);
@@ -508,13 +516,12 @@ final class PasswordRecoveryTest extends WebTestCase
         $hosts = Request::getTrustedHosts();
         Request::setTrustedHosts([]);
         try {
+            self::getContainer()->set(PublicUrl::class, new PublicUrl(self::getContainer()->get('request_stack'), $settings, null, true));
             $user = $this->user('forged');
             $this->forgot($user->email, null, true, ['HTTP_HOST' => 'evil.example']);
 
-            self::assertCount(1, $this->sent);
-            $url = $this->linkIn($this->sent[0]);
-            self::assertStringStartsWith('https://test-link.example.com/admin/reset-password/', $url);
-            self::assertStringNotContainsString('evil.example', $this->sent[0]->text . $this->sent[0]->html);
+            self::assertSame([], $this->sent);
+            self::assertSame([], $this->queuedRequests(), 'The editable domain cannot supply a password link base.');
         } finally {
             Request::setTrustedHosts($hosts);
             $restoreDomain();
@@ -522,23 +529,25 @@ final class PasswordRecoveryTest extends WebTestCase
     }
 
     #[Test]
-    public function withTrustedHostsTheHostOfTheRequestIsUsedAndAnotherOneIsRefused(): void
+    public function trustedHostsAloneDoNotAuthorizeAnAccountLinkOrigin(): void
     {
-        $this->useMailpit();
+        self::getContainer()->get(\Itk\Cms\Mail\MailSettings::class)->save(['enabled' => true, 'host' => '127.0.0.1', 'port' => 1, 'encryption' => 'none', 'clearPassword' => true, 'fromAddress' => 'test@example.com']);
         $settings = self::getContainer()->get(SettingsService::class);
         $restoreDomain = $this->setDomain($settings, 'test-link.example.com');
         $hosts = Request::getTrustedHosts();
         Request::setTrustedHosts(['^test-web\.example\.com$']);
         try {
+            self::getContainer()->set(PublicUrl::class, new PublicUrl(self::getContainer()->get('request_stack'), $settings, null, false));
             $user = $this->user('trusted');
             $this->forgot($user->email, null, true, ['HTTP_HOST' => 'test-web.example.com']);
-            self::assertStringStartsWith('http://test-web.example.com/admin/reset-password/', $this->linkIn($this->sent[0]));
+            self::assertSame([], $this->queuedRequests(), 'A trusted hostname does not establish a trusted scheme and port.');
+            self::assertSame([], $this->sent);
 
             $this->forgot($user->email, null, true, ['HTTP_HOST' => 'evil.example']);
             self::assertResponseStatusCodeSame(400);
-            self::assertCount(1, $this->sent, 'no letter for a forged Host');
+            self::assertSame([], $this->sent, 'no letter for a forged Host');
         } finally {
-            Request::setTrustedHosts($hosts);
+            Request::setTrustedHosts(\array_map(static fn (string $pattern): string => \substr($pattern, 1, -2), $hosts));
             $restoreDomain();
         }
     }

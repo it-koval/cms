@@ -24,6 +24,7 @@ use Itk\Cms\Support\Url;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\HttpFoundation\RequestStack;
+use Symfony\Contracts\Service\ResetInterface;
 use Twig\Environment;
 use Twig\Extension\RuntimeExtensionInterface;
 use Twig\Markup;
@@ -35,19 +36,19 @@ use Twig\Markup;
  *   itk_field_attrs(section|page, 'image') data-f / data-sec attributes of a non-text field (preview only, else '')
  *   itk_section_attrs(section)            attributes of a section's root element (preview only, else '')
  *   itk_section_class(section)            'chg' when the section differs from the published one (preview only)
- *   render_sections(page)                 every visible section through templates/sections/<type>.html.twig (or the template() of a section class)
- *   menu('header')                        items of a menu area: [{ label, kind, url, active, children }]
- *   settings('phone') / settings()        a site setting of the current language / all of them
- *   media_url(image[, width[, ratio]])    address of an image value ({ src, alt }) or of a path; with a width: of its WebP variant of that width;
+ *   itk_render_sections(page)                 every visible section through templates/sections/<type>.html.twig (or the template() of a section class)
+ *   itk_menu('header')                        items of a menu area: [{ label, kind, url, active, children }]
+ *   itk_settings('phone') / itk_settings()        a site setting of the current language / all of them
+ *   itk_media_url(image[, width[, ratio]])    address of an image value ({ src, alt }) or of a path; with a width: of its WebP variant of that width;
  *                                         with a ratio ('16:9'): of the frame of that ratio (the one saved in the media editor, else around the focal point)
  *                                         a ratio that is neither in itk_cms.images.ratios nor saved for the file is not an error: the whole picture is used and a warning is logged
- *   media_width(image)                    width of the original file in px (null for other addresses): for a picture the layout shows at its own size
- *   media_srcset(image[, maxWidth[, ratio]])  value of srcset: the WebP variants of the image (empty for GIF, SVG and other addresses), same ratio rules
- *   media_ratio(width, height)            the ratio key of a fixed slot ('14:5' for 700, 250; 219:103 is given as the nearest 17:8), to pass as the ratio above
+ *   itk_media_width(image)                    width of the original file in px (null for other addresses): for a picture the layout shows at its own size
+ *   itk_media_srcset(image[, maxWidth[, ratio]])  value of srcset: the WebP variants of the image (empty for GIF, SVG and other addresses), same ratio rules
+ *   itk_media_ratio(width, height)            the ratio key of a fixed slot ('14:5' for 700, 250; 219:103 is given as the nearest 17:8), to pass as the ratio above
  *   itk_img(image, { sizes, class, width, height, loading, alt, src_width, max_width, attrs, ratio })   a whole <img> with src, srcset and the image's alt;
  *                                         where the server makes AVIF it is wrapped in <picture> with an AVIF <source>
- *   page_url(link|page|id)                address behind a link value, a page or a page id
- *   listing(page)                         the published pages (or collection records) a page lists
+ *   itk_page_url(link|page|id)                address behind a link value, a page or a page id
+ *   itk_listing(page)                         the published pages (or collection records) a page lists
  *   itk_collection('ambassadors')         the published records of a collection in site order
  *   itk_collection('tours', {where, sort, limit, offset})   the same, filtered, sorted and cut by the database (only published, the same for everyone)
  *   itk_pages({template, parent, limit, sort})              the published pages of a template / under a page: [{ id, parentId, template, title, url, seo, fields, … }]
@@ -60,7 +61,7 @@ use Twig\Markup;
  *
  * @internal
  */
-final class ItkRuntime implements RuntimeExtensionInterface
+final class ItkRuntime implements RuntimeExtensionInterface, ResetInterface
 {
     /** @var array<string, true> ratios already reported as not allowed (one warning per request) */
     private array $warnedRatios = [];
@@ -74,7 +75,6 @@ final class ItkRuntime implements RuntimeExtensionInterface
     public function __construct(
         private readonly Schema $schema,
         private readonly RenderState $state,
-        private readonly HtmlSanitizer $html,
         private readonly FieldValues $values,
         private readonly ChangeDetector $changes,
         private readonly MenuService $menus,
@@ -92,6 +92,13 @@ final class ItkRuntime implements RuntimeExtensionInterface
         private readonly ?MediaFileRepository $mediaFiles = null,
         private readonly ?LoggerInterface $logger = null,
     ) {
+    }
+
+    public function reset(): void
+    {
+        $this->warnedRatios = [];
+        $this->savedFrames = [];
+        $this->warned = [];
     }
 
     public function isPreview(): bool
@@ -122,7 +129,7 @@ final class ItkRuntime implements RuntimeExtensionInterface
      */
     public function field(array $subject, string $path): mixed
     {
-        [$field, $data, $secId, $base, $miss] = $this->resolve($subject, $path);
+        [$field, $data, $secId, $base, $miss, $rowIds] = $this->resolve($subject, $path);
         $value = Json::get($data, $path);
         if (null !== $miss && !$this->state->preview) {
             $this->mistake(I18n::t(isset($subject['type']) ? 'http.field_missing_section' : 'http.field_missing_page', [
@@ -133,7 +140,7 @@ final class ItkRuntime implements RuntimeExtensionInterface
             return \is_scalar($value) ? new Markup(HtmlSanitizer::escape((string) $value), 'UTF-8') : $value;
         }
         if ($field->isRich()) {
-            $out = $this->images->rewriteHtml($this->html->sanitize($value, (string) $field->richMode()));
+            $out = $this->images->rewriteHtml($this->values->richValue($field, $value));
         } elseif (\in_array($field->type(), ['text', 'textarea', 'number', 'select'], true)) {
             $out = HtmlSanitizer::escape(\is_scalar($value) ? (string) $value : '');
             if ('textarea' === $field->type()) {
@@ -144,7 +151,7 @@ final class ItkRuntime implements RuntimeExtensionInterface
         }
         if ($this->state->preview) {
             $cls = 'itk-f' . ($field->isRich() && 'headline' !== $field->type() ? ' itk-rich' : '') . ($this->fieldChanged($subject, $field, $path, $base) ? ' chg' : '');
-            $out = '<span data-f="' . HtmlSanitizer::escape($path) . '" data-sec="' . HtmlSanitizer::escape($secId) . '" class="' . $cls . '">' . $out . '</span>';
+            $out = '<span data-f="' . HtmlSanitizer::escape($path) . '" data-sec="' . HtmlSanitizer::escape($secId) . '"' . self::rowAttrs($rowIds) . ' class="' . $cls . '">' . $out . '</span>';
         }
 
         return new Markup($out, 'UTF-8');
@@ -156,10 +163,16 @@ final class ItkRuntime implements RuntimeExtensionInterface
         if (!$this->state->preview) {
             return new Markup('', 'UTF-8');
         }
-        [$field, , $secId, $base] = $this->resolve($subject, $path);
+        [$field, , $secId, $base, , $rowIds] = $this->resolve($subject, $path);
         $chg = null !== $field && $this->fieldChanged($subject, $field, $path, $base);
 
-        return new Markup(' data-f="' . HtmlSanitizer::escape($path) . '" data-sec="' . HtmlSanitizer::escape($secId) . '"' . ($chg ? ' data-chg="1"' : ''), 'UTF-8');
+        return new Markup(' data-f="' . HtmlSanitizer::escape($path) . '" data-sec="' . HtmlSanitizer::escape($secId) . '"' . self::rowAttrs($rowIds) . ($chg ? ' data-chg="1"' : ''), 'UTF-8');
+    }
+
+    /** @param list<string> $ids repeater identities in path order, independent of the saved row positions */
+    private static function rowAttrs(array $ids): string
+    {
+        return [] === $ids ? '' : ' data-row-ids="' . HtmlSanitizer::escape(Json::encode($ids)) . '"';
     }
 
     /** @param array<string, mixed> $section */
@@ -251,7 +264,12 @@ final class ItkRuntime implements RuntimeExtensionInterface
     public function setting(?string $key = null, mixed $default = null): mixed
     {
         if (null === $key) {
-            return $this->settings->all($this->locale());
+            $subject = $this->settings->all($this->locale());
+            if (!\in_array($subject, $this->state->settingsSubjects, true)) {
+                $this->state->settingsSubjects[] = $subject;
+            }
+
+            return $subject;
         }
 
         return $this->settings->get($key, $default, $this->locale());
@@ -434,7 +452,13 @@ final class ItkRuntime implements RuntimeExtensionInterface
      */
     public function listingOf(array $page): array
     {
-        return isset($page['id']) ? $this->listing->forPage((string) $page['id'], $this->locale()) : [];
+        $rows = isset($page['id']) ? $this->listing->forPage((string) $page['id'], $this->locale()) : [];
+        $collection = $this->schema->template((string) ($page['template'] ?? $this->state->template))?->listingRule()['collection'] ?? null;
+        if (null !== $collection) {
+            $this->rememberCollectionOwners($rows, (string) $collection);
+        }
+
+        return $rows;
     }
 
     /**
@@ -446,11 +470,22 @@ final class ItkRuntime implements RuntimeExtensionInterface
      */
     public function collection(string $key, ?array $options = null): array
     {
-        if (null === $options) {
-            return $this->collections->published($key, $this->locale());
-        }
+        $rows = null === $options
+            ? $this->collections->published($key, $this->locale())
+            : $this->read(fn (): array => $this->reader->collection($key, $options, $this->locale()), []);
+        $this->rememberCollectionOwners($rows, $key);
 
-        return $this->read(fn (): array => $this->reader->collection($key, $options, $this->locale()), []);
+        return $rows;
+    }
+
+    /** @param list<array<string, mixed>> $rows */
+    private function rememberCollectionOwners(array $rows, string $key): void
+    {
+        foreach ($rows as $row) {
+            if (isset($row['id'])) {
+                $this->state->collectionOwners[(string) $row['id']] = $key;
+            }
+        }
     }
 
     /**
@@ -465,7 +500,11 @@ final class ItkRuntime implements RuntimeExtensionInterface
         return $this->read(fn (): array => $this->reader->pages($options, $this->locale()), []);
     }
 
-    /** The published page with this id, or null. @return null|array<string, mixed> */
+    /**
+     * The published page with this id, or null.
+     *
+     * @return array<string, mixed>|null
+     */
     public function page(mixed $id): ?array
     {
         return \is_string($id) && '' !== $id ? $this->reader->page($id, $this->locale()) : null;
@@ -486,13 +525,24 @@ final class ItkRuntime implements RuntimeExtensionInterface
     /**
      * @param array<string, mixed> $subject
      *
-     * @return array{0: ?FieldInterface, 1: array<string, mixed>, 2: string, 3: ?array<string, mixed>, 4: array{0: string, 1: list<string>}|null} field, data, owner id for data-sec, published data of the owner,
-     *                                                                                                                                            and the first key of the path the section or the repeater does not have (with the keys it has)
+     * @return array{0: ?FieldInterface, 1: array<string, mixed>, 2: string, 3: ?array<string, mixed>, 4: array{0: string, 1: list<string>}|null, 5: list<string>} field, data, owner id, published data, missing field and repeater row identities
      */
     private function resolve(array $subject, string $path): array
     {
-        $isSection = isset($subject['type']);
-        if ($isSection) {
+        $isSettings = \in_array($subject, $this->state->settingsSubjects, true);
+        $isSection = !$isSettings && isset($subject['type']);
+        $collection = !$isSettings && isset($subject['id']) ? ($this->state->collectionOwners[(string) $subject['id']] ?? null) : null;
+        if ($isSettings) {
+            $fields = $this->schema->settingsFields();
+            $data = $subject;
+            $secId = '@settings';
+            $base = null;
+        } elseif (null !== $collection) {
+            $fields = $this->schema->collection($collection)?->fieldList() ?? [];
+            $data = $subject;
+            $secId = '@collection/' . $collection . '/' . (string) $subject['id'];
+            $base = null;
+        } elseif ($isSection) {
             $fields = $this->schema->sectionFields((string) $subject['type']);
             $data = (array) ($subject['data'] ?? []);
             $secId = (string) ($subject['id'] ?? '');
@@ -511,8 +561,14 @@ final class ItkRuntime implements RuntimeExtensionInterface
         $field = null;
         $miss = null;
         $list = $fields;
+        $rowIds = [];
+        $at = $data;
         foreach (\explode('.', $path) as $depth => $part) {
             if (\ctype_digit($part)) {
+                $at = \is_array($at) ? ($at[$part] ?? null) : null;
+                if ('repeater' === $field?->type()) {
+                    $rowIds[] = \is_array($at) && \is_string($at['_id'] ?? null) ? $at['_id'] : '';
+                }
                 continue;
             }
             $field = null;
@@ -527,10 +583,11 @@ final class ItkRuntime implements RuntimeExtensionInterface
                 $miss = 0 === $depth || [] !== $list ? [$part, \array_map(static fn (FieldInterface $f): string => $f->key(), $list)] : null;
                 break;
             }
+            $at = \is_array($at) ? ($at[$part] ?? null) : null;
             $list = $field->subFields();
         }
 
-        return [$field, $data, $secId, $base, $miss];
+        return [$field, $data, $secId, $base, $miss, $rowIds];
     }
 
     /** A mistake of a site template: an exception in strict mode, else one warning in the log per request. */
@@ -545,7 +602,10 @@ final class ItkRuntime implements RuntimeExtensionInterface
         }
     }
 
-    /** @param array<string, mixed> $subject @param null|array<string, mixed> $base */
+    /**
+     * @param array<string, mixed> $subject
+     * @param array<string, mixed>|null $base
+     */
     private function fieldChanged(array $subject, FieldInterface $field, string $path, ?array $base): bool
     {
         if (null === $this->state->published || null === $base) {

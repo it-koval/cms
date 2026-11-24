@@ -20,6 +20,7 @@ final class PageSectionMoveTool extends SectionTool
         return 'Move a section to another place in the DRAFT of a page: to a position (0 = first, counted in the final list) or right after another section.' . self::EDITOR_NOTE;
     }
 
+    /** @return array<string, mixed> */
     public function inputSchema(): array
     {
         return self::schema(self::pageIdProperties() + [

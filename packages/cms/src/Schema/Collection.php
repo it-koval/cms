@@ -18,6 +18,7 @@ use Itk\Cms\Security\Viewer;
  */
 final class Collection
 {
+    public const RESERVED_KEYS = ['id', 'locale', 'locales', 'position', 'translated', 'status', 'updatedAt', 'version', 'awaiting', 'returned', 'changed', 'changes', 'parentId'];
     private string $singular;
     private ?string $newLabel = null;
     private string $icon = 'list';
@@ -94,7 +95,7 @@ final class Collection
     }
 
     /**
-     * The views of the list: 'table', 'cards', 'calendar' => ['start' => 'dateFrom', 'end' => 'dateTo', 'title' => 'title'], 'kanban' => ['field' => 'status', 'columns' => [...]].
+     * The views of the list: 'table', 'cards', 'calendar' => ['start' => 'dateFrom', 'end' => 'dateTo', 'title' => 'title'], 'kanban' => ['field' => 'state', 'columns' => [...]].
      *
      * @param array<int|string, mixed> $views
      */
@@ -502,6 +503,11 @@ final class Collection
         return $this->singleton;
     }
 
+    public function subFieldKey(): ?string
+    {
+        return $this->subField;
+    }
+
     /** The title field the collection named itself (titleField()); null when the first text field stands for it. */
     public function declaredTitleField(): ?string
     {
@@ -525,7 +531,7 @@ final class Collection
             }
         }
 
-        return $this->fieldList()[0]?->key() ?? 'title';
+        return ($this->fieldList()[0] ?? null)?->key() ?? 'title';
     }
 
     /** @return list<FieldInterface> every editable field of every tab */

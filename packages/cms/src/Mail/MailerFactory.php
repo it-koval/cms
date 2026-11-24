@@ -8,6 +8,7 @@ use Itk\Cms\Content\SettingsService;
 use Itk\Cms\I18n\I18n;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\Mailer\Transport;
+use Symfony\Component\Mailer\Transport\Dsn;
 use Symfony\Component\Mailer\Transport\TransportInterface;
 use Symfony\Component\Mime\Address;
 use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
@@ -18,6 +19,8 @@ use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
  *   2. otherwise the environment variable MAILER_DSN, when it holds a real transport (null://null means «ничего не отправлять» and counts as not configured);
  *   3. otherwise mail is «не настроена».
  * The sender (from) is always the one of «Настройки → Почта»; with only MAILER_DSN and no address saved, noreply@<домен сайта> is used when the site has a domain.
+ *
+ * @internal
  */
 final class MailerFactory
 {
@@ -40,11 +43,24 @@ final class MailerFactory
             return null;
         }
         if ($c->hasServer()) {
-            return new MailRoute(DsnBuilder::build($c), MailRoute::SETTINGS, $from, [$c->password, $c->username]);
+            return $c->hasSafeCredentials() ? new MailRoute(DsnBuilder::build($c), MailRoute::SETTINGS, $from, [$c->password], [$c->username]) : null;
         }
         $env = $this->envDsn();
         if (null !== $env) {
-            return new MailRoute($env, MailRoute::ENV, $from, [$env, $this->passwordOf($env)]);
+            $secrets = [$env];
+            $usernames = [];
+            $unsafe = false;
+            foreach (self::envTransports($env) as $dsn) {
+                if ('' !== (string) $dsn->getPassword()) {
+                    $secrets[] = $dsn->getPassword();
+                    $unsafe = $unsafe || ('smtp' === $dsn->getScheme() && !$dsn->getBooleanOption('require_tls'));
+                }
+                if ('' !== (string) $dsn->getUser()) {
+                    $usernames[] = $dsn->getUser();
+                }
+            }
+
+            return new MailRoute($env, MailRoute::ENV, $from, $secrets, $usernames, $unsafe);
         }
 
         return null;
@@ -56,8 +72,12 @@ final class MailerFactory
     }
 
     /** A transport for the route. No logger on purpose: the SMTP conversation of the debug log holds the login and password in base64. */
-    public function transport(MailRoute $route): TransportInterface
+    public function transport(MailRoute $route, bool $guardRequestDelivery = false): TransportInterface
     {
+        if ($guardRequestDelivery) {
+            return (new RequestMailTransportGuard($this->dispatcher))->transport($route->dsn);
+        }
+
         return Transport::fromDsn($route->dsn, $this->dispatcher, null, null);
     }
 
@@ -67,6 +87,12 @@ final class MailerFactory
         return null !== $this->envDsn();
     }
 
+    /** Diagnostic only: preserve existing MAILER_DSN transports while making optional SMTP encryption visible. */
+    public function hasUnsafeEnvCredentials(?MailRoute $route = null): bool
+    {
+        return ($route ?? $this->route())->unsafeEnvCredentials;
+    }
+
     /** Why mail is not configured, in plain words (null when it is). */
     public function problem(): ?string
     {
@@ -74,6 +100,9 @@ final class MailerFactory
             return null;
         }
         $c = $this->settings->config();
+        if ($c->hasServer() && !$c->hasSafeCredentials()) {
+            return I18n::t('http.mail_password_requires_tls');
+        }
         if (null === $this->sender($c)) {
             return I18n::t('http.mail_problem_sender');
         }
@@ -114,10 +143,20 @@ final class MailerFactory
         return $dsn;
     }
 
-    private function passwordOf(string $dsn): string
+    /** @return list<Dsn> Leaf transports in a simple, failover or roundrobin DSN, without constructing a transport or opening a connection. */
+    private static function envTransports(#[\SensitiveParameter] string $value): array
     {
-        $parts = \parse_url($dsn);
+        // Symfony's compound DSN grammar separates leaves with a space or a closing parenthesis.
+        \preg_match_all('~(?:^|[ (])([a-z][a-z0-9+.-]*://[^ )]+)~i', $value, $matches);
+        $transports = [];
+        foreach ($matches[1] as $leaf) {
+            try {
+                $transports[] = Dsn::fromString($leaf);
+            } catch (\Throwable) {
+                // Normal delivery reports malformed DSNs. Diagnostics must never expose their text.
+            }
+        }
 
-        return \is_array($parts) && isset($parts['pass']) ? \rawurldecode($parts['pass']) : '';
+        return $transports;
     }
 }

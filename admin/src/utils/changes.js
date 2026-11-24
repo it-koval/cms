@@ -55,11 +55,6 @@ export function pageChanges(page, published) {
   return out
 }
 
-/** Section ids that carry at least one change (for the magenta tag in «Структура»). */
-export function changedSectionIds(page, published) {
-  return new Set(pageChanges(page, published).filter((c) => c.sec).map((c) => c.sec))
-}
-
 /** Changed top-level keys of one section (for the form's magenta marks). */
 export function sectionChangedKeys(section, publishedSection) {
   if (!publishedSection) return []

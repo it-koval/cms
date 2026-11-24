@@ -6,7 +6,11 @@ namespace Itk\Cms\Health;
 
 use Itk\Cms\I18n\I18n;
 
-/** Checks the PHP runtime serving this request, including sites installed before the October 2026 security release. @internal */
+/**
+ * Checks the PHP runtime serving this request, including sites installed before the October 2026 security release.
+ *
+ * @internal
+ */
 final class PhpHealthCheck implements HealthCheckInterface
 {
     public function __construct(private readonly string $version = \PHP_VERSION)

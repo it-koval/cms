@@ -12,11 +12,11 @@ use Itk\Cms\Notification\Notification;
 use Itk\Cms\Request\TelegramNotifier;
 use Itk\Cms\Schema\Schema;
 use Itk\Cms\Tests\App\TestKernel;
+use Itk\Cms\Tests\Core\Fixture\FailingMessageBus;
 use PHPUnit\Framework\Attributes\Test;
 use Psr\Log\NullLogger;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 use Symfony\Component\HttpKernel\KernelInterface;
-use Symfony\Component\Messenger\Envelope;
 use Symfony\Component\Messenger\MessageBusInterface;
 use Symfony\Component\Notifier\Message\ChatMessage;
 use Symfony\Component\Notifier\Message\MessageInterface;
@@ -33,6 +33,7 @@ final class TelegramChannelTest extends WebTestCase
     /** @var array<string, array{bool, mixed}> */
     private array $saved = [];
 
+    /** @param array<string, mixed> $options */
     protected static function createKernel(array $options = []): KernelInterface
     {
         return new TestKernel($options['environment'] ?? 'test', $options['debug'] ?? true);
@@ -49,7 +50,7 @@ final class TelegramChannelTest extends WebTestCase
             }
             $settings = self::getContainer()->get(SettingsService::class);
             foreach ($this->saved as $key => [$existed, $value]) {
-                $em->createQuery('DELETE FROM Itk\Cms\Entity\Setting s WHERE s.key = :k')->setParameter('k', $key)->execute();
+                $settings->remove($key);
                 if ($existed) {
                     $settings->set($key, $value);
                 }
@@ -76,20 +77,6 @@ final class TelegramChannelTest extends WebTestCase
         return $r;
     }
 
-    /** A bus that is down (the broker is unreachable, the table is missing) and counts the attempts. */
-    private function brokenBus(): MessageBusInterface
-    {
-        return new class implements MessageBusInterface {
-            public int $attempts = 0;
-
-            public function dispatch(object $message, array $stamps = []): Envelope
-            {
-                ++$this->attempts;
-                throw new \RuntimeException('Queue is down');
-            }
-        };
-    }
-
     private function channel(MessageBusInterface $bus, ?\Closure $chatter): TelegramChannel
     {
         $notifier = new TelegramNotifier(
@@ -109,7 +96,7 @@ final class TelegramChannelTest extends WebTestCase
     {
         self::bootKernel();
         $r = $this->request();
-        $bus = $this->brokenBus();
+        $bus = new FailingMessageBus();
 
         $this->channel($bus, static fn (): ?object => null)->send(new Notification(Notification::REQUEST_NEW, 'Новая заявка', payload: ['requestId' => $r->id]));
 
@@ -123,7 +110,7 @@ final class TelegramChannelTest extends WebTestCase
     {
         self::bootKernel();
         $r = $this->request();
-        $bus = $this->brokenBus();
+        $bus = new FailingMessageBus();
         $transport = new class implements TransportInterface {
             public function send(MessageInterface $message): SentMessage
             {
@@ -145,6 +132,9 @@ final class TelegramChannelTest extends WebTestCase
 
         self::assertSame(1, $bus->attempts);
         self::assertSame(RequestEntity::DELIVERY_FAILED, $r->delivery);
-        self::assertStringContainsString('Queue is down', (string) $r->deliveryError);
+        self::assertStringNotContainsString('Queue is down', (string) $r->deliveryError, 'broker diagnostics are not exposed to staff');
+        self::assertStringContainsString(\Itk\Cms\I18n\I18n::t('http.request_queue_failed'), (string) $r->deliveryError);
+        self::assertSame(['telegram'], $r->queuedChannels(), 'the ambiguous publication remains recoverable');
+        self::assertSame(1, (int) self::getContainer()->get(EntityManagerInterface::class)->getConnection()->fetchOne('SELECT COUNT(*) FROM itk_request_queue WHERE request_id = ?', [$r->id]));
     }
 }

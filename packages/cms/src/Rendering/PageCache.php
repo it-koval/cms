@@ -7,6 +7,7 @@ namespace Itk\Cms\Rendering;
 use Itk\Cms\Content\SiteAddress;
 use Itk\Cms\Content\SitemapBuilder;
 use Itk\Cms\Entity\PageTranslation;
+use Itk\Cms\Security\CspNonce;
 use Itk\Cms\Support\Url;
 use Psr\Cache\CacheItemPoolInterface;
 use Psr\Clock\ClockInterface;
@@ -31,6 +32,7 @@ final class PageCache
     private const PRUNE_EVERY = 600;
     private const PRUNE_MARKER = 'prune-at';
 
+    /** @internal Core implementation; excluded from the site API. */
     public function __construct(
         #[Autowire(service: 'itk_cms.page_cache')]
         private readonly CacheItemPoolInterface $pool,
@@ -45,13 +47,19 @@ final class PageCache
     ) {
     }
 
-    /** True when the request neither reads nor writes the cache: the option is off, debug, Authorization, a visitor with a session (he sees the site fresh), a method other than GET and HEAD, a query string, a host or a port nobody vouched for, a spelling of the address that is not the page's own, a Forwarded or X-Forwarded-Prefix header. */
+    /**
+     * True when the request neither reads nor writes the cache: the option is off, debug, Authorization, a visitor with a session, a CSP nonce, a method other than GET and HEAD, a query string, an untrusted host or port, a non-canonical address, or a Forwarded or X-Forwarded-Prefix header.
+     *
+     * @internal
+     */
     public function bypasses(Request $request, PageTranslation $page): bool
     {
-        return !$this->enabled || $this->debug || !$request->isMethodCacheable() || $request->headers->has('Authorization') || $request->hasPreviousSession() || null !== $request->getQueryString()
+        return !$this->enabled || $this->debug || !$request->isMethodCacheable() || $request->headers->has('Authorization') || $request->hasPreviousSession()
+            || null !== CspNonce::fromRequest($request) || null !== $request->getQueryString()
             || $request->headers->has('X-Forwarded-Prefix') || $request->headers->has('Forwarded') || $request->getPathInfo() !== self::canonical($page) || !$this->vouches($request);
     }
 
+    /** @internal Core implementation; excluded from the site API. */
     public function get(Request $request, string $fingerprint): ?Response
     {
         $item = $this->pool->getItem($this->key($request, $fingerprint));
@@ -65,6 +73,8 @@ final class PageCache
      * @param int|false|null $directive what the template asked through itk_cache(): a number of seconds the entry may live at most, false = do not keep, null = nothing asked
      *
      * @return bool whether the answer was kept
+     *
+     * @internal core implementation; excluded from the site API
      */
     public function put(Request $request, string $fingerprint, Response $response, int|false|null $directive): bool
     {

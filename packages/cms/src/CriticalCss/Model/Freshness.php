@@ -15,6 +15,8 @@ use Itk\Cms\Entity\CriticalCss;
  *   Failed   this very basis was tried and did not work: not retried by itself (no Chrome loop), only by the command or by the next basis
  *
  * The one table of policy, used by the render (inline?), by the request side (ask the worker?) and by the worker (run?).
+ *
+ * @internal
  */
 enum Freshness
 {

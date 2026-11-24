@@ -38,6 +38,9 @@ final class MailHealthCheck implements HealthCheckInterface
         }
         $last = $this->status->get();
         $env = MailRoute::ENV === $route->source;
+        if ($this->factory->hasUnsafeEnvCredentials($route)) {
+            return HealthResult::warn(I18n::t('http.mail_env_password_tls_warning'));
+        }
         if (null !== $last['error'] && (null === $last['okAt'] || ($last['errorAt'] ?? '') >= $last['okAt'])) {
             return HealthResult::warn(I18n::t($env ? 'http.mail_failed_env' : 'http.mail_failed_settings', ['error' => $last['error']]));
         }

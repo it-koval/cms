@@ -4,7 +4,7 @@
 // version (canvas, structure, form, undo history and publish counter are per language): setContentLocale(code), PageEditorView waits for the last autosave and re-creates the editor.
 // The status of the language on screen follows the live state of the editor (ed.status); the others come from the status summary loaded with the page.
 import { computed, inject, onMounted, ref } from 'vue'
-import { app, setContentLocale } from '@/stores/app.js'
+import { app, switchContentLocale } from '@/stores/app.js'
 import { t } from '@/i18n/index.js'
 import { isMulti } from '@/utils/locales.js'
 import { stateOf } from '@/components/pages/langWords.js'
@@ -26,10 +26,10 @@ const statuses = computed(() => Object.fromEntries(app.languages.list.map((l) =>
   return [l.code, { key: stateOf(v).key, count: v && v.changes }]
 })))
 
-function pick(code) {
+async function pick(code) {
   if (code === ed.locale || ed.busy) return
   refocus = true
-  setContentLocale(code)
+  if (!(await switchContentLocale(code))) refocus = false
 }
 </script>
 
@@ -39,6 +39,6 @@ let refocus = false // module level: survives the re-creation of the editor
 
 <template>
   <LanguageSelect
-    v-if="isMulti()" ref="sel" :model-value="ed.locale" :languages="app.languages.list" :statuses="statuses" :label="t('editor.lang_select')" :disabled="ed.busy" @update:model-value="pick"
+    v-if="isMulti()" ref="sel" variant="editor" :model-value="ed.locale" :languages="app.languages.list" :statuses="statuses" :label="t('editor.lang_select')" :disabled="ed.busy" @update:model-value="pick"
   />
 </template>

@@ -7,6 +7,8 @@ namespace Itk\Cms\History;
 /**
  * Through what the change that is being made comes: by hand in the admin (nothing set) or by an AI assistant (MCP). The history writes it
  * into every entry it makes meanwhile, so the history panel can say «через ИИ-ассистента (имя ключа)». Set for the time of one call, then cleared.
+ *
+ * @internal
  */
 final class ChangeSource
 {

@@ -17,12 +17,16 @@ use Symfony\Component\Notifier\Transport\TransportInterface;
 use Symfony\Contracts\HttpClient\HttpClientInterface;
 use Symfony\Contracts\Service\ResetInterface;
 
-/** The site's optional Telegram transport, shared by request delivery and validation of the routing settings. @internal */
+/**
+ * The site's optional Telegram transport, shared by request delivery and validation of the routing settings.
+ *
+ * @internal
+ */
 final class TelegramConnection implements ResetInterface
 {
     private bool $resolved = false;
     private ?TransportInterface $transport = null;
-    private ?TelegramTransport $adminTransport = null;
+    private ?TransportInterface $adminTransport = null;
     private ?string $adminToken = null;
 
     /** @param (\Closure(): ?object)|null $chatter builds the chatter on first use, reading the site's optional TELEGRAM_DSN */
@@ -34,17 +38,14 @@ final class TelegramConnection implements ResetInterface
     ) {
     }
 
-    /** Error texts of the HTTP client carry the request address, and the address carries the bot token: never show or log it. The same goes for a DSN quoted by a configuration error. */
+    /**
+     * Error texts of the HTTP client carry the request address, and the address carries the bot token: never show or log it. The same goes for a DSN quoted by a configuration error.
+     *
+     * @param list<string> $tokens
+     */
     public static function scrub(string $message, #[\SensitiveParameter] array $tokens = []): string
     {
-        foreach ($tokens as $token) {
-            if ('' !== $token) {
-                $message = \str_replace([$token, \rawurlencode($token)], '***', $message);
-            }
-        }
-        $message = (string) \preg_replace('~bot\d+(?::|%3A)[A-Za-z0-9_-]+~i', 'bot***', $message);
-
-        return (string) \preg_replace('~([a-z][a-z0-9+.-]*://)[^\s"\'@/]*@~i', '$1***@', $message);
+        return \Itk\Cms\Logging\SecretScrubber::scrub($message, $tokens);
     }
 
     public function scrubError(string $message): string
@@ -79,6 +80,9 @@ final class TelegramConnection implements ResetInterface
         if (null !== $this->bots?->token('telegram') && !$this->adminPackagesAvailable()) {
             return I18n::t('http.telegram_packages_missing');
         }
+        if (($transport = $this->transport()) instanceof RefusedTelegramTransport) {
+            return $transport->problem();
+        }
         if ($includeUnconfigured && !$this->isConnected()) {
             return I18n::t('http.telegram_problem_token');
         }
@@ -100,7 +104,7 @@ final class TelegramConnection implements ResetInterface
         }
         if ($token !== $this->adminToken || null === $this->adminTransport) {
             $this->adminToken = $token;
-            $this->adminTransport = new TelegramTransport($token, client: $this->http);
+            $this->adminTransport = TelegramTransportGuard::transport(new TelegramTransport($token, client: $this->http ?? HttpClient::create()), $this->logger);
         }
 
         return $this->adminTransport;
@@ -127,7 +131,7 @@ final class TelegramConnection implements ResetInterface
         }
         try {
             $chatter = ($this->chatter)();
-            $this->transport = $chatter instanceof TransportInterface && self::canDeliver($chatter) ? $chatter : null;
+            $this->transport = $chatter instanceof TransportInterface && self::canDeliver($chatter) ? TelegramTransportGuard::transport($chatter, $this->logger) : null;
         } catch (EnvNotFoundException) {
             // TELEGRAM_DSN is not set: Telegram is not used on this site
         } catch (\Throwable $e) {

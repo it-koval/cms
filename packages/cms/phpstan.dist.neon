@@ -1,12 +1,18 @@
-# Static analysis of the bundle: composer stan. Level 5; the types in docblocks are hints, not facts (treatPhpDocTypesAsCertain),
+# Static analysis of the bundle and tests: composer stan. The types in docblocks are hints, not facts (treatPhpDocTypesAsCertain),
 # because the data of the site comes out of JSON columns and the docblocks describe what the code expects to find there.
-# The baseline covers AbstractMcpTool::annotations(), which returns [] for tools that do not declare their own annotations.
-includes:
-    - phpstan-baseline.neon
-
 parameters:
-    level: 5
+    level: 6
     treatPhpDocTypesAsCertain: false
+    # Test clients, repositories and caches can change between identical calls.
+    rememberPossiblyImpureFunctionValues: false
     paths:
         - src
+        - tests
     tmpDir: .phpstan.cache
+    ignoreErrors:
+        # symfony/asset is optional and AnalyticsAsset can be used without it.
+        -
+            message: '#Symfony\\Component\\Asset\\PackageInterface#'
+            identifier: class.notFound
+            path: src/Analytics/AnalyticsAsset.php
+            reportUnmatched: false

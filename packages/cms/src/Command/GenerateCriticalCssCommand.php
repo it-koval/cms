@@ -9,6 +9,7 @@ use Itk\Cms\CriticalCss\CriticalCssService;
 use Itk\Cms\CriticalCss\Model\When;
 use Itk\Cms\CriticalCss\Stylesheets;
 use Itk\Cms\Entity\PageTranslation;
+use Itk\Cms\I18n\ContentLocales;
 use Itk\Cms\I18n\I18n;
 use Itk\Cms\Repository\PageRepository;
 use Itk\Cms\Repository\PageTranslationRepository;
@@ -32,6 +33,8 @@ use Symfony\Component\Console\Style\SymfonyStyle;
  *
  * Safe to run any number of times.
  * Not needed after a CSS deploy: the first render of each page asks for it (CriticalCssService::forLiveRender); running it in the deploy script only does it sooner.
+ *
+ * @internal
  */
 #[AsCommand(name: 'itk:critical-css:generate', description: 'ops.cmd_critical_css_description')]
 final class GenerateCriticalCssCommand extends Command
@@ -45,6 +48,7 @@ final class GenerateCriticalCssCommand extends Command
         private readonly CriticalCssGenerator $generator,
         private readonly PageRepository $pages,
         private readonly PageTranslationRepository $translations,
+        private readonly ?ContentLocales $contentLocales = null,
     ) {
         parent::__construct();
     }
@@ -138,7 +142,7 @@ final class GenerateCriticalCssCommand extends Command
             $all = $this->translations->findAllLive();
         }
 
-        return \array_values(\array_filter($all, static fn (PageTranslation $t): bool => null === $locale || $t->locale === $locale));
+        return \array_values(\array_filter($all, fn (PageTranslation $t): bool => $t->isLive() && ($this->contentLocales?->serves($t->locale, (string) ($t->published['url'] ?? $t->publishedUrl)) ?? true) && (null === $locale || $t->locale === $locale)));
     }
 
     private function label(PageTranslation $t): string

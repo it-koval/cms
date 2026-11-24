@@ -99,13 +99,6 @@
   "collections.act_done": "Дайын",
   "collections.act_failed": "Әрекетті орындау мүмкін болмады",
   "collections.draft_save_failed": "Сақтау мүмкін болмады",
-  "collections.pr_label": "ЖИ-агенттің ұсыныстары",
-  "collections.pr_header": {
-    "other": "ЖИ-агент {count} түзету ұсынды"
-  },
-  "collections.pr_note": "{note}. Сіз қабылдамайынша ештеңе өзгермейді.",
-  "collections.pr_accept": "Қабылдау",
-  "collections.pr_reject": "Қабылдамау",
   "collections.pp_send": "Жариялауға жіберу",
   "collections.pp_title": "Не жарияланады",
   "collections.pp_count": {
@@ -126,7 +119,7 @@
   "collections.mv_copy_from": "{lang} көшіру",
   "collections.mv_copy_hint": "Барлық мәтін мен фото жобаға түседі. Тек мәтіндерді аудару қалады.",
   "collections.mv_blank": "Бос жазбадан бастау",
-  "collections.mv_blank_hint": "Атауы, мекенжайы, ауыстырғыштар мен фото сақталады, мәтіндер бос болады.",
+  "collections.mv_blank_hint": "Жазбаның осы түріне арналған әдепкі мәндер қолданылады.",
   "collections.mv_title": "{version} ішінде бұл жазба әлі жоқ",
   "collections.mv_sub": "Сіз аударма қосып, оны жарияламайынша, жазба {site} көрсетілмейді.",
   "collections.mv_sub_linked": "Сіз аударма қосып, оны жарияламайынша, жазба {site} көрсетілмейді. Сайттағы бет онымен бірге пайда болады.",
@@ -172,6 +165,7 @@
   "collections.cl_reorder_note_multi": "Карточкаларды сүйреңіз немесе көрсеткілерді пайдаланыңыз. {note} Рет барлық тілге ортақ.",
   "collections.cl_reorder_note_hidden": "Карточкаларды сүйреңіз немесе көрсеткілерді пайдаланыңыз. {note} Рет барлық тілге ортақ. Аудармасы жоқ жазбалар {site} көрінбейді, бірақ олардың орны сақталады.",
   "collections.cl_cancel": "Бас тарту",
+  "collections.cl_order_leave_message": "Жаңа рет сақталмады. Ретті сақтамай шығу керек пе?",
   "collections.cl_reorder_save": "Ретті сақтау",
   "collections.cl_selected_region": "Таңдалған жазбалар",
   "collections.cl_selected": "Таңдалды: {count}",
@@ -301,10 +295,6 @@
   "collections.iv_delete_version_text": "«{title}» {site} көрсетілмейтін болады. Басқа тілдердегі нұсқалар қалады. Мұны қайтару мүмкін емес.",
   "collections.iv_delete_version_text_page": "«{title}» өз бетімен бірге {site} көрсетілмейтін болады. Басқа тілдердегі нұсқалар қалады. Мұны қайтару мүмкін емес.",
   "collections.iv_version_deleted": "{version} жойылды",
-  "collections.iv_accepted": "Түзету қабылданды және жобада тұр: сайтқа жарияланғаннан кейін шығады",
-  "collections.iv_accept_failed": "Түзетуді қабылдау мүмкін болмады",
-  "collections.iv_rejected": "Түзету қабылданбады",
-  "collections.iv_reject_failed": "Қабылдамау мүмкін болмады",
   "collections.iv_not_found": "Мұндай жазба жоқ",
   "collections.iv_not_loaded": "Жазба жүктелмеді",
   "collections.iv_deleted_hint": "Мүмкін, ол жойылған. Тізімге оралыңыз.",
@@ -326,5 +316,7 @@
   "collections.first_publication": "алғашқы жариялау",
   "collections.unsaved_first": "Әрекет орындалмады: түзетулер сақталмады ({reason})",
   "collections.leave_unsaved_text": "Соңғы түзетулер сақталмады ({reason}). Қазір шықсаңыз, олар жоғалады.",
-  "collections.wait_busy": "Күте тұрыңыз: жаңарту жүріп жатыр. Әрекет орындалмады"
+  "collections.wait_busy": "Күте тұрыңыз: жаңарту жүріп жатыр. Әрекет орындалмады",
+  "collections.cl_incomplete": "{total} жазбаның {loaded} көрсетілді. Қалғанын көру үшін іздеуді нақтылаңыз.",
+  "collections.cl_tree_incomplete": "Құрылым толық жүктелмеді. Ата-анамен байланысты сақтау үшін жылжыту өшірілді. Тізімді жаңартыңыз немесе іздеуді нақтылаңыз."
 }

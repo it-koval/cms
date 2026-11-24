@@ -13,11 +13,11 @@ use Monolog\Processor\ProcessorInterface;
  * An exception in the context (`'exception' => $e`; HttpClient puts the request URL into its message) that carries the token, or whose previous exception does, is replaced
  * with a ScrubbedThrowable: the class, message, place and previous exceptions stay, the secret and the stack trace do not.
  * Registered by the bundle when Monolog is installed (config/services.php), with the tag `monolog.processor`.
+ *
+ * @internal
  */
 final class SecretScrubProcessor implements ProcessorInterface
 {
-    private const PATTERN = '~bot\d+:[A-Za-z0-9_-]+~';
-
     public function __invoke(LogRecord $record): LogRecord
     {
         return $record->with(
@@ -29,7 +29,7 @@ final class SecretScrubProcessor implements ProcessorInterface
 
     private function scrubString(string $s): string
     {
-        return \preg_replace(self::PATTERN, 'bot***', $s) ?? $s;
+        return SecretScrubber::scrub($s);
     }
 
     /**
@@ -74,7 +74,7 @@ final class SecretScrubProcessor implements ProcessorInterface
     private function carriesSecret(\Throwable $e): bool
     {
         for ($i = 0; null !== $e && $i < 20; $e = $e->getPrevious(), ++$i) {
-            if (1 === \preg_match(self::PATTERN, $e->getMessage()) || 1 === \preg_match(self::PATTERN, (string) $e)) {
+            if ($e->getMessage() !== SecretScrubber::scrub($e->getMessage()) || (string) $e !== SecretScrubber::scrub((string) $e)) {
                 return true;
             }
         }

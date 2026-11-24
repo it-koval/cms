@@ -32,6 +32,7 @@ final class MediaSearchTool extends AbstractMcpTool
         return ['readOnly' => true, 'destructive' => false, 'idempotent' => true];
     }
 
+    /** @return array<string, mixed> */
     public function inputSchema(): array
     {
         return self::schema([
@@ -39,6 +40,7 @@ final class MediaSearchTool extends AbstractMcpTool
             'type' => ['type' => 'string', 'enum' => ['img', 'pdf'], 'description' => 'Only photos or only PDFs.'],
             'limit' => self::limitProperty(30, 100),
             'offset' => self::offsetProperty(),
+            'cursor' => self::string('Use nextCursor or previousCursor from the previous result with the same filters. Takes precedence over offset.', 64),
         ]);
     }
 
@@ -50,12 +52,13 @@ final class MediaSearchTool extends AbstractMcpTool
     public function call(array $args, McpContext $context): array
     {
         $context->require('media', 'view');
-        $rows = [];
-        foreach ($this->media->list((string) ($args['q'] ?? ''), (string) ($args['type'] ?? '')) as $m) {
-            $rows[] = self::row($this->media->present($m));
-        }
+        $offset = self::offset($args);
+        $limit = self::limit($args, 30, 100);
+        $page = $this->media->page((string) ($args['q'] ?? ''), (string) ($args['type'] ?? ''), '', $offset, $limit, (string) ($args['cursor'] ?? ''));
+        $rows = \array_map(fn ($m): array => self::row($this->media->present($m)), $page['items']);
 
-        return Format::page($rows, self::offset($args), self::limit($args, 30, 100));
+        return ['hasMore' => null !== $page['nextCursor'], 'nextCursor' => $page['nextCursor'], 'previousCursor' => $page['previousCursor']]
+            + Format::pageResult($rows, $page['total'], $offset, $limit);
     }
 
     /**

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Itk\Cms\Tests\Core;
 
+use Doctrine\DBAL\Connection;
 use Doctrine\Persistence\ManagerRegistry;
 use Itk\Cms\Command\MakeCollectionCommand;
 use Itk\Cms\Command\MakeFieldCommand;
@@ -11,7 +12,10 @@ use Itk\Cms\Command\MakePluginCommand;
 use Itk\Cms\Command\MakeSectionCommand;
 use Itk\Cms\Command\MakeSettingsCommand;
 use Itk\Cms\Command\MakeTemplateCommand;
+use Itk\Cms\Extension\ItkExtensionInterface;
 use Itk\Cms\Extension\Registry;
+use Itk\Cms\Field\AbstractField;
+use Itk\Cms\Field\FieldInterface;
 use Itk\Cms\Generator\CollectionClassBuilder;
 use Itk\Cms\Generator\CollectionSpecReader;
 use Itk\Cms\Generator\FileWriter;
@@ -20,19 +24,27 @@ use Itk\Cms\Generator\Naming;
 use Itk\Cms\Generator\ProjectLayout;
 use Itk\Cms\Generator\SkeletonRenderer;
 use Itk\Cms\Generator\TableReader;
+use Itk\Cms\I18n\AdminLocale;
+use Itk\Cms\I18n\I18n;
+use Itk\Cms\Repository\CollectionItemRepository;
+use Itk\Cms\Resource\CollectionResource;
 use Itk\Cms\Resource\ResourceRegistry;
+use Itk\Cms\Resource\SectionResource;
+use Itk\Cms\Resource\SettingsResource;
+use Itk\Cms\Resource\TemplateResource;
 use Itk\Cms\Tests\Core\Fixture\TripsCollection;
 use PHPUnit\Framework\Attributes\Test;
-use PHPUnit\Framework\TestCase;
-use Psr\Container\ContainerInterface;
+use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
+use Symfony\Component\Console\Application;
 use Symfony\Component\Console\Command\Command;
+use Symfony\Component\Console\Tester\ApplicationTester;
 use Symfony\Component\Console\Tester\CommandTester;
 use Twig\Environment;
 use Twig\Loader\ArrayLoader;
 use Twig\Source;
 
 /** Генераторы itk:make:*: класс (и заготовка Twig / JS) в src/Itk/…, без перезаписи без --force; пробный запуск ничего не пишет. */
-final class GeneratorsTest extends TestCase
+final class GeneratorsTest extends KernelTestCase
 {
     private string $project;
     private MakeContext $make;
@@ -54,6 +66,7 @@ final class GeneratorsTest extends TestCase
     protected function tearDown(): void
     {
         $this->remove($this->project);
+        parent::tearDown();
     }
 
     private function remove(string $path): void
@@ -68,22 +81,9 @@ final class GeneratorsTest extends TestCase
         }
     }
 
-    private function collectionCommand(): MakeCollectionCommand
+    private function collectionCommand(?ManagerRegistry $doctrine = null): MakeCollectionCommand
     {
-        $skeleton = new SkeletonRenderer();
-        $none = new class implements ContainerInterface {
-            public function get(string $id): never
-            {
-                throw new \LogicException('not needed');
-            }
-
-            public function has(string $id): bool
-            {
-                return false;
-            }
-        };
-
-        return new MakeCollectionCommand($this->make, new CollectionClassBuilder($skeleton), new CollectionSpecReader(), new TableReader(), $this->createStub(ManagerRegistry::class), $none);
+        return new MakeCollectionCommand($this->make, new CollectionClassBuilder(new SkeletonRenderer()), new CollectionSpecReader(), new TableReader(), $doctrine ?? $this->createStub(ManagerRegistry::class));
     }
 
     /**
@@ -100,9 +100,24 @@ final class GeneratorsTest extends TestCase
     private function code(string $path): string
     {
         $code = (string) \file_get_contents($this->project . '/' . $path);
-        \token_get_all($code, \TOKEN_PARSE); // a ParseError fails the test
+        self::assertNotEmpty(\token_get_all($code, \TOKEN_PARSE));
 
         return $code;
+    }
+
+    /**
+     * @template T of object
+     *
+     * @param class-string<T> $base
+     *
+     * @return class-string<T>
+     */
+    private function generatedClass(string $path, string $name, string $base): string
+    {
+        require_once $this->project . '/' . $path;
+        self::assertTrue(\is_a($name, $base, true), $name . ' must extend or implement ' . $base);
+
+        return $name;
     }
 
     #[Test]
@@ -149,14 +164,14 @@ final class GeneratorsTest extends TestCase
 
         $code = $this->code('src/Itk/Template/TestGenTplTemplate.php');
         self::assertStringContainsString('namespace Gen\\Itk\\Template;', $code);
-        require_once $this->project . '/src/Itk/Template/TestGenTplTemplate.php';
-        $r = new \Gen\Itk\Template\TestGenTplTemplate();
+        $class = $this->generatedClass('src/Itk/Template/TestGenTplTemplate.php', 'Gen\\Itk\\Template\\TestGenTplTemplate', TemplateResource::class);
+        $r = new $class();
         self::assertSame('test_gen_tpl', $r->key());
         self::assertSame('Тестовый шаблон', $r->title());
         self::assertSame([], [...$r->fields()]);
 
         $twig = (string) \file_get_contents($this->project . '/templates/pages/test_gen_tpl.html.twig');
-        self::assertStringContainsString('{{ render_sections(page) }}', $twig);
+        self::assertStringContainsString('{{ itk_render_sections(page) }}', $twig);
         self::assertStringContainsString('“test_gen_tpl”', $twig);
         (new Environment(new ArrayLoader()))->tokenize(new Source($twig, 'test_gen_tpl'));
     }
@@ -167,8 +182,8 @@ final class GeneratorsTest extends TestCase
         $t = $this->exec(new MakeSectionCommand($this->make), ['key' => 'test_gen_sec', 'name' => 'Секция «Тест»', '--group' => 'Формы']);
         self::assertSame(Command::SUCCESS, $t->getStatusCode());
         $this->code('src/Itk/Section/TestGenSecSection.php');
-        require_once $this->project . '/src/Itk/Section/TestGenSecSection.php';
-        $r = new \Gen\Itk\Section\TestGenSecSection();
+        $class = $this->generatedClass('src/Itk/Section/TestGenSecSection.php', 'Gen\\Itk\\Section\\TestGenSecSection', SectionResource::class);
+        $r = new $class();
         self::assertSame(['test_gen_sec', 'Секция «Тест»', 'Формы'], [$r->key(), $r->title(), $r->group()]);
         self::assertSame(['headline', 'text', 'image'], \array_map(static fn ($f): string => $f->key(), [...$r->fields()]));
         $twig = (string) \file_get_contents($this->project . '/templates/sections/test_gen_sec.html.twig');
@@ -182,9 +197,9 @@ final class GeneratorsTest extends TestCase
         $t = $this->exec(new MakeSettingsCommand($this->make), ['key' => 'test_gen_set', 'name' => 'Тест', '--dir' => 'src/Itk/Settings']);
         self::assertSame(Command::SUCCESS, $t->getStatusCode());
         $code = $this->code('src/Itk/Settings/TestGenSetSettings.php');
-        self::assertStringContainsString("settings('testGenSetText')", $code);
-        require_once $this->project . '/src/Itk/Settings/TestGenSetSettings.php';
-        $r = new \Gen\Itk\Settings\TestGenSetSettings();
+        self::assertStringContainsString("itk_settings('testGenSetText')", $code);
+        $class = $this->generatedClass('src/Itk/Settings/TestGenSetSettings.php', 'Gen\\Itk\\Settings\\TestGenSetSettings', SettingsResource::class);
+        $r = new $class();
         self::assertSame(['testGenSetText'], \array_map(static fn ($f): string => $f->key(), [...$r->fields()]));
     }
 
@@ -194,8 +209,8 @@ final class GeneratorsTest extends TestCase
         $t = $this->exec(new MakeFieldCommand($this->make), ['key' => 'test_gen_fld', 'name' => 'Рейтинг']);
         self::assertSame(Command::SUCCESS, $t->getStatusCode());
         $this->code('src/Itk/Field/TestGenFldField.php');
-        require_once $this->project . '/src/Itk/Field/TestGenFldField.php';
-        $f = \Gen\Itk\Field\TestGenFldField::make('Оценка', 'rate')->required();
+        $class = $this->generatedClass('src/Itk/Field/TestGenFldField.php', 'Gen\\Itk\\Field\\TestGenFldField', AbstractField::class);
+        $f = $class::make('Оценка', 'rate')->required();
         self::assertSame(['k' => 'rate', 't' => 'test_gen_fld', 'label' => 'Оценка', 'req' => true], \array_intersect_key($f->toArray(), \array_flip(['k', 't', 'label', 'req'])));
 
         $js = (string) \file_get_contents($this->project . '/public/itk/fields/test_gen_fld.js');
@@ -210,9 +225,9 @@ final class GeneratorsTest extends TestCase
         $t = $this->exec(new MakePluginCommand($this->make), ['key' => 'test_gen_plg', 'name' => 'Отчёты «для своих»']);
         self::assertSame(Command::SUCCESS, $t->getStatusCode());
         $this->code('src/Itk/Plugin/TestGenPlgExtension.php');
-        require_once $this->project . '/src/Itk/Plugin/TestGenPlgExtension.php';
+        $class = $this->generatedClass('src/Itk/Plugin/TestGenPlgExtension.php', 'Gen\\Itk\\Plugin\\TestGenPlgExtension', ItkExtensionInterface::class);
 
-        $registry = new Registry([new \Gen\Itk\Plugin\TestGenPlgExtension()]);
+        $registry = new Registry([new $class()]);
         self::assertSame(['/itk/plugins/test_gen_plg/admin.js'], $registry->adminAssetList()['js']);
         self::assertCount(1, $registry->menuItems());
 
@@ -272,7 +287,7 @@ final class GeneratorsTest extends TestCase
         $make = new MakeContext(new ProjectLayout($this->project), new SkeletonRenderer(), new FileWriter(), $registry, $this->project . '/config/itk/schema.php');
         \file_put_contents($this->project . '/config/itk/schema.php', "<?php\nreturn static function (\$s): void {\n    \$s->section('old_one', 'Старая')->fields();\n};\n");
 
-        $t = $this->exec(new MakeCollectionCommand($make, new CollectionClassBuilder(new SkeletonRenderer()), new CollectionSpecReader(), new TableReader(), $this->createStub(ManagerRegistry::class), $this->createStub(ContainerInterface::class)), ['key' => 'test_trips']);
+        $t = $this->exec(new MakeCollectionCommand($make, new CollectionClassBuilder(new SkeletonRenderer()), new CollectionSpecReader(), new TableReader(), $this->createStub(ManagerRegistry::class)), ['key' => 'test_trips']);
         self::assertSame(Command::FAILURE, $t->getStatusCode());
         self::assertStringContainsString(TripsCollection::class, $t->getDisplay());
 
@@ -307,8 +322,8 @@ final class GeneratorsTest extends TestCase
         self::assertSame(Command::SUCCESS, $t->getStatusCode());
         $code = $this->code('src/Itk/Collection/TestGenPlainCollection.php');
         self::assertStringContainsString("#[Group('Каталог')]", $code);
-        require_once $this->project . '/src/Itk/Collection/TestGenPlainCollection.php';
-        $r = new \Gen\Itk\Collection\TestGenPlainCollection();
+        $class = $this->generatedClass('src/Itk/Collection/TestGenPlainCollection.php', 'Gen\\Itk\\Collection\\TestGenPlainCollection', CollectionResource::class);
+        $r = new $class();
         self::assertSame(['name', 'photo'], \array_map(static fn ($f): string => $f->key(), [...$r->fields()]));
         self::assertSame(['box', 'name'], [$r->icon(), $r->titleField()]);
         self::assertStringContainsString("'Фото'", $code, 'the label of the photo comes from the catalogue (model.label_photo), in the language of the person who runs the command');
@@ -340,13 +355,27 @@ final class GeneratorsTest extends TestCase
         self::assertStringContainsString("yield Date::make('Начало', 'start')->sortable()->filterable();", $code);
         self::assertStringContainsString("yield DateTime::make('Время', 'at')->sortable()->filterable();", $code);
 
-        require_once $this->project . '/src/Itk/Collection/TestGenJsonCollection.php';
-        $r = new \Gen\Itk\Collection\TestGenJsonCollection();
+        $class = $this->generatedClass('src/Itk/Collection/TestGenJsonCollection.php', 'Gen\\Itk\\Collection\\TestGenJsonCollection', CollectionResource::class);
+        $r = new $class();
         self::assertSame(['Поездки из файла', 'поездка', 'map', 'city'], [$r->title(), $r->singular(), $r->icon(), $r->titleField()]);
         self::assertSame(
             ['text', 'textarea', 'number', 'toggle', 'select', 'text', 'text', 'image'],
             \array_map(static fn ($f): string => $f->toArray()['t'], [...$r->fields()]),
         );
+    }
+
+    #[Test]
+    public function reservedCollectionKeysAreRejectedBeforeWritingAClass(): void
+    {
+        foreach (['status', 'locales', 'position'] as $key) {
+            \file_put_contents($this->project . '/reserved.json', \json_encode([
+                'key' => 'test_gen_reserved', 'fields' => [['key' => $key, 'type' => 'text']],
+            ], \JSON_THROW_ON_ERROR));
+            $result = $this->exec($this->collectionCommand(), ['--from' => 'reserved.json']);
+            self::assertSame(Command::INVALID, $result->getStatusCode(), $key);
+            self::assertStringContainsString($key, $result->getDisplay());
+            self::assertDirectoryDoesNotExist($this->project . '/src');
+        }
     }
 
     #[Test]
@@ -367,11 +396,86 @@ final class GeneratorsTest extends TestCase
     }
 
     #[Test]
-    public function importNeedsASourceOfRows(): void
+    public function removedCollectionOptionsFailBeforeWritingAClass(): void
     {
-        $t = $this->exec($this->collectionCommand(), ['key' => 'test_gen_norows', '--import' => true]);
-        self::assertSame(Command::INVALID, $t->getStatusCode());
-        self::assertStringContainsString('--import работает с таблицей', $t->getDisplay());
+        $application = new Application();
+        $application->addCommand($this->collectionCommand());
+        $application->setAutoExit(false);
+        $t = new ApplicationTester($application);
+        foreach (['--import', '--publish'] as $option) {
+            self::assertSame(Command::FAILURE, $t->run(['command' => 'itk:make:collection', '--from' => 'table:test_gen_src', $option => true], ['interactive' => false]));
+            self::assertStringContainsString(\sprintf('The "%s" option does not exist.', $option), $t->getDisplay());
+            self::assertDirectoryDoesNotExist($this->project . '/src');
+        }
+    }
+
+    #[Test]
+    public function aCollectionFromJsonIgnoresRowsAndReportsThemOnlyWhenNonEmpty(): void
+    {
+        self::bootKernel();
+        $container = self::getContainer();
+        $items = $container->get(CollectionItemRepository::class);
+        $locale = $container->get(AdminLocale::class);
+        $command = $this->collectionCommand($container->get('doctrine'));
+        $key = 'test_gen_json_rows';
+        $path = 'src/Itk/Collection/TestGenJsonRowsCollection.php';
+        $message = 'The "rows" field is ignored: the command no longer imports records. Move the data with your own script.';
+        $spec = ['key' => $key, 'fields' => [['key' => 'city', 'type' => 'text']]];
+        $db = $container->get(Connection::class);
+        $db->beginTransaction();
+        try {
+            \file_put_contents($this->project . '/rows.json', \json_encode($spec + ['rows' => [['id' => 1, 'city' => 'Omitted row']]], \JSON_THROW_ON_ERROR));
+            $t = $locale->run('en', fn (): CommandTester => $this->exec($command, ['--from' => 'rows.json']));
+            self::assertSame(Command::SUCCESS, $t->getStatusCode(), $t->getDisplay());
+            self::assertSame(1, \substr_count($t->getDisplay(), $message), $t->getDisplay());
+            self::assertStringContainsString('final class TestGenJsonRowsCollection', $this->code($path));
+            self::assertSame([], $items->findByCollection($key));
+
+            \file_put_contents($this->project . '/rows.json', \json_encode($spec + ['rows' => []], \JSON_THROW_ON_ERROR));
+            $t = $locale->run('en', fn (): CommandTester => $this->exec($command, ['--from' => 'rows.json', '--force' => true]));
+            self::assertSame(Command::SUCCESS, $t->getStatusCode(), $t->getDisplay());
+            self::assertStringNotContainsString($message, $t->getDisplay());
+        } finally {
+            $db->rollBack();
+        }
+    }
+
+    #[Test]
+    public function aCollectionComesFromTheColumnsOfATable(): void
+    {
+        self::bootKernel();
+        $container = self::getContainer();
+        $db = $container->get(Connection::class);
+        $table = 'test_gen_src_' . \bin2hex(\random_bytes(6));
+        $db->beginTransaction();
+        try {
+            $db->executeStatement('CREATE TABLE ' . $table . ' (id INTEGER PRIMARY KEY, city VARCHAR(40) NOT NULL, seats INTEGER DEFAULT 0, starts_at TIMESTAMP, photo BYTEA)');
+            $db->executeStatement('INSERT INTO ' . $table . " (id, city) VALUES (1, 'Omitted row')");
+            $command = $this->collectionCommand($container->get('doctrine'));
+            $args = ['key' => 'test_gen_table', '--from' => 'table:' . $table];
+            $path = 'src/Itk/Collection/TestGenTableCollection.php';
+
+            $t = $this->exec($command, $args + ['--dry-run' => true]);
+            self::assertSame(Command::SUCCESS, $t->getStatusCode(), $t->getDisplay());
+            self::assertStringContainsString('final class TestGenTableCollection', $t->getDisplay());
+            self::assertFileDoesNotExist($this->project . '/' . $path);
+
+            $t = $this->exec($command, $args);
+            self::assertSame(Command::SUCCESS, $t->getStatusCode(), $t->getDisplay());
+            self::assertStringContainsString('photo', $t->getDisplay());
+            $code = $this->code($path);
+            $class = $this->generatedClass($path, 'Gen\\Itk\\Collection\\TestGenTableCollection', CollectionResource::class);
+            self::assertSame(['city', 'seats', 'starts_at'], \array_map(static fn (FieldInterface $field): string => $field->key(), [...(new $class())->fields()]));
+            self::assertSame([], $container->get(CollectionItemRepository::class)->findByCollection('test_gen_table'));
+
+            $t = $this->exec($command, $args);
+            self::assertSame(Command::FAILURE, $t->getStatusCode());
+            $display = (string) \preg_replace('/\s+/', ' ', $t->getDisplay());
+            self::assertStringContainsString(I18n::t('ops.make_file_conflict'), $display);
+            self::assertSame($code, $this->code($path));
+        } finally {
+            $db->rollBack();
+        }
     }
 
     #[Test]
@@ -380,5 +484,32 @@ final class GeneratorsTest extends TestCase
         $t = $this->exec($this->collectionCommand(), ['key' => 'test_gen_map', '--from' => 'table:test_nothing', '--map' => 'city']);
         self::assertSame(Command::INVALID, $t->getStatusCode());
         self::assertStringContainsString('--map', $t->getDisplay());
+    }
+
+    #[Test]
+    public function builtinFieldTypesCannotBeReplacedByTheGenerator(): void
+    {
+        foreach (['image', 'repeater', 'relation', 'readonly', 'text'] as $key) {
+            $t = $this->exec(new MakeFieldCommand($this->make), ['key' => $key]);
+            self::assertSame(Command::FAILURE, $t->getStatusCode(), $t->getDisplay());
+        }
+        self::assertDirectoryDoesNotExist($this->project . '/src');
+        self::assertDirectoryDoesNotExist($this->project . '/public');
+    }
+
+    #[Test]
+    public function specFieldsUseTheSchemasKeyRuleAndRejectDuplicates(): void
+    {
+        foreach (['bad.key', 'space key', ''] as $bad) {
+            \file_put_contents($this->project . '/keys.json', (string) \json_encode(['key' => 'f2_keys', 'fields' => [['key' => $bad]]]));
+            self::assertSame(Command::INVALID, $this->exec($this->collectionCommand(), ['--from' => 'keys.json'])->getStatusCode());
+            self::assertDirectoryDoesNotExist($this->project . '/src');
+        }
+        \file_put_contents($this->project . '/keys.json', (string) \json_encode(['key' => 'f2_keys', 'fields' => [['key' => 'name'], ['key' => 'name']]]));
+        self::assertSame(Command::INVALID, $this->exec($this->collectionCommand(), ['--from' => 'keys.json'])->getStatusCode());
+        self::assertDirectoryDoesNotExist($this->project . '/src');
+        \file_put_contents($this->project . '/keys.json', (string) \json_encode(['key' => 'f2_keys', 'fields' => [['key' => '1-name'], ['key' => 'camelCase']]]));
+        $t = $this->exec($this->collectionCommand(), ['--from' => 'keys.json']);
+        self::assertSame(Command::SUCCESS, $t->getStatusCode(), $t->getDisplay());
     }
 }

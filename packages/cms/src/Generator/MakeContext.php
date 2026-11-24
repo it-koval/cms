@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Itk\Cms\Generator;
 
 use Itk\Cms\Resource\CollectionResource;
-use Itk\Cms\Resource\ResourceInterface;
 use Itk\Cms\Resource\ResourceRegistry;
 use Itk\Cms\Resource\SectionResource;
 use Itk\Cms\Resource\SettingsResource;
@@ -36,19 +35,16 @@ final class MakeContext
     ) {
     }
 
-    /** Makes a class known to the schema in this run (the container does not know a file that was written a second ago). */
-    public function addResource(ResourceInterface $resource): void
-    {
-        $this->resources->add($resource);
-    }
-
     /**
      * Who already uses the key: a class (other than $exceptClass) or config/itk/schema.php; null when it is free.
      *
-     * @param 'collection'|'template'|'section'|'settings' $kind
+     * @param 'collection'|'template'|'section'|'settings'|'field'|'plugin' $kind
      */
     public function keyOwner(string $kind, string $key, string $exceptClass): ?string
     {
+        if ('field' === $kind && \in_array($key, [...\array_keys(FieldSpec::TYPES), 'repeater', 'relation', 'readonly', 'note'], true)) {
+            return 'Itk\\Cms\\Field';
+        }
         $type = self::RESOURCES[$kind] ?? null;
         if (null === $type) {
             return null;

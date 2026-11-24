@@ -7,6 +7,7 @@ namespace Itk\Cms\Security;
 use Itk\Cms\Entity\User;
 use Itk\Cms\I18n\I18n;
 use Symfony\Bundle\SecurityBundle\Security;
+use Symfony\Component\HttpFoundation\RequestStack;
 use Symfony\Component\Security\Core\Exception\AccessDeniedException;
 
 /** Shortcut for controllers of the admin API: Access::require('pages', 'publish', $template). */
@@ -15,6 +16,7 @@ final class Access
     public function __construct(
         private readonly Security $security,
         private readonly RoleResolver $resolver,
+        private readonly ?RequestStack $requests = null,
     ) {
     }
 
@@ -25,12 +27,16 @@ final class Access
         return $u instanceof User ? $u : null;
     }
 
-    /** The signed-in person with his rights, or the system viewer when nobody is signed in (console, queue). */
+    /** The signed-in person with his rights, an anonymous HTTP viewer, or the trusted system when no request is running. */
     public function viewer(): Viewer
     {
         $u = $this->user();
 
-        return null === $u ? Viewer::system() : Viewer::of($u, $this->resolver->rightsOf($u));
+        if (null === $u) {
+            return null === $this->requests?->getMainRequest() ? Viewer::system() : Viewer::anonymous();
+        }
+
+        return Viewer::of($u, $this->resolver->rightsOf($u));
     }
 
     public function can(string $area, string $action = 'view', ?string $template = null): bool

@@ -8,7 +8,8 @@ use Itk\Cms\Security\Viewer;
 
 /**
  * One field of a section, a template, a collection, a settings group or a site form: what the core reads to validate, store,
- * compare and export it. Every field is an Itk\Cms\Field\AbstractField (Text::make('Заголовок', 'title')->required()).
+ * compare and export it. Core fields extend AbstractField (Text::make('Заголовок', 'title')->required()).
+ * A direct custom implementation may also implement PublicFieldInterface to expose supported text to the public knowledge base.
  */
 interface FieldInterface
 {

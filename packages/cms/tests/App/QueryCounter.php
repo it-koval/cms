@@ -18,7 +18,11 @@ final class QueryCounter implements Middleware
     /** @var list<string> */
     public static array $queries = [];
 
-    /** Runs $work and returns the SQL of every query it made. @return list<string> */
+    /**
+     * Runs $work and returns the SQL of every query it made.
+     *
+     * @return list<string>
+     */
     public static function during(\Closure $work): array
     {
         $before = \count(self::$queries);

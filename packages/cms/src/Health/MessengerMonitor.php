@@ -7,9 +7,12 @@ namespace Itk\Cms\Health;
 use Itk\Cms\Content\ContentException;
 use Itk\Cms\Entity\Request;
 use Itk\Cms\I18n\I18n;
+use Itk\Cms\Mail\RequestMailCheckpoint;
 use Itk\Cms\Mail\SendMail;
 use Itk\Cms\Media\GenerateImageVariants;
+use Itk\Cms\Request\RequestDeliverer;
 use Itk\Cms\Request\SendRequestNotification;
+use Itk\Cms\Security\RequestPasswordLink;
 use Symfony\Component\Messenger\Envelope;
 use Symfony\Component\Messenger\Stamp\BusNameStamp;
 use Symfony\Component\Messenger\Stamp\ErrorDetailsStamp;
@@ -36,15 +39,18 @@ final class MessengerMonitor
     private bool $failedResolved = false;
     private ?ReceiverInterface $failedReceiver = null;
     private ?string $failedProblem = null;
+    private ?RequestDeliverer $resolvedDeliverer = null;
 
     /**
      * @param ServiceProviderInterface<object> $receivers messenger.receiver_locator: every transport by its name (and by service id)
      * @param (\Closure(): ?ReceiverInterface)|ReceiverInterface|null $failed the failure transport (messenger.failure_transports.default; a closure builds it on first use, so a transport
      *                                                                        that cannot be built does not break the screen), null when the site has none
+     * @param (\Closure(): RequestDeliverer)|null $requestDeliverer
      */
     public function __construct(
         private readonly ServiceProviderInterface $receivers,
         private readonly \Closure|ReceiverInterface|null $failed = null,
+        private readonly ?\Closure $requestDeliverer = null,
     ) {
     }
 
@@ -99,10 +105,44 @@ final class MessengerMonitor
         return ['available' => true, 'total' => \max($total, \count($items)), 'items' => $items];
     }
 
+    /** Find a specific envelope before suggesting a failure-transport retry. */
+    public function failedMailRetry(string $requestId, string $recipient): ?string
+    {
+        $failed = $this->failedTransport();
+        if (!$failed instanceof ListableReceiverInterface) {
+            return null;
+        }
+        $key = RequestMailCheckpoint::recipientKey($requestId, $recipient);
+        try {
+            foreach ($failed->all(self::LIMIT) as $envelope) {
+                $mail = $envelope->getMessage();
+                $id = $envelope->last(TransportMessageIdStamp::class)?->getId();
+                if (!$mail instanceof SendMail || $key !== RequestMailCheckpoint::key($mail) || (!\is_string($id) && !\is_int($id))) {
+                    continue;
+                }
+                foreach ($this->transportNames() as $name) {
+                    try {
+                        if ($failed === $this->receivers->get($name)) {
+                            return \sprintf('messenger:failed:retry --transport=%s %s', \escapeshellarg($name), \escapeshellarg((string) $id));
+                        }
+                    } catch (\Throwable) {
+                    }
+                }
+            }
+        } catch (\Throwable) {
+        }
+
+        return null;
+    }
+
     /** Puts a failed message back into the queue it came from; a worker takes it from there as a new one (the retry count starts over). */
     public function retry(string $id): void
     {
         $envelope = $this->envelope($id);
+        $message = $envelope->getMessage();
+        if (($message instanceof SendMail && \in_array($message->kind, [SendMail::RESET, SendMail::INVITE], true)) || ($message instanceof RequestPasswordLink && !$message->trusted)) {
+            throw ContentException::invalid(I18n::t('ops.queue_legacy_password_no_retry'));
+        }
         $from = $envelope->last(SentToFailureTransportStamp::class)?->getOriginalReceiverName();
         try {
             $target = null !== $from && $this->receivers->has($from) ? $this->receivers->get($from) : null;
@@ -112,7 +152,20 @@ final class MessengerMonitor
         if (!$target instanceof SenderInterface) {
             throw ContentException::invalid(I18n::t('ops.queue_no_origin'));
         }
-        $target->send(new Envelope($envelope->getMessage(), $envelope->all(BusNameStamp::class)));
+        $deliverer = $message instanceof SendRequestNotification ? $this->deliverer() : null;
+        if ($message instanceof SendRequestNotification && false === $deliverer?->resumeJob($message)) {
+            $this->failedTransport()?->ack($envelope);
+
+            return;
+        }
+        try {
+            $target->send(new Envelope($message, $envelope->all(BusNameStamp::class)));
+        } catch (\Throwable $e) {
+            if ($message instanceof SendRequestNotification) {
+                $deliverer?->queueFailed($message->requestId, $message->channel, $message->jobId ?? 'legacy', I18n::t('http.request_queue_failed'));
+            }
+            throw $e;
+        }
         $this->failedTransport()?->ack($envelope);
     }
 
@@ -125,8 +178,16 @@ final class MessengerMonitor
     /** @return list<string> */
     private function transportNames(): array
     {
-        // the locator knows each transport twice: by its name and by its service id («messenger.transport.async»)
-        return \array_values(\array_filter(\array_keys($this->receivers->getProvidedServices()), static fn (string|int $k): bool => !\str_contains((string) $k, '.')));
+        return TransportNames::of($this->receivers);
+    }
+
+    private function deliverer(): ?RequestDeliverer
+    {
+        if (null === $this->requestDeliverer) {
+            return null;
+        }
+
+        return $this->resolvedDeliverer ??= ($this->requestDeliverer)();
     }
 
     /** The failure transport, built on the first call; null when the site has none or it cannot be built (the reason is in $failedProblem). */
@@ -205,7 +266,7 @@ final class MessengerMonitor
     /** Error texts are shown on the screen: the bot token of a Telegram address never goes there, and a long trace is cut. */
     public static function scrub(string $text): string
     {
-        $text = \preg_replace('~bot\d+:[A-Za-z0-9_-]+~', 'bot***', $text) ?? $text;
+        $text = \Itk\Cms\Logging\SecretScrubber::scrub($text);
 
         return \mb_strlen($text) > 400 ? \mb_substr($text, 0, 400) . '…' : $text;
     }

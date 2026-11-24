@@ -1,5 +1,7 @@
 {
+  "editor.settings_leave_message": "Бет баптауларында сақталмаған өзгерістер бар.",
   "editor.preview_dialog": "Бетті алдын ала қарау",
+  "editor.preview_item_unavailable": "Алдын ала қараудағы элемент енді қолжетімсіз. Алдын ала қарауды жаңартыңыз.",
   "editor.preview_heading": "Алдын ала қарау · {title}",
   "editor.preview_draft_sections": {
     "other": "жоба, {count} секция"
@@ -14,8 +16,8 @@
   "editor.missing_copy_fields": "Үлгі өрістері, секциялар, мәтіндер, фотолар және іздеу жүйелеріне арналған сипаттама жобаға көшеді. Тек аудару ғана қалады.",
   "editor.missing_copy_fields_addr": "Үлгі өрістері, секциялар, мәтіндер, фотолар және іздеу жүйелеріне арналған сипаттама жобаға көшеді, мекенжайы {address} болады. Тек аудару ғана қалады.",
   "editor.missing_blank": "Бос беттен бастау",
-  "editor.missing_blank_fields": "Үлгі өрістері бос қалады, күндер мен фотолар сақталады. Мәтіндерді өзіңіз жазасыз.",
-  "editor.missing_blank_plain": "Бір ғана алғашқы экран. Қалған секциялар мен мәтіндерді өзіңіз қосасыз.",
+  "editor.missing_blank_fields": "Жобада үлгінің әдепкі мәндері болады.",
+  "editor.missing_blank_plain": "Жаңа жоба ашылады. Қажетті бөлімдер мен мәтіндерді қосыңыз.",
   "editor.missing_copied": "{ver} жасалды. Ол жобаларда тұр және сіз жариялағанша сайтта көрінбейді",
   "editor.missing_undo": "атауы мен мекенжайы",
   "editor.missing_blank_done_fields": "Бос {ver} жасалды. Үлгі өрістерін толтырыңыз: міндетті өрістерсіз бетті жариялау мүмкін емес",
@@ -91,13 +93,6 @@
   "editor.outline_legend_sel": "Өзіңіз өңдеп жатқан секция",
   "editor.form_hidden": "Секция жасырылған: келушілер оны көрмейді.",
   "editor.form_show": "Сайтта көрсету",
-  "editor.agent_offered": {
-    "other": "ЖИ-агент {count} түзету ұсынды"
-  },
-  "editor.agent_accept_all": "Барлығын қабылдау",
-  "editor.agent_note": "{note}. Сіз қабылдамайынша, сайтта да, жобада да ештеңе өзгермейді.",
-  "editor.agent_accept": "Қабылдау",
-  "editor.agent_reject": "Қабылдамау",
   "editor.revert_title": "Барлық түзетулерден бас тарту керек пе?",
   "editor.revert_title_multi": "Бұл беттегі {ver} барлық түзетулерінен бас тарту керек пе?",
   "editor.revert_msg": "Бет сайттағы қазіргі күйіне оралады. Ондағы жарияланбаған барлық түзетулер жойылады, оларды қайтару мүмкін емес.",
@@ -221,12 +216,6 @@
   "editor.pane_form": "Пішін",
   "editor.preview": "Алдын ала қарау",
   "editor.preview_full": "Толық экранда алдын ала қарау",
-  "editor.ai_offered_aria": {
-    "other": "ЖИ {count} түзету ұсынды"
-  },
-  "editor.ai_btn": {
-    "other": "ЖИ: {count} түзету"
-  },
   "editor.return_to_author": "Авторға қайтару",
   "editor.sent_already": "Нұсқа жіберілген: оны тексеріп, жариялайды",
   "editor.publish": "Жариялау",
@@ -254,11 +243,6 @@
   "editor.undo_restore": "қайтару",
   "editor.toast_hidden": "Секция жасырылды. Жариялауды ұмытпаңыз",
   "editor.toast_shown": "Секция қайтадан көрсетіледі",
-  "editor.toast_accepted": "Түзету қабылданды және жобада тұр: сайтқа жарияланғаннан кейін шығады",
-  "editor.toast_rejected": "Түзету қабылданбады",
-  "editor.toast_accepted_all": {
-    "other": "{count} түзету қабылданды. Олар жобада тұр: сайтқа жарияланғаннан кейін шығады"
-  },
   "editor.toast_published": "Жарияланды",
   "editor.toast_published_multi": "{ver} жарияланды",
   "editor.err_publish": "Жариялау мүмкін болмады",

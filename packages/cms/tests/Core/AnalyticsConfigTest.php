@@ -5,13 +5,55 @@ declare(strict_types=1);
 namespace Itk\Cms\Tests\Core;
 
 use Itk\Cms\Analytics\AnalyticsConfig;
+use Itk\Cms\I18n\I18n;
+use Itk\Cms\Tests\App\TestKernel;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Config\Definition\Exception\InvalidConfigurationException;
 
 /** Сырые значения настроек превращаются в типизированную конфигурацию; неверное значение даёт проблему, а не вывод. */
 final class AnalyticsConfigTest extends TestCase
 {
+    private ?TestKernel $kernel = null;
+
+    protected function tearDown(): void
+    {
+        if (null !== $this->kernel) {
+            $this->kernel->shutdown();
+            I18n::useLocale('ru');
+        }
+    }
+
+    /** @return iterable<string, array{array<string, mixed>, string}> */
+    public static function startModes(): iterable
+    {
+        yield 'default' => [[], 'auto'];
+        yield 'explicit auto' => [['analytics' => ['start' => 'auto']], 'auto'];
+        yield 'explicit manual' => [['analytics' => ['start' => 'manual']], 'manual'];
+    }
+
+    /** @param array<string, mixed> $options */
+    #[Test]
+    #[DataProvider('startModes')]
+    public function theContainerAcceptsBothStartModes(array $options, string $expected): void
+    {
+        $this->kernel = new TestKernel('test', true, itk: $options);
+        $this->kernel->boot();
+
+        self::assertSame($expected, $this->kernel->getContainer()->getParameter('itk_cms.analytics.start'));
+    }
+
+    #[Test]
+    public function anUnknownStartModeFailsTheContainerBuild(): void
+    {
+        $this->kernel = new TestKernel('test', true, itk: ['analytics' => ['start' => 'on-consent']]);
+
+        $this->expectException(InvalidConfigurationException::class);
+        $this->expectExceptionMessage('itk_cms.analytics.start');
+        $this->kernel->boot();
+    }
+
     #[Test]
     public function nothingSetIsEmptyAndHasNoProblems(): void
     {

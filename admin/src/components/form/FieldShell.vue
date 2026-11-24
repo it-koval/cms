@@ -15,6 +15,7 @@ const props = defineProps({
   helpId: { type: String, default: '' },
   help: { type: String, default: '' },
   error: { type: String, default: '' },
+  errorId: { type: String, default: '' },
   changed: { type: Boolean, default: false },
   top: { type: Boolean, default: false },
   budget: { type: Object, default: null },
@@ -39,6 +40,6 @@ const state = computed(() => (props.budget ? budgetState(props.budget.n, props.b
     </div>
     <slot />
     <div v-if="help" :id="helpId || undefined" class="help">{{ help }}</div>
-    <div v-if="error" class="err" role="alert"><Icon name="alert" size="s16" /><span>{{ error }}</span></div>
+    <div v-if="error" :id="errorId || undefined" class="err" role="alert"><Icon name="alert" size="s16" /><span>{{ error }}</span></div>
   </div>
 </template>

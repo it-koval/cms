@@ -4,11 +4,13 @@
 
 const field = (k, t, label, more = {}) => ({ k, t, label, ...more })
 const list = (show = null, sortable = false) => ({ show, sortable, width: null })
+export const LANGUAGES = { main: 'ru', list: [
+  { code: 'ru', name: 'Русский' }, { code: 'kk', name: 'Қазақша' }, { code: 'tr', name: 'Türkçe' }, { code: 'zh', name: '中文' }, { code: 'en', name: 'English' },
+] }
 
 const SCHEMA = {
   mainLocale: 'ru',
   design: { headlineMarks: [] },
-  features: { ai: false },
   sectionGroups: ['Первый экран', 'Содержимое'],
   sections: [
     {
@@ -107,8 +109,8 @@ const SCHEMA = {
       tabs: [{ key: 'main', label: 'Таблица', fields: [] }], empty: { title: 'Таблицы нет', text: '' }, views: [{ type: 'matrix' }], filters: [], searchKeys: [], metrics: [], actions: [], tree: false, defaultSort: '', perPage: 25,
     },
   ],
-  menuAreas: [],
-  settings: { groups: [] },
+  menuAreas: [{ key: 'header', name: 'Верхнее меню', depth: 2 }],
+  settings: { groups: [{ key: 'general', title: 'О компании', icon: 'settings', fields: [field('siteTitle', 'text', 'Название компании', { tr: true }), field('phone', 'text', 'Телефон')] }] },
   forms: [{ key: 'callback', title: 'Заказать звонок', fields: [] }, { key: 'order', title: 'Оформить заказ', fields: [
     { k: 'name', t: 'text', label: 'Имя' }, { k: 'phone', t: 'text', label: 'Телефон' }, { k: 'city', t: 'text', label: 'Город' },
     { k: 'comment', t: 'textarea', label: 'Комментарий клиента' }, { k: 'items', t: 'textarea', label: 'Состав заказа' },
@@ -206,7 +208,7 @@ const SETTINGS = {
 /** A fresh copy of everything the mock knows. `pages` keeps the order of the list; a page is { draft fields…, published: snapshot|null }. */
 export function makeDb() {
   const copy = (v) => JSON.parse(JSON.stringify(v))
-  return {
+  const db = {
     schema: copy(SCHEMA),
     user: copy(USER),
     prefs: {},
@@ -220,4 +222,54 @@ export function makeDb() {
       plans: { titleField: 'title', records: [{ id: 'main', status: 'published', updatedAt: T0, version: 'v1', awaiting: null, returned: null, ...copy(PLANS), published: copy({ ...PLANS }) }] },
     },
   }
+  // Ordinary, matrix and singleton records share identity, never the translated draft.
+  const company = { ...copy(SCHEMA.collections[0]), key: 'company', title: 'О компании', singular: 'профиль', singleton: 'company-profile', titleField: 'title', newLabel: '', description: 'Один профиль компании.', tabs: [{ key: 'main', label: 'Профиль', fields: [field('title', 'text', 'Название', { req: true }), field('text', 'textarea', 'Описание')] }] }
+  db.schema.collections.push(company)
+  db.schema.permissionAreas.push({ key: 'col:company', group: 'content', label: 'О компании', actions: ['view', 'edit', 'publish', 'delete'] }, { key: 'set:general', group: 'settings', label: 'О компании', actions: ['view', 'edit'] }, { key: 'set:menus', group: 'settings', label: 'Меню', actions: ['view', 'edit'] })
+  db.user.perms['col:company'] = ['view', 'edit', 'publish', 'delete']
+  db.user.perms['set:general'] = db.user.perms['set:menus'] = ['view', 'edit']
+  db.schema.nav[1].items.push({ key: 'col-company', label: 'О компании', to: '/collections/company/company-profile', icon: 'doc', order: 2 })
+  db.collections.company = { titleField: 'title', records: [{ ...record('company-profile', { title: 'Демо-компания', text: 'Наша команда' }), published: { title: 'Демо-компания', text: 'Наша команда' } }] }
+  const translated = (source, patch, state = 'published') => {
+    const { published, translations, ...draft } = copy(source)
+    const version = { ...draft, ...patch, status: state === 'draft' ? 'draft' : 'published', published: null, version: `v${++db.seq}` }
+    if (state !== 'draft') version.published = copy(version)
+    if (state === 'changed') version.title += ' — жаңартылды'
+    return version
+  }
+  db.pages.forEach((p) => { p.translations = {} })
+  db.collections.news.records.forEach((r) => { r.translations = {} })
+  db.pages[0].translations = {
+    kk: translated(db.pages[0], { title: 'Басты бет', url: '/kk' }),
+    tr: translated(db.pages[0], { title: 'Ana sayfa', url: '/tr' }),
+    zh: translated(db.pages[0], { title: '首页', url: '/zh' }),
+    en: translated(db.pages[0], { title: 'Home', url: '/en' }),
+  }
+  for (const [locale, words] of Object.entries({
+    kk: ['Демо-сайтқа қош келдіңіз', 'Өз тіліңізде сайтты басқарыңыз.', 'Толығырақ'],
+    tr: ['Demo siteye hoş geldiniz', 'Sitenizi kendi dilinizde yönetin.', 'Daha fazla bilgi'],
+    zh: ['欢迎访问演示网站', '使用您的语言管理网站。', '了解更多'],
+    en: ['Welcome to the demo site', 'Manage your site in your own language.', 'Learn more'],
+  })) {
+    const v = db.pages[0].translations[locale]
+    v.sections = [section(`s1-${locale}`, 'hero', { headline: words[0], text: `<p>${words[1]}</p>`, btn: words[2] })]
+    v.published.sections = copy(v.sections)
+  }
+  db.pages[1].translations.kk = translated(db.pages[1], { title: 'Компания туралы', url: '/kk/about' }, 'changed')
+  db.pages[2].translations.kk = translated(db.pages[2], { title: 'Байланыс', url: '/kk/contacts' }, 'draft')
+  const news = db.collections.news.records
+  news[0].translations = { kk: translated(news[0], { title: 'Жаңа кеңсеге көштік' }), tr: translated(news[0], { title: 'Yeni ofisimize taşındık' }), en: translated(news[0], { title: 'We moved to a new office' }) }
+  news[1].translations.kk = translated(news[1], { title: 'Жаңа топтама шықты' }, 'changed')
+  news[2].translations.kk = translated(news[2], { title: 'Күз қорытындылары' }, 'draft')
+  const plans = db.collections.plans.records[0]
+  plans.translations = { kk: translated(plans, { cols: copy(PLANS.cols).map((c, i) => ({ ...c, name: ['Бастау', 'Кәсіби', 'Барлығы'][i] })) }) }
+  const profile = db.collections.company.records[0]
+  profile.translations = { kk: translated(profile, { title: 'Демо компаниясы', text: 'Біздің команда' }, 'draft') }
+  db.settings.phone = '+7 900 000-00-00'
+  db.settingsTexts = { ru: { siteTitle: 'Демо-компания' }, kk: { siteTitle: 'Демо компаниясы' } }
+  db.menus = {
+    ru: { header: [{ _id: 'm1', label: 'Главная', link: { kind: 'page', page: '/', url: '' } }] },
+    kk: { header: [{ _id: 'm2', label: 'Басты бет', link: { kind: 'page', page: '/kk', url: '' } }] },
+  }
+  return db
 }

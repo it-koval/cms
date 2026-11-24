@@ -2,5 +2,5 @@
 {% extends ['layout.html.twig', '@ItkCms/layout.html.twig'] %}
 
 {% block content %}
-    {{ render_sections(page) }}
+    {{ itk_render_sections(page) }}
 {% endblock %}

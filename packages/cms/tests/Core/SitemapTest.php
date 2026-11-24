@@ -5,11 +5,13 @@ declare(strict_types=1);
 namespace Itk\Cms\Tests\Core;
 
 use Doctrine\ORM\EntityManagerInterface;
+use Itk\Cms\Content\CrawlerCacheGeneration;
 use Itk\Cms\Content\PageService;
 use Itk\Cms\Content\SeoRuleService;
 use Itk\Cms\Content\SettingsService;
 use Itk\Cms\Content\SitemapBuilder;
 use Itk\Cms\Controller\Site\SitemapController;
+use Itk\Cms\Entity\Setting;
 use Itk\Cms\Entity\User;
 use Itk\Cms\Support\Url;
 use PHPUnit\Framework\Attributes\Test;
@@ -116,6 +118,28 @@ final class SitemapTest extends WebTestCase
     }
 
     #[Test]
+    public function draftAutosavesKeepTheCrawlerCacheWhilePublicationRebuildsIt(): void
+    {
+        $page = $this->live('Cache live', '/test-cache-autosave-' . \bin2hex(\random_bytes(5)));
+        $generations = self::getContainer()->get(CrawlerCacheGeneration::class);
+        $xml = $this->sitemap->xml();
+        $before = [$generations->current('sitemap'), $generations->current('llms')];
+        $misses = 0;
+        for ($i = 0; $i < 20; ++$i) {
+            $this->pages->saveDraft($page['id'], null, ['title' => 'Draft ' . $i]);
+            if ($before !== [$generations->current('sitemap'), $generations->current('llms')]) {
+                ++$misses;
+            }
+            self::assertSame($xml, $this->sitemap->xml());
+        }
+        \fwrite(\STDERR, "\n20 draft autosaves: crawler generation changes = $misses\n");
+        self::assertSame(0, $misses, 'draft-only saves cannot change the published crawler files');
+        $this->pages->publish($page['id']);
+        self::assertNotSame($before[0], $generations->current('sitemap'));
+        self::assertNotSame($before[1], $generations->current('llms'));
+    }
+
+    #[Test]
     public function livePagesAreListedWithAbsoluteAddressesAndTheDayTheyWerePublished(): void
     {
         $this->live('Карта: живая', '/test-sm-live');
@@ -157,7 +181,12 @@ final class SitemapTest extends WebTestCase
         self::assertContains('http://test-sitemap.example.com/test-sm-scheme', $this->locs($this->xml()));
 
         foreach (['', 'test sitemap"><x', 'javascript:alert(1)'] as $junk) {
-            $this->useDomain($junk);
+            $em = self::getContainer()->get(EntityManagerInterface::class);
+            $row = $em->find(Setting::class, ['key' => 'domain', 'locale' => Setting::ALL]);
+            self::assertNotNull($row);
+            $row->value = $junk; // saved before domain validation was introduced
+            $em->flush();
+            $this->settings->reset();
             $this->client->request('GET', '/sitemap.xml');
             self::assertResponseStatusCodeSame(404, 'domain: ' . $junk);
         }

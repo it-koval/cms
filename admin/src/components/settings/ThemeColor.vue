@@ -5,6 +5,7 @@
 import { computed, ref, watch } from 'vue'
 import Icon from '@/components/ui/Icon.vue'
 import { formatNumber, t } from '@/i18n/index.js'
+import { fieldAria } from '@/components/form/fieldProps.js'
 
 const props = defineProps({
   modelValue: { type: String, required: true },
@@ -48,6 +49,7 @@ function onBlur() {
 const onPick = (e) => { slip.value = ''; emit('update:modelValue', e.target.value.toUpperCase()) }
 
 const ratio = computed(() => (props.check ? formatNumber(props.check.ratio, { minimumFractionDigits: 1, maximumFractionDigits: 1 }) : ''))
+const validation = computed(() => slip.value || props.error || (props.check && !props.check.ok ? t('settings.theme_unreadable', { ratio: ratio.value }) : ''))
 const adjusted = t('settings.theme_text_adjusted').split('{color}') // the colour sits between the two halves of the sentence
 const steps = computed(() => (props.ladder ? Object.entries(props.ladder) : []))
 </script>
@@ -55,10 +57,10 @@ const steps = computed(() => (props.ladder ? Object.entries(props.ladder) : []))
 <template>
   <div :class="['field', 'tc', { 'is-error': error || (check && !check.ok) }]">
     <label :for="id + '-hex'">{{ label }}</label>
-    <div v-if="help" class="help">{{ help }}</div>
+    <div v-if="help" :id="id + '_h'" class="help">{{ help }}</div>
     <div class="tc-row">
-      <input :id="id" class="tc-pick" type="color" :value="modelValue.toLowerCase()" :disabled="disabled" :aria-label="t('settings.theme_color_pick', { label })" @input="onPick">
-      <input :id="id + '-hex'" class="tc-hex" type="text" :value="text" maxlength="7" spellcheck="false" autocomplete="off" :disabled="disabled" @input="onText" @blur="onBlur">
+      <input :id="id" class="tc-pick" type="color" :value="modelValue.toLowerCase()" :disabled="disabled" v-bind="fieldAria(id, help, validation)" :aria-label="t('settings.theme_color_pick', { label })" @input="onPick">
+      <input :id="id + '-hex'" class="tc-hex" type="text" :value="text" maxlength="7" spellcheck="false" autocomplete="off" :disabled="disabled" v-bind="fieldAria(id, help, validation)" @input="onText" @blur="onBlur">
       <span v-if="check" class="tc-sample" :style="{ background: modelValue, color: check.ink }" aria-hidden="true">{{ t('settings.theme_sample') }}</span>
     </div>
     <ul v-if="steps.length" class="tc-pal" :aria-label="t('settings.theme_palette_aria', { label })">
@@ -66,10 +68,10 @@ const steps = computed(() => (props.ladder ? Object.entries(props.ladder) : []))
         <span class="tc-sw" :style="{ background: hex }" /><span class="tc-n">{{ step }}</span>
       </li>
     </ul>
-    <div v-if="slip" class="err" role="alert"><Icon name="alert" size="s16" /><span>{{ slip }}</span></div>
-    <div v-else-if="error" class="err" role="alert"><Icon name="alert" size="s16" /><span>{{ error }}</span></div>
+    <div v-if="slip" :id="id + '_e'" class="err" role="alert"><Icon name="alert" size="s16" /><span>{{ slip }}</span></div>
+    <div v-else-if="error" :id="id + '_e'" class="err" role="alert"><Icon name="alert" size="s16" /><span>{{ error }}</span></div>
     <div v-else-if="check && check.ok" class="tc-check ok"><Icon name="check" size="s16" /><span>{{ check.ink === '#FFFFFF' ? t('settings.theme_readable_white', { ratio }) : t('settings.theme_readable_dark', { ratio }) }}</span></div>
-    <div v-else-if="check" class="err" role="alert"><Icon name="alert" size="s16" /><span>{{ t('settings.theme_unreadable', { ratio }) }}</span></div>
+    <div v-else-if="check" :id="id + '_e'" class="err" role="alert"><Icon name="alert" size="s16" /><span>{{ t('settings.theme_unreadable', { ratio }) }}</span></div>
     <div v-if="check && check.ok && check.textAdjusted" class="help tc-note">{{ adjusted[0] }}<span class="tc-dot" :style="{ background: check.text }" aria-hidden="true" /> {{ check.text }}{{ adjusted[1] }}</div>
   </div>
 </template>

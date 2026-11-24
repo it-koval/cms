@@ -1,12 +1,12 @@
 // Hash-history router (the server serves one shell page at /admin, the screens live after the #). ALL routes are registered here; each points to a view file.
 // meta.layout: 'app' = inside the rail layout, 'bare' = no rail (the full-screen page editor). Signing in is the server's page /admin/login.
 // meta.byLocale: the screen works in the content language and is re-mounted when it changes (App.vue). The page editor has no flag: it follows app.locale itself.
-// Any route may carry ?lang=xx: the guard switches the content language to xx (when the site has it) and removes the query. Links that point to a version in a
-// certain language use it (withLang(path, locale) in utils/locales.js): the dashboard, the recent log, AI proposals.
+// Links to a specific version carry ?lang=xx. Language switches share the screen's unsaved-change guard.
 import { createRouter, createWebHashHistory } from 'vue-router'
-import { app, setContentLocale } from '@/stores/app.js'
+import { app } from '@/stores/app.js'
 import { preloadRichText } from '@/components/form/RichTextAsync.js'
 import { t } from '@/i18n/index.js'
+import { installContentLocaleRouting } from './contentLocale.js'
 
 // The forms of these screens focus rich-text fields (a click on the canvas, a new record): the editor comes with the screen, so a field has it in its first render.
 // A failed load does not close the screen: the field tries again when it is drawn (form/RichTextAsync.js).
@@ -34,15 +34,7 @@ export const router = createRouter({
   scrollBehavior: (to, from, saved) => saved || { top: 0 },
 })
 
-// ?lang=xx switches the content language
-router.beforeEach((to) => {
-  if (typeof to.query.lang === 'string' && to.query.lang) {
-    const { lang, ...rest } = to.query
-    setContentLocale(lang) // an unknown language is ignored
-    return { path: to.path, query: rest, hash: to.hash, replace: true }
-  }
-  return true
-})
+installContentLocaleRouting(router)
 
 export function refreshTitle(to = router.currentRoute.value) {
   document.title = `${to.meta.title || 'ITK CMS'} · ${app.siteInfo ? app.siteInfo.name : 'ITK CMS'}`

@@ -14,5 +14,6 @@
 'i18n.notification_max_failed': 'Request #{id} did not reach MAX'
 'i18n.notification_mail_failed_request': 'The email about request #{id} was not delivered'
 'i18n.notification_mail_failed': 'Email not sent: {subject}'
+'i18n.notification_mail_failed_account': 'A password or invitation email was not delivered'
 'i18n.notification_mail_refused': 'The mail server did not accept the email'
 'i18n.plural_example': '{count} page|{count} pages'

@@ -95,7 +95,8 @@ async function resend(channel) {
     if (current !== generation) return
     req.value = updated
     const out = resendOutcome(updated, channel)
-    if (out.state === 'pending') toast.error(t('ui.rd_not_sent'))
+    if (out.state === 'queued') toast.show(t('ui.rd_queued'))
+    else if (out.state === 'pending') toast.error(t('ui.rd_not_sent'))
     else if (out.state === 'failed') toast.error(out.error || t('ui.rd_resend_failed'))
     else toast.show(t('ui.rd_delivered', { id }))
   } catch (e) {
@@ -144,6 +145,32 @@ onBeforeRouteUpdate((to, from) => to.params.id === from.params.id || mayLeave())
         <LangTag v-if="isMulti() && req.locale" class="rd-lg" :code="req.locale" />
       </div>
 
+      <section class="rd-sec">
+        <div class="rd-h">
+          {{ t('ui.rd_delivery') }}
+          <span v-if="req.queuedChannels?.length" class="chip" role="status">{{ t('ui.rd_queued') }}</span>
+          <StatusChip v-else :status="failed ? 'failed' : req.delivery === 'pending' ? 'pending' : 'delivered'" />
+        </div>
+        <div v-if="failed && !req.queuedChannels?.length" class="alert err-a"><Icon name="alert" size="s16" /><span><b>{{ t('ui.rd_failed_lead') }}</b> {{ t('ui.rd_failed_text') }}</span></div>
+        <ul v-if="channels.length" class="rd-ch">
+          <li v-for="c in channels" :key="c.channel">
+            <div class="rd-ch-h">
+              <b>{{ channelName(c.channel) }}</b>
+              <span v-if="req.queuedChannels?.includes(c.channel)" class="chip" role="status">{{ t('ui.rd_queued') }}</span>
+              <StatusChip v-else :status="chipOf(c.state)" />
+              <button v-if="c.state === 'failed' && canEdit && !req.queuedChannels?.includes(c.channel)" type="button" :class="['btn', 'sm', 'rd-ch-b', { loading: sending === c.channel }]" :disabled="busy || !!sending" @click="resend(c.channel)"><Icon name="refresh" size="s14" />{{ t('ui.rd_resend_channel', { channel: channelName(c.channel) }) }}</button>
+            </div>
+          </li>
+        </ul>
+        <div v-if="sendable.length && canEdit" class="rd-send">
+          <button v-for="c in sendable.filter((c) => !req.queuedChannels?.includes(c))" :key="c" type="button" :class="['btn', 'sm', { loading: sending === c }]" :disabled="busy || !!sending" @click="resend(c)"><Icon name="send" size="s14" />{{ t('ui.rd_send_channel', { channel: channelName(c) }) }}</button>
+        </div>
+        <ul class="log">
+          <li v-for="(l, i) in req.log" :key="i" :class="{ f: l[0] === 'fail' }"><span class="d" /><span>{{ l[1] }}<small class="num">{{ fmtTime(l[2]) }}</small></span></li>
+        </ul>
+        <button v-if="failed && canEdit && !channels.length && !req.queuedChannels?.length" type="button" :class="['btn', 'primary', 'rd-resend', { loading: sending === 'all' }]" :disabled="busy || !!sending" @click="resend()"><Icon name="refresh" size="s16" />{{ t('ui.rd_resend') }}</button>
+      </section>
+
       <RequestDetails :request="req" :form="form" />
 
       <section class="rd-sec">
@@ -152,30 +179,6 @@ onBeforeRouteUpdate((to, from) => to.params.id === from.params.id || mayLeave())
           <button v-for="s in WORK_STATUSES" :key="s[0]" type="button" :aria-pressed="work === s[0]" :disabled="busy || !!sending || !canEdit" @click="pick(s[0])">{{ s[1] }}</button>
         </div>
         <p class="muted rd-hint">{{ t(canEdit ? 'ui.rd_status_hint_edit' : 'ui.rd_status_hint_view') }}</p>
-      </section>
-
-      <section class="rd-sec">
-        <div class="rd-h">
-          {{ t('ui.rd_delivery') }}
-          <StatusChip :status="failed ? 'failed' : req.delivery === 'pending' ? 'pending' : 'delivered'" />
-        </div>
-        <div v-if="failed" class="alert err-a"><Icon name="alert" size="s16" /><span><b>{{ t('ui.rd_failed_lead') }}</b> {{ t('ui.rd_failed_text') }}</span></div>
-        <ul v-if="channels.length" class="rd-ch">
-          <li v-for="c in channels" :key="c.channel">
-            <div class="rd-ch-h">
-              <b>{{ channelName(c.channel) }}</b>
-              <StatusChip :status="chipOf(c.state)" />
-              <button v-if="c.state === 'failed' && canEdit" type="button" :class="['btn', 'sm', 'rd-ch-b', { loading: sending === c.channel }]" :disabled="busy || !!sending" @click="resend(c.channel)"><Icon name="refresh" size="s14" />{{ t('ui.rd_resend_channel', { channel: channelName(c.channel) }) }}</button>
-            </div>
-          </li>
-        </ul>
-        <div v-if="sendable.length && canEdit" class="rd-send">
-          <button v-for="c in sendable" :key="c" type="button" :class="['btn', 'sm', { loading: sending === c }]" :disabled="busy || !!sending" @click="resend(c)"><Icon name="send" size="s14" />{{ t('ui.rd_send_channel', { channel: channelName(c) }) }}</button>
-        </div>
-        <ul class="log">
-          <li v-for="(l, i) in req.log" :key="i" :class="{ f: l[0] === 'fail' }"><span class="d" /><span>{{ l[1] }}<small class="num">{{ fmtTime(l[2]) }}</small></span></li>
-        </ul>
-        <button v-if="failed && canEdit && !channels.length" type="button" :class="['btn', 'primary', 'rd-resend', { loading: sending === 'all' }]" :disabled="busy || !!sending" @click="resend()"><Icon name="refresh" size="s16" />{{ t('ui.rd_resend') }}</button>
       </section>
 
       <section class="rd-sec">

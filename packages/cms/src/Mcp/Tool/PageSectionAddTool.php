@@ -37,6 +37,7 @@ final class PageSectionAddTool extends SectionTool
             . 'Put it at the end, or at position (0 = first), or after_section_id. Returns the new section id.' . self::EDITOR_NOTE;
     }
 
+    /** @return array<string, mixed> */
     public function inputSchema(): array
     {
         return self::schema(self::pageIdProperties() + [

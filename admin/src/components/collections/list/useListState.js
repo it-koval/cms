@@ -44,7 +44,10 @@ export function useListState(cfg, filters) {
   return Object.assign(toRefs(state), {
     restore,
     state,
-    params: () => ({ q: state.q.trim(), filter: cleanFilter(state.filter), sort: state.sort, page: state.page, perPage: state.perPage }),
+    params: () => {
+      const { status = '', ...filter } = cleanFilter(state.filter)
+      return { q: state.q.trim(), status, filter, sort: state.sort, page: state.page, perPage: state.perPage }
+    },
     reset() { state.q = ''; state.filter = {}; state.page = 1 },
     activeFilters: () => activeCount(state.filter),
     flush,

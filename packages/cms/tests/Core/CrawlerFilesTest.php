@@ -4,8 +4,7 @@ declare(strict_types=1);
 
 namespace Itk\Cms\Tests\Core;
 
-use Doctrine\DBAL\Types\Types;
-use Doctrine\ORM\EntityManagerInterface;
+use Doctrine\DBAL\Connection;
 use Itk\Cms\Content\CrawlerFiles;
 use Itk\Cms\Content\PageService;
 use Itk\Cms\Content\SeoRuleService;
@@ -25,30 +24,24 @@ final class CrawlerFilesTest extends WebTestCase
     private const DOMAIN = 'test-crawler.example.com';
 
     private KernelBrowser $client;
+    private Connection $connection;
     private SettingsService $settings;
     private CrawlerFiles $files;
     private string $csrf = '';
-    /** @var list<string> */
-    private array $ids = [];
-    /** @var array<string, array{0: bool, 1: mixed}> key => [was it saved, its value] */
-    private array $before = [];
-    /** @var array<string, mixed>|null the row of the home page as the test found it (the home page cannot be taken off the site through the service) */
-    private ?array $home = null;
-    private \DateTimeImmutable $started;
     /** @var list<string> */
     private array $tmpFiles = [];
 
     protected function setUp(): void
     {
-        $this->started = new \DateTimeImmutable('-1 second');
         $this->client = static::createClient();
         $this->client->disableReboot();
         $c = self::getContainer();
+        $connection = $c->get(Connection::class);
+        self::assertInstanceOf(Connection::class, $connection);
+        $connection->beginTransaction();
+        $this->connection = $connection;
         $this->settings = $c->get(SettingsService::class);
         $this->files = $c->get(CrawlerFiles::class);
-        foreach (['domain', 'siteName', 'robotsTxt', 'llmsTxt'] as $key) {
-            $this->before[$key] = [$this->settings->isSet($key), $this->settings->get($key, null, '')];
-        }
         $this->settings->set('domain', self::DOMAIN);
         $this->settings->set('siteName', 'Тестовый сайт');
         $this->settings->set('robotsTxt', '');
@@ -59,39 +52,20 @@ final class CrawlerFilesTest extends WebTestCase
 
     protected function tearDown(): void
     {
-        foreach ($this->tmpFiles as $file) {
-            @\unlink($file);
-        }
-        $c = self::getContainer();
-        $em = $c->get(EntityManagerInterface::class);
-        $em->clear();
-        $em->createQuery("DELETE FROM Itk\\Cms\\Entity\\SeoRule r WHERE r.path LIKE '/test-%'")->execute();
-        $this->asAdmin();
-        if (null !== $this->home) {
-            $home = $this->home;
-            $id = (string) $home['page_id'];
-            unset($home['page_id']);
-            $em->getConnection()->update('itk_page_translation', $home, ['page_id' => $id, 'locale' => $home['locale']], ['migrated' => Types::BOOLEAN]);
-            $em->createQuery('DELETE FROM Itk\Cms\Entity\Revision r WHERE r.resourceId = :id AND r.createdAt >= :t')->setParameter('id', $id)->setParameter('t', $this->started)->execute();
-        }
-        foreach (\array_reverse($this->ids) as $id) {
-            try {
-                $c->get(PageService::class)->remove($id);
-            } catch (\Throwable) {
+        try {
+            foreach ($this->tmpFiles as $file) {
+                @\unlink($file);
             }
-        }
-        $em->createQuery('DELETE FROM Itk\Cms\Entity\Revision r WHERE r.resourceId IN (:ids)')->setParameter('ids', [] === $this->ids ? ['-'] : $this->ids)->execute();
-        $em->createQuery("DELETE FROM Itk\\Cms\\Entity\\Revision r WHERE r.kind = 'settings' AND r.resourceKey = 'seo-files'")->execute();
-        foreach ($this->before as $key => [$wasSet, $value]) {
-            if ($wasSet) {
-                $this->settings->set($key, $value);
-            } else {
-                $em->createQuery('DELETE FROM Itk\Cms\Entity\Setting s WHERE s.key = :k')->setParameter('k', $key)->execute();
+            if (isset($this->connection)) {
+                $this->connection->rollBack();
             }
+            if (isset($this->files)) {
+                $this->files->forget();
+                self::getContainer()->get(SitemapBuilder::class)->forget();
+            }
+        } finally {
+            parent::tearDown();
         }
-        $em->createQuery('DELETE FROM Itk\Cms\Entity\User u WHERE u.email LIKE :e')->setParameter('e', 'test-%@example.com')->execute();
-        $this->files->forget();
-        parent::tearDown();
     }
 
     private function signIn(User $user): void
@@ -127,7 +101,6 @@ final class CrawlerFilesTest extends WebTestCase
         $this->asAdmin();
         $pages = self::getContainer()->get(PageService::class);
         $page = $pages->create(['template' => 'default', 'title' => $title, 'url' => $url]);
-        $this->ids[] = $page['id'];
         if ([] !== $seo) {
             $pages->saveDraft($page['id'], null, ['seo' => $seo] + $pages->getDraft($page['id'])['page']);
         }
@@ -137,7 +110,7 @@ final class CrawlerFilesTest extends WebTestCase
     }
 
     /**
-     * The home page of the installation, published with the SEO given (taken back at the end).
+     * The home page of the installation, published with the SEO given inside the test transaction.
      *
      * @param array<string, mixed> $seo
      */
@@ -145,16 +118,14 @@ final class CrawlerFilesTest extends WebTestCase
     {
         $this->asAdmin();
         $pages = self::getContainer()->get(PageService::class);
-        $connection = self::getContainer()->get(EntityManagerInterface::class)->getConnection();
-        $row = $connection->fetchAssociative(
-            "SELECT * FROM itk_page_translation WHERE locale = ? AND draft ->> 'url' = '/'",
+        $row = $this->connection->fetchAssociative(
+            "SELECT page_id, status FROM itk_page_translation WHERE locale = ? AND draft ->> 'url' = '/'",
             [self::getContainer()->getParameter('itk_cms.main_locale')],
         );
         self::assertIsArray($row, 'the installation has a home page');
         if ('draft' !== $row['status']) {
             self::markTestSkipped('the home page of this database is live: the test does not touch it');
         }
-        $this->home = $row;
         $id = (string) $row['page_id'];
         $draft = $pages->getDraft($id)['page'];
         $pages->saveDraft($id, null, ['seo' => $seo] + $draft);
@@ -320,6 +291,8 @@ final class CrawlerFilesTest extends WebTestCase
         self::assertStringEndsWith("\n", $body);
         self::assertSame('text/plain; charset=UTF-8', $this->client->getResponse()->headers->get('Content-Type'));
         self::assertSame('nosniff', $this->client->getResponse()->headers->get('X-Content-Type-Options'));
+
+        $this->get('/test-llms-%D0%B1%D0%BB%D0%BE%D0%B3%20%281%29');
     }
 
     #[Test]
@@ -331,7 +304,6 @@ final class CrawlerFilesTest extends WebTestCase
         $this->asAdmin();
         $pages = self::getContainer()->get(PageService::class);
         $other = $pages->create(['template' => 'default', 'title' => 'Other language', 'url' => '/test-llms-en', 'locale' => 'en']);
-        $this->ids[] = $other['id'];
         $pages->publish($other['id'], 'en');
         $rules = self::getContainer()->get(SeoRuleService::class);
         $rules->create(['path' => '/test-llms-closed', 'match' => 'exact', 'robots' => 'noindex,follow']);

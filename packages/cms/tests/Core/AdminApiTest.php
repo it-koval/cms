@@ -17,6 +17,7 @@ use Itk\Cms\Tests\Core\Fixture\TripsCollection;
 use PHPUnit\Framework\Attributes\Test;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 /** JSON API админки: схема с nav для человека, список с фильтрами, действия, скачивание, настройки пользователя (prefs), оболочка с плагинами. */
 final class AdminApiTest extends WebTestCase
@@ -105,16 +106,16 @@ final class AdminApiTest extends WebTestCase
     }
 
     #[Test]
-    public function theListKeepsItsOldAnswerWithoutParametersAndAnswersAnEnvelopeWithThem(): void
+    public function theListAnswersAnEnvelopeWithAndWithoutParameters(): void
     {
         $collections = self::getContainer()->get(CollectionService::class);
         foreach ([['А', 3], ['Б', 1], ['В', 2]] as [$t, $n]) {
             $collections->create('test_trips', ['title' => $t, 'seats' => $n, 'state' => 'open']);
         }
 
-        $old = $this->api('GET', 'collections/test_trips');
-        self::assertTrue(\array_is_list($old));
-        self::assertCount(3, $old);
+        $default = $this->api('GET', 'collections/test_trips');
+        self::assertCount(3, $default['items']);
+        self::assertSame([3, 1, 3], [$default['total'], $default['page'], $default['perPage']]);
 
         $new = $this->api('GET', 'collections/test_trips?sort=-seats&perPage=2&filter[state]=open');
         self::assertSame(['А', 'В'], \array_column($new['items'], 'title'));
@@ -127,6 +128,34 @@ final class AdminApiTest extends WebTestCase
 
         $this->api('GET', 'collections/test_trips?filter[nope]=1', [], 422);
         $this->api('GET', 'collections/test_trips?sort=note', [], 422);
+    }
+
+    #[Test]
+    public function customRequestDateFiltersRequireCalendarDatesInOrder(): void
+    {
+        $result = $this->api('GET', 'requests?form=f2-date-filter&period=custom&from=2024-02-29&to=2024-02-29');
+        self::assertSame([], $result['items']);
+        self::assertSame(0, $result['total']);
+        foreach (['from=2024-02-30', 'from=tomorrow', 'from=2024-03-01&to=2024-02-29'] as $filter) {
+            $this->api('GET', 'requests?period=custom&' . $filter, [], 422);
+        }
+    }
+
+    #[Test]
+    public function redirectLengthsAreValidatedBeforeSaving(): void
+    {
+        $from = '/f2-length-' . \str_repeat('a', 244);
+        $to = '/' . \str_repeat('b', 511);
+        $row = $this->api('POST', 'redirects', ['from' => $from, 'to' => $to], 201);
+        try {
+            self::assertSame($from, $row['from']);
+            self::assertSame($to, $row['to']);
+            $this->api('PATCH', 'redirects/' . $row['id'], ['from' => $from . 'a', 'to' => $to . 'b'], 422);
+            $this->api('POST', 'redirects', ['from' => $from . 'a', 'to' => $to], 422);
+            $this->api('POST', 'redirects', ['from' => '/f2-length-other', 'to' => $to . 'b'], 422);
+        } finally {
+            $this->api('DELETE', 'redirects/' . $row['id']);
+        }
     }
 
     #[Test]
@@ -144,7 +173,7 @@ final class AdminApiTest extends WebTestCase
             $em->persist($request);
         }
         $em->flush();
-        $search = fn (string $q): array => $this->api('GET', 'requests?' . \http_build_query(['form' => $form, 'q' => $q]));
+        $search = fn (string $q): array => $this->api('GET', 'requests?' . \http_build_query(['form' => $form, 'q' => $q]))['items'];
 
         try {
             foreach (['9001112233', '+7 (900) 111-22-33', '111-22'] as $query) {
@@ -308,7 +337,9 @@ final class AdminApiTest extends WebTestCase
         $this->client->request('GET', $r['download']);
         self::assertResponseIsSuccessful();
         self::assertStringContainsString('attachment; filename=trips.csv', (string) $this->client->getResponse()->headers->get('Content-Disposition'));
-        $file = $this->client->getResponse()->getFile()->getPathname();
+        $response = $this->client->getResponse();
+        self::assertInstanceOf(BinaryFileResponse::class, $response);
+        $file = $response->getFile()->getPathname();
         self::assertSame("title\nАлтай", $this->client->getInternalResponse()->getContent());
         self::assertFileDoesNotExist($file, 'delete: true removes the file after sending');
 

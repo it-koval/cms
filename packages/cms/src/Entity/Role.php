@@ -11,6 +11,8 @@ use Itk\Cms\Repository\RoleRepository;
 /**
  * A role. Built-in roles (admin, editor, author, requests) have no stored rights: they are worked out from the schema on every read
  * (Itk\Cms\Security\RoleResolver). Custom roles carry perms: { areaKey: [actions] } and templates (null = every template).
+ *
+ * @internal
  */
 #[ORM\Entity(repositoryClass: RoleRepository::class)]
 #[ORM\Table(name: 'itk_role')]

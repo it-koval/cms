@@ -7,8 +7,6 @@ namespace Itk\Cms\KnowledgeBase\Model;
 /**
  * The identity of one document of the index: a page or an item, in one language. It says nothing about the content, so a message that carries
  * it is never out of date: the handler reads the source as it is when the message runs.
- *
- * @internal
  */
 final readonly class SourceRef
 {

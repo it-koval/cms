@@ -12,7 +12,11 @@ use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
 
-/** Forgets every page kept by PageCache, for a deploy script or after the site changed data the fingerprint does not see. */
+/**
+ * Forgets every page kept by PageCache, for a deploy script or after the site changed data the fingerprint does not see.
+ *
+ * @internal
+ */
 #[AsCommand(name: 'itk:cache:clear', description: 'ops.cmd_cache_clear_description')]
 final class ClearPageCacheCommand extends Command
 {

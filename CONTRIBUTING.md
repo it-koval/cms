@@ -4,7 +4,7 @@ English | [Русский](CONTRIBUTING.ru.md)
 
 Bug reports with steps to reproduce, fixes with a test, and documentation fixes help the most.
 
-Do not report a security problem in a public issue. Follow [SECURITY.md](SECURITY.md) instead.
+Follow the [code of conduct](CODE_OF_CONDUCT.md) when taking part. Report security problems privately as described in [SECURITY.md](SECURITY.md).
 
 ## Repository layout
 
@@ -13,65 +13,71 @@ Do not report a security problem in a public issue. Follow [SECURITY.md](SECURIT
 
 ## Set up the environment
 
-You need:
-
-- PHP 8.3 or newer with the `ctype`, `dom`, `gd`, `json`, `mbstring`, `pdo_pgsql`, and `sodium` extensions. `exif` and `intl` are optional.
-- Composer.
-- Docker for the test database, the mail catcher, and the admin panel. The admin panel runs Node 24.22.2 in a container, so you do not need Node on the host.
-
-The tests run on PostgreSQL 17 with pgvector (the `pgvector/pgvector:pg17` image) and send mail to Mailpit. Start both and install the dependencies:
+Install Docker with Compose. Run these commands from the repository root:
 
 ```bash
-docker run -d --name itk-test-pg -p 127.0.0.1:33960:5432 -e POSTGRES_PASSWORD=itk-test pgvector/pgvector:pg17
-docker run -d --name itk-test-mail -p 127.0.0.1:33951:1025 -p 127.0.0.1:33952:8025 axllent/mailpit
-
-cd packages/cms
-composer install
-cd ../../admin
-docker compose run --rm node npm ci
+make build
+make install
+make up
 ```
+
+`make help` lists all targets. Default ports are bound to `127.0.0.1`.
+
+| Target | Default ports |
+|---|---|
+| `make up` | PostgreSQL with pgvector on 18021 and Mailpit on 18022. |
+| `make admin-dev`, `make admin-mock` | Vite on 18023. |
+| Site HTTP | 18020 is reserved. `make up` does not start a site HTTP server. |
+| `make smoke-prod` | Production smoke check on 18028. |
+
+Override these ports with `DB_PORT`, `MAILPIT_PORT`, `ADMIN_PORT`, `HTTP_PORT` and `DEPLOY_PORT`, respectively.
 
 ## Run the checks
 
-### PHP
-
-Run these commands from `packages/cms`:
+Run the checks from the repository root.
 
 ```bash
-export ITK_TEST_MAILPIT_URL=http://127.0.0.1:33952 ITK_TEST_MAILPIT_SMTP_PORT=33951
-composer test        # composer lint:sql, then recreates the itk_test database, runs the migrations and itk:install, then PHPUnit
-composer lint:sql    # fails on MySQL constructs in the SQL of the bundle (src/, migrations included)
-composer stan        # PHPStan, level 5
-composer cs          # PHP CS Fixer, check only. composer cs:fix applies the fixes.
+make test
+make lint
+make audit
+make admin-build
 ```
 
-By default `DATABASE_URL` is `postgresql://postgres:itk-test@127.0.0.1:33960/itk?serverVersion=17&charset=utf8`. The tests use the `itk_test` database. If you set your own `DATABASE_URL`, keep `serverVersion` in it. Without it Doctrine connects to the database that does not exist yet to detect the server version, and `doctrine:database:create` fails.
+`make test` runs `test-php` and `test-admin`. `make lint` runs `validate`, `lint-php`, and `lint-admin`.
 
-Without `ITK_TEST_MAILPIT_URL` the mail tests are skipped. Other notes:
+### PHP
 
-- `tests/` holds a test site (`tests/App`, the `TestKernel` kernel) and the core tests (`tests/Core`).
-- `ITK_TEST_CACHE_DIR` sets a separate cache directory of the test site for parallel runs.
-- `composer test:run -- --order-by=random` (after `composer test:prepare`) checks that the test order does not matter.
-- The tests do not need Telegram or MAX: `TestKernel` replaces the sending.
+`make test-php` runs `composer test`. This checks SQL, recreates the test database, and runs PHPUnit. `make validate` validates the Composer package and checks SQL. `make lint-php` checks `src` and `tests` at PHPStan level 6 and checks PHP formatting.
 
-CI also runs `php tests/bin/console doctrine:schema:validate --env=test` to check that the database schema matches the Doctrine mapping.
+`make test-random` runs the tests in random order with seeds `30301` and `30302`, as in CI. Set `SEEDS` to override them, for example `make test-random SEEDS=30301`. Run `make schema` after `make test-random` or `make test-php` to validate the prepared database schema.
+
+To test one class, start the stack with `make up` and open the PHP shell with `make sh`. Inside it, run `composer test:prepare` once, then `php vendor/bin/phpunit --filter ClassName`.
+
+The tests in `tests/Core` use the site in `tests/App`. For a separate test stack, run `COMPOSE_PROJECT_NAME=itkcms-alt make test`. Build the PHP image with that same project name first. If the main stack is running, set `DB_PORT` and `MAILPIT_PORT` to free ports as well.
+
+If you supply your own `DATABASE_URL` in the PHP shell, keep `serverVersion` in it. Set `ITK_TEST_CACHE_DIR` there to isolate the test cache. The tests stub Telegram and MAX. Mail tests need `ITK_TEST_MAILPIT_URL`.
+
+`make ci-deps` and `make test-max` are CI-only targets. They change Composer dependencies and require `CI=1` in a separate checkout for local runs.
 
 ### Admin panel
 
-Run these commands from `admin`:
+`make test-admin` runs Vitest. `make lint-admin` runs ESLint and checks the interface catalogs and Cyrillic in the code. `make audit` checks npm dependencies. `make admin-build` writes the build to `packages/cms/public/admin`. `make admin-build-check` rebuilds the admin panel and checks for differences against the Git index, including new files.
+
+`make admin-dev` starts Vite at `http://127.0.0.1:18023/bundles/itkcms/admin/`. By default the container reaches the site API at `host.docker.internal:8080`. Set `ITK_SITE_URL` to use another address.
+
+To run the admin panel on made-up data without PHP, run this command from the repository root:
 
 ```bash
-docker compose run --rm node npm audit
-docker compose run --rm node npm audit --omit=dev
-docker compose run --rm node npm run lint
-docker compose run --rm node npm run check:i18n  # interface catalogs and Cyrillic in the code
-docker compose run --rm node npm test
-docker compose run --rm node npm run build        # writes the build to packages/cms/public/admin
+make admin-mock
 ```
 
-`docker compose up node` starts Vite at `http://127.0.0.1:5174/bundles/itkcms/admin/`. By default the container reaches the site API at `host.docker.internal:8080`. Set `ITK_SITE_URL` to use another address. To run the admin panel without PHP, on made-up data, run `docker compose run --rm --service-ports node npm run dev:mock -- --host 0.0.0.0`.
+Open `http://127.0.0.1:18023/bundles/itkcms/admin/`.
 
-`admin/compose.yaml` mounts the repository root at `/workspace` and keeps the Linux dependencies in a named volume. The container does not use or overwrite a `node_modules` directory on the host. `npm ci` installs exactly what the lock file lists. Keep the Node version the same in `admin/compose.yaml`, `.github/workflows/ci.yml`, and `admin/.nvmrc`.
+`admin/compose.yaml` mounts the repository root at `/workspace` and keeps the Linux dependencies in a named volume. The container does not use or overwrite a `node_modules` directory on the host. `npm ci` installs exactly what the lock file lists. Keep the Node version the same in `admin/compose.yaml` and `admin/.nvmrc`.
+
+### Docker kit
+
+`CRITICAL_CSS=1 make smoke-dev` builds and checks the development image. Run `make site-clean` to prepare a clean Symfony site. The default destination `.ci-site` must be absent or empty. If you set `SITE`, the same applies. If you set `DEPLOY_PORT`, pass the same value to `make site-clean` and `make smoke-prod`. Then run `make smoke-prod` to build and check the production kit on that site. These checks need network access.
 
 ## Commit the built admin panel
 

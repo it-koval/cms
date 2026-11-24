@@ -1,4 +1,4 @@
-/* Admin chrome: reset, shell (rail, page), buttons, fields, chips, tabs, tables, toasts, popovers, drawers, dialogs, skeleton, empty state. Ported from the prototype. */
+/* Admin chrome: reset, shell (rail, page), buttons, fields, chips, tabs, tables, toasts, popovers, drawers, dialogs, skeleton, empty state. */
 *,*::before,*::after{box-sizing:border-box}
 html,body{height:100%}
 body{margin:0;background:var(--ground);color:var(--ink);font:400 var(--t-base)/1.5 'Golos Text Variable','Golos Text',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;caret-color:var(--cy);-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;overflow-x:hidden}
@@ -10,7 +10,7 @@ a:hover{color:var(--brand-text-d)}
 button,input,select,textarea{font:inherit;color:inherit}
 button{cursor:pointer}
 :focus-visible{outline:2px solid var(--cy);outline-offset:2px;border-radius:3px}
-.rail :focus-visible{outline-color:var(--brand-ink)}.pv-dark :focus-visible{outline-color:#fff}
+.rail :focus-visible{outline-color:var(--brand-ink)}
 *{scrollbar-width:thin;scrollbar-color:#B9C3C9 transparent}
 *::-webkit-scrollbar{width:10px;height:10px}
 *::-webkit-scrollbar-thumb{background:#B9C3C9;border-radius:6px;border:2px solid transparent;background-clip:content-box}
@@ -40,7 +40,6 @@ button{cursor:pointer}
 .badge{margin-left:auto;min-width:22px;height:20px;padding:0 7px;border-radius:10px;background:var(--cy-100);color:var(--cy-dd);font-size:var(--t-xs);font-weight:650;display:inline-grid;place-items:center;font-variant-numeric:tabular-nums}
 .nav>a[aria-current=page] .badge{background:var(--cy);color:var(--brand-ink)}
 .rail-foot{margin-top:auto;padding-top:14px;border-top:1px solid color-mix(in srgb,var(--brand-ink) 16%,transparent);display:flex;flex-direction:column;gap:12px}
-.demo-sw .lb{font-size:var(--t-xs);color:var(--rail-ink-2);margin-bottom:5px;display:block}
 .seg{display:inline-flex;background:var(--rail-shade);border-radius:var(--r);padding:2px;gap:2px;width:100%}
 .seg button{flex:1;border:0;background:transparent;color:var(--rail-ink);height:28px;border-radius:4px;font-size:var(--t-sm);font-weight:500;padding:0 6px;transition:background var(--dur),color var(--dur)}
 .seg button:hover{color:var(--brand-ink)}

@@ -39,5 +39,6 @@ return static function (SchemaBuilder $s) use ($site): void {
         Field::textarea('items', 'Состав')->max(\PHP_INT_MAX),
         Field::textarea('safe', 'Без скобок')->max(6000)->pattern('/^([^<>]|\n)*$/', 'Без скобок'),
     );
+    $s->form('long_f1_resend', 'F1 resend')->fields(Field::textarea('items', 'Items')->max(100000))->telegram('{items}');
     $s->form('long_plain', 'Без шаблона')->fields(Field::textarea('items', 'Состав')->max(20000));
 };

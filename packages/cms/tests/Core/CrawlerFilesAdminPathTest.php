@@ -12,6 +12,7 @@ use Symfony\Component\HttpKernel\KernelInterface;
 /** robots.txt по умолчанию закрывает ту админку, что есть на самом деле: itk_cms.admin_path = /cp и prefix маршрутов. */
 final class CrawlerFilesAdminPathTest extends WebTestCase
 {
+    /** @param array<string, mixed> $options */
     protected static function createKernel(array $options = []): KernelInterface
     {
         return new TestKernel('test', true, $options['admin'] ?? '/cp', $options['prefix'] ?? '');

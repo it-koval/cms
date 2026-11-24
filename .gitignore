@@ -19,13 +19,18 @@ coverage/
 # Local settings and secrets
 .env.local
 *.local
+/.ci-site/
+/admin/npm-audit.json
 
 # Other
 .impeccable
 docs/
+!/docs/
+/docs/*
+!/docs/DEPLOY.md
+!/docs/DEPLOY.ru.md
 
 # Internal notes of the maintainers: kept locally, not published
 /PRODUCT.md
 /DESIGN.md
 /CHANGELOG-critical-css.md
-/prototype/

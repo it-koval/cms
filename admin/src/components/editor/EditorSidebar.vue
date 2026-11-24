@@ -60,7 +60,6 @@ defineExpose({
   focusHead, focusRow, focusRowAct, focusAct, body,
   focusField: (path) => { const f = () => (ed.sb === 'tpl' ? tplForm.value : form.value); return f() ? f().focusField(path) : nextTick().then(() => f() && f().focusField(path)) },
   focusFirst: (select) => (ed.sb === 'tpl' ? tplForm.value : form.value) && (ed.sb === 'tpl' ? tplForm.value : form.value).focusFirst(select),
-  showAgent: () => form.value && form.value.showAgent(),
 })
 </script>
 

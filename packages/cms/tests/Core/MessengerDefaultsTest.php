@@ -15,6 +15,11 @@ use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\Console\Tester\CommandTester;
 use Symfony\Component\HttpKernel\KernelInterface;
 use Symfony\Component\Messenger\Bridge\Doctrine\Transport\DoctrineTransport;
+use Symfony\Component\Messenger\Envelope;
+use Symfony\Component\Messenger\Event\WorkerMessageFailedEvent;
+use Symfony\Component\Messenger\Event\WorkerMessageRetriedEvent;
+use Symfony\Component\Messenger\Stamp\DelayStamp;
+use Symfony\Component\Messenger\Stamp\RedeliveryStamp;
 use Symfony\Component\Messenger\Transport\InMemory\InMemoryTransport;
 
 /**
@@ -25,6 +30,7 @@ final class MessengerDefaultsTest extends KernelTestCase
 {
     private const CLEAN = ['messenger' => ['buses' => ['messenger.bus.default' => null]]];
 
+    /** @param array<string, mixed> $options */
     protected static function createKernel(array $options = []): KernelInterface
     {
         return new TestKernel($options['environment'] ?? 'test', $options['debug'] ?? true, null, '', $options['framework'] ?? []);
@@ -91,6 +97,72 @@ final class MessengerDefaultsTest extends KernelTestCase
     }
 
     #[Test]
+    public function requestDeliveryRetriesThreeTimesThenGoesToFailed(): void
+    {
+        self::bootKernel(['framework' => self::CLEAN]);
+        $db = self::getContainer()->get(Connection::class);
+        $db->beginTransaction();
+
+        try {
+            $id = \random_int(1_000_000_000, 2_000_000_000);
+            $failed = $this->transport('failed');
+            self::assertInstanceOf(DoctrineTransport::class, $failed);
+            $before = $failed->getMessageCount();
+            self::assertSame([60000, 120000, 240000, null], $this->failureDelays(new SendRequestNotification($id), 4));
+            self::assertSame($before + 1, $failed->getMessageCount());
+
+            $otherDelay = $this->failureDelays(new GenerateCriticalCss('f1-' . $id), 1)[0];
+            self::assertGreaterThanOrEqual(900, $otherDelay);
+            self::assertLessThanOrEqual(1100, $otherDelay);
+        } finally {
+            $db->rollBack();
+        }
+    }
+
+    #[Test]
+    public function requestDeliveryRespectsTheSitesRetrySettings(): void
+    {
+        self::bootKernel(['framework' => ['messenger' => [
+            'buses' => ['messenger.bus.default' => null],
+            'failure_transport' => 'failed',
+            'transports' => [
+                'async' => ['dsn' => 'in-memory://', 'retry_strategy' => ['max_retries' => 1, 'delay' => 7000, 'jitter' => 0]],
+                'failed' => 'in-memory://',
+            ],
+        ]]]);
+
+        self::assertSame([7000, null], $this->failureDelays(new SendRequestNotification(\random_int(1_000_000_000, 2_000_000_000)), 2));
+    }
+
+    /** @return list<int|null> one delay per simulated worker failure */
+    private function failureDelays(object $message, int $attempts): array
+    {
+        $dispatcher = self::getContainer()->get('event_dispatcher');
+        $delay = null;
+        $listener = static function (WorkerMessageRetriedEvent $event) use (&$delay): void {
+            $delay = $event->getEnvelope()->last(DelayStamp::class)?->getDelay();
+        };
+        $dispatcher->addListener(WorkerMessageRetriedEvent::class, $listener);
+
+        try {
+            $delays = [];
+            for ($attempt = 0; $attempt < $attempts; ++$attempt) {
+                $delay = null;
+                $envelope = new Envelope($message, [new RedeliveryStamp($attempt)]);
+                $event = new WorkerMessageFailedEvent($envelope, 'async', new \RuntimeException('Synthetic delivery failure'));
+                $dispatcher->dispatch($event);
+                // @phpstan-ignore notIdentical.alwaysFalse (The listener sets $delay through a reference.)
+                self::assertSame(null !== $delay, $event->willRetry());
+                $delays[] = $delay;
+            }
+
+            return $delays;
+        } finally {
+            $dispatcher->removeListener(WorkerMessageRetriedEvent::class, $listener);
+        }
+    }
+
+    #[Test]
     public function aSiteWithItsOwnFailureTransportGetsNoSecondOne(): void
     {
         self::bootKernel(['framework' => ['messenger' => [
@@ -124,16 +196,17 @@ final class MessengerDefaultsTest extends KernelTestCase
     {
         $kernel = self::bootKernel(['framework' => self::CLEAN]);
         $db = self::getContainer()->get(Connection::class);
-        $db->executeStatement('DROP TABLE IF EXISTS messenger_messages');
+        $db->beginTransaction();
 
         try {
+            $db->executeStatement('DROP TABLE IF EXISTS messenger_messages');
             $install = new CommandTester((new Application($kernel))->find('itk:install'));
             self::assertSame(0, $install->execute(['--no-home' => true], ['interactive' => false]), $install->getDisplay());
 
             self::assertTrue($db->createSchemaManager()->tablesExist(['messenger_messages']), 'the table of the queue is there before the first message');
             self::assertStringContainsString('Очередь сообщений: подготовлено транспортов — 4', $install->getDisplay());
         } finally {
-            $this->transport('failed')->setup(); // the test site\'s «failed» has auto_setup=0: leave the table as the other tests expect it
+            $db->rollBack();
         }
     }
 }

@@ -50,6 +50,7 @@ final class TelegramOptionalTest extends WebTestCase
     /** @var array<string, array{bool, mixed}> setting => [was it saved, its value]: put back after the test */
     private array $saved = [];
 
+    /** @param array<string, mixed> $options */
     protected static function createKernel(array $options = []): KernelInterface
     {
         return new TestKernel($options['environment'] ?? 'test', $options['debug'] ?? true, null, '', $options['framework'] ?? []);
@@ -73,7 +74,7 @@ final class TelegramOptionalTest extends WebTestCase
             $em->createQuery('DELETE FROM Itk\Cms\Entity\User u WHERE u.email LIKE :e')->setParameter('e', 'test-tg-%@example.com')->execute();
             $settings = self::getContainer()->get(SettingsService::class);
             foreach ($this->saved as $key => [$existed, $value]) {
-                $em->createQuery('DELETE FROM Itk\Cms\Entity\Setting s WHERE s.key = :k')->setParameter('k', $key)->execute();
+                $settings->remove($key);
                 if ($existed) {
                     $settings->set($key, $value);
                 }
@@ -123,7 +124,11 @@ final class TelegramOptionalTest extends WebTestCase
         );
     }
 
-    /** A transport that remembers what it was asked to send (and may refuse). */
+    /**
+     * A transport that remembers what it was asked to send (and may refuse).
+     *
+     * @return TransportInterface&object{sent: list<ChatMessage>}
+     */
     private function recorder(bool $refuse = false): TransportInterface
     {
         return new class($refuse) implements TransportInterface {
@@ -137,7 +142,7 @@ final class TelegramOptionalTest extends WebTestCase
             public function send(MessageInterface $message): SentMessage
             {
                 if ($this->refuse) {
-                    throw new \RuntimeException('Chat not found');
+                    throw new \Itk\Cms\Request\DeliveryRefusedException('Chat not found');
                 }
                 \assert($message instanceof ChatMessage);
                 $this->sent[] = $message;

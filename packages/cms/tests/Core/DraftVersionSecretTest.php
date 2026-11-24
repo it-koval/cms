@@ -80,7 +80,11 @@ final class DraftVersionSecretTest extends WebTestCase
         return (array) \json_decode((string) $this->client->getResponse()->getContent(), true);
     }
 
-    /** What the version used to be: a bare sha1 of the state, which anyone who sees the other fields could try with a guessed value. */
+    /**
+     * What the version used to be: a bare sha1 of the state, which anyone who sees the other fields could try with a guessed value.
+     *
+     * @param array<array-key, mixed> $state
+     */
     private function unkeyed(array $state): string
     {
         return \substr(\sha1(Json::encode(Json::canonical($state))), 0, 16);

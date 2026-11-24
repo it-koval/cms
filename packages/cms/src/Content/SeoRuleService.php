@@ -6,13 +6,18 @@ namespace Itk\Cms\Content;
 
 use Doctrine\ORM\EntityManagerInterface;
 use Itk\Cms\Entity\SeoRule;
+use Itk\Cms\Event\SeoRulesChanged;
+use Itk\Cms\I18n\ContentLocales;
 use Itk\Cms\I18n\I18n;
 use Itk\Cms\Repository\SeoRuleRepository;
 use Itk\Cms\Support\Url;
+use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 
 /**
  * SEO rules of addresses (Настройки → SEO → Правила адресов): the list, create, change, remove. Saved at once, there is no publish step.
  * The rules themselves are applied by SeoResolver.
+ *
+ * @internal
  */
 final class SeoRuleService
 {
@@ -25,8 +30,10 @@ final class SeoRuleService
         private readonly EntityManagerInterface $em,
         private readonly SeoRuleRepository $rules,
         private readonly SeoResolver $resolver,
+        private readonly ContentLocales $contentLocales,
         private readonly ?SitemapBuilder $sitemap = null,
         private readonly ?CrawlerFiles $crawlerFiles = null,
+        private readonly ?EventDispatcherInterface $events = null,
     ) {
     }
 
@@ -52,6 +59,7 @@ final class SeoRuleService
         $this->em->flush();
         $this->resolver->reset();
         $this->forgetCrawlerFiles(); // «noindex» of a rule changes the sitemap and llms.txt
+        $this->events?->dispatch(new SeoRulesChanged([clone $rule]));
 
         return $rule;
     }
@@ -62,21 +70,25 @@ final class SeoRuleService
     public function update(string $id, array $patch): SeoRule
     {
         $rule = $this->find($id);
+        $before = clone $rule;
         $this->fill($rule, $patch);
         $rule->updatedAt = new \DateTimeImmutable();
         $this->em->flush();
         $this->resolver->reset();
         $this->forgetCrawlerFiles();
+        $this->events?->dispatch(new SeoRulesChanged([$before, clone $rule]));
 
         return $rule;
     }
 
     public function remove(string $id): void
     {
+        $rule = clone $this->find($id);
         $this->em->remove($this->find($id));
         $this->em->flush();
         $this->resolver->reset();
         $this->forgetCrawlerFiles();
+        $this->events?->dispatch(new SeoRulesChanged([$rule]));
     }
 
     /**
@@ -103,12 +115,40 @@ final class SeoRuleService
             throw ContentException::invalid(I18n::t('content.seo_path_long'), ['path' => I18n::t('content.seo_path_long')]);
         }
         [$path, $query] = \array_pad(\explode('?', $raw, 2), 2, '');
-        $path = Url::key($path);
+        $path = self::requestPathKey($path);
         \parse_str($query, $params);
         self::sortParams($params);
         $query = \http_build_query($params, '', '&', \PHP_QUERY_RFC3986);
 
         return '' === $query ? $path : $path . '?' . $query;
+    }
+
+    /** A stored path is already in its canonical spelling. */
+    public static function pathKey(string $path): string
+    {
+        return Url::key(Url::fromPath($path));
+    }
+
+    /** Decode HTTP input once without turning an escaped delimiter into path structure. */
+    public static function requestPathKey(string $path): string
+    {
+        $decoded = \preg_replace_callback('/(?:%[a-f0-9]{2})+/i', static function (array $run): string {
+            // A legacy rule may contain malformed UTF-8 escapes. Keep those bytes escaped instead of
+            // letting case folding replace them and silently change the address (or fail a PostgreSQL write).
+            $validUtf8 = \mb_check_encoding(\rawurldecode($run[0]), 'UTF-8');
+
+            return \preg_replace_callback('/%([a-f0-9]{2})/i', static function (array $match) use ($validUtf8): string {
+                $byte = (int) \hexdec($match[1]);
+                $char = \chr($byte);
+                if ($byte >= 128) {
+                    return $validUtf8 ? $char : $match[0];
+                }
+
+                return \ctype_alnum($char) || \str_contains('-._~', $char) ? $char : $match[0];
+            }, $run[0]) ?? $run[0];
+        }, $path);
+
+        return self::pathKey($decoded ?? $path);
     }
 
     /** @param array<array-key, mixed> $params */
@@ -151,9 +191,17 @@ final class SeoRuleService
         }
         $locale = $rule->locale;
         if (\array_key_exists('locale', $data)) {
-            $locale = null === $data['locale'] || '' === $data['locale'] ? null : (string) $data['locale'];
-            if (null !== $locale && !\preg_match('/^[A-Za-z]{2,8}$/', $locale)) {
+            $input = $data['locale'];
+            if (null === $input || '' === $input) {
+                $locale = null;
+            } elseif (!\is_string($input) || (!$this->contentLocales->isConfigured() && 1 !== \preg_match('/^[A-Za-z]{2,8}\z/', $input))) {
                 $errors['locale'] = I18n::t('content.seo_locale_unknown');
+            } else {
+                try {
+                    $locale = $this->contentLocales->assertUsable($input);
+                } catch (ContentException) {
+                    $errors['locale'] = I18n::t('content.seo_locale_unknown');
+                }
             }
         }
         $values = [];

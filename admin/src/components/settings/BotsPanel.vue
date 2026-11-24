@@ -8,6 +8,7 @@ import ReadOnlyNote from '@/components/ui/ReadOnlyNote.vue'
 import { useToast } from '@/components/ui/useToast.js'
 import { useConfirm } from '@/components/ui/useConfirm.js'
 import { t } from '@/i18n/index.js'
+import { useUnsavedChanges } from '@/composables/useUnsavedChanges.js'
 
 const toast = useToast()
 const confirm = useConfirm()
@@ -23,6 +24,7 @@ const tokens = reactive({ telegram: '', max: '' })
 const clearing = reactive({ telegram: false, max: false })
 const errors = reactive({})
 const dirty = computed(() => Object.fromEntries(channels.map((key) => [key, tokens[key] !== '' || clearing[key]])))
+useUnsavedChanges(() => Object.values(dirty.value).some(Boolean), { saving })
 
 function fill(next) {
   state.value = next
@@ -117,11 +119,11 @@ function discard(key) {
               <span class="mark"><span class="pmark" aria-hidden="true"><i /></span>{{ t('settings.changed') }}</span>
             </div>
             <div class="row bots-token">
-              <input :id="'bots-' + key + '-token'" :value="tokens[key]" type="password" autocomplete="new-password" spellcheck="false" :disabled="saving" :placeholder="placeholder(key)" :aria-invalid="errors[key] ? 'true' : undefined" :aria-describedby="'bots-' + key + '-help'" @input="typeToken(key, $event.target.value)">
+              <input :id="'bots-' + key + '-token'" :value="tokens[key]" type="password" autocomplete="new-password" spellcheck="false" :disabled="saving" :placeholder="placeholder(key)" :aria-invalid="errors[key] ? 'true' : undefined" :aria-describedby="'bots-' + key + '-help' + (errors[key] ? ' bots-' + key + '-error' : '')" @input="typeToken(key, $event.target.value)">
               <button v-if="canEdit && state[key].source === 'admin' && !clearing[key]" type="button" class="btn sm" :disabled="saving" @click="clearToken(key)">{{ t('settings.bots_clear') }}</button>
             </div>
             <div :id="'bots-' + key + '-help'" class="help">{{ t('settings.bots_token_help') }}<template v-if="clearing[key]"> {{ t('settings.bots_clear_pending') }}</template></div>
-            <div v-if="errors[key]" class="err" role="alert"><Icon name="alert" size="s16" /><span>{{ errors[key] }}</span></div>
+            <div v-if="errors[key]" :id="'bots-' + key + '-error'" class="err" role="alert"><Icon name="alert" size="s16" /><span>{{ errors[key] }}</span></div>
           </div>
         </div>
         <div v-if="canEdit" class="bots-bar">

@@ -50,7 +50,7 @@ final class BotSettingsCollisionTest extends TestCase
         $this->group = (new SettingsGroup('site', 'Site'))
             ->fields(Field::text('title', 'Title'), Field::text('telegramBot', 'Telegram connection'))
             ->prepend(Field::text('maxBot', 'MAX connection'));
-        $this->schema = new Schema('ru', [], [], [], ['top' => [], 'bottom' => []], [], [], [], ['site' => $this->group], []);
+        $this->schema = new Schema('ru', [], [], ['top' => [], 'bottom' => []], [], [], [], ['site' => $this->group], []);
         $this->rows = [
             'title' => new Setting('title', Setting::ALL, 'Public title'),
             'telegramBot' => new Setting('telegramBot', Setting::ALL, ['token' => 'v1.telegram-secret']),

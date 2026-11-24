@@ -14,7 +14,7 @@ use Symfony\Component\DependencyInjection\Attribute\Autowire;
  *   $settings->string('phone')         $settings->bool('maintenance')        $settings->int('seats', 10)
  *   $settings->array('socials')        $settings->media('logo')              $settings->get('siteName', locale: 'en')
  *
- * Twig: settings('phone') is the same. A setting of a field marked translatable() is read in the language you ask for (default: the main one).
+ * Twig: itk_settings('phone') is the same. A setting of a field marked translatable() is read in the language you ask for (default: the main one).
  * A default is used when the setting is not in the schema or is empty (an empty text / number / list); false and 0 are real values.
  */
 final class Settings
@@ -83,7 +83,11 @@ final class Settings
         return \is_array($value) && [] !== $value ? $value : $default;
     }
 
-    /** A picture setting: { src, alt }, or null while none is chosen. @return null|array{src: string, alt: string} */
+    /**
+     * A picture setting: { src, alt }, or null while none is chosen.
+     *
+     * @return array{src: string, alt: string}|null
+     */
     public function media(string $key, ?string $locale = null): ?array
     {
         $value = $this->raw($key, $locale);
@@ -109,7 +113,7 @@ final class Settings
             return $this->settings->get($key, $locale);
         }
 
-        return $field->hasDefault() ? $field->defaultValue() : null;
+        return $field->hasDefault() ? $field->defaultValue() : ('select' === $field->type() ? $this->settings->get($key, $locale) : null);
     }
 
     private function cast(string $key, mixed $value): mixed

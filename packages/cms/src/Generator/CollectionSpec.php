@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Itk\Cms\Generator;
 
+use Itk\Cms\I18n\I18n;
+use Itk\Cms\Schema\Collection;
+
 /**
  * What a collection class is generated from: a JSON file or a table.
  *
@@ -14,7 +17,7 @@ final class CollectionSpec
     /**
      * @param list<FieldSpec> $fields
      * @param array<string, mixed>|null $source {kind: 'table'|'json', name: string, idColumn?: string}
-     * @param list<string> $notes columns left out and why
+     * @param list<string> $notes notices about ignored input
      */
     public function __construct(
         public readonly string $key,
@@ -26,6 +29,16 @@ final class CollectionSpec
         public readonly ?array $source = null,
         public readonly array $notes = [],
     ) {
+        $seen = [];
+        foreach ($fields as $field) {
+            if (\in_array($field->key, Collection::RESERVED_KEYS, true)) {
+                throw new \InvalidArgumentException(I18n::t('model.problem_record_key_taken', ['at' => $title, 'key' => $field->key]));
+            }
+            if (isset($seen[$field->key])) {
+                throw new \InvalidArgumentException(I18n::t('model.problem_field_key_repeated', ['at' => $title, 'key' => $field->key]));
+            }
+            $seen[$field->key] = true;
+        }
     }
 
     public function withKeyAndTitle(string $key, string $title): self

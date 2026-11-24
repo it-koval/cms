@@ -5,17 +5,22 @@ declare(strict_types=1);
 namespace Itk\Cms\Tests\Core;
 
 use Doctrine\DBAL\Connection;
+use Itk\Cms\Analytics\AnalyticsAsset;
 use Itk\Cms\Command\DoctorCommand;
 use Itk\Cms\Content\PageService;
 use Itk\Cms\Extension\Registry;
 use Itk\Cms\Health\Doctor;
 use Itk\Cms\Health\HealthResult;
+use Itk\Cms\Health\HealthService;
+use Itk\Cms\Media\ImageVariants;
 use Itk\Cms\Repository\PageRepository;
 use Itk\Cms\Tests\App\TestKernel;
 use Itk\Cms\Tests\Core\Fixture\OffHealthCheck;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use Symfony\Bundle\FrameworkBundle\Console\Application;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
+use Symfony\Component\Console\Command\LazyCommand;
 use Symfony\Component\Console\Tester\CommandTester;
 use Symfony\Component\HttpKernel\KernelInterface;
 
@@ -24,6 +29,7 @@ final class DoctorTest extends KernelTestCase
 {
     private ?string $homeId = null;
 
+    /** @param array<string, mixed> $options */
     protected static function createKernel(array $options = []): KernelInterface
     {
         return new TestKernel('test', true, null, '', [], [], $options['itk'] ?? []);
@@ -43,7 +49,11 @@ final class DoctorTest extends KernelTestCase
         return self::getContainer()->get(Doctor::class)->run();
     }
 
-    /** @param list<array{group: string, name: string, status: string, message: string}> $lines @return array{group: string, name: string, status: string, message: string} */
+    /**
+     * @param list<array{group: string, name: string, status: string, message: string}> $lines
+     *
+     * @return array{group: string, name: string, status: string, message: string}
+     */
     private function line(array $lines, string $name): array
     {
         foreach ($lines as $l) {
@@ -72,6 +82,51 @@ final class DoctorTest extends KernelTestCase
         self::assertStringContainsString('не опубликована', $home['message']);
     }
 
+    /** @return iterable<string, array{bool, string}> */
+    public static function webpSupport(): iterable
+    {
+        yield 'WebP writer' => [true, HealthResult::OK];
+        yield 'no WebP writer' => [false, HealthResult::FAIL];
+    }
+
+    #[Test]
+    #[DataProvider('webpSupport')]
+    public function siteHealthAndDoctorUseTheSameWebpResult(bool $supported, string $status): void
+    {
+        self::bootKernel();
+        $container = self::getContainer();
+        $container->set(ImageVariants::class, new ImageVariants('', '/uploads', [375], 80, 1000000, gdWebp: $supported));
+
+        $checks = \array_column($container->get(HealthService::class)->report()['checks'], null, 'name');
+        $lines = $this->lines();
+        $line = $this->line($lines, 'WebP');
+        self::assertSame($status, $checks['WebP']['status']);
+        self::assertSame(['name' => 'WebP', 'status' => $line['status'], 'message' => $line['message']], $checks['WebP']);
+        self::assertSame(1, \count(\array_filter($lines, static fn (array $line): bool => 'WebP' === $line['name'])));
+    }
+
+    #[Test]
+    public function siteHealthAndDoctorReportTheSameLegacyTwigCall(): void
+    {
+        self::bootKernel();
+        $relative = 'templates/legacy-twig-' . \bin2hex(\random_bytes(6)) . '.twig';
+        $path = self::$kernel->getProjectDir() . '/' . $relative;
+        \file_put_contents($path, "heading\n{{ render_sections(page) }}");
+
+        try {
+            $name = 'Устаревшие Twig-функции';
+            $checks = \array_column(self::getContainer()->get(HealthService::class)->report()['checks'], null, 'name');
+            self::assertSame(HealthResult::WARN, $checks[$name]['status']);
+            self::assertStringContainsString($relative . ':2 (render_sections)', $checks[$name]['message']);
+
+            $tester = new CommandTester((new Application(self::$kernel))->find('itk:doctor'));
+            $tester->execute([]);
+            self::assertStringContainsString($name . ': ' . $checks[$name]['message'], $tester->getDisplay());
+        } finally {
+            \unlink($path);
+        }
+    }
+
     #[Test]
     public function aSiteInOrderHasNoFailLines(): void
     {
@@ -81,7 +136,7 @@ final class DoctorTest extends KernelTestCase
         $lines = $this->lines();
         $fails = \array_filter($lines, static fn (array $l): bool => HealthResult::FAIL === $l['status']);
         self::assertSame([], \array_values($fails), \json_encode($fails, \JSON_UNESCAPED_UNICODE));
-        foreach (['Расширения PHP', 'WebP', 'AVIF', 'APP_SECRET', 'Папка для загрузок', 'База данных', 'Адрес сайта', 'Миграции', 'Главная страница', 'Файрвол админки', 'Очередь и воркер', 'Админка: сборка', 'Схема сайта'] as $name) {
+        foreach (['Расширения PHP', 'WebP', 'AVIF', 'APP_SECRET', 'Папка для загрузок', 'База данных', 'Адрес сайта', 'Миграции', 'Главная страница', 'Файрвол админки', 'Очередь и воркер', 'Админка: сборка', 'Загрузчик аналитики', 'Схема сайта'] as $name) {
             $this->line($lines, $name);
         }
         self::assertSame(HealthResult::OK, $this->line($lines, 'Миграции')['status']);
@@ -170,6 +225,34 @@ final class DoctorTest extends KernelTestCase
     }
 
     #[Test]
+    public function theAnalyticsLoaderNeedsACurrentInstalledCopy(): void
+    {
+        $dir = \dirname(__DIR__) . '/App/doctor-analytics-' . \bin2hex(\random_bytes(6));
+        \mkdir($dir, recursive: true);
+        $installed = $dir . '/analytics.js';
+        $bundle = new AnalyticsAsset();
+
+        try {
+            $missing = Doctor::checkAnalyticsLoader($bundle, $installed);
+            self::assertSame(HealthResult::WARN, $missing->status);
+            self::assertStringContainsString('отсутствует', $missing->message);
+
+            \file_put_contents($installed, 'outdated');
+            $outdated = Doctor::checkAnalyticsLoader($bundle, $installed);
+            self::assertSame(HealthResult::WARN, $outdated->status);
+            self::assertStringContainsString('отличается', $outdated->message);
+
+            \copy(\dirname(__DIR__, 2) . '/public/analytics.js', $installed);
+            self::assertSame(HealthResult::OK, Doctor::checkAnalyticsLoader($bundle, $installed)->status);
+        } finally {
+            if (\is_file($installed)) {
+                \unlink($installed);
+            }
+            \rmdir($dir);
+        }
+    }
+
+    #[Test]
     public function theAdminBuildNeedsItsManifestAndEveryFileOfIt(): void
     {
         $dir = \sys_get_temp_dir() . '/itk-admin-build-' . \bin2hex(\random_bytes(4));
@@ -203,7 +286,8 @@ final class DoctorTest extends KernelTestCase
     {
         self::bootKernel();
 
-        self::assertInstanceOf(DoctorCommand::class, (new Application(self::$kernel))->find('itk:doctor')->getCommand());
+        $command = (new Application(self::$kernel))->find('itk:doctor');
+        self::assertInstanceOf(DoctorCommand::class, $command instanceof LazyCommand ? $command->getCommand() : $command);
     }
 
     #[Test]

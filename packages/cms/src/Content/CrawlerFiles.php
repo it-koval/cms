@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace Itk\Cms\Content;
 
 use Itk\Cms\Admin\AdminPath;
+use Itk\Cms\I18n\ContentLocales;
 use Itk\Cms\Support\Url;
+use Psr\Cache\CacheItemPoolInterface;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Contracts\Cache\CacheInterface;
 use Symfony\Contracts\Cache\ItemInterface;
@@ -38,9 +40,12 @@ final class CrawlerFiles
         private readonly SitemapBuilder $sitemap,
         private readonly IndexablePages $pages,
         private readonly AdminPath $admin,
-        private readonly CacheInterface $cache,
+        #[Autowire(service: 'cache.app')]
+        private readonly CacheInterface&CacheItemPoolInterface $cache,
         #[Autowire(param: 'kernel.project_dir')]
         private readonly string $projectDir,
+        private readonly ?ContentLocales $locales = null,
+        private readonly ?CrawlerCacheGeneration $generation = null,
     ) {
     }
 
@@ -139,7 +144,12 @@ final class CrawlerFiles
     /** Drops the kept standard llms.txt (the next request builds it again). */
     public function forget(): void
     {
-        $this->cache->delete(self::KEY);
+        $this->generations()->advance('llms');
+    }
+
+    public function isMultilingual(): bool
+    {
+        return $this->locales?->isMultilingual() ?? false;
     }
 
     private function robotsDefault(): string
@@ -158,19 +168,19 @@ final class CrawlerFiles
     {
         $base = $this->sitemap->base();
         $name = $this->siteName($base);
-        $sig = \md5(($base ?? '') . "\0" . $name);
-        $build = function (ItemInterface $item) use ($base, $name, $sig): array {
+        $sig = \md5(($base ?? '') . "\0" . $name . ($this->isMultilingual() ? "\0" . $this->pages->catalogSignature() : ''));
+        $generation = $this->generations()->current('llms');
+
+        return $this->cache->get(self::KEY . '_' . $generation . '_' . $sig, function (ItemInterface $item) use ($base, $name): string {
             $item->expiresAfter(self::TTL);
 
-            return ['sig' => $sig, 'text' => $this->buildLlms($base, $name)];
-        };
-        $kept = $this->cache->get(self::KEY, $build);
-        if (!\is_array($kept) || ($kept['sig'] ?? null) !== $sig) { // the name or the address changed since it was kept
-            $this->cache->delete(self::KEY);
-            $kept = $this->cache->get(self::KEY, $build);
-        }
+            return $this->buildLlms($base, $name);
+        });
+    }
 
-        return (string) $kept['text'];
+    private function generations(): CrawlerCacheGeneration
+    {
+        return $this->generation ?? new CrawlerCacheGeneration($this->cache);
     }
 
     /** The name of the site (main language); else its address without the scheme; else «Site». */
@@ -195,8 +205,8 @@ final class CrawlerFiles
                 $home = $r['description'];
             }
             $title = '' !== $r['title'] ? $r['title'] : $r['url'];
-            $href = \str_replace(['(', ')'], ['%28', '%29'], ($base ?? '') . Url::encodePath($r['url']));
-            $links[] = '- [' . self::label($title) . '](' . $href . ')' . ('' !== $r['description'] ? ': ' . self::line($r['description']) : '');
+            $href = \str_replace(['(', ')'], ['%28', '%29'], ($base ?? '') . Url::encodePath($this->isMultilingual() ? Url::spelling($r['url']) : $r['url']));
+            $links[$r['locale']][] = '- [' . self::label($title) . '](' . $href . ')' . ('' !== $r['description'] ? ': ' . self::line($r['description']) : '');
         }
         $out = ['# ' . self::line($name)];
         if ('' !== $home) {
@@ -205,9 +215,24 @@ final class CrawlerFiles
         }
         if ([] !== $links) {
             $out[] = '';
-            $out[] = '## Pages';
-            $out[] = '';
-            \array_push($out, ...$links);
+            if ($this->isMultilingual()) {
+                foreach ($this->locales->codes() as $code) {
+                    if (!isset($links[$code])) {
+                        continue;
+                    }
+                    $out[] = '## ' . self::line($this->locales->name($code));
+                    $out[] = '';
+                    \array_push($out, ...$links[$code]);
+                    $out[] = '';
+                }
+                \array_pop($out);
+            } else {
+                $out[] = '## Pages';
+                $out[] = '';
+                foreach ($links as $group) {
+                    \array_push($out, ...$group);
+                }
+            }
         }
 
         return \implode("\n", $out);

@@ -137,7 +137,10 @@ final class RawFieldGuardTest extends KernelTestCase
         return [['id' => 's1', 'type' => 'test_raw_places', 'hidden' => false, 'data' => ['places' => $items]]];
     }
 
-    /** @param list<array<string, mixed>> $before @param list<array<string, mixed>> $after */
+    /**
+     * @param list<array<string, mixed>> $before
+     * @param list<array<string, mixed>> $after
+     */
     private function assertRefused(array $before, array $after, string $what): void
     {
         try {

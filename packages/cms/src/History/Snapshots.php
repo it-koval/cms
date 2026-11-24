@@ -111,7 +111,11 @@ final class Snapshots
         return ['position' => $i->position, 'parentId' => $i->parentId, 'createdAt' => $i->createdAt->format(\DATE_ATOM), 'translations' => $i->translations];
     }
 
-    /** The name to show for an entry: the title of a page, the title field of a record, the name of a group or a menu. */
+    /**
+     * The name to show for an entry: the title of a page, the title field of a record, the name of a group or a menu.
+     *
+     * @param array<string, mixed> $snapshot
+     */
     public function title(string $kind, string $key, array $snapshot): string
     {
         $title = '';
@@ -125,7 +129,7 @@ final class Snapshots
             $title = (string) ($snapshot['name'] ?? $key);
         } else {
             $title = match ($key) {
-                'notifications' => I18n::t('content.history_notifications'),
+                'notifications', Revision::NOTIFICATION_SETTINGS_KEY => I18n::t('content.history_notifications'),
                 'seo-files' => I18n::t('content.history_seo'),
                 default => '',
             };
@@ -168,7 +172,7 @@ final class Snapshots
     public function summary(string $kind, string $key, string $action, array $snapshot, ?array $prev): array
     {
         $head = $this->headRow($kind, $action);
-        $rows = Revision::DELETE === $action || Revision::CREATE === $action ? [] : $this->diff($kind, $key, $snapshot, $prev);
+        $rows = \in_array($action, [Revision::DELETE, Revision::DELETE_TRANSLATION, Revision::CREATE], true) ? [] : $this->diff($kind, $key, $snapshot, $prev);
 
         return $this->cut([...(null !== $head ? [$head] : []), ...$rows]);
     }
@@ -230,6 +234,7 @@ final class Snapshots
             Revision::UNPUBLISH => I18n::t('content.head_unpublished'),
             Revision::REVERT => I18n::t('content.head_reverted'),
             Revision::DELETE => I18n::t($deleted),
+            Revision::DELETE_TRANSLATION => I18n::t('content.head_translation_deleted'),
             Revision::RESTORE => I18n::t('content.head_restored'),
             default => null,
         };

@@ -9,6 +9,7 @@ use Itk\Cms\Generator\Naming;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Input\InputInterface;
 
+/** @internal */
 #[AsCommand(name: 'itk:make:settings', description: 'ops.cmd_make_settings_description')]
 final class MakeSettingsCommand extends AbstractMakeCommand
 {

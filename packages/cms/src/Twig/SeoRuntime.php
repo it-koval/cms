@@ -13,7 +13,7 @@ use Twig\Extension\RuntimeExtensionInterface;
  *
  *   {% set seo = itk_seo({ title: 'Мой сайт', robots: 'index,follow' }) %}
  *
- * Returns { title, description, robots, canonical, ogImage, rule }:
+ * Returns { title, description, robots, canonical, ogImage, rule, alternates }:
  *   title        SEO rule of the address, else the page's SEO title, else the page title, else defaults.title
  *   description  rule, else the page's, else defaults.description
  *   robots       rule, else defaults.robots ('' = print nothing, or the site's own default)
@@ -34,7 +34,7 @@ final class SeoRuntime implements RuntimeExtensionInterface
      * @param array<string, mixed> $context the Twig context: `page` is read from it when there is one
      * @param array<string, mixed> $defaults
      *
-     * @return array{title: string, description: string, robots: string, canonical: string, ogImage: string, rule: string|null}
+     * @return array{title: string, description: string, robots: string, canonical: string, ogImage: string, rule: string|null, alternates: list<array{hreflang: string, href: string}>}
      */
     public function seo(array $context, array $defaults = []): array
     {
@@ -44,6 +44,14 @@ final class SeoRuntime implements RuntimeExtensionInterface
             $seo = $this->seo->apply($seo, $this->seo->forRequest());
         }
 
-        return $this->seo->meta($seo, \is_scalar($page['title'] ?? null) ? (string) $page['title'] : '', $defaults);
+        $meta = $this->seo->meta($seo, \is_scalar($page['title'] ?? null) ? (string) $page['title'] : '', $defaults);
+        $livePage = isset($page['id']) && !($context['itk_preview'] ?? false);
+        if ('' === $meta['canonical'] && $livePage) {
+            $meta['canonical'] = (string) ($page['seo_canonical'] ?? '');
+        }
+        $meta['alternates'] = $livePage && !\str_contains(\strtolower($meta['robots']), 'noindex')
+            ? (array) ($page['seo_alternates'] ?? []) : [];
+
+        return $meta;
     }
 }

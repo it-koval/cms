@@ -7,7 +7,7 @@
 // RIGHTS (area col:<key>): without «Править» the table is read-only (inert, no buttons); without «Публиковать» the button is «Отправить на публикацию» (the version then waits: «Ждёт публикации»,
 // and those who may publish get «Вернуть автору» beside «Опубликовать»).
 // Every save names the version of the table it found (baseVersion); a table changed meanwhile (an assistant, another person) stops the autosave and EditConflict asks: show the new version or keep my edits.
-import { computed, nextTick, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { onBeforeRouteLeave, onBeforeRouteUpdate } from 'vue-router'
 import { api } from '@/api/index.js'
 import { app, can, refreshCounters, switchContentLocale, useLocaleGuard } from '@/stores/app.js'
@@ -25,6 +25,7 @@ import { isConflict, useDraftSave } from './useDraftSave.js'
 import { matrixChanges, pubVal } from './matrixChanges.js'
 import { fill, MATRIX_WORDS, matrixWords } from '@/schema/matrix.js'
 import MissingVersion from './MissingVersion.vue'
+import HistoryDrawer from '@/components/history/HistoryDrawer.vue'
 import { cap, onLang, siteIn, up, verAcc, verGen, verNom, versionState } from '@/utils/langWords.js'
 import { carryTab, takeTab } from './lang.js'
 import { isMain, isMulti, langName } from '@/utils/locales.js'
@@ -49,6 +50,7 @@ const pub = ref(null) // published { cols, rows } or null
 const meta = ref({ status: 'published', updatedAt: null, awaiting: null, returned: null })
 const canEdit = computed(() => can('col:' + COL, 'edit'))
 const canPublish = computed(() => can('col:' + COL, 'publish'))
+const canDelete = computed(() => can('col:' + COL, 'delete'))
 const awaiting = computed(() => meta.value.awaiting || null)
 const returned = computed(() => meta.value.returned || null) // { by, at } after a publisher sent the table back to the author
 const loaded = ref(false)
@@ -86,16 +88,19 @@ async function settled() {
 }
 /** Leaving the table: the same, except that a failed save lets the person decide (the edits are lost with the screen). A conflict keeps them here, the banner asks. */
 async function mayLeave() {
+  if (working.value || startBusy.value) return false
   if (await saver.flush()) return true
   if (saver.conflict.value) { toast.error(t('collections.mx_settle_first')); return false }
-  return confirm({
+  const discard = await confirm({
     title: t('settings.leave_title'), message: t('collections.leave_unsaved_text', { reason: saver.error.value || t('collections.error_word') }),
     confirmLabel: t('settings.leave_confirm'), cancelLabel: t('people.btn_stay'), danger: true,
   })
+  if (discard) saver.reset()
+  return discard
 }
 // leaving the table (the list, another section) with edits that were not saved: the person stays or leaves knowingly (false = stay)
 onBeforeRouteLeave(mayLeave)
-onBeforeRouteUpdate(mayLeave)
+onBeforeRouteUpdate((to, from) => to.params.col === from.params.col ? true : mayLeave())
 /** «Показать новую версию»: the edits on screen are dropped, the table is loaded as it is now. */
 async function showNewVersion() {
   working.value = true
@@ -119,12 +124,19 @@ async function choose(fn) {
   try { await fn() } finally { choosing.value = false }
 }
 
+let loadSeq = 0
+let alive = true
+onBeforeUnmount(() => { alive = false; loadSeq++ })
 async function load() {
+  if (!alive) return
+  const my = ++loadSeq
+  const saves = saver.saves()
   try {
     const { item, published, locales } = await api.collections.get(COL, ID, LOC)
+    if (my !== loadSeq) return
     summary.value = locales
     translated.value = !!item
-    saver.setVersion(item && item.version)
+    saver.setVersion(item && item.version, saves)
     if (item) {
       tbl.value = { cols: item.cols || [], rows: item.rows || [] }
       pub.value = published ? { cols: published.cols, rows: published.rows } : null
@@ -135,9 +147,10 @@ async function load() {
     }
     failed.value = ''
   } catch (e) {
+    if (my !== loadSeq) return
     failed.value = e.message || t('collections.mx_load_failed')
   }
-  loaded.value = true
+  if (my === loadSeq) loaded.value = true
 }
 const carried = takeTab(COL, ID) // a language switch just re-mounted this screen: put the focus back on the language select
 onMounted(async () => {
@@ -328,11 +341,11 @@ const states = computed(() => {
   })
   return out
 })
-async function startTranslation() {
+async function startTranslation(from = app.languages.main) {
   if (startBusy.value) return
-  startBusy.value = 'copy'
+  startBusy.value = from ? 'copy' : 'blank'
   try {
-    await api.collections.createTranslation(COL, ID, LOC, { from: app.languages.main })
+    await api.collections.createTranslation(COL, ID, LOC, { from })
     await load()
     refreshCounters()
     toast.show(t('collections.mx_version_created', { version: up(verNom(LOC)) }))
@@ -343,6 +356,7 @@ async function startTranslation() {
   }
 }
 async function removeVersion() {
+  if (!canDelete.value || IS_MAIN || working.value) return
   const ok = await confirm({
     title: t('collections.mx_delete_version_title', { version: verAcc(LOC) }),
     message: t('collections.mx_delete_version_text', { site: siteIn(LOC) }),
@@ -352,8 +366,8 @@ async function removeVersion() {
   working.value = true
   try {
     popOpen.value = false
-    saver.reset()
     await api.collections.removeTranslation(COL, ID, LOC)
+    saver.reset()
     await load()
     refreshCounters()
     toast.show(t('collections.mx_version_deleted', { version: up(verNom(LOC)) }))
@@ -372,6 +386,23 @@ useLocaleGuard(async () => {
 })
 const pickLang = (code) => switchContentLocale(code)
 
+const histOpen = ref(false)
+async function openHistory() {
+  if (working.value || !(await settled())) return
+  histOpen.value = true
+}
+async function onRestored() {
+  histOpen.value = false
+  working.value = true
+  try {
+    saver.reset()
+    await load()
+    refreshCounters()
+  } finally {
+    working.value = false
+  }
+}
+
 /* ---------- small helpers ---------- */
 // a textarea that grows with its text (field-sizing is not in every browser)
 const fit = (el) => { el.style.height = 'auto'; el.style.height = el.scrollHeight + 2 + 'px' }
@@ -385,7 +416,7 @@ const saveText = computed(() => ({ dirty: t('collections.saving'), saving: t('co
       <div class="cl-hd">
         <div class="cl-h1">
           <h1>{{ cfg.title }}</h1>
-          <LanguageSelect v-if="MULTI && summary" ref="langSel" :model-value="LOC" :languages="app.languages.list" :statuses="states" :label="t('collections.mx_language')" @update:model-value="pickLang" />
+          <LanguageSelect v-if="MULTI && summary" ref="langSel" :model-value="LOC" :languages="app.languages.list" :statuses="states" :label="t('collections.mx_language')" :disabled="working || !!startBusy" @update:model-value="pickLang" />
         </div>
         <p class="sub">{{ W.about }}<template v-if="MULTI"> {{ t('collections.mx_per_language') }}</template></p>
       </div>
@@ -396,6 +427,7 @@ const saveText = computed(() => ({ dirty: t('collections.saving'), saving: t('co
         </span>
         <StatusChip :status="chipStatus" :label="chipLabel" />
         <StatusChip v-if="awaiting" status="warn" :label="t('collections.awaiting')" :title="t('collections.sent_for_publishing_by', { by: awaiting.by })" />
+        <button v-if="MULTI" type="button" class="btn" @click="openHistory"><Icon name="clock" size="s16" />{{ t('collections.iv_history') }}</button>
         <button v-if="canEdit && pub && count" type="button" class="btn ghost" @click="doRevert"><Icon name="undo" size="s16" />{{ t('collections.revert_edits') }}</button>
         <button v-if="canEdit && canPublish && awaiting" type="button" class="btn" @click="doReturn">{{ t('collections.return_to_author') }}</button>
         <button
@@ -409,7 +441,7 @@ const saveText = computed(() => ({ dirty: t('collections.saving'), saving: t('co
     <div v-else-if="failed" class="sheet"><EmptyState icon="alert" :title="t('collections.mx_load_error_title')" :text="failed"><button type="button" class="btn" @click="load">{{ t('collections.mx_retry') }}</button></EmptyState></div>
 
     <div v-else-if="!tbl" class="sheet cl-miss">
-      <MissingVersion v-if="canEdit" :cfg="cfg" :locale="LOC" :busy="startBusy" @copy="startTranslation" />
+      <MissingVersion v-if="canEdit" :cfg="cfg" :locale="LOC" :busy="startBusy" @copy="startTranslation(app.languages.main)" @blank="startTranslation(null)" />
       <EmptyState v-else icon="globe" :title="t('collections.mx_missing_title')" :text="t('collections.mx_missing_text')" />
     </div>
 
@@ -498,13 +530,14 @@ const saveText = computed(() => ({ dirty: t('collections.saving'), saving: t('co
         <span v-if="meta.updatedAt" class="muted">{{ t('collections.changed_at', { date: fmtUpdated(meta.updatedAt) }) }}</span>
         <span class="cl-leg"><span class="pmark" aria-hidden="true"><i /></span>{{ t('collections.mx_legend') }}</span>
       </div>
-      <div v-if="MULTI && !IS_MAIN && canEdit" class="cl-foot">
+      <div v-if="MULTI && !IS_MAIN && canDelete" class="cl-foot">
         <button type="button" class="btn danger sm" @click="removeVersion"><Icon name="trash" size="s14" />{{ cap(t('collections.delete_version', { version: verAcc(LOC) })) }}</button>
         <span class="muted">{{ t('collections.mx_foot', { lang: langName(app.languages.main) }) }}</span>
       </div>
     </div>
 
     <PublishPopover v-model:open="popOpen" :anchor="pubBtn" :changes="changes" :busy="working" :subject="W.subject" :limit="10" :lang-code="MULTI ? LOC : ''" :send="!canPublish" @confirm="canPublish ? doPublish() : doSubmit()" />
+    <HistoryDrawer v-if="MULTI" v-model:open="histOpen" kind="item" :resource-id="ID" :locale="LOC" :can-restore="canEdit" @restored="onRestored" />
   </div>
 </template>
 

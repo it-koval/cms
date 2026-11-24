@@ -7,15 +7,21 @@ namespace Itk\Cms;
 use Doctrine\Migrations\Version\Comparator;
 use Itk\Cms\Admin\Theme\AdminTheme;
 use Itk\Cms\Admin\Theme\Color;
+use Itk\Cms\Analytics\AnalyticsConfig;
+use Itk\Cms\Content\PageService;
+use Itk\Cms\Controller\Site\RequestSubmitController;
+use Itk\Cms\Doctrine\JsonFirstValue;
 use Itk\Cms\Doctrine\JsonGet;
 use Itk\Cms\Doctrine\JsonNumber;
 use Itk\Cms\Doctrine\JsonText;
 use Itk\Cms\Doctrine\PhoneDigits;
 use Itk\Cms\Doctrine\VectorType;
 use Itk\Cms\I18n\AdminLocale;
+use Itk\Cms\I18n\ContentLocales;
 use Itk\Cms\I18n\I18n;
 use Itk\Cms\Mail\PublicUrl;
 use Itk\Cms\Media\ImageVariants;
+use Itk\Cms\Request\RequestRetryStrategy;
 use Symfony\Component\Config\Definition\Configurator\DefinitionConfigurator;
 use Symfony\Component\Config\Definition\Exception\InvalidConfigurationException;
 use Symfony\Component\Console\Command\LazyCommand;
@@ -53,10 +59,8 @@ final class ItkCmsBundle extends AbstractBundle
             }
         }, PassConfig::TYPE_BEFORE_OPTIMIZATION, 10);
 
-        // Outside a request (console, worker, a service called directly) the interface speaks itk_cms.admin_locale, not framework.default_locale: the translator starts in it and the
-        // locale switcher goes back to it when the services are reset. In a request Symfony and Itk\Cms\I18n\AdminLocaleListener decide as usual.
-        // The fallback languages stay the ones of the site (its list, else framework.default_locale): English only goes behind them, for a language the catalogues of the bundle do not have.
-        // A prepended `fallbacks` would not do: an empty list is what makes Symfony take the default language, and a list of the site would merge behind English.
+        // Keep the application's default locale in consoles and workers. The interface listener scopes the admin language to CMS requests.
+        // Append the bundle fallback after the site's own fallback languages.
         $container->addCompilerPass(new class implements CompilerPassInterface {
             public function process(ContainerBuilder $container): void
             {
@@ -69,10 +73,6 @@ final class ItkCmsBundle extends AbstractBundle
                         }
                     }
                     $translator->setMethodCalls($calls);
-                    $translator->addMethodCall('setLocale', ['%itk_cms.admin_locale%']);
-                }
-                if ($container->hasDefinition('translation.locale_switcher')) {
-                    $container->getDefinition('translation.locale_switcher')->replaceArgument(0, '%itk_cms.admin_locale%');
                 }
             }
         });
@@ -137,12 +137,84 @@ final class ItkCmsBundle extends AbstractBundle
                     throw new InvalidConfigurationException(\sprintf('itk_cms.admin_locale "%s" is not one of itk_cms.admin_locales (%s).', \is_scalar($v['admin_locale']) ? $v['admin_locale'] : \gettype($v['admin_locale']), \implode(', ', $v['admin_locales'])));
                 })
             ->end()
+            ->validate()
+                ->ifTrue(static fn (array $v): bool => null !== $v['locales'])
+                ->then(static function (array $v): array {
+                    if ([] === $v['locales']) {
+                        throw new InvalidConfigurationException('itk_cms.locales must list at least the main language');
+                    }
+                    $reserved = [];
+                    foreach ([...\array_keys(PageService::RESERVED_URLS), '/bundles'] as $path) {
+                        $segment = \explode('/', \ltrim($path, '/'), 2)[0];
+                        if (!\str_contains($segment, '.')) {
+                            $reserved[$segment] = $path;
+                        }
+                    }
+                    $admin = \strtolower(\explode('/', \ltrim($v['admin_path'], '/'), 2)[0]);
+                    foreach (\array_keys($v['locales']) as $code) {
+                        if (isset($reserved[$code])) {
+                            throw new InvalidConfigurationException(\sprintf('Language code "%s" in itk_cms.locales conflicts with reserved path "%s".', $code, $reserved[$code]));
+                        }
+                        if ($code === $admin) {
+                            throw new InvalidConfigurationException(\sprintf('Language code "%s" in itk_cms.locales conflicts with itk_cms.admin_path "%s".', $code, $v['admin_path']));
+                        }
+                        if (1 !== \preg_match('~^[a-z]{2,3}\z~', (string) $code)) {
+                            throw new InvalidConfigurationException(\sprintf('Invalid language code "%s" in itk_cms.locales. Use 2 or 3 lowercase letters.', $code));
+                        }
+                    }
+                    $main = \strtolower(\trim((string) $v['main_locale']));
+                    if (!isset($v['locales'][$main])) {
+                        throw new InvalidConfigurationException(\sprintf('itk_cms.main_locale "%s" is not one of itk_cms.locales (%s).', $main, \implode(', ', \array_keys($v['locales']))));
+                    }
+                    $v['main_locale'] = $main;
+
+                    return $v;
+                })
+            ->end()
             ->children()
                 ->scalarNode('schema_file')
                     ->info('PHP file that returns static function (SchemaBuilder $s): void')
                     ->defaultValue('%kernel.project_dir%/config/itk/schema.php')
                 ->end()
                 ->scalarNode('main_locale')->defaultValue('ru')->end()
+                ->arrayNode('locales')
+                    ->info('Languages of the site content, keyed by their short codes')
+                    ->useAttributeAsKey('code')
+                    ->normalizeKeys(false)
+                    ->defaultNull()
+                    ->arrayPrototype()
+                        ->children()
+                            ->scalarNode('name')
+                                ->isRequired()
+                                ->validate()->ifTrue(static fn ($v): bool => !\is_string($v) || '' === \trim($v))->thenInvalid('Language name must be a non-empty string')->end()
+                            ->end()
+                            ->scalarNode('html_lang')
+                                ->defaultNull()
+                                ->validate()->ifTrue(static fn ($v): bool => null !== $v && (!\is_string($v) || 1 !== \preg_match('~^[a-z]{2,3}(-[A-Za-z0-9]{2,8})?\z~', $v)))->thenInvalid('html_lang must be a language tag like en or zh-CN')->end()
+                            ->end()
+                            ->scalarNode('og_locale')
+                                ->defaultNull()
+                                ->validate()->ifTrue(static fn ($v): bool => null !== $v && (!\is_string($v) || 1 !== \preg_match('~^[a-z]{2,3}_[A-Z]{2}\z~', $v)))->thenInvalid('og_locale must be a language and country separated by an underscore, like zh_CN')->end()
+                            ->end()
+                        ->end()
+                    ->end()
+                    ->validate()
+                        ->always()
+                        ->then(static function (array $locales): array {
+                            $tags = [];
+                            foreach ($locales as $code => $locale) {
+                                $tag = $locale['html_lang'] ?? (string) $code;
+                                $key = \strtolower($tag);
+                                if (isset($tags[$key])) {
+                                    throw new InvalidConfigurationException(\sprintf('Languages "%s" and "%s" in itk_cms.locales have the same html_lang "%s".', $tags[$key], $code, $tag));
+                                }
+                                $tags[$key] = $code;
+                            }
+
+                            return $locales;
+                        })
+                    ->end()
+                ->end()
                 ->scalarNode('admin_locale')
                     ->info('Language of the admin panel, of its letters and of the console for whoever has not chosen his own in "My profile". This is the language of the interface: the languages of the content are main_locale and the language versions of pages')
                     ->defaultValue('en')
@@ -175,6 +247,16 @@ final class ItkCmsBundle extends AbstractBundle
                 ->booleanNode('conditional_responses')
                     ->info('ETag and Last-Modified on live pages for a visitor without a session, and 304 when the page has not changed (the tag follows the page, the live pages, settings, menus, collections and SEO rules); never in debug')
                     ->defaultTrue()
+                ->end()
+                ->arrayNode('analytics')
+                    ->addDefaultsIfNotSet()
+                    ->children()
+                        ->enumNode('start')
+                            ->info('When to start the configured analytics counters: auto on page load, or manual through itkAnalytics.start() in the site frontend')
+                            ->values([AnalyticsConfig::AUTO, AnalyticsConfig::MANUAL])
+                            ->defaultValue(AnalyticsConfig::AUTO)
+                        ->end()
+                    ->end()
                 ->end()
                 ->arrayNode('page_cache')
                     ->info('The finished HTML of live pages, kept so that a repeated visit is answered without a render. The key follows the content (the same fingerprint as the ETag), so an edit shows at once; never in debug, for a visitor with a session or with Authorization')
@@ -265,6 +347,15 @@ final class ItkCmsBundle extends AbstractBundle
                 ->scalarNode('upload_dir')->defaultValue('%kernel.project_dir%/public/uploads/media')->end()
                 ->scalarNode('upload_url')->defaultValue('/uploads/media')->end()
                 ->integerNode('max_upload_mb')->defaultValue(20)->min(1)->end()
+                ->arrayNode('requests')
+                    ->addDefaultsIfNotSet()
+                    ->children()
+                        ->integerNode('max_body')
+                            ->info('Largest public form submission body, in bytes')
+                            ->defaultValue(RequestSubmitController::DEFAULT_MAX_BODY)->min(1)->max(\PHP_INT_MAX - 1)
+                        ->end()
+                    ->end()
+                ->end()
                 ->arrayNode('images')
                     ->info('Resized WebP variants of uploaded images: /uploads/media/_v/w{width}/Y/m/name.webp, made on the first request and kept as static files')
                     ->addDefaultsIfNotSet()
@@ -279,7 +370,7 @@ final class ItkCmsBundle extends AbstractBundle
                         ->integerNode('max_pixels')->info('Originals above this many pixels are not converted (decompression bomb guard); the original is served')->defaultValue(50_000_000)->min(1)->end()
                         ->integerNode('avif_quality')->info('Quality of the AVIF copies (AVIF looks the same as WebP at a lower number)')->defaultValue(60)->min(1)->max(100)->end()
                         ->arrayNode('ratios')
-                            ->info('Ratios an image may be cut to (the media editor offers them, media_url(img, w, "16:9") and itk_img(img, {ratio}) accept them); a frame saved for a file is allowed on top of these')
+                            ->info('Ratios an image may be cut to (the media editor offers them, itk_media_url(img, w, "16:9") and itk_img(img, {ratio}) accept them); a frame saved for a file is allowed on top of these')
                             ->scalarPrototype()->end()
                             ->defaultValue(['16:9', '4:3', '1:1', '3:4'])
                         ->end()
@@ -339,7 +430,7 @@ final class ItkCmsBundle extends AbstractBundle
                     ->end()
                 ->end()
                 ->scalarNode('public_url')
-                    ->info('Address of the site for links in letters, e.g. https://example.com (password links lead there); may be an %env()% placeholder (its value is checked when it is read, an empty one counts as no option). Without it the address of the request is used: then set framework.trusted_hosts.')
+                    ->info('Full site origin for password and invitation links, e.g. https://example.com. May be an %env()% placeholder. Ordinary site links can also use the request host checked by framework.trusted_hosts.')
                     ->defaultNull()
                     ->validate()->ifTrue(static fn ($v): bool => null !== $v && !\is_string($v))->thenInvalid('An address like https://example.com is expected')->end()
                 ->end()
@@ -377,12 +468,18 @@ final class ItkCmsBundle extends AbstractBundle
     {
         $parameters = $container->parameters();
         $parameters->set('itk_cms.schema_file', $config['schema_file']);
-        $parameters->set('itk_cms.main_locale', $config['main_locale']);
+        $mainLocale = (string) $config['main_locale'];
+        $locales = $config['locales'];
+        $main = $locales[$mainLocale] ?? ['name' => (new ContentLocales($mainLocale))->name($mainLocale), 'html_lang' => null, 'og_locale' => null];
+        $parameters->set('itk_cms.main_locale', $mainLocale);
+        $parameters->set('itk_cms.locales', [$mainLocale => $main] + ($locales ?? []));
+        $parameters->set('itk_cms.locales_configured', null !== $locales);
         $parameters->set('itk_cms.admin_locale', $config['admin_locale']);
         $parameters->set('itk_cms.admin_locales', \array_values(\array_unique($config['admin_locales'])));
         $parameters->set('itk_cms.blog', $config['blog']);
         $parameters->set('itk_cms.security_headers', $config['security_headers']);
         $parameters->set('itk_cms.conditional_responses', $config['conditional_responses']);
+        $parameters->set('itk_cms.analytics.start', $config['analytics']['start']);
         $parameters->set('itk_cms.page_cache.enabled', $config['page_cache']['enabled']);
         $parameters->set('itk_cms.page_cache.ttl', $config['page_cache']['ttl']);
         $critical = $config['critical_css'];
@@ -413,6 +510,7 @@ final class ItkCmsBundle extends AbstractBundle
         $parameters->set('itk_cms.upload_dir', $config['upload_dir']);
         $parameters->set('itk_cms.upload_url', $config['upload_url']);
         $parameters->set('itk_cms.max_upload_mb', $config['max_upload_mb']);
+        $parameters->set('itk_cms.requests.max_body', $config['requests']['max_body']);
         $widths = \array_values(\array_unique(\array_map('intval', $config['images']['widths'])));
         \sort($widths);
         $parameters->set('itk_cms.images.widths', $widths);
@@ -463,7 +561,7 @@ final class ItkCmsBundle extends AbstractBundle
                 ],
                 'orm' => [
                     'dql' => [
-                        'string_functions' => ['JSON_TEXT' => JsonText::class, 'JSON_GET' => JsonGet::class, 'ITK_PHONE_DIGITS' => PhoneDigits::class],
+                        'string_functions' => ['JSON_TEXT' => JsonText::class, 'JSON_GET' => JsonGet::class, 'JSON_FIRST_VALUE' => JsonFirstValue::class, 'ITK_PHONE_DIGITS' => PhoneDigits::class],
                         'numeric_functions' => ['JSON_NUMBER' => JsonNumber::class],
                     ],
                     'mappings' => [
@@ -496,12 +594,6 @@ final class ItkCmsBundle extends AbstractBundle
             ]);
         }
 
-        if ($builder->hasExtension('twig')) {
-            $builder->prependExtensionConfig('twig', [
-                'paths' => [$path . '/templates' => 'ItkCms'],
-            ]);
-        }
-
         if ($builder->hasExtension('framework')) {
             $builder->prependExtensionConfig('framework', [
                 // a site without a translator of its own still gets the catalogues of the bundle (translations/itk_*.yaml); its translations/ folder overrides them, domain by domain
@@ -520,6 +612,11 @@ final class ItkCmsBundle extends AbstractBundle
                     // «Профиль → Сменить пароль»: five tries in 15 minutes for each person
                     'itk_password_change' => [
                         'policy' => 'sliding_window',
+                        'limit' => 5,
+                        'interval' => '15 minutes',
+                    ],
+                    'itk_two_factor' => [
+                        'policy' => 'fixed_window',
                         'limit' => 5,
                         'interval' => '15 minutes',
                     ],
@@ -569,6 +666,7 @@ final class ItkCmsBundle extends AbstractBundle
                         'Itk\\Cms\\Media\\GenerateImageVariants' => 'async',
                         'Itk\\Cms\\Mail\\SendMail' => 'async',
                         'Itk\\Cms\\Security\\RequestPasswordLink' => 'async',
+                        'Itk\\Cms\\Security\\DeliverPasswordLink' => 'async',
                         'Itk\\Cms\\IndexNow\\Model\\PingIndexNow' => 'async',
                         'Itk\\Cms\\CriticalCss\\Model\\GenerateCriticalCss' => 'critical_css',
                         'Itk\\Cms\\KnowledgeBase\\Model\\SyncKnowledge' => 'knowledge_base',
@@ -602,7 +700,10 @@ final class ItkCmsBundle extends AbstractBundle
 
         $out = [];
         if (!isset($transports['async'])) {
-            $out['transports']['async'] = 'doctrine://default';
+            $out['transports']['async'] = [
+                'dsn' => 'doctrine://default',
+                'retry_strategy' => ['service' => RequestRetryStrategy::class],
+            ];
         }
         if (!isset($transports['critical_css'])) {
             $out['transports']['critical_css'] = 'doctrine://default?queue_name=critical_css';

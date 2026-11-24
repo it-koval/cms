@@ -12,6 +12,8 @@ use Itk\Cms\Event\RecordDeleted;
 use Itk\Cms\Event\RecordDeleting;
 use Itk\Cms\Event\RecordPublished;
 use Itk\Cms\Event\RecordPublishing;
+use Itk\Cms\Event\RecordTranslationAdded;
+use Itk\Cms\Event\RecordTranslationRemoved;
 use Itk\Cms\Event\RecordUnpublished;
 use Itk\Cms\Event\RecordUnpublishing;
 use Itk\Cms\Event\RecordUpdated;
@@ -19,13 +21,16 @@ use Itk\Cms\Event\RecordUpdating;
 use Itk\Cms\Schema\Schema;
 use Itk\Cms\Security\Access;
 use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
+use Symfony\Contracts\Service\ResetInterface;
 
 /**
  * Tells the site what happens to its records: the Symfony event first (listeners), then the method of the resource class.
  * PageService and CollectionService call it around create / update / delete / publish / unpublish and their mass variants.
  * Inside deferAfter() the `after…` hooks and events wait until the work is done: a mass operation runs them only after its transaction is committed.
+ *
+ * @internal
  */
-final class HookDispatcher
+final class HookDispatcher implements ResetInterface
 {
     /** @var array<string, true> */
     private array $loaded = [];
@@ -38,6 +43,13 @@ final class HookDispatcher
         private readonly Schema $schema,
         private readonly Access $access,
     ) {
+    }
+
+    /** A persistent kernel starts each HTTP request or worker message with fresh hook state. */
+    public function reset(): void
+    {
+        $this->loaded = [];
+        $this->queue = null;
     }
 
     /**
@@ -69,13 +81,14 @@ final class HookDispatcher
         return $result;
     }
 
-    /** The core reads a section for the first time in this request. */
+    /** The core reads a resource in this language for the first time in this request. */
     public function loaded(string $kind, string $key, string $locale): void
     {
-        if (isset($this->loaded[$kind . ':' . $key])) {
+        $loadedKey = $kind . ':' . $key . ':' . $locale;
+        if (isset($this->loaded[$loadedKey])) {
             return;
         }
-        $this->loaded[$kind . ':' . $key] = true;
+        $this->loaded[$loadedKey] = true;
         $this->resource($kind, $key)?->onLoad($this->context($kind, $key, $locale));
     }
 
@@ -87,7 +100,7 @@ final class HookDispatcher
     public function creating(string $kind, string $key, string $locale, array $data): array
     {
         $viewer = $this->access->viewer();
-        $this->events->dispatch($event = new RecordCreating($key, $kind, null, $data, $viewer));
+        $this->events->dispatch($event = new RecordCreating($key, $kind, null, $data, $viewer, $locale));
 
         return $this->array($this->resource($kind, $key)?->beforeCreating($event->data, $this->context($kind, $key, $locale)) ?? $event->data, 'beforeCreating');
     }
@@ -95,7 +108,7 @@ final class HookDispatcher
     public function created(Record $record): void
     {
         $this->after(function () use ($record): void {
-            $this->events->dispatch(new RecordCreated($record->resourceKey, $record->kind, $record, [], $this->access->viewer()));
+            $this->events->dispatch(new RecordCreated($record->resourceKey, $record->kind, $record, $record->snapshot(), $this->access->viewer()));
             $this->resource($record->kind, $record->resourceKey)?->afterCreated($record, $this->contextOf($record));
         });
     }
@@ -115,7 +128,7 @@ final class HookDispatcher
     public function updated(Record $record): void
     {
         $this->after(function () use ($record): void {
-            $this->events->dispatch(new RecordUpdated($record->resourceKey, $record->kind, $record, [], $this->access->viewer()));
+            $this->events->dispatch(new RecordUpdated($record->resourceKey, $record->kind, $record, $record->snapshot(), $this->access->viewer()));
             $this->resource($record->kind, $record->resourceKey)?->afterUpdated($record, $this->contextOf($record));
         });
     }
@@ -133,11 +146,26 @@ final class HookDispatcher
         $this->resource($record->kind, $record->resourceKey)?->beforeDeleting($record, $this->contextOf($record));
     }
 
-    public function deleted(Record $record): void
+    /** @param array<string, mixed> $data Mutation snapshots for after-event consumers. */
+    public function deleted(Record $record, array $data = []): void
+    {
+        $this->after(function () use ($record, $data): void {
+            $this->events->dispatch(new RecordDeleted($record->resourceKey, $record->kind, $record, $data + $record->snapshot(), $this->access->viewer()));
+            $this->resource($record->kind, $record->resourceKey)?->afterDeleted($record, $this->contextOf($record));
+        });
+    }
+
+    public function translationAdded(Record $record): void
     {
         $this->after(function () use ($record): void {
-            $this->events->dispatch(new RecordDeleted($record->resourceKey, $record->kind, $record, [], $this->access->viewer()));
-            $this->resource($record->kind, $record->resourceKey)?->afterDeleted($record, $this->contextOf($record));
+            $this->events->dispatch(new RecordTranslationAdded($record->resourceKey, $record->kind, $record, $record->snapshot(), $this->access->viewer()));
+        });
+    }
+
+    public function translationRemoved(Record $record): void
+    {
+        $this->after(function () use ($record): void {
+            $this->events->dispatch(new RecordTranslationRemoved($record->resourceKey, $record->kind, $record, $record->snapshot(), $this->access->viewer()));
         });
     }
 
@@ -147,10 +175,11 @@ final class HookDispatcher
         $this->resource($record->kind, $record->resourceKey)?->beforePublishing($record, $this->contextOf($record));
     }
 
-    public function published(Record $record): void
+    /** @param array<string, mixed> $data Mutation snapshots for after-event consumers. */
+    public function published(Record $record, array $data = []): void
     {
-        $this->after(function () use ($record): void {
-            $this->events->dispatch(new RecordPublished($record->resourceKey, $record->kind, $record, [], $this->access->viewer()));
+        $this->after(function () use ($record, $data): void {
+            $this->events->dispatch(new RecordPublished($record->resourceKey, $record->kind, $record, $data + $record->snapshot(), $this->access->viewer()));
             $this->resource($record->kind, $record->resourceKey)?->afterPublished($record, $this->contextOf($record));
         });
     }
@@ -161,10 +190,11 @@ final class HookDispatcher
         $this->resource($record->kind, $record->resourceKey)?->beforeUnpublishing($record, $this->contextOf($record));
     }
 
-    public function unpublished(Record $record): void
+    /** @param array<string, mixed> $data Mutation snapshots for after-event consumers. */
+    public function unpublished(Record $record, array $data = []): void
     {
-        $this->after(function () use ($record): void {
-            $this->events->dispatch(new RecordUnpublished($record->resourceKey, $record->kind, $record, [], $this->access->viewer()));
+        $this->after(function () use ($record, $data): void {
+            $this->events->dispatch(new RecordUnpublished($record->resourceKey, $record->kind, $record, $data + $record->snapshot(), $this->access->viewer()));
             $this->resource($record->kind, $record->resourceKey)?->afterUnpublished($record, $this->contextOf($record));
         });
     }

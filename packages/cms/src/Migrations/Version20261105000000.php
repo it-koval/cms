@@ -8,6 +8,7 @@ use Doctrine\DBAL\Platforms\PostgreSQLPlatform;
 use Doctrine\DBAL\Schema\Schema;
 use Doctrine\Migrations\AbstractMigration;
 
+/** @internal */
 final class Version20261105000000 extends AbstractMigration
 {
     public const MIN_SERVER_VERSION_NUM = 160000;

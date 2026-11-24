@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Itk\Cms\CriticalCss;
 
 use Itk\Cms\Event\RecordPublished;
+use Itk\Cms\I18n\ContentLocales;
 use Itk\Cms\Repository\PageTranslationRepository;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
@@ -24,6 +25,7 @@ final class RequestOnPublish
         private readonly CriticalCssService $critical,
         private readonly PageTranslationRepository $translations,
         private readonly LoggerInterface $logger,
+        private readonly ?ContentLocales $contentLocales = null,
     ) {
     }
 
@@ -34,7 +36,7 @@ final class RequestOnPublish
         }
         try {
             $t = $this->translations->findOneBy(['page' => $event->record->id, 'locale' => $event->record->locale]);
-            if (null !== $t) {
+            if (null !== $t && $t->isLive() && ($this->contentLocales?->serves($t->locale, (string) ($t->published['url'] ?? $t->publishedUrl)) ?? true)) {
                 $this->critical->request($t);
             }
         } catch (\Throwable $e) {

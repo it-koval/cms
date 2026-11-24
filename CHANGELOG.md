@@ -2,7 +2,116 @@ English | [Русский](CHANGELOG.ru.md)
 
 # Changelog
 
-All notable changes to ITK CMS are recorded in this file. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html). [UPGRADE.md](UPGRADE.md) defines the public API.
+All notable changes to ITK CMS are recorded in this file. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html). The [public API reference](packages/cms/API.md) defines the supported integration points.
+
+## [0.3.0] - 2026-11-25
+
+### Breaking changes
+
+- The bundle requires the dependency versions it is tested with: Symfony 7.4.23 or newer in the 7.4 line, or Symfony 8.1.11 and newer, Doctrine ORM 3.8 and DBAL 4.6 or newer, Twig 3.31.1 or newer. Symfony 8.0 reached its end of life and is no longer supported. Older versions broke request delivery and Site Health. Follow [the upgrade steps](UPGRADE.md#upgrade-a-site): they update the dependencies together with the bundle.
+- Twig functions `menu`, `settings`, `listing`, `media_url`, `media_srcset`, `media_width`, `media_ratio`, `page_url` and `render_sections` now use the `itk_` prefix. See [the migration command](UPGRADE.md#twig-functions).
+- Admin requests and media lists take `page` and `perPage` and return a paginated object. Admin and MCP lists use creation-time and ID cursors for adjacent pages. See [UPGRADE.md](UPGRADE.md#030).
+- Forms use a 1,000-character limit for fields without `max()`. Schema lint and Site status report those fields. MCP `request_get` reads up to 6,000 characters of each form value.
+- Page templates grant Author access via `forAuthors()`. Media usage calls require a `Viewer`. Custom fields may opt into knowledge-base extraction via `PublicFieldInterface`.
+- Singleton reads return initial values until the first explicit save. Collection fields with reserved metadata keys fail schema lint.
+- `GET /admin/api/collections/{col}` always returns the paginated object `{ items, total, page, perPage, facets, metrics }`. Search, filters, status and translation selection apply before counting and pagination. Published versions with unpublished changes are included in the `draft` filter. Clients must read `items` and request further pages. See [UPGRADE.md](UPGRADE.md#030).
+- `Mcp\AbstractMcpTool::locale()` is now non-static. Both `self::locale($args)` and `$this->locale($args)` work inside instance methods. Calls from a static context are no longer supported. See [UPGRADE.md](UPGRADE.md#030).
+- Site settings groups cannot use the core keys `menus`, `redirects`, `seo`, `notifications`, `mail`, `bots`, `theme`, `languages`, `users`, `mcp` or `seo-files`. Rename the groups and update `set:<group>` permissions and field visibility references while retaining field keys. See [UPGRADE](UPGRADE.md#reserved-settings-groups).
+- Public form JSON must be a flat object of up to 1000 scalar or null values. Arrays and nested objects return HTTP 422. The acceptance switch is controlled by the system notifications setting `itk:forms`. A site field named `forms` keeps its own value.
+- The Photos editor adds `{src, alt}` objects. Existing URL strings remain valid. Site templates must support both shapes before editors add photos. See [UPGRADE](UPGRADE.md#other-changes).
+- Removed the AI suggestions editor panel and the schema option `feature('ai')`. Update the site schema as described in [UPGRADE.md](UPGRADE.md#ai-suggestions).
+- Row import in `itk:make:collection` was removed along with `--import` and `--publish`. The command ignores the JSON field `rows` and still generates a class from a table or a description. Move old site records with your own script when migrating the database dump. See [UPGRADE](UPGRADE.md#collection-row-import).
+- The 0.3.0 database migrations are incompatible with 0.2.2 and include irreversible changes. A rollback requires the pre-upgrade database and uploads with the original matching deployment. See [UPGRADE](UPGRADE.md#rollback-to-022).
+- Outstanding account links expire. Sites must configure `itk_cms.public_url`, clear legacy account mail jobs and request fresh links. Integrations starting a new request resend use `RequestQueue::enqueue(..., resend: true)` instead of dispatching a legacy `SendRequestNotification` directly. See [UPGRADE](UPGRADE.md#other-changes).
+
+### Added
+
+- Use `make` to start the development stack and run CI checks locally (`make help`). On `127.0.0.1`, `make up` uses 18021 for PostgreSQL and 18022 for Mailpit. `make admin-dev` and `make admin-mock` use 18023. Port 18020 is reserved for site HTTP. `make smoke-prod` uses 18028. See [CONTRIBUTING](CONTRIBUTING.md).
+- `itk:requests:recover` triggers recovery of request delivery jobs and events. After checking a Telegram/MAX chat, `itk:requests:resolve <request> <telegram|max> <recipient> <sent|rejected>` records the result. `itk:requests:resend <request> --channel=<telegram|max>` continues delivery. For SMTP, use `itk:requests:mail:resolve <request> <recipient> <sent|rejected>` and, after a confirmed refusal, `itk:requests:resend <request> --channel=mail --recipient=<address>`. These mail recovery commands work without a failure transport. Mail resolution also prints the retry command when it finds a matching failed envelope.
+- Added the code of conduct, issue and pull request templates, and a deployment and rollback guide with a production Compose file. See [DEPLOY.md](docs/DEPLOY.md).
+- Site Health and `itk:doctor` report unreadable two-step sign-in keys and use the same GD/WebP check.
+- `itk_cms.analytics.start` selects `auto` (default) or `manual` in site configuration. The browser API `window.itkAnalytics.start()` starts all configured counters, and `start(['ga'])` selects GA. Counter keys are `metrika` and `ga`. New starts dispatch the bubbling `itk-analytics:started` event on `document` with `detail.counters`. Repeated calls without new counters emit no event.
+- Page and collection lists show translation status and open the selected version. Content editors, translated settings and menus have a language picker. The dashboard and collection counters cover all configured languages.
+- Page and record history can show one language or all languages. `GET /admin/api/history/{kind}/{id}?scope=all` paginates across languages, and restoring a revision targets its own draft.
+- `itk_cms.requests.max_body` sets the byte limit for public form submissions. `itk:install --password-file` reads the first administrator password from a mounted secret.
+- Section types can declare the first screen with `firstScreen()`. Site-defined fields can implement `ValueValidatingFieldInterface`.
+- Multilingual SEO emits reciprocal `hreflang` links, including `x-default` for an indexable main version. Published pages use their own canonical URL when none is set. The sitemap covers every indexable language version, and `llms.txt` groups pages by language. Both generated files refresh after committed page changes and revalidate with content ETags.
+- `itk:doctor` checks language prefixes, home pages, missing translations in settings and menus, and overrides of generated crawler files.
+- Public routes serve published language versions at addresses such as `/kk/about`.
+- Twig pages expose `html_lang`, `og_locale` and `translations`. The last field lists published versions for a language switcher.
+- `RecordTranslationAdded` and `RecordTranslationRemoved` extend `RecordEvent`, carry the operation locale and are dispatched after commit. Translation operations do not call object create/delete events or lifecycle hooks; removing a live translation still emits the unpublish events and hooks.
+- Page and collection record translations can be created and deleted through the admin JSON API and the public `PageService` and `CollectionService` methods. A new translation is a draft copied from another language or filled with schema defaults. Deleting it preserves the other languages. The main and last versions cannot be deleted.
+- `itk_cms.locales` configures content languages and their display names and metadata.
+- The public `Itk\Cms\I18n\ContentLocales` service exposes the ordered language list, display names, prefixes and metadata.
+
+### Changed
+
+- The [public API reference](packages/cms/API.md) lists the supported PHP types. Internal types and `PageService` implementation methods carry `@internal` annotations.
+
+- Record after-events expose the committed snapshot in `data.fields`, `data.meta` and `data.status`. Publishing reports the live version. Deleting reports the snapshot captured before removal.
+- CI runs the PHP and Symfony matrix in Docker, covers PostgreSQL 16 and 17 and lowest dependencies, tests two random orders, and checks a clean Symfony install and the production Compose stack. The package split requires a successful CI run for the same commit.
+- The Composer archive no longer includes development scripts.
+- Today reads snapshots in batches and displays the latest eight new requests with a link to the whole list. Public listings read the relevant subtree and live collection records. The media warm command reads bounded batches and reuses variant generation.
+
+- Analytics initialization uses one versioned external `defer` loader with `data-*` attributes. In `manual`, the bundle makes no provider requests or preliminary connections before `start()` and omits Metrika's `<noscript>` pixel. `auto` keeps that pixel. Verification meta tags remain available in both modes. Sites manage consent, persistence and reload after revocation, and must remove their direct analytics inserts before switching to `manual`. See [UPGRADE.md](UPGRADE.md#030).
+- The default async transport retries request delivery after 60, 120 and 240 seconds. A manual resend of more than 20 parts per channel is queued and the admin panel confirms it.
+- Admin and preview URLs use the Symfony Asset base path and CDN without the site's version or manifest. Standard Twig bundle overrides take priority.
+- Admin integrations can manage delivery settings through `settings?scope=notifications`. Those settings are stored separately from site fields with the same name.
+- Console and worker translations use the application's locale. CMS screens and recipient-specific emails retain their own locale.
+- Domain settings are validated on save.
+- IndexNow submits the affected paths for all configured languages. Critical CSS is generated for the published versions of those languages.
+- Publishing or removing a translation refreshes the cached HTML and ETag of the other versions of the same page.
+- On configured sites, live and preview templates translate text in the page's language. JSON-LD uses its HTML language tag.
+- Public forms record the locale from `?locale=`, the same-origin referrer or the main language on configured sites. Form messages, including `429`, use the submission language when the bundle provides a translation. A stale or unsupported `?locale=` preserves a valid submission in the main language and logs a warning.
+- On sites without `itk_cms.locales`, form messages now use the site's main language when the bundle provides a translation. Previously, `admin_locales` determined the message language.
+- MCP load hooks run once per resource and language in each request.
+- The admin API uses a shared language check and returns `422` for a code outside an explicitly configured list.
+- On sites with several configured languages, page versions use their language's address prefix. The main language's addresses cannot start with another configured language's path segment.
+- PHP and the admin editor use a shared Russian and Kazakh transliteration table when generating slugs.
+- Republishing a page at the same address queues one IndexNow notification.
+
+### Fixed
+
+- The preview opens the field clicked inside a disclosure, including marked collection records and settings in the preview language. Each photo has its own editable alt text.
+- Draft input survives a failed delete or a cancelled navigation. Escape closes the top dialog, destructive confirmations focus Cancel, and profile edits prompt before closing.
+- Collection lists show load errors with Retry and disable tree moves when a parent is missing. Field errors are associated with their inputs. Media names and request form names wrap on narrow screens.
+- Saving a page draft preserves the sitemap cache.
+
+- Language links, crawler files, IndexNow and critical CSS include only versions whose addresses route to their language. Moving a multilingual version preserves any live page at its old address.
+- An invalid public URL leaves public HTML and crawler routes usable. The doctor reports the invalid configuration.
+- Generated canonical and `hreflang` URLs, the SEO address check, sitemap, crawler files, JSON-LD and IndexNow use the normalized `itk_cms.public_url` when valid and fall back to the configured `domain`. This is independent of the request host, scheme and port. Without site configuration, generated absolute SEO URLs are omitted.
+- Single-language HTML cache validators also change when the configured SEO origin changes. Domain-only sitemaps normalize IDNs, host case and default ports in every language mode.
+- The settings migration copies the effective values read by 0.2.2 into `itk:` without deleting or renaming the originals. Existing internal values take precedence. Flags retain their effective boolean meaning and routes retain numeric form keys, including `"0"`. The notifications API returns routes as JSON objects. SMTP settings are isolated from site fields named `mail`.
+- SEO rule paths normalize percent-encoded text while preserving escaped separators such as `%2F`, `%3F` and `%23`. Migration `20261124120100` normalizes existing rules and preserves colliding rules with their IDs for operator review before traffic resumes.
+- Canonical slash redirects preserve the original query string, including repeated parameters. The SEO address check applies the same routing and shows the canonical and rules for the URL's language.
+- Site status lists form fields that lack an explicit limit. Long request retries retain per-channel outcomes across reloads and release failed channels for another retry.
+- Malformed JSON in public forms returns a validation error. Oversized submissions return HTTP 413 before decoding.
+- An existing SMTP setting with a password and disabled encryption reports how to restore mail delivery.
+- Republish hooks receive the published snapshot. Page edits share title and URL validation, normalize SEO fields and detect cycles at any depth. Bulk deletion handles children first.
+- Telegram and MAX retain accepted parts per recipient and keep the saved text through retries of an unfinished operation, including after a channel is disabled and re-enabled. A part left in `sending` waits for operator resolution. Retries skip accepted parts and can retry confirmed refusals. A manual retry after a complete refusal starts a new operation with fresh text.
+- Telegram classifies delivery using the original POST. A 2xx response confirms acceptance only with `ok: true` and `result.message_id`. HTTP 4xx other than 408 and proven failures before sending are definite refusals. A 2xx with no valid confirmation, 408, 5xx and a lost response after sending remain uncertain. A later listener error cannot change the outcome of the original POST. An incompatible HTTP client decorator is refused before sending as a definite failure.
+- SMTP request mail keeps per-recipient acceptance checkpoints. An uncertain recipient stays blocked until operator resolution. Old aggregate mail warnings remain open because 0.2.2 did not persist the complete historical recipient list. After verifying every historical destination, an operator can explicitly close an old aggregate warning with `itk:requests:mail:resolve <request> --legacy-checked`. Use historical delivery records to verify that list.
+- For request email, compound SMTP transports try another server only after a confirmed refusal. A lost acknowledgement stops the compound send and records an uncertain outcome.
+- Short retries and queue-failure updates for committed requests use one serialized connection for reservation and outcome, avoiding a lock against their own reservation in a caller transaction. Standard `messenger:failed:retry` reopens the current failed job while completed and superseded jobs stay closed. Live workers retain their delivery lock beyond lease expiry.
+- Request notifications commit their queue intents in PostgreSQL with the request. A running Messenger worker recovers unpublished intents with their original job IDs.
+- Delivery outcomes retain a pending event until its listeners succeed. Worker recovery and `itk:requests:recover` replay pending events without resending provider messages. Custom listeners must be idempotent.
+- Delivery status is committed before dispatching its event. Parallel attempts for the same request and channel are serialized. The database deduplicates notifications, and history retention runs in the same flush as the new revision.
+- Custom request dates and redirect lengths return validation errors. Redirects can match a query string. CSS strings and escapes survive critical stylesheet preparation.
+- MCP stdio and workers reset request state. MCP logs a failed tool constructor, while other tools remain available. Messenger handlers work with named buses.
+- The install, health and generator commands agree on upload checks, dotted transport names, field names and built-in types. Page creation dates have a stable database column.
+- Knowledge indexing retries temporary database failures, follows changes to `noindex` and labels fragments with their actual field keys.
+
+### Security
+
+- `itk:schema:lint` warns about `canSee()` and `readonly()` on nested fields and identifies which fields need top-level placement.
+- Settings history filters nested fields before describing changes and preserves current protected values during restore. New revisions record whether their values belong to site settings or internal notifications. Legacy notification revisions without that provenance are read-only and available only to a full administrator. Removed settings groups are read-only for a full administrator.
+- Account links use a configured origin and can be consumed only once under a database lock. The Docker kit applies the `256k` body limit only to `/request/{form}` at nginx. Media uploads keep the `256m` nginx limit. Production PHP and worker services attach the Chromium seccomp profile derived from Docker Engine 27.5.1, including builds with critical CSS disabled.
+- Collection actions require sign-in and permission. Blocking a user revokes their next admin request, and sign-in failures use the same public message. Two-step sign-in serializes verification and limits attempts per person.
+- Queue jobs no longer carry rendered password links. The worker revokes each failed attempt's link.
+- Saved SMTP passwords require TLS. Site status and `itk:doctor` warn when `MAILER_DSN` uses a password with optional TLS. Sensitive parameters and transport errors use credential redaction. The installer checks passwords of 10 to 200 characters, including passwords read from a mounted file.
+- PHP and the admin editor reject control characters in HTML URLs. Critical CSS runs Chrome in its sandbox and restricts connections to the local render server. The search embedding cache is bounded.
+- Token services reject unknown scopes.
+- The editor and server agree on which rich-text URLs to keep. Stylesheets apply without an inline event handler when a CSP nonce is supplied.
 
 ## [0.2.2] - 2026-11-22
 
@@ -152,6 +261,7 @@ The first public release.
 - A Docker kit in `docker/`: PHP-FPM, nginx, a queue worker, PostgreSQL 17 with pgvector, and Mailpit, with development and production stages.
 - Rules for an AI agent that builds a site on the bundle (`SITE-AGENTS.md`).
 
+[0.3.0]: https://github.com/it-koval/cms/releases/tag/v0.3.0
 [0.2.2]: https://github.com/it-koval/cms/releases/tag/v0.2.2
 [0.2.1]: https://github.com/it-koval/cms/releases/tag/v0.2.1
 [0.2.0]: https://github.com/it-koval/cms/releases/tag/v0.2.0

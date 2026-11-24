@@ -35,6 +35,12 @@ final class AdminMailLinksTest extends WebTestCase
     private string $csrf = '';
     private int $n = 0;
 
+    /** @param array<string, mixed> $options */
+    protected static function createKernel(array $options = []): \Symfony\Component\HttpKernel\KernelInterface
+    {
+        return new \Itk\Cms\Tests\App\TestKernel('test', true, itk: ['public_url' => 'http://localhost']);
+    }
+
     protected function setUp(): void
     {
         $this->mailerEnv();
@@ -121,7 +127,7 @@ final class AdminMailLinksTest extends WebTestCase
         self::assertSame(12, \strlen($invited['password']));
         self::assertArrayNotHasKey('emailError', $invited);
         self::assertTrue($this->valid($email, $invited['password']));
-        self::assertSame([], $this->queuedMail());
+        self::assertSame([], $this->deliverPasswordMail());
 
         $reset = $this->api('POST', 'users/' . $invited['id'] . '/reset-password');
 
@@ -130,7 +136,7 @@ final class AdminMailLinksTest extends WebTestCase
         self::assertNotSame($invited['password'], $reset['password']);
         self::assertTrue($this->valid($email, $reset['password']));
         self::assertFalse($this->valid($email, $invited['password']), 'the dialog password replaced the old one');
-        self::assertSame([], $this->queuedMail());
+        self::assertSame([], $this->deliverPasswordMail());
     }
 
     #[Test]
@@ -145,7 +151,7 @@ final class AdminMailLinksTest extends WebTestCase
         self::assertTrue($invited['emailed']);
         self::assertArrayNotHasKey('password', $invited);
         self::assertSame('invited', $invited['status']);
-        $queued = $this->queuedMail();
+        $queued = $this->deliverPasswordMail();
         self::assertCount(1, $queued);
         self::assertSame([$email, SendMail::INVITE], [$queued[0]->to, $queued[0]->kind]);
         self::assertStringContainsString('7 дней', $queued[0]->text);
@@ -174,7 +180,7 @@ final class AdminMailLinksTest extends WebTestCase
         self::assertSame($person->email, $reset['email']);
         self::assertArrayNotHasKey('password', $reset);
         self::assertTrue($this->valid($person->email, self::OLD), 'nothing changed until the link is used');
-        $queued = $this->queuedMail();
+        $queued = $this->deliverPasswordMail();
         self::assertSame([$person->email, SendMail::RESET], [$queued[0]->to, $queued[0]->kind]);
         self::assertStringContainsString('24 часа', $queued[0]->text);
         $this->setPasswordByLink($queued[0], self::NEW);
@@ -194,7 +200,7 @@ final class AdminMailLinksTest extends WebTestCase
 
         self::assertTrue($again['emailed']);
         self::assertTrue($again['invited']);
-        self::assertSame(SendMail::INVITE, $this->queuedMail()[0]->kind);
+        self::assertSame(SendMail::INVITE, $this->deliverPasswordMail()[0]->kind);
     }
 
     #[Test]
@@ -206,7 +212,7 @@ final class AdminMailLinksTest extends WebTestCase
         $this->mailpitWipe($email);
         $this->api('POST', 'users', ['name' => 'Проверка', 'email' => $email, 'roleId' => 'editor'], 201);
 
-        self::getContainer()->get(SiteMailer::class)->deliver($this->queuedMail()[0]);
+        self::getContainer()->get(SiteMailer::class)->deliver($this->deliverPasswordMail()[0]);
 
         $found = $this->mailpitFor($email);
         self::assertCount(1, $found);
@@ -221,7 +227,7 @@ final class AdminMailLinksTest extends WebTestCase
         $me = $this->admin();
 
         $this->api('POST', 'users/' . $me->id . '/reset-password', [], 403);
-        self::assertSame([], $this->queuedMail());
+        self::assertSame([], $this->deliverPasswordMail());
     }
 
     #[Test]
@@ -293,7 +299,7 @@ final class AdminMailLinksTest extends WebTestCase
         $this->useMailpit();
         $this->admin();
         $invited = $this->api('POST', 'users', ['name' => 'Опечатка в адресе', 'email' => $this->email('typo'), 'roleId' => 'editor'], 201);
-        $mail = $this->queuedMail()[0];
+        $mail = $this->deliverPasswordMail()[0];
         self::assertSame(200, $this->linkStatus($mail), 'the link works until the address is corrected');
         $this->admin2();
 
@@ -308,7 +314,7 @@ final class AdminMailLinksTest extends WebTestCase
         $this->useMailpit();
         $this->admin();
         $invited = $this->api('POST', 'users', ['name' => 'Имя', 'email' => $this->email('name'), 'roleId' => 'editor'], 201);
-        $mail = $this->queuedMail()[0];
+        $mail = $this->deliverPasswordMail()[0];
         $this->admin2();
 
         $this->api('PATCH', 'users/' . $invited['id'], ['name' => 'Другое имя']);
@@ -323,7 +329,7 @@ final class AdminMailLinksTest extends WebTestCase
         $this->admin();
         $person = self::getContainer()->get(UserManager::class)->create($this->email('blocked'), 'Блокируемый', 'editor', self::OLD);
         $this->api('POST', 'users/' . $person->id . '/reset-password');
-        $mail = $this->queuedMail()[0];
+        $mail = $this->deliverPasswordMail()[0];
         $this->admin2();
         $this->api('POST', 'users/' . $person->id . '/block');
         self::assertSame(410, $this->linkStatus($mail), 'blocked');
@@ -331,7 +337,7 @@ final class AdminMailLinksTest extends WebTestCase
         $other = self::getContainer()->get(UserManager::class)->create($this->email('onetime'), 'С одноразовым паролем', 'editor', self::OLD);
         $this->admin2();
         $this->api('POST', 'users/' . $other->id . '/reset-password');
-        $second = $this->queuedMail()[0];
+        $second = $this->deliverPasswordMail()[0];
         $this->clearQueue();
         self::assertSame(200, $this->linkStatus($second));
         $this->admin2();

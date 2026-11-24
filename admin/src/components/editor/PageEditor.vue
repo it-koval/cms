@@ -7,6 +7,7 @@
 // RIGHTS: a role that may not see the page's template gets «Нет доступа»; one that may not edit gets the same editor read-only (a calm line above the page, no editing controls, inert forms);
 // a version that waits for publication says so above the page (and who sent it); a draft that someone changed meanwhile stops the autosave and asks what to do with the edits on screen (EditConflict).
 import { computed, nextTick, onBeforeUnmount, onMounted, provide, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import Icon from '@/components/ui/Icon.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import Skeleton from '@/components/ui/Skeleton.vue'
@@ -27,9 +28,11 @@ import { EDITOR_KEY, EDITOR_UI_KEY, TPL_ID, rememberSb, useEditorState } from '.
 import { smooth } from './scroll.js'
 import { isMulti, langName } from '@/utils/locales.js'
 import { vp } from '@/utils/viewport.js'
+import { previewDestination } from './previewTarget.js'
 
 // `locale`: the language version this editor instance edits (fixed for its life; PageEditorView re-creates it when the content language changes)
 const props = defineProps({ pageId: { type: String, required: true }, locale: { type: String, default: '' } })
+const router = useRouter()
 const ed = useEditorState(props.pageId, props.locale || undefined)
 provide(EDITOR_KEY, ed)
 
@@ -38,6 +41,7 @@ const sidebar = ref(null)
 const preview = ref(null)
 const previewOpen = ref(false)
 const settingsOpen = ref(false)
+const settingsModal = ref(null)
 /** The marker the server puts on the template's own fields (data-sec="@page"). */
 const PAGE_SEC = '@page'
 
@@ -140,16 +144,6 @@ function openTpl(o = {}) {
 function showListing() {
   if (preview.value) preview.value.showEnd()
 }
-function openAi(id) {
-  selectSec(id, { form: true, focus: 'head' })
-  setTimeout(() => sidebar.value && sidebar.value.showAgent(), 250)
-}
-function gotoAgent() {
-  const p = ed.liveProps[0]
-  if (!p) return
-  selectSec(p.sectionId, { form: true, focus: 'head', scroll: 'nearest' })
-  setTimeout(() => sidebar.value && sidebar.value.showAgent(), 250)
-}
 /** «Предыдущая / Следующая секция» in the form header. */
 function stepSection(dir) {
   const k = ed.indexOf(ed.sel) + dir
@@ -208,7 +202,12 @@ watch(() => ed.restored, (id) => { // «вернуть» after a delete
 })
 
 /* ---------- what the page tells us (postMessage from the frame) ---------- */
-function onFrameFocus({ sec, path }) {
+function onFrameFocus({ sec, path, rows }) {
+  if (sec === '@settings' || String(sec).startsWith('@collection/')) {
+    const destination = previewDestination({ sec, path, rows }, props.locale || app.locale)
+    if (destination) router.push(destination)
+    return
+  }
   if (sec === PAGE_SEC) openTpl({ focus: 'head', field: path })
   else if (ed.secById(sec)) openForm(sec, { focus: 'head', field: path })
 }
@@ -261,7 +260,7 @@ async function openPreview() {
 const openSettings = () => { settingsOpen.value = true }
 
 provide(EDITOR_UI_KEY, {
-  selectSec, openForm, openTpl, showListing, openAi, goSb, collapseSb, reopenSb, toggleFull, setPane, toggleSb, stepSection, gotoChange, gotoError, gotoAgent,
+  selectSec, openForm, openTpl, showListing, goSb, collapseSb, reopenSb, toggleFull, setPane, toggleSb, stepSection, gotoChange, gotoError,
   moveSec, dupSec, delSec, toggleHide, addAt, pickType, step, setDevice, openPreview, openSettings,
 })
 
@@ -274,7 +273,7 @@ watch(() => ed.loading, async (v) => {
 /* ---------- keyboard ---------- */
 const TEXT_ENTRY = 'textarea,input:not([type=checkbox]):not([type=radio]):not([type=button]):not([type=submit]):not([type=range]),[contenteditable="true"]'
 function onKey(e) {
-  if (ed.loading || ed.error || !ed.page || previewOpen.value || settingsOpen.value) return
+  if (ed.loading || ed.busy || ed.error || !ed.page || previewOpen.value || settingsOpen.value) return
   const k = (e.key || '').toLowerCase()
   if ((e.metaKey || e.ctrlKey) && !e.altKey && ['z', 'я', 'y', 'н'].includes(k)) { // i18n-ignore: the keys of undo / redo on the Russian layout too
     if (ed.readOnly) return
@@ -304,7 +303,11 @@ onBeforeUnmount(() => {
   toast.dismissOwner('editor') // «название и адрес» of the «версия создана» toast opens THIS editor's settings
   ed.dispose()
 })
-defineExpose({ flushAll: () => ed.flushAll() })
+defineExpose({
+  flushAll: () => ed.flushAll(),
+  canLeave: () => !ed.busy && (settingsModal.value?.mayLeave() ?? true),
+  discardPending: () => ed.discardPending(),
+})
 
 const hint = computed(() => (vp.phone ? t('editor.hint_phone') : t('editor.hint')))
 // the hint gives way to the notes above it (read-only, waits for publication, sent back)
@@ -342,7 +345,7 @@ const showHint = computed(() => !(ed.readOnly || ed.awaiting || (ed.returned && 
     </div>
 
     <div
-      v-else id="editor" class="editor" :data-dev="ed.device" :data-sb="ed.sb || 'off'" :data-pane="vp.phone ? ed.pane : undefined" :data-full="ed.sb && ed.sbFull ? '' : undefined"
+      v-else id="editor" class="editor" :inert="ed.busy || undefined" :aria-busy="ed.busy" :data-dev="ed.device" :data-sb="ed.sb || 'off'" :data-pane="vp.phone ? ed.pane : undefined" :data-full="ed.sb && ed.sbFull ? '' : undefined"
     >
       <EditorTopBar />
       <!-- above the sidebar and the page, not on the page: the form on the phone and the sidebar on the whole screen hide the page, and the person who is typing there has to see this -->
@@ -380,7 +383,7 @@ const showHint = computed(() => !(ed.readOnly || ed.awaiting || (ed.returned && 
       </div>
 
       <FullPreview v-if="previewOpen" :page="ed.page" @close="previewOpen = false" />
-      <PageSettingsModal v-model:open="settingsOpen" />
+      <PageSettingsModal ref="settingsModal" v-model:open="settingsOpen" />
     </div>
   </div>
 </template>

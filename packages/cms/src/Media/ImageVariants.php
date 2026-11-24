@@ -20,6 +20,8 @@ use Symfony\Component\DependencyInjection\Attribute\Autowire;
  * the original gives a copy of the original size). A ratio is allowed when it is in itk_cms.images.ratios or the file has
  * a frame of it (MediaFile::$crops). JPG, PNG, WebP and AVIF are converted; GIF, SVG, PDF, other addresses and originals
  * above itk_cms.images.max_pixels are passed through unchanged.
+ *
+ * @internal
  */
 final class ImageVariants
 {
@@ -96,7 +98,11 @@ final class ImageVariants
         return [(int) $m[1] / $g, (int) $m[2] / $g];
     }
 
-    /** "16:9" for [16, 9]. */
+    /**
+     * "16:9" for [16, 9].
+     *
+     * @param array{0: int, 1: int} $ratio
+     */
     public static function ratioKey(array $ratio): string
     {
         return $ratio[0] . ':' . $ratio[1];
@@ -106,7 +112,7 @@ final class ImageVariants
      * The ratio of a fixed slot in a layout (an <img> of $width × $height pixels) as a key such as "14:5": the reduced
      * fraction of width:height. A ratio takes sides of 1..99, so a slot that reduces to bigger numbers (1095×515 is 219:103)
      * gets the closest ratio that fits (17:8, off by well under 1%). Null for a size that is not positive.
-     * Use it for media_url()/itk_img() so that the delivered file has the shape of its slot.
+     * Use it for itk_media_url()/itk_img() so that the delivered file has the shape of its slot.
      */
     public static function slotRatio(int $width, int $height): ?string
     {
@@ -220,14 +226,16 @@ final class ImageVariants
     /**
      * Address of the variant that is at least $width wide (the nearest allowed width; the largest one when $width is above all).
      * Anything that is not a convertible upload is returned as it is. With a ratio ("16:9") the address is the one of the frame of that ratio.
+     *
+     * @param array{0: int, 1: int}|null $originalSize stored dimensions, when both are known
      */
-    public function url(string $originalUrl, int $width, ?string $ratio = null, string $format = 'webp'): string
+    public function url(string $originalUrl, int $width, ?string $ratio = null, string $format = 'webp', ?array $originalSize = null): string
     {
         $rel = $this->relative($originalUrl);
         if (null === $rel) {
             return $originalUrl;
         }
-        $size = $this->dimensions($this->originalPath($rel));
+        $size = $originalSize ?? $this->dimensions($this->originalPath($rel));
         if (null !== $size && $size[0] * $size[1] > $this->maxPixels) {
             return $originalUrl;
         }
@@ -581,17 +589,28 @@ final class ImageVariants
     /**
      * Makes every copy an original of this width needs (the widths of srcset(), WebP and, when GD can, AVIF); the ones that exist are kept.
      *
+     * @param int|null $originalWidth legacy hint; current file dimensions determine the default widths
+     * @param list<int> $widths explicit variant widths, or [] for the original's srcset widths
+     *
      * @return array{made: int, existing: int, skipped: int}
      */
-    public function warm(string $originalUrl, ?int $originalWidth = null): array
+    public function warm(string $originalUrl, ?int $originalWidth = null, array $widths = []): array
     {
         $out = ['made' => 0, 'existing' => 0, 'skipped' => 0];
         $path = $this->pathOf($originalUrl);
         if (null === $path) {
             return $out;
         }
-        $width = $originalWidth ?: ($this->dimensions($path)[0] ?? 0);
-        foreach ($this->warmJobs($width) as [$w, $format]) {
+        if ([] === $widths) {
+            // Stored widths may predate EXIF support or come from an import. Warm the file as it looks now.
+            $known = \array_key_exists($path, $this->sizes);
+            $originalWidth = $this->dimensions($path)[0] ?? 0;
+            if (!$known) {
+                unset($this->sizes[$path]);
+            }
+        }
+        $jobs = [] === $widths ? $this->warmJobs($originalWidth ?? 0) : $this->jobsForWidths($widths);
+        foreach ($jobs as [$w, $format]) {
             if (\is_file((string) $this->variantFileOf($originalUrl, $w, null, $format))) {
                 ++$out['existing'];
             } elseif (null !== $this->generate($originalUrl, $w, $format)) {
@@ -611,8 +630,18 @@ final class ImageVariants
      */
     public function warmJobs(int $originalWidth): array
     {
+        return $this->jobsForWidths(\array_column($this->candidates($originalWidth), 0));
+    }
+
+    /**
+     * @param list<int> $widths
+     *
+     * @return list<array{0: int, 1: string}>
+     */
+    private function jobsForWidths(array $widths): array
+    {
         $jobs = [];
-        foreach ($this->candidates($originalWidth) as [$w]) {
+        foreach ($widths as $w) {
             $jobs[] = [$w, 'webp'];
             if ($this->supportsAvif()) {
                 $jobs[] = [$w, 'avif'];

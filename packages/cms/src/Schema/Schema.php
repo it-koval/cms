@@ -17,6 +17,9 @@ final class Schema
     public const ACTIONS = ['view', 'edit', 'publish', 'delete'];
 
     /** Keys of Settings that are not in any group (Notifications tab): Telegram and MAX on/off and chats per form, e-mail addresses per form, accept requests. */
+    /** Dedicated permission areas and history identities; site/analytics remain extensible schema groups. */
+    public const RESERVED_SETTINGS_GROUP_KEYS = ['menus', 'redirects', 'seo', 'notifications', 'mail', 'bots', 'theme', 'languages', 'users', 'mcp', 'seo-files'];
+
     public const CORE_SETTING_KEYS = ['tgOn', 'tgRoutes', 'maxOn', 'maxRoutes', 'mailRoutes', 'forms'];
 
     /** Credential rows belong to their dedicated API and can never be fields of a site settings group. */
@@ -27,7 +30,6 @@ final class Schema
 
     /**
      * @param list<string> $headlineMarks
-     * @param array<string, bool> $features
      * @param array<string, MenuAreaDef> $menuAreas
      * @param array{top: list<string>, bottom: list<string>} $layout
      * @param array<string, SectionType> $sections
@@ -40,7 +42,6 @@ final class Schema
     public function __construct(
         private readonly string $mainLocale,
         private readonly array $headlineMarks,
-        private readonly array $features,
         private readonly array $menuAreas,
         private readonly array $layout,
         private readonly array $sections,
@@ -166,10 +167,12 @@ final class Schema
         foreach ($this->sections as $key => $s) {
             $at = I18n::t('model.problem_at_section', ['key' => $key]);
             $out = [...$out, ...$this->keyProblems($at, (string) $key), ...$this->fieldProblems($at, $s->allFields())];
+            $out = [...$out, ...$this->h1Problems($at, $s->declaredH1Field(), $s->fieldList())];
         }
         foreach ($this->templates as $key => $t) {
             $at = I18n::t('model.problem_at_template', ['key' => $key]);
             $out = [...$out, ...$this->keyProblems($at, (string) $key), ...$this->fieldProblems($at, $t->fieldList())];
+            $out = [...$out, ...$this->h1Problems($at, $t->h1Field(), $t->fieldList())];
             $parents = $t->parentRule();
             if (\is_array($parents)) {
                 $out = [...$out, ...$this->unknownTemplates($at, 'parents()', $parents)];
@@ -186,9 +189,9 @@ final class Schema
             }
             $out = [...$out, ...$this->keyProblems($at, (string) $key), ...$this->fieldProblems($at, $fields)];
             foreach ($fields as $f) {
-                if ('version' === $f->key()) {
+                if (\in_array($f->key(), Collection::RESERVED_KEYS, true)) {
                     // the record of a collection carries the version of its draft under this key (flat(), `baseVersion` of the autosave): a field of the same name would be covered by it
-                    $out[] = I18n::t('model.problem_version_taken', ['at' => $at]);
+                    $out[] = I18n::t('model.problem_record_key_taken', ['at' => $at, 'key' => $f->key()]);
                 }
             }
             $title = $c->declaredTitleField();
@@ -240,6 +243,9 @@ final class Schema
         $out = [];
         $seen = [];
         foreach ($fields as $f) {
+            if ($f->isNote()) {
+                continue;
+            }
             $key = $f->key();
             if (!Key::isValid($key)) {
                 $out[] = I18n::t('model.problem_field_key_invalid', ['at' => $at, 'key' => $key, 'rule' => Key::rule()]);
@@ -254,6 +260,20 @@ final class Schema
         }
 
         return $out;
+    }
+
+    /**
+     * @param list<FieldInterface> $fields
+     *
+     * @return list<string>
+     */
+    private function h1Problems(string $at, ?string $key, array $fields): array
+    {
+        if (null === $key || \in_array($key, \array_map(static fn (FieldInterface $f): string => $f->key(), $fields), true)) {
+            return [];
+        }
+
+        return [I18n::t('model.problem_h1_field', ['at' => $at, 'key' => $key])];
     }
 
     /**
@@ -291,7 +311,11 @@ final class Schema
         return ($this->templates[$template] ?? null)?->fieldList() ?? [];
     }
 
-    /** Page-level fields outside sections (title, address, SEO); keys may be dotted. */
+    /**
+     * Page-level fields outside sections (title, address, SEO); keys may be dotted.
+     *
+     * @return list<FieldInterface>
+     */
     public static function pageFields(): array
     {
         return [
@@ -302,12 +326,16 @@ final class Schema
         ];
     }
 
-    /** Templates whose cards show a date: the ones an «Автор» writes. @return list<string> */
+    /**
+     * Templates explicitly available to the built-in Author role.
+     *
+     * @return list<string>
+     */
     public function articleTemplates(): array
     {
         $out = [];
         foreach ($this->templates as $t) {
-            if (isset(($t->cardRule() ?? [])['date'])) {
+            if ($t->allowsAuthors()) {
                 $out[] = $t->key();
             }
         }
@@ -388,7 +416,6 @@ final class Schema
         return [
             'mainLocale' => $this->mainLocale,
             'design' => ['headlineMarks' => $this->headlineMarks],
-            'features' => $this->features,
             'sections' => \array_values(\array_map(static fn (SectionType $s): array => $s->toArray($viewer), $this->sections)),
             'sectionGroups' => $this->sectionGroups(),
             'pageFields' => \array_map(static fn (FieldInterface $f): array => $f->toArray(), self::pageFields()),

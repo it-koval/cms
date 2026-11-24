@@ -1,0 +1,76 @@
+[English](DEPLOY.md) | Русский
+
+# Выкладка и откат сайта
+
+Выполняйте команды из корня сайта. Перед изменениями в продакшене проверьте обновление и восстановление на тестовой копии.
+
+## Подготовка
+
+1. Храните Composer lock-файл и комплект Docker вместе с релизом сайта. Скопируйте комплект в `docker/`, а `vendor/itk/cms/docker/compose.prod.yaml` в корень сайта как `compose.prod.yaml`. При обновлении бандла проверьте изменения комплекта.
+2. Задайте `COMPOSE_PROJECT_NAME` для сайта. Сохраняйте его при обновлении и откате, чтобы Compose использовал те же тома базы и загрузок. В `DEPLOY_PORT` укажите локальный порт nginx. В `DEPLOY_IMAGE_TAG` укажите коммит релиза или другой уникальный идентификатор. По умолчанию `DEPLOY_DB_NAME` равен `app`.
+3. Загрузите `DEPLOY_DB_PASSWORD` из хранилища секретов. Передайте `APP_SECRET`, `DATABASE_URL` и `MAILER_DSN` через окружение или Symfony Vault. Для Vault передайте `SYMFONY_DECRYPTION_SECRET`. Укажите хост базы `database` и имя из `DEPLOY_DB_NAME`. Закодируйте пароль в `DATABASE_URL` по правилам URL. Сохраняйте `APP_SECRET` между релизами. Укажите публичный HTTPS-адрес в `DEFAULT_URI`. Настройте доверенные хосты и прокси в Symfony. PHP видит запросы с адреса шлюза сети Docker, а не с 127.0.0.1, поэтому укажите в `framework.trusted_proxies` подсеть сети Compose или `private_ranges`. Иначе все посетители получат один IP для лимитов форм и входа, а HTTPS не определится. Если сайт использует другие бандлы с публичными файлами, добавьте в сборку сайта `php bin/console assets:install public --no-interaction`: образ копирует только файлы ITK CMS. См. [настройки безопасности](../packages/cms/README.ru.md#безопасность-securityyaml).
+4. Направьте HTTPS-прокси на `127.0.0.1:$DEPLOY_PORT`. Передавайте исходный хост и схему. PostgreSQL и PHP-FPM работают в сети Compose. Для каждого обновления укажите в `BACKUP_DIR` новый защищённый каталог вне контекста сборки.
+
+## Первая выкладка
+
+```sh
+docker compose -f compose.prod.yaml config --quiet
+docker compose -f compose.prod.yaml build php nginx
+docker compose -f compose.prod.yaml up -d --wait database
+docker compose -f compose.prod.yaml run --rm --no-deps php php bin/console doctrine:migrations:migrate --no-interaction
+docker compose -f compose.prod.yaml run --rm --no-deps php php bin/console itk:install --email=you@example.com --domain=example.com
+docker compose -f compose.prod.yaml up -d --wait --no-build php nginx worker
+```
+
+Введите пароль администратора по запросу. Войдите в админку и опубликуйте главную страницу. Выполните проверки ниже до открытия сайта.
+
+## Обновление
+
+Если переводите существующий сайт с 0.2.2 на этот комплект, сделайте копию в старом окружении и перенесите загрузки до запуска nginx. Следуйте разделу [Первый переход на production-комплект](../UPGRADE.ru.md#первый-переход-на-production-комплект).
+
+1. Сохраните прежний тег образов, файл Compose и настройки окружения. Задайте новый `DEPLOY_IMAGE_TAG`. Соберите оба образа командой `docker compose -f compose.prod.yaml build php nginx`.
+2. Включите режим обслуживания на HTTPS-прокси и заблокируйте приём форм. Оставьте текущие воркеры (0.2.2 при переходе на 0.3.0) работать до опустошения очереди, включая отложенные повторы. Проверьте очередь командой `docker compose -f compose.prod.yaml exec -T php php bin/console messenger:stats` (или той же командой в вашей прежней схеме) и подтвердите **0** проверкой, которая учитывает отложенные и обрабатываемые сообщения. Для Doctrine посчитайте все строки `messenger_messages` (или настроенной таблицы) по `queue_name`. Разберите сообщения в очереди ошибок до продолжения. Затем остановите `nginx`, `php`, `worker` и остальные процессы записи в базу или загрузки до резервного копирования.
+3. Сделайте резервную копию обоих томов. Проверьте, что архивы читаются.
+
+   ```sh
+   docker compose -f compose.prod.yaml exec -T database sh -c 'pg_dump -U postgres -Fc "$POSTGRES_DB"' > "$BACKUP_DIR/before-deploy.dump"
+   docker compose -f compose.prod.yaml run --rm -T --no-deps --entrypoint tar php -C /app/public/uploads -cf - . > "$BACKUP_DIR/before-deploy-uploads.tar"
+   docker compose -f compose.prod.yaml exec -T database pg_restore --list < "$BACKUP_DIR/before-deploy.dump" > /dev/null
+   tar -tf "$BACKUP_DIR/before-deploy-uploads.tar" > /dev/null
+   ```
+
+4. Запустите команду миграции из первой выкладки. Тем же способом запустите `itk:install --no-interaction`, чтобы обновить базовые настройки CMS. Запустите `php`, `nginx` и `worker` командой `up -d --wait --no-build`.
+5. Проверьте релиз до отключения режима обслуживания.
+
+## Проверка
+
+```sh
+curl --fail --show-error https://example.com/healthz
+docker compose -f compose.prod.yaml exec -T php php bin/console itk:doctor
+docker compose -f compose.prod.yaml ps php nginx worker
+docker compose -f compose.prod.yaml logs --tail=50 worker
+```
+
+Убедитесь, что `/healthz` отвечает успешно и воркер работает. Откройте главную страницу и войдите в админку. Проверьте, что загруженное изображение открывается, а тестовое сообщение уходит из очереди. При необходимости разрешите проверяющим доступ через прокси на время обслуживания.
+
+## Откат
+
+Миграции 0.3.0 несовместимы с кодом 0.2.2 и частично необратимы. Для отката с 0.3.0 на 0.2.2 восстановите базу и загрузки из резервной копии до обновления и верните соответствующие код и конфигурацию. Если это был первый переход на комплект, восстановите исходное развёртывание по разделу [UPGRADE → Откат на 0.2.2](../UPGRADE.ru.md#откат-на-022). Шаги ниже предназначены для сайта, который уже использовал production-комплект до обновления.
+
+1. Включите режим обслуживания. Остановите `nginx`, `php` и `worker`. Верните прежний `DEPLOY_IMAGE_TAG`. Используйте файл Compose и настройки окружения прежнего релиза.
+2. Для несовместимых версий, в том числе 0.3.0 → 0.2.2, сперва отдельно сохраните текущую базу и загрузки. Если схема и данные совместимы с прежним релизом, перейдите к шагу 3.
+
+   ```sh
+   docker compose -f compose.prod.yaml exec -T database sh -c 'pg_dump -U postgres -Fc "$POSTGRES_DB"' > "$BACKUP_DIR/before-rollback.dump"
+   docker compose -f compose.prod.yaml run --rm -T --no-deps --entrypoint tar php -C /app/public/uploads -cf - . > "$BACKUP_DIR/before-rollback-uploads.tar"
+   ```
+
+   Пишите эту копию в файлы `before-rollback`. Не перезаписывайте `before-deploy.dump` и `before-deploy-uploads.tar`: восстановление ниже читает их. Затем восстановите базу и загрузки из одной резервной копии. Это заменит данные, изменённые после копирования.
+
+   ```sh
+   docker compose -f compose.prod.yaml exec -T database pg_restore --clean --if-exists --create --exit-on-error -U postgres -d postgres < "$BACKUP_DIR/before-deploy.dump"
+   docker compose -f compose.prod.yaml run --rm -T --no-deps --entrypoint sh php -ec 'cd /app/public/uploads && find . -mindepth 1 -delete && tar -xf -' < "$BACKUP_DIR/before-deploy-uploads.tar"
+   ```
+
+3. При откате 0.3.0 → 0.2.2 до запуска любого воркера 0.2.2 проверьте восстановленную очередь, включая отложенные повторы и очередь ошибок (`messenger_messages` для Doctrine или внешний транспорт сайта). Сопоставьте конверты с итогами доставки в копии 0.3.0 `before-rollback.dump` по ID заявки, каналу, ID задания при его наличии и адресу получателя для почты. Для повтора без ID задания проверьте по данным провайдера, дошла ли именно эта попытка. Удаляйте только отдельные конверты с подтверждённой доставкой в 0.3.0. Не допускайте обработку конвертов с неизвестным итогом до сверки доставки, при необходимости по данным провайдера. Иначе восстановленная старая очередь может повторить отправки, выполненные после резервного копирования.
+4. Выполните `docker compose -f compose.prod.yaml up -d --wait --no-build php nginx worker`. Повторите проверки перед отключением режима обслуживания.

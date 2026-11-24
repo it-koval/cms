@@ -102,7 +102,13 @@ trait McpSupport
         return self::getContainer()->get(ApiTokenService::class)->create($user, $name, $scopes, $days);
     }
 
-    /** A key with scopes the owner's role does not offer (made straight in the database): the rights of the person must still decide. @param list<string> $scopes */
+    /**
+     * A key with scopes the owner's role does not offer (made straight in the database): the rights of the person must still decide.
+     *
+     * @param list<string> $scopes
+     *
+     * @return array{token: ApiToken, plain: string}
+     */
     protected function mcpForcedKey(User $user, array $scopes, string $name = 'TestMcp forced'): array
     {
         $made = $this->mcpKey($user, [McpScopes::READ], 30, $name);
@@ -147,7 +153,13 @@ trait McpSupport
         return \array_column($reply['result']['tools'], 'name');
     }
 
-    /** A page the tests clean up afterwards. @return array<string, mixed> */
+    /**
+     * A page the tests clean up afterwards.
+     *
+     * @param array<string, mixed> $more
+     *
+     * @return array<string, mixed>
+     */
     protected function mcpPage(McpContext $ctx, string $title = 'TestMcp page', ?string $url = null, array $more = []): array
     {
         if (\in_array($more['template'] ?? null, ['test_tpl', 'test_flat'], true) && !isset($more['parent_id'])) {

@@ -11,7 +11,7 @@ use Symfony\Component\Messenger\Attribute\AsMessageHandler;
  *
  * @internal
  */
-#[AsMessageHandler(bus: 'messenger.bus.default')]
+#[AsMessageHandler]
 final class RequestPasswordLinkHandler
 {
     public function __construct(private readonly PasswordRecovery $recovery)
@@ -20,6 +20,10 @@ final class RequestPasswordLinkHandler
 
     public function __invoke(RequestPasswordLink $message): void
     {
+        // Old serialized requests may contain a base resolved from editable settings.
+        if (!$message->trusted) {
+            return;
+        }
         $this->recovery->sendRequested($message->email, $message->baseUrl);
     }
 }

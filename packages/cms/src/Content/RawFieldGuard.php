@@ -13,10 +13,12 @@ use Itk\Cms\Security\Access;
 /**
  * Fields marked Field::raw() are output as raw HTML, so a script in one of them runs on the site and in the admin preview with the
  * session of whoever opens it. Adding or changing such a value therefore takes the right to manage users (administrator); everybody
- * else may keep, move or delete what is already there. Without a signed-in user (console import) nothing is checked.
+ * else may keep, move or delete what is already there. Without a signed-in user (console, queue) nothing is checked.
  * Through an AI assistant (MCP, see ChangeSource) nobody changes such a field, an administrator's key included: a model that reads texts of visitors could be talked into
  * writing a script, and the page would run it for everyone. So for a key every field is compared in its place (section, list item), not the page as a whole: emptying a field or
  * copying a code into another one is a change too. What stays allowed is taking the whole section or list item away (the code goes with it, as in the admin), moving and hiding.
+ *
+ * @internal
  */
 final class RawFieldGuard
 {

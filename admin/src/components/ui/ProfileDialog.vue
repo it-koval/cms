@@ -9,11 +9,13 @@ import Avatar from './Avatar.vue'
 import TwoFactorPanel from '@/components/profile/TwoFactorPanel.vue'
 import MyTokens from '@/components/profile/MyTokens.vue'
 import { useToast } from './useToast.js'
+import { useConfirm } from './useConfirm.js'
 import { locales, setLocale, t } from '@/i18n/index.js'
 
 const props = defineProps({ open: { type: Boolean, default: false } })
 const emit = defineEmits(['update:open'])
 const toast = useToast()
+const confirm = useConfirm()
 
 const form = reactive({ name: '', email: '' })
 const submitted = ref(false)
@@ -32,6 +34,16 @@ const errors = computed(() => ({
   name: form.name.trim() ? '' : t('ui.profile_err_name'),
   email: !form.email.trim() ? t('ui.profile_err_email') : /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim()) ? '' : t('ui.profile_err_email_typo'),
 }))
+
+let closing = false
+async function requestClose(value = false) {
+  if (value || busy.value || closing) return
+  closing = true
+  try {
+    if (dirty.value && !(await confirm({ title: t('settings.leave_title'), message: t('ui.profile_unsaved'), confirmLabel: t('settings.leave_confirm'), cancelLabel: t('settings.stay'), danger: true }))) return
+    emit('update:open', false)
+  } finally { closing = false }
+}
 
 async function save() {
   submitted.value = true
@@ -97,7 +109,7 @@ async function changePassword() {
 </script>
 
 <template>
-  <Modal v-if="app.user" :open="open" :title="t('ui.profile_title')" :width="480" initial-focus="#pf-name" @update:open="emit('update:open', $event)">
+  <Modal v-if="app.user" :open="open" :title="t('ui.profile_title')" :width="480" initial-focus="#pf-name" @update:open="requestClose">
     <div class="pf-head">
       <Avatar :name="form.name || app.user.name" :size="48" />
       <div class="pf-id"><b>{{ app.user.roleName }}</b><span class="muted">{{ app.siteInfo.name }}</span></div>
@@ -105,13 +117,13 @@ async function changePassword() {
     <form id="pf-form" class="pf-form" novalidate @submit.prevent="save">
       <div :class="['field', { 'is-error': submitted && !!errors.name }]">
         <div class="lbl"><label for="pf-name">{{ t('ui.profile_name') }}</label></div>
-        <input id="pf-name" v-model="form.name" type="text" maxlength="60" autocomplete="off" :aria-invalid="submitted && errors.name ? 'true' : undefined">
-        <div v-if="submitted && errors.name" class="err" role="alert"><Icon name="alert" size="s16" /><span>{{ errors.name }}</span></div>
+        <input id="pf-name" v-model="form.name" type="text" maxlength="60" autocomplete="off" :aria-invalid="submitted && errors.name ? 'true' : undefined" :aria-describedby="submitted && errors.name ? 'pf-name-error' : undefined">
+        <div v-if="submitted && errors.name" id="pf-name-error" class="err" role="alert"><Icon name="alert" size="s16" /><span>{{ errors.name }}</span></div>
       </div>
       <div :class="['field', { 'is-error': submitted && !!errors.email }]">
         <div class="lbl"><label for="pf-email">{{ t('ui.profile_email') }}</label></div>
-        <input id="pf-email" v-model="form.email" type="text" inputmode="email" maxlength="80" autocomplete="off" :aria-invalid="submitted && errors.email ? 'true' : undefined">
-        <div v-if="submitted && errors.email" class="err" role="alert"><Icon name="alert" size="s16" /><span>{{ errors.email }}</span></div>
+        <input id="pf-email" v-model="form.email" type="text" inputmode="email" maxlength="80" autocomplete="off" :aria-invalid="submitted && errors.email ? 'true' : undefined" :aria-describedby="submitted && errors.email ? 'pf-email-error' : undefined">
+        <div v-if="submitted && errors.email" id="pf-email-error" class="err" role="alert"><Icon name="alert" size="s16" /><span>{{ errors.email }}</span></div>
       </div>
       <div class="field">
         <div class="lbl"><label for="pf-role">{{ t('ui.profile_role') }}</label></div>
@@ -165,7 +177,7 @@ async function changePassword() {
     <div class="pf-2fa"><TwoFactorPanel /></div>
     <div v-if="open" class="pf-2fa"><MyTokens /></div>
     <template #footer>
-      <button type="button" class="btn" @click="emit('update:open', false)">{{ dirty ? t('ui.cancel') : t('ui.close') }}</button>
+      <button type="button" class="btn" @click="requestClose(false)">{{ dirty ? t('ui.cancel') : t('ui.close') }}</button>
       <button type="submit" form="pf-form" :class="['btn', 'primary', { loading: busy === 'save' }]" :disabled="!dirty">{{ t('ui.save') }}</button>
     </template>
   </Modal>

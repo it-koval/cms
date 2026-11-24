@@ -1,0 +1,44 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Itk\Cms\Tests\Core;
+
+use Itk\Cms\Support\Slug;
+use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\Test;
+use PHPUnit\Framework\TestCase;
+
+final class SlugTest extends TestCase
+{
+    /** @return iterable<string, array{string, int, string}> */
+    public static function slugCases(): iterable
+    {
+        $cases = \json_decode(\file_get_contents(__DIR__ . '/../Fixtures/slug-cases.json'), true, 512, \JSON_THROW_ON_ERROR);
+        foreach ($cases as $case) {
+            yield $case['in'] => [$case['in'], $case['max'], $case['out']];
+        }
+    }
+
+    #[Test]
+    #[DataProvider('slugCases')]
+    public function transliteratesWithTheSharedSlugRules(string $text, int $max, string $expected): void
+    {
+        self::assertSame($expected, Slug::slugify($text, $max));
+    }
+
+    #[Test]
+    public function keepsTheDefaultServerLimit(): void
+    {
+        self::assertSame(\str_repeat('q', 64), Slug::slugify(\str_repeat('Қ', 70)));
+    }
+
+    #[Test]
+    public function areaKeysStartWithALetterAndAvoidExistingKeys(): void
+    {
+        self::assertSame('menu_123', Slug::areaKey('123'));
+        self::assertSame('menu', Slug::areaKey('!!!'));
+        self::assertSame('main_menu', Slug::areaKey('Main menu'));
+        self::assertSame('header_3', Slug::areaKey('Header', ['header', 'header_2']));
+    }
+}

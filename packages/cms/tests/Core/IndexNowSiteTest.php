@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace Itk\Cms\Tests\Core;
 
+use Doctrine\ORM\EntityManagerInterface;
 use Itk\Cms\Content\SettingsService;
 use Itk\Cms\Content\SitemapBuilder;
+use Itk\Cms\Entity\Setting;
 use Itk\Cms\IndexNow\IndexNowSite;
 use Itk\Cms\IndexNow\IndexNowState;
 use Itk\Cms\Tests\Core\Fixture\IndexNowSettings;
@@ -47,7 +49,6 @@ final class IndexNowSiteTest extends KernelTestCase
     public static function addresses(): iterable
     {
         yield 'empty' => ['', IndexNowState::NoAddress];
-        yield 'not an address' => ['not an address', IndexNowState::NoAddress];
         yield 'public host' => ['example.org', IndexNowState::Ready];
         yield 'public host with a scheme and a port' => ['https://www.example.org:8443', IndexNowState::Ready];
         yield 'localhost' => ['localhost:8000', IndexNowState::NotPublic];
@@ -59,6 +60,21 @@ final class IndexNowSiteTest extends KernelTestCase
         yield 'a .example name' => ['shop.example', IndexNowState::NotPublic];
         yield 'a .invalid name' => ['shop.invalid', IndexNowState::NotPublic];
         yield 'a name that only ends like a zone' => ['attest.org', IndexNowState::Ready];
+    }
+
+    #[Test]
+    public function anInvalidDomainStoredBeforeValidationIsIgnored(): void
+    {
+        $this->setting('indexNow', true);
+        $this->setting('domain', '');
+        $em = self::getContainer()->get(EntityManagerInterface::class);
+        $row = $em->find(Setting::class, ['key' => 'domain', 'locale' => Setting::ALL]);
+        self::assertNotNull($row);
+        $row->value = 'not an address';
+        $em->flush();
+        self::getContainer()->get(SettingsService::class)->reset();
+
+        self::assertSame(IndexNowState::NoAddress, $this->site()->state());
     }
 
     #[Test]

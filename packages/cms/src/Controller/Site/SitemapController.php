@@ -8,6 +8,7 @@ use Itk\Cms\Content\SitemapBuilder;
 use Itk\Cms\I18n\I18n;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
+use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\Attribute\AsController;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
@@ -30,7 +31,7 @@ final class SitemapController
     }
 
     #[Route('/sitemap.xml', name: 'itk_sitemap', methods: ['GET', 'HEAD'])]
-    public function __invoke(): Response
+    public function __invoke(?Request $request = null): Response
     {
         $static = $this->projectDir . '/public/sitemap.xml';
         if (\is_file($static)) {
@@ -44,6 +45,16 @@ final class SitemapController
             throw new NotFoundHttpException(I18n::t('http.sitemap_no_url'));
         }
 
-        return new Response($xml, 200, ['Content-Type' => 'application/xml; charset=UTF-8', 'Cache-Control' => 'public, max-age=600']);
+        $response = new Response($xml, 200, ['Content-Type' => 'application/xml; charset=UTF-8', 'Cache-Control' => 'public, max-age=600']);
+        if ($this->sitemap->isMultilingual()) {
+            $response->headers->set('Cache-Control', 'public, max-age=0, must-revalidate');
+            $response->setEtag(\hash('sha256', $xml));
+            // Only the content tag can distinguish changes made within one second.
+            if (null !== $request && $request->headers->has('If-None-Match')) {
+                $response->isNotModified($request);
+            }
+        }
+
+        return $response;
     }
 }

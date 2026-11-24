@@ -26,6 +26,7 @@ use Itk\Cms\Schema\Schema;
 use Itk\Cms\Security\UserManager;
 use Itk\Cms\Tests\App\FakeMaxSender;
 use Itk\Cms\Tests\App\TestKernel;
+use Itk\Cms\Tests\Core\Fixture\FailingMessageBus;
 use PHPUnit\Framework\Attributes\Test;
 use Psr\Log\NullLogger;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
@@ -53,6 +54,7 @@ final class MaxChannelTest extends WebTestCase
     private array $saved = [];
     private string $csrf = '';
 
+    /** @param array<string, mixed> $options */
     protected static function createKernel(array $options = []): KernelInterface
     {
         return new TestKernel($options['environment'] ?? 'test', $options['debug'] ?? true, null, '', [], [], $options['itk'] ?? []);
@@ -70,9 +72,10 @@ final class MaxChannelTest extends WebTestCase
             $em->createQuery('DELETE FROM Itk\Cms\Entity\User u WHERE u.email LIKE :e')->setParameter('e', 'test-max-%@example.com')->execute();
             $settings = self::getContainer()->get(SettingsService::class);
             foreach ($this->saved as $key => [$existed, $value]) {
-                $em->createQuery('DELETE FROM Itk\Cms\Entity\Setting s WHERE s.key = :k')->setParameter('k', $key)->execute();
                 if ($existed) {
                     $settings->set($key, $value);
+                } else {
+                    $settings->remove($key);
                 }
             }
         }
@@ -126,19 +129,6 @@ final class MaxChannelTest extends WebTestCase
         return self::getContainer()->get(EntityManagerInterface::class)->getRepository(StoredNotification::class)->count(['dedupeKey' => $type . ':' . $r->id]);
     }
 
-    private function brokenBus(): MessageBusInterface
-    {
-        return new class implements MessageBusInterface {
-            public int $attempts = 0;
-
-            public function dispatch(object $message, array $stamps = []): Envelope
-            {
-                ++$this->attempts;
-                throw new \RuntimeException('Queue is down');
-            }
-        };
-    }
-
     private function channel(MessageBusInterface $bus): MaxChannel
     {
         return new MaxChannel(self::getContainer()->get(EntityManagerInterface::class), $bus, self::getContainer()->get('event_dispatcher'), new NullLogger(), $this->max());
@@ -160,7 +150,7 @@ final class MaxChannelTest extends WebTestCase
             public function send(MessageInterface $message): SentMessage
             {
                 if ($this->refuse) {
-                    throw new \RuntimeException('Chat not found');
+                    throw new \Itk\Cms\Request\DeliveryRefusedException('Chat not found');
                 }
 
                 return new SentMessage($message, 'recorder');
@@ -214,6 +204,7 @@ final class MaxChannelTest extends WebTestCase
         return (array) \json_decode((string) $client->getResponse()->getContent(), true);
     }
 
+    /** @param array<string, mixed> $options */
     private function adminClient(array $options = []): void
     {
         $client = static::createClient($options);
@@ -230,7 +221,7 @@ final class MaxChannelTest extends WebTestCase
         $this->setting('maxRoutes', ['*' => self::CHAT]);
         $this->fake(false);
         $r = $this->request();
-        $bus = $this->brokenBus();
+        $bus = new FailingMessageBus();
 
         $this->channel($bus)->send($this->newRequestNote($r));
 
@@ -246,7 +237,7 @@ final class MaxChannelTest extends WebTestCase
         $this->maxReady();
         $this->setting('maxOn', false);
         $r = $this->request();
-        $bus = $this->brokenBus();
+        $bus = new FailingMessageBus();
 
         $this->channel($bus)->send($this->newRequestNote($r));
 
@@ -265,7 +256,7 @@ final class MaxChannelTest extends WebTestCase
         $other = DriverManager::getConnection(self::getContainer()->get(EntityManagerInterface::class)->getConnection()->getParams());
         $other->executeStatement('UPDATE itk_request SET channels = ?, delivery = ? WHERE id = ?', ['{"telegram":{"state":"sent","error":null}}', 'sent', $r->id]);
         $other->close();
-        $bus = $this->brokenBus();
+        $bus = new FailingMessageBus();
 
         $this->channel($bus)->send($this->newRequestNote($r));
 
@@ -274,7 +265,8 @@ final class MaxChannelTest extends WebTestCase
         self::assertSame(RequestEntity::DELIVERY_FAILED, $r->channelState(RequestEntity::CHANNEL_MAX));
         self::assertSame(RequestEntity::DELIVERY_FAILED, $r->delivery);
         self::assertStringStartsWith('MAX: ', (string) $r->deliveryError);
-        self::assertStringContainsString('Queue is down', (string) $r->deliveryError);
+        self::assertStringNotContainsString('Queue is down', (string) $r->deliveryError, 'broker diagnostics are never shown to staff');
+        self::assertStringContainsString(\Itk\Cms\I18n\I18n::t('http.request_queue_failed'), (string) $r->deliveryError);
         self::assertSame(1, $this->bell($r, Notification::MAX_FAILED));
         self::assertSame(0, $this->bell($r, Notification::TELEGRAM_FAILED));
     }
@@ -445,6 +437,50 @@ final class MaxChannelTest extends WebTestCase
 
         self::assertSame(RequestEntity::DELIVERY_PENDING, $r->delivery);
         self::assertSame(0, $this->bell($r, Notification::MAX_FAILED));
+    }
+
+    #[Test]
+    public function aLateTerminalFailureCannotReleaseTheSameJobWhileItsRetryIsSending(): void
+    {
+        self::bootKernel();
+        $fake = $this->maxReady();
+        $r = $this->request();
+        $em = self::getContainer()->get(EntityManagerInterface::class);
+        $deliverer = self::getContainer()->get(RequestDeliverer::class);
+        $handler = self::getContainer()->get(SendRequestNotificationHandler::class);
+        $job = RequestDeliverer::reserve($em, (int) $r->id, 'max', false);
+        $message = new SendRequestNotification((int) $r->id, false, 'max', $job);
+        $fake->refuse = 'first worker refusal';
+        try {
+            $handler($message);
+            self::fail('the first attempt must fail before the duplicate is claimed');
+        } catch (RequestNotDeliveredException) {
+            self::assertSame('retry', $r->channelJobPhase('max'));
+        }
+        $lateFailure = new \Symfony\Component\Messenger\Event\WorkerMessageFailedEvent(new Envelope($message), 'async', new RequestNotDeliveredException('first worker refusal'));
+        $phaseDuringSend = null;
+        $queuedDuringSend = [];
+        $newReservation = null;
+        $fake->refuse = null;
+        $fake->onSend = static function () use ($deliverer, $em, $r, $lateFailure, &$phaseDuringSend, &$queuedDuringSend, &$newReservation): void {
+            // Another envelope has already claimed this job when the first worker's final event arrives.
+            (new \Itk\Cms\Request\RequestDeliveryJobListener($deliverer))($lateFailure);
+            $phaseDuringSend = $r->channelJobPhase('max');
+            $queuedDuringSend = $r->queuedChannels();
+            $newReservation = RequestDeliverer::reserve($em, (int) $r->id, 'max', true);
+        };
+        try {
+            $handler($message);
+        } finally {
+            $fake->onSend = null;
+        }
+
+        self::assertSame('processing', $phaseDuringSend, 'the terminal event belongs to the previous attempt');
+        self::assertSame(['max'], $queuedDuringSend);
+        self::assertNull($newReservation, 'the operator cannot start another send while this one is running');
+        self::assertSame(RequestEntity::DELIVERY_SENT, $r->channelState('max'));
+        self::assertSame('done', $r->channelJobPhase('max'));
+        self::assertCount(1, $fake->sent);
     }
 
     #[Test]
@@ -833,6 +869,11 @@ final class MaxChannelTest extends WebTestCase
     public function theMaxSettingsAreSavedCheckedAndSeenOnlyByThoseWhoMaySeeNotifications(): void
     {
         $this->adminClient();
+        $settings = self::getContainer()->get(SettingsService::class);
+        foreach (['maxOn', 'maxRoutes'] as $key) {
+            $this->saved[$key] = [$settings->isSet($key), $settings->get($key)];
+            $settings->remove($key);
+        }
         $all = $this->api('GET', 'settings');
         self::assertTrue($all['maxOn']);
         self::assertSame([], $all['maxRoutes']);
@@ -843,8 +884,6 @@ final class MaxChannelTest extends WebTestCase
         $saved = $this->api('PATCH', 'settings', ['maxRoutes' => ['*' => ' -70001 , 70002', 'call' => '70003'], 'maxOn' => false]);
         self::assertSame(['*' => '-70001 , 70002', 'call' => '70003'], $saved['maxRoutes']);
         self::assertFalse($saved['maxOn']);
-        $this->saved['maxRoutes'] = [false, null];
-        $this->saved['maxOn'] = [false, null];
         self::assertSame(['-70001', '70002'], self::getContainer()->get(SettingsService::class)->maxChatIdsFor('page'));
 
         foreach (['@channel', 'abc', '12x', '1.5', '123456789012345678901'] as $bad) {
@@ -864,7 +903,9 @@ final class MaxChannelTest extends WebTestCase
         $em->createQuery('DELETE FROM Itk\Cms\Entity\User u WHERE u.email LIKE :e')->setParameter('e', 'test-max-%@example.com')->execute();
         $editor = self::getContainer()->get(UserManager::class)->create('test-max-editor@example.com', 'Тест MAX', 'editor', 'password-for-test');
         \assert($editor instanceof User);
-        static::getClient()->loginUser($editor, 'itk_admin');
+        $client = static::getClient();
+        self::assertInstanceOf(KernelBrowser::class, $client);
+        $client->loginUser($editor, 'itk_admin');
         $seen = $this->api('GET', 'settings');
         foreach (['maxOn', 'maxRoutes', 'maxFallback', 'maxReady', 'tgReady', 'tgOn', 'tgRoutes'] as $key) {
             self::assertArrayNotHasKey($key, $seen, 'an editor does not see ' . $key);
@@ -961,7 +1002,9 @@ final class MaxChannelTest extends WebTestCase
         $this->adminClient();
         $editor = self::getContainer()->get(UserManager::class)->create('test-max-editor@example.com', 'Тест MAX', 'editor', 'password-for-test');
         \assert($editor instanceof User);
-        static::getClient()->loginUser($editor, 'itk_admin');
+        $client = static::getClient();
+        self::assertInstanceOf(KernelBrowser::class, $client);
+        $client->loginUser($editor, 'itk_admin');
         $this->fake();
 
         $this->api('POST', 'settings/max-test', ['chatId' => self::CHAT], 403);

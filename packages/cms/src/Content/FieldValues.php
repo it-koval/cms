@@ -27,6 +27,9 @@ final class FieldValues
         if ($f->hasDefault()) {
             return $f->defaultValue();
         }
+        if ('text' === $f->type() && \in_array($f->toArray()['inputType'] ?? '', ['date', 'datetime-local'], true)) {
+            return '';
+        }
 
         return match ($f->type()) {
             'text', 'textarea' => $f->isRequired() ? $this->placeholder('content.field_default_item') : '',
@@ -72,12 +75,6 @@ final class FieldValues
         }
 
         return $out;
-    }
-
-    /** @return array<string, mixed> */
-    public function defaultItem(FieldInterface $repeater): array
-    {
-        return ['_id' => Json::nid('p')] + $this->defaults($repeater->subFields());
     }
 
     /** True when a REQUIRED field has no usable value. */
@@ -126,6 +123,9 @@ final class FieldValues
             if ($this->isMissing($f, $v)) {
                 $out[] = ['path' => $path, 'field' => $f->toArray(), 'message' => $this->requiredMessage($f)];
             }
+            foreach (FieldValueRules::problems($f, $v) as $problem) {
+                $out[] = ['path' => $path, 'field' => $f->toArray(), 'message' => $problem['message']];
+            }
             if ('repeater' === $f->type() && \is_array($v)) {
                 foreach (\array_values($v) as $i => $item) {
                     if (\is_array($item)) {
@@ -142,15 +142,23 @@ final class FieldValues
     public function equal(FieldInterface $f, mixed $a, mixed $b): bool
     {
         if ($f->isRich()) {
-            $mode = (string) $f->richMode();
-
-            return $this->html->sanitize($a, $mode) === $this->html->sanitize($b, $mode);
+            return $this->richValue($f, $a) === $this->richValue($f, $b);
         }
         if ('repeater' === $f->type()) {
             return Json::same(Json::stripIds($a ?? []), Json::stripIds($b ?? []));
         }
 
         return Json::same($a, $b);
+    }
+
+    /** The same field rules apply to writes and to legacy values rendered from a saved snapshot. */
+    public function richValue(FieldInterface $field, mixed $value): string
+    {
+        $html = $this->html->sanitize($value, (string) $field->richMode());
+
+        return 'headline' === $field->type() && false === ($field->toArray()['brk'] ?? true)
+            ? \str_replace('<br>', ' ', $html)
+            : $html;
     }
 
     /**
@@ -193,8 +201,12 @@ final class FieldValues
                 continue;
             }
             $v = $data[$f->key()];
+            $problems = FieldValueRules::problems($f, $v);
+            if ([] !== $problems) {
+                throw ContentException::invalid($problems[0]['message'], \array_map(static fn (array $problem): array => ['path' => $f->key(), 'field' => $f->toArray(), 'message' => $problem['message']], $problems));
+            }
             if ($f->isRich()) {
-                $v = $this->html->sanitize($v, (string) $f->richMode());
+                $v = $this->richValue($f, $v);
             } elseif ('repeater' === $f->type()) {
                 $items = [];
                 foreach (\is_array($v) ? \array_values($v) : [] as $item) {

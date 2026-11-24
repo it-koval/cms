@@ -11,6 +11,7 @@ use MaxMessenger\Bot\MaxApiConfig;
 use Mj4444\SimpleHttpClient\Contracts\HttpClientInterface;
 use Mj4444\SimpleHttpClient\Contracts\HttpRequestInterface;
 use Mj4444\SimpleHttpClient\Contracts\HttpResponseInterface;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
@@ -20,7 +21,7 @@ final class MaxApiSenderTest extends TestCase
 {
     private const TOKEN = 'tok-3n-SECRET-value';
 
-    /** @var list<HttpRequestInterface<HttpResponseInterface>> */
+    /** @var list<HttpRequestInterface<HttpResponseInterface<*>>> */
     public array $requests = [];
 
     /** A wire that answers every request with the given status and body and keeps the requests. */
@@ -98,6 +99,61 @@ final class MaxApiSenderTest extends TestCase
             self::assertStringContainsString('Bot is not a member', $e->getMessage());
             self::assertStringNotContainsString(self::TOKEN, $e->getMessage());
         }
+    }
+
+    #[Test]
+    public function theServerClientDoesNotRepeatAnAmbiguousPost(): void
+    {
+        $config = (new MaxApiConfig(self::TOKEN))->setHttpClient($this->wire(503, '{"code":"unavailable","message":"unavailable"}'))->setRetryAttempts([1]);
+        $sender = new MaxApiSender(static fn (): MaxApiClient => new MaxApiClient($config), static fn (): MaxApiConfig => $config, new NullLogger());
+        try {
+            $sender->send(1, 'text');
+            self::fail('an uncertain response must be surfaced');
+        } catch (\Itk\Cms\Request\DeliveryUncertainException) {
+            self::assertCount(1, $this->requests);
+            self::assertSame([1], $config->getRetryAttempts());
+        }
+    }
+
+    /** @param array<string, int|float>|null $info */
+    #[Test]
+    #[DataProvider('curlFailures')]
+    public function networkFailuresBeforeSendingAreRetryableButLostResponsesStayUncertain(int $code, ?array $info, bool $uncertain): void
+    {
+        $wire = new class($code, $info, self::TOKEN) extends \Mj4444\SimpleHttpClient\CurlHttpClient {
+            /** @param array<string, int|float>|null $info */
+            public function __construct(private readonly int $failureCode, private readonly ?array $info, private readonly string $token)
+            {
+                parent::__construct();
+            }
+
+            public function request(HttpRequestInterface $request): HttpResponseInterface
+            {
+                $this->lastCurlInfo = $this->curlInfoRequired ? $this->info : null;
+                throw new \Mj4444\SimpleHttpClient\Exceptions\GeneralException('Network failure ' . $this->token, $this->failureCode, $request);
+            }
+        };
+        $sender = $this->sender($wire);
+        try {
+            $sender->send(1, 'text');
+            self::fail('the network failure must be surfaced');
+        } catch (MaxDeliveryException|\Itk\Cms\Request\DeliveryUncertainException $failure) {
+            self::assertSame($uncertain, $failure instanceof \Itk\Cms\Request\DeliveryUncertainException);
+            self::assertStringNotContainsString(self::TOKEN, $failure->getMessage());
+        }
+    }
+
+    /** @return iterable<string, array{int, array<string, int|float>|null, bool}> */
+    public static function curlFailures(): iterable
+    {
+        foreach ([6 => 'DNS', 7 => 'connection refused', 35 => 'TLS handshake', 60 => 'TLS certificate'] as $code => $name) {
+            yield $name => [$code, null, false];
+        }
+        yield 'connect timeout' => [28, ['pretransfer_time' => 0.0, 'size_upload' => 0.0, 'request_size' => 0, 'http_code' => 0], false];
+        yield 'response timeout after upload' => [28, ['pretransfer_time' => 0.01, 'size_upload' => 100.0, 'request_size' => 200, 'http_code' => 0], true];
+        yield 'timeout without progress evidence' => [28, null, true];
+        yield 'connection reset after upload' => [56, ['pretransfer_time' => 0.01, 'size_upload' => 100.0, 'request_size' => 200, 'http_code' => 0], true];
+        yield 'redirect failed after initial upload' => [6, ['pretransfer_time' => 0.0, 'size_upload' => 100.0, 'request_size' => 200, 'http_code' => 0, 'redirect_count' => 1], true];
     }
 
     #[Test]

@@ -4,8 +4,14 @@ declare(strict_types=1);
 
 namespace Itk\Cms\Content;
 
+use Itk\Cms\Event\RecordDeleted;
+use Itk\Cms\Event\RecordEvent;
+use Itk\Cms\Event\RecordPublished;
+use Itk\Cms\Event\RecordUnpublished;
+use Itk\Cms\I18n\ContentLocales;
 use Itk\Cms\Repository\PageTranslationRepository;
 use Itk\Cms\Support\Url;
+use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
 use Symfony\Contracts\Service\ResetInterface;
 
 /**
@@ -21,8 +27,10 @@ final class LiveUrlIndex implements ResetInterface
     /** @var array<string, array<string, array{id: string, title: string, url: string}>> language => page id => the same rows */
     private array $ids = [];
 
-    public function __construct(private readonly PageTranslationRepository $translations)
-    {
+    public function __construct(
+        private readonly PageTranslationRepository $translations,
+        private readonly ?ContentLocales $locales = null,
+    ) {
     }
 
     public function has(string $locale, string $url): bool
@@ -57,6 +65,17 @@ final class LiveUrlIndex implements ResetInterface
         $this->index($locale);
 
         return $this->ids[$locale][$id] ?? null;
+    }
+
+    /** The after events run once the write commits, including the unpublish of a removed translation. */
+    #[AsEventListener(event: RecordPublished::class)]
+    #[AsEventListener(event: RecordUnpublished::class)]
+    #[AsEventListener(event: RecordDeleted::class)]
+    public function onPageChange(RecordEvent $event): void
+    {
+        if ('page' === $event->kind && $this->locales?->isMultilingual()) {
+            $this->reset();
+        }
     }
 
     /** kernel.reset: a worker asks the database again for the next message. */

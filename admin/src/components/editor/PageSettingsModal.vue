@@ -17,6 +17,7 @@ import { useConfirm } from '@/components/ui/useConfirm.js'
 import PageUrlInput from '@/components/pages/PageUrlInput.vue'
 import { version } from '@/utils/langWords.js'
 import { escapeHtml } from '@/utils/html.js'
+import { clone, same } from '@/utils/objects.js'
 import { t } from '@/i18n/index.js'
 import { EDITOR_KEY } from './editorState.js'
 
@@ -33,10 +34,12 @@ const model = ref(null) // url holds only the part after the prefix when `pre` i
 const err = ref('')
 const urlErr = ref('')
 const busy = ref(false)
+let original = null
 watch(() => props.open, (v) => {
   if (!v) return
   const p = ed.page
   model.value = { title: p.title, url: pre.value ? unprefix(p.url, ed.locale) : p.url, parentId: p.parentId || '', template: p.template, seo: { title: (p.seo && p.seo.title) || '', description: (p.seo && p.seo.description) || '' } }
+  original = clone(model.value)
   err.value = ''
   urlErr.value = ''
 }, { immediate: true })
@@ -55,7 +58,7 @@ const parentOpts = computed(() => {
   return out
 })
 // another template: the parent stays if it still fits, else the top level, else the first page the template fits under
-watch(() => model.value && model.value.template, (k) => { if (k) model.value = { ...model.value, parentId: pickParent(parents.value, k, model.value.parentId) } })
+watch(() => model.value && model.value.template, (k) => { if (k && !same(model.value, original)) model.value = { ...model.value, parentId: pickParent(parents.value, k, model.value.parentId) } })
 const parentHelp = computed(() => (rules.value.isHome ? HOME_PARENT_HELP : parentHelpText(model.value ? model.value.template : ed.page.template, multi.value)))
 const urlHelp = computed(() => {
   const r = rules.value
@@ -74,9 +77,19 @@ const langNote = computed(() => t(rules.value.lockParent ? 'editor.settings_lang
 const seo = [PAGE_FIELDS[2], PAGE_FIELDS[3]]
 
 const close = () => emit('update:open', false)
+function mayLeave() {
+  if (busy.value) return false
+  if (!props.open || same(model.value, original)) return true
+  return confirm({
+    title: t('settings.leave_title'), message: t('editor.settings_leave_message'),
+    confirmLabel: t('settings.leave_confirm'), cancelLabel: t('people.btn_stay'), danger: true,
+  })
+}
+defineExpose({ mayLeave })
 function onUrlBlur() { if (model.value) model.value = { ...model.value, url: normalizeUrl(model.value.url) } }
 function setUrl(v) { model.value = { ...model.value, url: v }; urlErr.value = '' }
 async function submit() {
+  if (busy.value) return
   const m = model.value
   if (!m.title.trim()) { err.value = t('editor.settings_need_title'); return }
   if (!rules.value.lockUrl) {
@@ -85,15 +98,12 @@ async function submit() {
   }
   err.value = ''
   urlErr.value = ''
-  if (m.template !== ed.page.template) {
-    const lost = lostFieldsText(ed.page, m.template, ed.pages)
-    if (lost) {
-      const ok = await confirm({ title: t('editor.settings_tpl_title'), message: t('editor.settings_tpl_lost', { fields: lost }), confirmLabel: t('editor.settings_tpl_confirm'), danger: true })
-      if (!ok) return
-    }
-  }
   busy.value = true
   try {
+    if (m.template !== ed.page.template) {
+      const lost = lostFieldsText(ed.page, m.template, ed.pages)
+      if (lost && !(await confirm({ title: t('editor.settings_tpl_title'), message: t('editor.settings_tpl_lost', { fields: lost }), confirmLabel: t('editor.settings_tpl_confirm'), danger: true }))) return
+    }
     await ed.saveMeta({ ...m, url: fullUrl.value })
     close()
   } catch (e) {

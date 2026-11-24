@@ -50,10 +50,14 @@ if [ "${AUTO_MIGRATE:-1}" = "1" ]; then
         echo "[entrypoint] migrations failed, see output above; container stops" >&2
         exit 1
     fi
-    # roles, menu areas from the schema, default settings, home page; the administrator is created when ADMIN_EMAIL and ADMIN_PASSWORD are set
+    # Only the secret file path is passed to the installer. The default mount is optional.
+    admin_password_file=${ADMIN_PASSWORD_FILE:-/run/secrets/itk_admin_password}
+    if [ -z "${ADMIN_PASSWORD_FILE:-}" ] && [ ! -f "$admin_password_file" ]; then
+        admin_password_file=
+    fi
     if ! php bin/console itk:install --no-interaction \
         ${SITE_NAME:+--site-name="$SITE_NAME"} ${SITE_DOMAIN:+--domain="$SITE_DOMAIN"} \
-        ${ADMIN_EMAIL:+--email="$ADMIN_EMAIL"} ${ADMIN_PASSWORD:+--password="$ADMIN_PASSWORD"}; then
+        ${ADMIN_EMAIL:+--email="$ADMIN_EMAIL"} ${admin_password_file:+--password-file="$admin_password_file"}; then
         echo "[entrypoint] itk:install failed, see output above; container stops" >&2
         exit 1
     fi

@@ -4,7 +4,7 @@
 //   toast.show('Элемент удалён', { undo: () => restore(), undoLabel: 'вернуть' })
 //   toast.error('Не получилось')
 //   toast.show('...', { owner: 'editor', undo }); toast.dismissOwner('editor')   a toast whose action only works on one screen goes away with it
-// <ToastHost /> (mounted once in App.vue) renders them: black pill, cyan-light action link (DESIGN.md).
+// <ToastHost /> (mounted once in App.vue) renders them: black pill, cyan-light action link.
 import { reactive } from 'vue'
 import { t } from '@/i18n/index.js'
 

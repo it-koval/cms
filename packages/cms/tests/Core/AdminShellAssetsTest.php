@@ -88,4 +88,14 @@ final class AdminShellAssetsTest extends TestCase
     {
         self::assertNull(AdminAppController::manifestAssets(['_x.js' => ['file' => 'assets/x.js']], 'ru'));
     }
+
+    #[Test]
+    public function manifestUrlsUseTheConfiguredAssetResolver(): void
+    {
+        $assets = AdminAppController::manifestAssets(self::manifest(), 'kk', static fn (string $file): string => 'https://cdn.example.test/sub/bundles/itkcms/admin/' . $file);
+        self::assertNotNull($assets);
+        foreach ([$assets['js'], ...$assets['css'], ...$assets['preload']] as $url) {
+            self::assertStringStartsWith('https://cdn.example.test/sub/bundles/itkcms/admin/assets/', $url);
+        }
+    }
 }

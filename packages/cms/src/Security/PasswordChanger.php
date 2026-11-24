@@ -31,7 +31,7 @@ final class PasswordChanger
     /**
      * @throws ContentException 422 on a wrong current password or a weak new one, 429 when there were too many tries
      */
-    public function change(User $user, string $current, string $new, ?string $repeat = null): void
+    public function change(User $user, #[\SensitiveParameter] string $current, #[\SensitiveParameter] string $new, #[\SensitiveParameter] ?string $repeat = null): void
     {
         $limit = $this->limiter->create($user->id);
         if (!$limit->consume()->isAccepted()) {

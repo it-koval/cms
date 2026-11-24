@@ -83,7 +83,11 @@ final class SeoRulesTest extends WebTestCase
         return self::getContainer()->get(SeoRuleService::class);
     }
 
-    /** A published page at $url; $seo is its own SEO. */
+    /**
+     * A published page at $url; $seo is its own SEO.
+     *
+     * @param array<array-key, mixed> $seo
+     */
     private function page(string $title, string $url, array $seo = []): string
     {
         $svc = self::getContainer()->get(PageService::class);
@@ -108,6 +112,34 @@ final class SeoRulesTest extends WebTestCase
     private function resolver(): SeoResolver
     {
         return self::getContainer()->get(SeoResolver::class);
+    }
+
+    #[Test]
+    public function redirectsMatchTheQueryUnlessAPathRuleTakesPriority(): void
+    {
+        $this->api('POST', 'redirects', ['from' => '/f2-redirect-query', 'to' => '/f2-redirect-query?ref=Summer'], 422);
+        $redirects = self::getContainer()->get(RedirectService::class);
+        $specific = $redirects->create('/f2-redirect-query?ref=Summer&id=4', '/f2-specific');
+        $general = null;
+        try {
+            $this->client->request('GET', '/f2-redirect-query?id=4&ref=Summer');
+            self::assertResponseRedirects('/f2-specific', 301);
+            $this->client->request('GET', '/f2-redirect-query?id=4&ref=summer');
+            self::assertResponseStatusCodeSame(404);
+            $check = $this->api('GET', 'seo-rules/check?path=' . \urlencode('/f2-redirect-query?id=4&ref=Summer'));
+            self::assertSame('/f2-specific', $check['answer']['to'] ?? null);
+
+            $general = $redirects->create('/f2-redirect-query', '/f2-general');
+            $this->client->request('GET', '/f2-redirect-query?id=4&ref=Summer');
+            self::assertResponseRedirects('/f2-general', 301);
+            $this->client->request('GET', '/f2-redirect-query');
+            self::assertResponseRedirects('/f2-general', 301);
+        } finally {
+            $redirects->remove($specific->id);
+            if (null !== $general) {
+                $redirects->remove($general->id);
+            }
+        }
     }
 
     #[Test]
@@ -169,8 +201,7 @@ final class SeoRulesTest extends WebTestCase
         self::assertStringContainsString('<title>Свой заголовок</title>', $html);
         self::assertStringContainsString('<meta name="description" content="Своё описание"/>', $html);
         self::assertStringContainsString('<meta name="robots" content="index,follow"/>', $html);
-        self::assertSame(1, \substr_count($html, 'rel="canonical"'));
-        self::assertStringContainsString('/test-seo-plain"/>', $html);
+        self::assertStringNotContainsString('rel="canonical"', $html, 'no configured site origin: do not invent a canonical from the request');
         self::assertStringNotContainsString('og:image', $html);
     }
 
@@ -188,9 +219,9 @@ final class SeoRulesTest extends WebTestCase
         self::assertStringContainsString('<title>Заголовок правила</title>', $html);
         self::assertStringContainsString('content="Описание страницы"', $html, 'the description is not in the rule: the page keeps its own');
         self::assertStringContainsString('<meta name="robots" content="noindex,follow"/>', $html);
-        self::assertMatchesRegularExpression('~<link rel="canonical" href="https?://[^/"]+/test-seo-main"/>~', $html);
+        self::assertStringContainsString('<link rel="canonical" href="/test-seo-main"/>', $html);
         self::assertSame(1, \substr_count($html, 'rel="canonical"'));
-        self::assertMatchesRegularExpression('~<meta property="og:image" content="https?://[^/"]+/uploads/test-cover\.jpg"/>~', $html);
+        self::assertStringContainsString('<meta property="og:image" content="/uploads/test-cover.jpg"/>', $html);
         self::assertStringContainsString('<meta property="og:title" content="Заголовок правила"/>', $html);
     }
 
@@ -224,7 +255,7 @@ final class SeoRulesTest extends WebTestCase
     }
 
     #[Test]
-    public function relativeAddressesBecomeFullOnes(): void
+    public function relativeAddressesStayRelativeWithoutConfiguredSiteOrigin(): void
     {
         $this->rules()->create(['path' => '/test-seo-full', 'canonical' => '/test-target', 'ogImage' => 'https://cdn.example.com/a.jpg']);
         $twig = self::getContainer()->get(Environment::class);
@@ -234,7 +265,7 @@ final class SeoRulesTest extends WebTestCase
         $out = $twig->createTemplate('{{ itk_seo().canonical }}|{{ itk_seo().ogImage }}')->render([]);
         $stack->pop();
 
-        self::assertSame('https://site.example.com/test-target|https://cdn.example.com/a.jpg', $out);
+        self::assertSame('/test-target|https://cdn.example.com/a.jpg', $out);
     }
 
     #[Test]
@@ -287,7 +318,7 @@ final class SeoRulesTest extends WebTestCase
         $this->page('Для проверки', '/test-seo-check', ['title' => 'Заголовок из страницы', 'description' => 'Описание из страницы']);
         $this->rules()->create(['path' => '/test-seo-check', 'title' => 'Заголовок из правила']);
 
-        $page = $this->api('GET', 'seo-rules/check?path=' . \urlencode('/test-seo-check/'));
+        $page = $this->api('GET', 'seo-rules/check?path=' . \urlencode('/test-seo-check'));
         self::assertSame('/test-seo-check', $page['path']);
         self::assertSame('page', $page['answer']['kind']);
         self::assertSame(200, $page['answer']['status']);

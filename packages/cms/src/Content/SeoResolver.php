@@ -5,8 +5,9 @@ declare(strict_types=1);
 namespace Itk\Cms\Content;
 
 use Itk\Cms\Entity\SeoRule;
+use Itk\Cms\I18n\ContentLocales;
+use Itk\Cms\Mail\PublicUrl;
 use Itk\Cms\Repository\SeoRuleRepository;
-use Itk\Cms\Support\Url;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\RequestStack;
@@ -22,6 +23,8 @@ use Symfony\Contracts\Service\ResetInterface;
  *
  * A rule only overrides the fields it fills in: title and description lay over the page's own SEO, robots / canonical / ogImage are new.
  * Used by PageRenderer (the page's `seo` already carries the rule) and by the Twig function itk_seo() (any address).
+ *
+ * @internal
  */
 final class SeoResolver implements ResetInterface
 {
@@ -33,6 +36,8 @@ final class SeoResolver implements ResetInterface
         private readonly RequestStack $requests,
         #[Autowire(param: 'itk_cms.main_locale')]
         private readonly string $mainLocale,
+        private readonly ?PublicUrl $publicUrl = null,
+        private readonly ?ContentLocales $contentLocales = null,
     ) {
     }
 
@@ -52,30 +57,45 @@ final class SeoResolver implements ResetInterface
     public function matches(string $path, array $query = [], ?string $locale = null): array
     {
         $locale ??= $this->mainLocale;
-        $key = Url::key($path);
         $hits = [];
         foreach ($this->active() as $rule) {
-            if (null !== $rule->locale && '' !== $rule->locale && $rule->locale !== $locale) {
+            if (!self::covers($rule, $path, $query, $locale)) {
                 continue;
             }
-            $own = Url::key($rule->pathOnly());
-            $covers = SeoRule::EXACT === $rule->matchType
-                ? $key === $own
-                : ('/' === $own || $key === $own || \str_starts_with($key, $own . '/'));
-            if (!$covers) {
-                continue;
-            }
+            $own = SeoRuleService::pathKey($rule->pathOnly());
             $params = $rule->queryParams();
-            foreach ($params as $name => $value) {
-                if (!\array_key_exists($name, $query) || !self::same($query[$name], $value)) {
-                    continue 2;
-                }
-            }
             $hits[] = [$rule, [\count($params), SeoRule::EXACT === $rule->matchType ? 1 : 0, \strlen($own), $rule->locale === $locale ? 1 : 0, $rule->updatedAt->getTimestamp()]];
         }
         \usort($hits, static fn (array $a, array $b): int => $b[1] <=> $a[1] ?: \strcmp($b[0]->id, $a[0]->id));
 
         return \array_map(static fn (array $h): SeoRule => $h[0], $hits);
+    }
+
+    /**
+     * The same address matching is used when a changed rule invalidates derived content.
+     *
+     * @param array<array-key, mixed> $query
+     */
+    public static function covers(SeoRule $rule, string $path, array $query, string $locale): bool
+    {
+        if (!$rule->active || (null !== $rule->locale && '' !== $rule->locale && $rule->locale !== $locale)) {
+            return false;
+        }
+        $key = SeoRuleService::pathKey($path);
+        $own = SeoRuleService::pathKey($rule->pathOnly());
+        $covers = SeoRule::EXACT === $rule->matchType
+            ? $key === $own
+            : ('/' === $own || $key === $own || \str_starts_with($key, $own . '/'));
+        if (!$covers) {
+            return false;
+        }
+        foreach ($rule->queryParams() as $name => $value) {
+            if (!\array_key_exists($name, $query) || !self::same($query[$name], $value)) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /** @param array<array-key, mixed> $query */
@@ -92,7 +112,11 @@ final class SeoResolver implements ResetInterface
             return null;
         }
 
-        return $this->best($request->getPathInfo(), $request->query->all(), $locale ?? (string) ($request->attributes->get('_locale') ?? $this->mainLocale));
+        $path = SeoRuleService::requestPathKey($request->getPathInfo());
+        $routeLocale = $request->attributes->get('_locale');
+        $locale ??= \is_string($routeLocale) ? $routeLocale : ($this->contentLocales?->fromPath($path) ?? $this->mainLocale);
+
+        return $this->best($path, $request->query->all(), $locale);
     }
 
     /**
@@ -122,7 +146,7 @@ final class SeoResolver implements ResetInterface
 
     /**
      * What a template prints: the SEO of apply() with the fallbacks. title: SEO, then the page title, then defaults.title;
-     * description, robots, canonical, ogImage: SEO, then the same key of $defaults. canonical and ogImage become full addresses.
+     * description, robots, canonical, ogImage: SEO, then the same key of $defaults. Relative canonical and ogImage use the configured SEO origin when available.
      *
      * @param array<string, mixed> $seo result of apply()
      * @param array<string, mixed> $defaults what the site says when nothing else does
@@ -141,10 +165,10 @@ final class SeoResolver implements ResetInterface
             return '';
         };
         $text = static fn (mixed $v): string => \is_scalar($v) ? (string) $v : '';
-        $request ??= $this->requests->getCurrentRequest();
-        $full = static function (string $url) use ($request): string {
-            if (null !== $request && \str_starts_with($url, '/')) {
-                return $request->getSchemeAndHttpHost() . $request->getBaseUrl() . $url;
+        $base = $this->publicUrl?->seoBase();
+        $full = static function (string $url) use ($base): string {
+            if (null !== $base && \str_starts_with($url, '/') && !\str_starts_with($url, '//')) {
+                return $base . $url;
             }
 
             return $url;

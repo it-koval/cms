@@ -8,7 +8,7 @@ use Doctrine\DBAL\Connection;
 use Itk\Cms\I18n\I18n;
 
 /**
- * An existing SQL table → the spec of a collection (column types → fields) and its rows.
+ * An existing SQL table → the spec of a collection (column types → fields).
  *
  *   varchar/char → Text · text/json → Textarea · integer/numeric/float → Number · boolean → Toggle · date → Date · timestamp → DateTime · enum type → Select
  *
@@ -73,32 +73,6 @@ final class TableReader
     }
 
     /**
-     * The rows of the table: [sourceId, [field key => raw value]] for the columns of the spec.
-     *
-     * @return \Generator<int, array{0: string, 1: array<string, mixed>}>
-     */
-    public function rows(Connection $db, string $table, CollectionSpec $spec): \Generator
-    {
-        $idColumn = $spec->source['idColumn'] ?? null;
-        if (!\is_string($idColumn) || '' === $idColumn) {
-            throw new \InvalidArgumentException(I18n::t('model.gen_table_no_primary', ['table' => $table]));
-        }
-        $columns = [$idColumn];
-        foreach ($spec->fields as $f) {
-            $columns[] = (string) $f->column;
-        }
-        $sql = 'SELECT ' . \implode(', ', \array_map($this->quote(...), \array_unique($columns))) . ' FROM ' . $this->quoteTable($table) . ' ORDER BY ' . $this->quote($idColumn);
-        foreach ($db->iterateAssociative($sql) as $row) {
-            $values = [];
-            foreach ($spec->fields as $f) {
-                $values[$f->key] = $row[(string) $f->column] ?? null;
-            }
-
-            yield [(string) $row[$idColumn], $values];
-        }
-    }
-
-    /**
      * @param array<string, mixed> $r a row of information_schema.columns
      *
      * @return array{type: string, max?: int, options?: list<string>}|null
@@ -137,15 +111,5 @@ final class TableReader
         }
 
         return 2 === \count($parts) ? [$parts[0], $parts[1]] : [null, $parts[0]];
-    }
-
-    private function quoteTable(string $table): string
-    {
-        return \implode('.', \array_map($this->quote(...), \explode('.', $table)));
-    }
-
-    private function quote(string $identifier): string
-    {
-        return '"' . \str_replace('"', '""', $identifier) . '"';
     }
 }

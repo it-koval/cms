@@ -7,6 +7,8 @@ namespace Itk\Cms\Mail;
 /**
  * The «Почта» settings as the code reads them (Mail\MailSettings::config()). The password is here in plain text, for building the connection
  * and for nothing else: it never goes into a response, a log or a message of the queue.
+ *
+ * @internal
  */
 final class MailConfig
 {
@@ -35,5 +37,15 @@ final class MailConfig
     public function hasServer(): bool
     {
         return $this->enabled && '' !== $this->host && $this->port > 0;
+    }
+
+    public static function canSendCredentials(string $encryption, bool $hasPassword): bool
+    {
+        return !$hasPassword || \in_array($encryption, [self::SSL, self::STARTTLS], true);
+    }
+
+    public function hasSafeCredentials(): bool
+    {
+        return self::canSendCredentials($this->encryption, '' !== $this->password);
     }
 }

@@ -1,0 +1,30 @@
+# Add to docker/compose.yaml with --project-directory packages/cms.
+services:
+  php:
+    build:
+      args:
+        UID: ${ITK_CI_UID:-1000}
+        GID: ${ITK_CI_GID:-1000}
+    working_dir: /workspace/packages/cms
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@database:5432/itk?serverVersion=${ITK_CI_POSTGRES:-17}&charset=utf8
+      ITK_TEST_MAILPIT_URL: http://mailer:8025
+      ITK_TEST_MAILPIT_SMTP_PORT: "1025"
+      ITK_TEST_CACHE_DIR: /tmp/itk-test-cache
+      SYMFONY_REQUIRE: ${ITK_CI_SYMFONY:-7.4.*}
+    volumes:
+      - ../..:/workspace
+
+  database:
+    image: pgvector/pgvector:pg${ITK_CI_POSTGRES:-17}
+    environment:
+      POSTGRES_DB: itk
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U postgres -d $${POSTGRES_DB}"]
+
+  mailer:
+    healthcheck:
+      test: ["CMD", "/mailpit", "readyz"]
+      interval: 5s
+      timeout: 5s
+      retries: 20

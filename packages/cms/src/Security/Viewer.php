@@ -8,8 +8,8 @@ use Itk\Cms\Entity\User;
 use Itk\Cms\Schema\Schema;
 
 /**
- * Who is looking: the signed-in person with his rights, or the system itself (console commands, imports, queue workers — nobody signed in,
- * everything allowed). The viewer is what field `canSee()`, resource `canSee()`, actions and hooks ask.
+ * The viewer is the signed-in person with his rights or the system itself (console commands, queue workers).
+ * For the system nobody is signed in and everything is allowed. Field `canSee()`, resource `canSee()`, actions and hooks ask the viewer.
  *
  *   $v->can('col:tours', 'publish')        $v->allows('set:users')        $v->allows('col:tours:edit')
  */
@@ -21,6 +21,7 @@ final class Viewer
     private function __construct(
         private readonly ?User $user,
         private readonly array $rights,
+        private readonly bool $system = false,
     ) {
     }
 
@@ -35,12 +36,18 @@ final class Viewer
     /** No person: code is running on its own. Everything is allowed. */
     public static function system(): self
     {
+        return new self(null, ['perms' => [], 'templates' => null], true);
+    }
+
+    /** No signed-in person at an HTTP entry point: no permissions. */
+    public static function anonymous(): self
+    {
         return new self(null, ['perms' => [], 'templates' => null]);
     }
 
     public function isSystem(): bool
     {
-        return null === $this->user;
+        return $this->system;
     }
 
     public function user(): ?User
@@ -71,7 +78,7 @@ final class Viewer
 
     public function can(string $area, string $action = 'view', ?string $template = null): bool
     {
-        return null === $this->user || RoleResolver::allows($this->rights, $area, $action, $template);
+        return $this->system || RoleResolver::allows($this->rights, $area, $action, $template);
     }
 
     /**

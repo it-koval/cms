@@ -27,9 +27,6 @@ final class MediaLibraryTest extends WebTestCase
     /** @var list<string> */
     private array $fileIds = [];
 
-    /** @var list<string> */
-    private array $folderIds = [];
-
     protected function setUp(): void
     {
         $this->client = static::createClient();
@@ -67,7 +64,7 @@ final class MediaLibraryTest extends WebTestCase
     /**
      * @param array<string, mixed> $body
      *
-     * @return array<string, mixed>
+     * @return array<array-key, mixed>
      */
     private function api(string $method, string $path, array $body = [], int $status = 200): array
     {
@@ -80,10 +77,7 @@ final class MediaLibraryTest extends WebTestCase
     /** @return array<string, mixed> */
     private function folder(string $name, ?string $parentId = null): array
     {
-        $f = $this->api('POST', 'media-folders', ['name' => $name, 'parentId' => $parentId], 201);
-        $this->folderIds[] = $f['id'];
-
-        return $f;
+        return $this->api('POST', 'media-folders', ['name' => $name, 'parentId' => $parentId], 201);
     }
 
     /** A 1500 × 900 picture: red on the left half, blue on the right. */
@@ -100,7 +94,11 @@ final class MediaLibraryTest extends WebTestCase
         return $m;
     }
 
-    /** The colour of the pixel at (fx, fy) of an image served at $url, as [r, g, b]. */
+    /**
+     * The colour of the pixel at (fx, fy) of an image served at $url, as [r, g, b].
+     *
+     * @return array<array-key, mixed>
+     */
     private function pixel(string $url, float $fx, float $fy): array
     {
         $this->client->request('GET', $url);
@@ -135,10 +133,10 @@ final class MediaLibraryTest extends WebTestCase
         self::assertSame(['16:9', '4:3', '1:1', '3:4'], \array_slice($tree['ratios'], 0, 4));
         self::assertContains('14:5', $tree['ratios']);
 
-        $inB = $this->api('GET', 'media?folder=' . $b['id']);
+        $inB = $this->api('GET', 'media?folder=' . $b['id'])['items'];
         self::assertSame([$m->id], \array_column($inB, 'id'));
         self::assertSame($b['id'], $inB[0]['folderId']);
-        self::assertNotContains($m->id, \array_column($this->api('GET', 'media?folder=none'), 'id'));
+        self::assertNotContains($m->id, \array_column($this->api('GET', 'media?folder=none')['items'], 'id'));
     }
 
     #[Test]
@@ -202,7 +200,7 @@ final class MediaLibraryTest extends WebTestCase
         $this->api('DELETE', 'media-folders/' . $a['id'] . '?moveTo=' . $child['id'], [], 422);
 
         $this->api('DELETE', 'media-folders/' . $a['id'] . '?moveTo=' . $target['id']);
-        $files = $this->api('GET', 'media?folder=' . $target['id']);
+        $files = $this->api('GET', 'media?folder=' . $target['id'])['items'];
         self::assertSame([$m->id], \array_column($files, 'id'));
         $folders = [];
         foreach ($this->api('GET', 'media-folders')['folders'] as $f) {
@@ -216,7 +214,7 @@ final class MediaLibraryTest extends WebTestCase
         $this->api('DELETE', 'media-folders/' . $empty['id'], [], 404);
         // to the top level
         $this->api('DELETE', 'media-folders/' . $target['id'] . '?moveTo=root');
-        self::assertContains($m->id, \array_column($this->api('GET', 'media?folder=none'), 'id'));
+        self::assertContains($m->id, \array_column($this->api('GET', 'media?folder=none')['items'], 'id'));
     }
 
     #[Test]
@@ -431,7 +429,7 @@ final class MediaLibraryTest extends WebTestCase
         $twig = self::getContainer()->get('twig');
         $image = ['src' => $m->path, 'alt' => 'Тест'];
 
-        $url = $twig->createTemplate("{{ media_url(img, 960, '16:9') }}|{{ media_url(img, 960) }}|{{ media_url(img) }}")->render(['img' => $image]);
+        $url = $twig->createTemplate("{{ itk_media_url(img, 960, '16:9') }}|{{ itk_media_url(img, 960) }}|{{ itk_media_url(img) }}")->render(['img' => $image]);
         [$ratio, $plain, $original] = \explode('|', $url);
         self::assertStringContainsString('/_v/w960-r16x9/', $ratio);
         self::assertStringContainsString('/_v/w960/', $plain);

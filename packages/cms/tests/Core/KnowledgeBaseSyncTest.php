@@ -40,6 +40,7 @@ final class KnowledgeBaseSyncTest extends KernelTestCase
     /** @var list<string> */
     private array $rules = [];
 
+    /** @param array<string, mixed> $options */
     protected static function createKernel(array $options = []): KernelInterface
     {
         return new TestKernel('test', true, null, '', [], [], $options['itk'] ?? ['knowledge_base' => ['enabled' => true]]);
@@ -83,7 +84,10 @@ final class KnowledgeBaseSyncTest extends KernelTestCase
         return self::getContainer()->get(Connection::class);
     }
 
-    /** @param list<array<string, mixed>> $sections */
+    /**
+     * @param list<array<string, mixed>> $sections
+     * @param array<array-key, mixed> $seo
+     */
     private function publish(string $url, string $title, array $sections = [], array $seo = []): string
     {
         $pages = self::getContainer()->get(PageService::class);
@@ -319,5 +323,78 @@ final class KnowledgeBaseSyncTest extends KernelTestCase
         self::getContainer()->get(PageService::class)->saveDraft($id, null, ['title' => 'Исключено (черновик)']);
 
         self::assertSame([], $this->transport()->getSent());
+    }
+
+    #[Test]
+    public function seoNoindexChangesRemoveAndRestoreTheDocumentWithoutRepublishing(): void
+    {
+        self::bootKernel();
+        $url = '/kb-f2-rule-' . \bin2hex(\random_bytes(5));
+        $id = $this->publish($url, 'Возврат F2', [self::text('s1', '<p>Вернуть покупку.</p>')]);
+        $this->publish($url . '-other', 'Другая страница', [self::text('s1', '<p>Не затронута правилом.</p>')]);
+        $page = self::getContainer()->get(PageRepository::class)->find($id);
+        $english = new PageTranslation($page, 'en');
+        $english->draft = $english->published = ['title' => 'Returns', 'url' => $url, 'seo' => [], 'fields' => [], 'sections' => []];
+        $english->status = PageTranslation::PUBLISHED;
+        $english->publishedUrl = $url;
+        $page->translations->set('en', $english);
+        self::getContainer()->get(EntityManagerInterface::class)->persist($english);
+        self::getContainer()->get(EntityManagerInterface::class)->flush();
+        $this->drain();
+        $rules = self::getContainer()->get(SeoRuleService::class);
+        $rule = $rules->create(['path' => $url, 'locale' => 'en', 'robots' => 'noindex,follow']);
+        $this->rules[] = $rule->id;
+        self::assertCount(0, $this->transport()->getSent(), 'an excluded language is never queued');
+        $rules->update($rule->id, ['locale' => null]);
+        self::assertCount(1, $this->transport()->getSent(), 'one matching main-language version, no unrelated page');
+        self::assertSame([], $this->drain());
+        self::assertSame(0, $this->rows($id)['documents']);
+        $rules->update($rule->id, ['robots' => 'index,follow']);
+        self::assertCount(1, $this->transport()->getSent());
+        self::assertSame([], $this->drain());
+        self::assertSame(1, $this->rows($id)['documents']);
+        $rules->update($rule->id, ['robots' => 'noindex,follow']);
+        $this->drain();
+        $rules->remove($rule->id);
+        $this->rules = [];
+        self::assertCount(1, $this->transport()->getSent());
+        self::assertSame([], $this->drain());
+        self::assertSame(1, $this->rows($id)['documents']);
+    }
+
+    #[Test]
+    public function aDatabaseSerializationFailureIsRetriedButAConstraintFailureIsPermanent(): void
+    {
+        self::bootKernel();
+        $suffix = \bin2hex(\random_bytes(5));
+        $id = $this->publish('/kb-f2-db-' . $suffix, 'Сбой БД ' . $suffix, [self::text('s1', '<p>Временный сбой.</p>')]);
+        $db = $this->db();
+        $function = 'f2_kb_fault_' . $suffix;
+        $sequence = $function . '_seq';
+        $db->executeStatement('CREATE SEQUENCE ' . $sequence);
+        $db->executeStatement('CREATE FUNCTION ' . $function . "() RETURNS trigger AS \$\$ BEGIN IF nextval('" . $sequence . "') = 1 THEN RAISE EXCEPTION 'f2 transient' USING ERRCODE = '40001'; END IF; RETURN NEW; END \$\$ LANGUAGE plpgsql");
+        $db->executeStatement('CREATE TRIGGER ' . $function . ' BEFORE INSERT ON itk_kb_document FOR EACH ROW WHEN (NEW.source_id = ' . $db->quote($id) . ') EXECUTE FUNCTION ' . $function . '()');
+        try {
+            $errors = $this->drain();
+            self::assertCount(1, $errors);
+            $message = new SyncKnowledge('page', $id, 'ru');
+            self::assertTrue(RetryVerdict::retried($message, $errors[0], 0));
+            self::assertFalse(RetryVerdict::retried($message, $errors[0], 3));
+            self::assertSame(0, $this->rows($id)['documents']);
+            $this->transport()->send(new Envelope($message));
+            self::assertSame([], $this->drain());
+            self::assertSame(1, $this->rows($id)['documents']);
+            $db->executeStatement('CREATE OR REPLACE FUNCTION ' . $function . "() RETURNS trigger AS \$\$ BEGIN RAISE EXCEPTION 'f2 permanent' USING ERRCODE = '23514'; END \$\$ LANGUAGE plpgsql");
+            $db->executeStatement('DELETE FROM itk_kb_document WHERE source_id = ?', [$id]);
+            $this->transport()->send(new Envelope($message));
+            $errors = $this->drain();
+            self::assertCount(1, $errors);
+            self::assertInstanceOf(UnrecoverableMessageHandlingException::class, $errors[0]);
+            self::assertFalse(RetryVerdict::retried($message, $errors[0], 0));
+        } finally {
+            $db->executeStatement('DROP TRIGGER ' . $function . ' ON itk_kb_document');
+            $db->executeStatement('DROP FUNCTION ' . $function . '()');
+            $db->executeStatement('DROP SEQUENCE ' . $sequence);
+        }
     }
 }

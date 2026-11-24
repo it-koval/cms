@@ -7,10 +7,10 @@ namespace Itk\Cms\Controller\Admin;
 use Itk\Cms\Content\ContentException;
 use Itk\Cms\Content\PageService;
 use Itk\Cms\I18n\AdminLocale;
+use Itk\Cms\I18n\ContentLocales;
 use Itk\Cms\I18n\I18n;
 use Itk\Cms\Rendering\PageRenderer;
 use Itk\Cms\Security\Access;
-use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\Attribute\AsController;
@@ -34,8 +34,7 @@ final class PreviewController
         private readonly PageService $pages,
         private readonly Access $access,
         private readonly AdminLocale $adminLocale,
-        #[Autowire(param: 'itk_cms.main_locale')]
-        private readonly string $mainLocale,
+        private readonly ContentLocales $contentLocales,
     ) {
     }
 
@@ -43,19 +42,29 @@ final class PreviewController
     public function __invoke(Request $request, string $id): Response
     {
         $locale = $request->query->get('locale');
-        $locale = \is_string($locale) && \preg_match('/^[A-Za-z]{2,8}(-[A-Za-z0-9]{1,8})?$/', $locale) ? $locale : null;
         $user = $this->access->user();
         try {
-            $template = $this->adminLocale->runFor($user, function () use ($id, $locale): string {
+            [$template, $locale] = $this->adminLocale->runFor($user, function () use ($id, $locale): array {
+                try {
+                    if (null !== $locale && !\is_string($locale)) {
+                        throw ContentException::invalid(I18n::t('http.no_such_language'));
+                    }
+                    $locale = $this->contentLocales->assertUsable($locale);
+                } catch (ContentException $e) {
+                    if ($this->contentLocales->isConfigured()) {
+                        throw $e;
+                    }
+                    $locale = $this->contentLocales->main();
+                }
                 $page = $this->pages->find($id);
                 $template = $page->template;
                 $this->access->require('pages', 'view', $template);
                 // said here, in the language of the person: the renderer below draws in the language of the site
-                if (null === $page->translation($locale ?? $this->mainLocale)) {
+                if (null === $page->translation($locale)) {
                     throw new ContentException(I18n::t(PageService::NO_VERSION), 404);
                 }
 
-                return $template;
+                return [$template, $locale];
             });
             $response = $this->renderer->renderPreview($id, $locale);
         } catch (ContentException $e) {

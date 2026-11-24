@@ -1,9 +1,9 @@
 // The site this admin edits (one per install), its content languages and the data of the «Сегодня» screen.
-//   currentSiteSync() / getCurrentSite()   { key, name, domain }   from window.ITK_ADMIN.site (written by the server shell)
+//   currentSiteSync()                      { key, name, domain }   from window.ITK_ADMIN.site (written by the server shell)
 //   getLanguages()                         GET /languages         -> { main:'ru', list:[{ code:'ru', name:'Русский' }] }  main is always first
 //                                          (the server may answer a plain list of codes / { code, name } rows: both are turned into this shape)
-//   getDashboard()                         GET /dashboard         -> { newRequests, failedCount, unpublished, awaiting, proposals, recent, languages }  for «Сегодня»
-// The first iteration has the Russian language only; adding languages is a later feature, so there are no language-management calls.
+//   getDashboard()                         GET /dashboard         -> { newRequests, failedCount, unpublished, awaiting, recent, languages, locales }  for «Сегодня»
+// Content languages are configured by the site developer.
 import { http, boot } from './http.js'
 import { knownName } from '@/utils/locales.js'
 
@@ -12,9 +12,6 @@ const MAIN = 'ru'
 export function currentSiteSync() {
   const s = boot().site || {}
   return { key: 'site', name: s.name || 'ITK CMS', domain: s.domain || (typeof location !== 'undefined' ? location.host : '') }
-}
-export async function getCurrentSite() {
-  return currentSiteSync()
 }
 
 /** Any shape the server may use for the languages -> { main, list:[{ code, name }] }. */
@@ -35,5 +32,5 @@ export async function getLanguages() {
 
 export async function getDashboard() {
   const d = (await http.get('dashboard')) || {}
-  return { newRequests: [], failedCount: 0, unpublished: [], awaiting: [], proposals: [], recent: [], ...d, languages: d.languages ? normalizeLanguages(d.languages) : { main: MAIN, list: [{ code: MAIN, name: knownName(MAIN) }] } }
+  return { newRequests: [], failedCount: 0, unpublished: [], awaiting: [], recent: [], ...d, languages: d.languages ? normalizeLanguages(d.languages) : { main: MAIN, list: [{ code: MAIN, name: knownName(MAIN) }] } }
 }

@@ -3,8 +3,6 @@
 import { t } from '@/i18n/index.js'
 import { schema } from './registry.js'
 
-/** Settings groups of the site: [{ key, title, description, fields }] in the order of the schema. */
-export const settingsGroups = () => schema.settings.groups
 /** Flat field list of all groups. */
 export const getSettingsFields = () => schema.settings.groups.flatMap((g) => g.fields)
 

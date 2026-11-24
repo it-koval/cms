@@ -11,7 +11,11 @@ use Doctrine\ORM\Mapping as ORM;
 use Itk\Cms\Repository\PageRepository;
 use Symfony\Component\Uid\Uuid;
 
-/** One node of the site tree. The tree is shared by all languages; the content lives in PageTranslation. */
+/**
+ * One node of the site tree. The tree is shared by all languages; the content lives in PageTranslation.
+ *
+ * @internal
+ */
 #[ORM\Entity(repositoryClass: PageRepository::class)]
 #[ORM\Table(name: 'itk_page')]
 #[ORM\Index(name: 'itk_page_parent_idx', columns: ['parent_id'])]
@@ -31,7 +35,7 @@ class Page
     #[ORM\Column(type: Types::STRING, length: 64)]
     public string $template = 'default';
 
-    #[ORM\Column(type: Types::DATETIME_IMMUTABLE)]
+    #[ORM\Column(name: 'created_at', type: Types::DATETIME_IMMUTABLE)]
     public \DateTimeImmutable $createdAt;
 
     /** @var Collection<string, PageTranslation> */

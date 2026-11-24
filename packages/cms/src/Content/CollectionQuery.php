@@ -17,13 +17,15 @@ use Itk\Cms\Schema\Collection;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 
 /**
- * The list of a collection with search, filters, sorting and pages — done by the database: the fields live inside the JSON column
- * `translations`, and JSON_TEXT(i.translations, '{"ru","draft","title"}') (DQL functions of the bundle) reaches them.
+ * The database searches, filters and sorts the JSON translations. Top-level draft and published statuses use
+ * the content service to detect unpublished changes before counting and pagination.
  *
  *   run($collection, ['q' => 'моск', 'filter' => ['status' => 'published', 'date' => ['from' => '2026-11-01']], 'sort' => '-date', 'page' => 2, 'perPage' => 50], 'ru')
  *   → { items, total, page, perPage, facets, metrics }
  *
  * `status` (draft | published) is a filter and a sort key of every collection, `updatedAt`, `createdAt` and `position` are sort keys.
+ *
+ * @internal
  */
 final class CollectionQuery
 {
@@ -39,7 +41,7 @@ final class CollectionQuery
     }
 
     /**
-     * @param array{q?: mixed, filter?: mixed, sort?: mixed, page?: mixed, perPage?: mixed} $params
+     * @param array{q?: mixed, status?: mixed, onlyTranslated?: mixed, filter?: mixed, sort?: mixed, page?: mixed, perPage?: mixed} $params
      *
      * @return array{items: list<array<string, mixed>>, total: int, page: int, perPage: int, facets: array<string, array<string, int>>, metrics: list<array<string, mixed>>}
      */
@@ -50,14 +52,64 @@ final class CollectionQuery
         $perPage = \max(1, \min(self::MAX_PER_PAGE, (int) ($params['perPage'] ?? 0) ?: $c->perPageCount()));
         $page = \max(1, (int) ($params['page'] ?? 1));
         $filters = $this->filtersOf($c);
+        $status = $params['status'] ?? '';
+        if (!\in_array($status, ['', 'draft', 'published', 'missing'], true)) {
+            throw ContentException::invalid(I18n::t('content.query_bad_status'));
+        }
 
-        $qb = $this->base($c, $locale, $filters, \is_array($params['filter'] ?? null) ? $params['filter'] : [], \trim((string) ($params['q'] ?? '')));
-        $total = (int) (clone $qb)->select('COUNT(i.id)')->getQuery()->getSingleScalarResult();
+        $filterByRowStatus = 'draft' === $status || 'published' === $status;
+        $qb = $this->base(
+            $c,
+            $locale,
+            $filters,
+            \is_array($params['filter'] ?? null) ? $params['filter'] : null,
+            \trim((string) ($params['q'] ?? '')),
+            $filterByRowStatus || \filter_var($params['onlyTranslated'] ?? false, \FILTER_VALIDATE_BOOLEAN),
+            'missing' === $status,
+        );
         $this->order($qb, $c, $locale, $this->sorts($c, (string) ($params['sort'] ?? '')));
-        $rows = $qb->setFirstResult(($page - 1) * $perPage)->setMaxResults($perPage)->getQuery()->getResult();
+        if (null !== ($initial = $this->collections->initialSingleton($c))) {
+            $row = $this->collections->row($c, $initial, $locale);
+            $matches = '' === $status || ('missing' === $status ? !$row['translated'] : $row['translated'] && 'draft' === $status);
+            if (\filter_var($params['onlyTranslated'] ?? false, \FILTER_VALIDATE_BOOLEAN) && !$row['translated']) {
+                $matches = false;
+            }
+            foreach (\is_array($params['filter'] ?? null) ? $params['filter'] : [] as $key => $value) {
+                $matches = $this->initialMatches($filters[$key], $row[$key] ?? null, $value) && $matches;
+            }
+            $needle = \mb_strtolower(\trim((string) ($params['q'] ?? '')));
+            if ('' !== $needle) {
+                $keys = \is_array($params['filter'] ?? null) ? $c->searchKeys() : [$c->titleFieldKey(), $c->subFieldKey()];
+                $haystack = \implode(' ', \array_map(static fn (?string $key): string => \is_scalar($row[$key ?? ''] ?? null) ? (string) $row[$key ?? ''] : '', $keys));
+                $matches = $matches && \str_contains(\mb_strtolower($haystack), $needle);
+            }
+            $rows = $matches ? [$row] : [];
+
+            return ['items' => 1 === $page ? $rows : [], 'total' => \count($rows), 'page' => $page, 'perPage' => $perPage, 'facets' => [], 'metrics' => $this->initialMetrics($c, $initial, $locale)];
+        }
+        $total = $filterByRowStatus ? null : (int) (clone $qb)->resetDQLPart('orderBy')->select('COUNT(i.id)')->getQuery()->getSingleScalarResult();
+        $toRow = fn (CollectionItem $i): array => $this->collections->row($c, $i, $locale);
+        $matchedItems = null;
+        if (null === $total) {
+            $matchedItems = [];
+            foreach ($qb->getQuery()->getResult() as $item) {
+                if ($status === $this->collections->versionStatus($c, $item, $locale)) {
+                    $matchedItems[] = $item;
+                }
+            }
+            $total = \count($matchedItems);
+        }
+
+        $items = [];
+        if ($total > 0 && $page - 1 <= \intdiv($total - 1, $perPage)) {
+            $offset = ($page - 1) * $perPage;
+            $items = \array_map($toRow, null !== $matchedItems
+                ? \array_slice($matchedItems, $offset, $perPage)
+                : $qb->setFirstResult($offset)->setMaxResults($perPage)->getQuery()->getResult());
+        }
 
         return [
-            'items' => \array_map(fn (CollectionItem $i): array => $this->collections->row($c, $i, $locale), $rows),
+            'items' => $items,
             'total' => $total,
             'page' => $page,
             'perPage' => $perPage,
@@ -67,6 +119,34 @@ final class CollectionQuery
     }
 
     /* ---------- filters ---------- */
+
+    /** Match the one unpersisted initial row, after base() has validated the same filter inputs as a stored row. */
+    private function initialMatches(FilterKind $kind, mixed $actual, mixed $value): bool
+    {
+        if (null === $value || '' === $value || [] === $value) {
+            return true;
+        }
+        $text = \is_scalar($actual) ? (\is_bool($actual) ? ($actual ? 'true' : 'false') : (string) $actual) : '';
+        if (FilterKind::DateRange === $kind || FilterKind::NumberRange === $kind) {
+            $range = \is_array($value) ? $value : ['from' => $value, 'to' => $value];
+            $number = FilterKind::NumberRange === $kind;
+            if ('' === $text || ($number && !\is_numeric($actual))) {
+                return false;
+            }
+            $actual = $number ? $actual + 0 : \substr($text, 0, 10);
+
+            return (!isset($range['from']) || '' === $range['from'] || $actual >= ($number ? $range['from'] + 0 : \substr((string) $range['from'], 0, 10)))
+                && (!isset($range['to']) || '' === $range['to'] || $actual <= ($number ? $range['to'] + 0 : \substr((string) $range['to'], 0, 10)));
+        }
+
+        return match ($kind) {
+            FilterKind::Text => \str_contains(\mb_strtolower($text), \mb_strtolower($this->scalar($value))),
+            FilterKind::Select => $text === $this->scalar($value),
+            FilterKind::Toggle => \filter_var($value, \FILTER_VALIDATE_BOOLEAN) ? 'true' === $text : '' === $text || 'false' === $text,
+            FilterKind::Multi => \in_array($text, \is_array($value) ? $value : \array_map('trim', \explode(',', $this->scalar($value))), true),
+            FilterKind::Relation => [] !== \array_intersect((array) $actual, (array) $value),
+        };
+    }
 
     /**
      * The filters the current person may use, by key: the collection's filter fields, and `status`.
@@ -85,13 +165,21 @@ final class CollectionQuery
 
     /**
      * @param array<string, FilterKind> $kinds
-     * @param array<string, mixed> $filter
+     * @param array<string, mixed>|null $filter
      */
-    private function base(Collection $c, string $locale, array $kinds, array $filter, string $q): QueryBuilder
+    private function base(Collection $c, string $locale, array $kinds, ?array $filter, string $q, bool $onlyTranslated, bool $missing): QueryBuilder
     {
         $qb = $this->items->createQueryBuilder('i')->where('i.collection = :collection')->setParameter('collection', $c->key());
+        $version = "JSON_TEXT(i.translations, '" . JsonPath::of($locale) . "')";
+        if ($onlyTranslated) {
+            $qb->andWhere("$version IS NOT NULL");
+        }
+        if ($missing) {
+            $qb->andWhere("$version IS NULL");
+        }
+
         $n = 0;
-        foreach ($filter as $key => $value) {
+        foreach ($filter ?? [] as $key => $value) {
             $key = (string) $key;
             if (!isset($kinds[$key])) {
                 throw ContentException::invalid(I18n::t('content.query_filter_not_allowed'), ['filter' => $key]);
@@ -99,21 +187,38 @@ final class CollectionQuery
             $this->apply($qb, $kinds[$key], $this->text($locale, $key), $this->numExpr($locale, $key), $value, 'f' . $n++);
         }
         if ('' !== $q) {
-            $or = $qb->expr()->orX();
             $visible = \array_map(static fn (FieldInterface $f): string => $f->key(), $this->access->visible($c->fieldList()));
-            foreach ($c->searchKeys() as $key) {
-                if (\in_array($key, $visible, true)) {
-                    $or->add('LOWER(' . $this->text($locale, $key) . ') LIKE :q');
-                }
-            }
-            if (0 === $or->count()) {
+            $matches = null === $filter
+                ? [$this->rowLabelMatch($c, $locale, $visible)]
+                : \array_map(fn (string $key): string => 'LOWER(' . $this->text($locale, $key) . ') LIKE :q', \array_intersect($c->searchKeys(), $visible));
+            if ([] === $matches) {
                 $qb->andWhere('1 = 0');
             } else {
-                $qb->andWhere($or)->setParameter('q', '%' . $this->like(\mb_strtolower($q)) . '%');
+                $qb->andWhere($qb->expr()->orX(...\array_values($matches)))->setParameter('q', '%' . $this->like(\mb_strtolower($q)) . '%');
             }
         }
 
         return $qb;
+    }
+
+    /** @param list<string> $visible */
+    private function rowLabelMatch(Collection $c, string $locale, array $visible): string
+    {
+        // Use the same draft fallback as CollectionService::row() when the language is missing.
+        $draft = 'COALESCE(' . $this->json($locale, 'draft') . ', ' . $this->json($this->mainLocale, 'draft')
+            . ", JSON_GET(JSON_FIRST_VALUE(i.translations), '" . JsonPath::of('draft') . "'))";
+        $value = function (?string $key) use ($locale, $draft, $visible): string {
+            if (null === $key || !\in_array($key, $visible, true)) {
+                return "''";
+            }
+            $this->path($locale, $key);
+
+            return "COALESCE(JSON_TEXT($draft, '" . JsonPath::of($key) . "'), '')";
+        };
+        $title = $value($c->titleFieldKey());
+        $subtitle = $value($c->subFieldKey());
+
+        return "LOWER(CONCAT($title, ' ', $subtitle)) LIKE :q";
     }
 
     private function apply(QueryBuilder $qb, FilterKind $kind, string $text, string $num, mixed $value, string $p): void
@@ -237,6 +342,13 @@ final class CollectionQuery
     {
         $out = [];
         foreach ($kinds as $key => $kind) {
+            if ('status' === $key) {
+                foreach ($this->items->findByCollection($c->key()) as $item) {
+                    $status = $this->collections->versionStatus($c, $item, $locale);
+                    $out['status'][$status] = ($out['status'][$status] ?? 0) + 1;
+                }
+                continue;
+            }
             if (!\in_array($kind, [FilterKind::Select, FilterKind::Multi, FilterKind::Toggle], true)) {
                 continue;
             }
@@ -263,6 +375,37 @@ final class CollectionQuery
         $out = [];
         foreach ($c->metricList() as $m) {
             $out[] = ['label' => $m->label, 'kind' => $m->kind, 'value' => $this->metric($c, $locale, $m)];
+        }
+
+        return $out;
+    }
+
+    /**
+     * The virtual row belongs to the same metric corpus as a stored singleton, independently of list filters.
+     *
+     * @return list<array<string, mixed>>
+     */
+    private function initialMetrics(Collection $c, CollectionItem $initial, string $locale): array
+    {
+        $translation = $initial->translations[$locale] ?? [];
+        $row = ['status' => $translation['status'] ?? null, 'updatedAt' => $translation['updatedAt'] ?? null] + ($translation['draft'] ?? []);
+        $out = [];
+        foreach ($c->metricList() as $m) {
+            $matches = true;
+            foreach ($m->filter as $key => $value) {
+                $actual = $row[$key] ?? null;
+                if (\is_bool($value)) {
+                    $matches = $matches && ($value ? true === $actual : null === $actual || false === $actual);
+                } elseif (\is_array($value) && !\array_is_list($value) && [] !== \array_intersect(['from', 'to'], \array_keys($value))) {
+                    $matches = $matches && $this->initialMatches($c->field($key) instanceof Number ? FilterKind::NumberRange : FilterKind::DateRange, $actual, $value);
+                } elseif (\is_array($value)) {
+                    $matches = $matches && \in_array(\is_scalar($actual) ? $this->scalar($actual) : '', \array_map($this->scalar(...), \array_values($value)), true);
+                } else {
+                    $matches = $matches && null !== $actual && \is_scalar($actual) && $this->scalar($actual) === $this->scalar($value);
+                }
+            }
+            $value = $matches ? ('sum' === $m->kind ? (\is_numeric($row[$m->field ?? ''] ?? null) ? $row[$m->field] + 0 : 0) : 1) : 0;
+            $out[] = ['label' => $m->label, 'kind' => $m->kind, 'value' => $value];
         }
 
         return $out;
@@ -298,6 +441,11 @@ final class CollectionQuery
     }
 
     /* ---------- JSON expressions ---------- */
+
+    private function json(string ...$keys): string
+    {
+        return "JSON_GET(i.translations, '" . JsonPath::of(...$keys) . "')";
+    }
 
     /** JSON_TEXT(…) of a field of the draft (`status` and `updatedAt` are beside the draft). */
     private function text(string $locale, string $key): string

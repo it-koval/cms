@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Itk\Cms\KnowledgeBase;
 
+use Doctrine\DBAL\Exception\ConnectionException;
+use Doctrine\DBAL\Exception\RetryableException;
 use Itk\Cms\KnowledgeBase\Embedding\EmbeddingFailed;
 use Itk\Cms\KnowledgeBase\Model\Outcome;
 use Itk\Cms\KnowledgeBase\Model\SyncKnowledge;
@@ -29,7 +31,7 @@ use Symfony\Component\Messenger\Handler\BatchHandlerTrait;
  *
  * @internal
  */
-#[AsMessageHandler(bus: 'messenger.bus.default')]
+#[AsMessageHandler]
 final class SyncKnowledgeHandler implements BatchHandlerInterface
 {
     use BatchHandlerTrait;
@@ -54,8 +56,8 @@ final class SyncKnowledgeHandler implements BatchHandlerInterface
         }
         try {
             $report = $this->indexer->sync(\array_values($refs));
-        } catch (EmbeddingFailed $e) {
-            $failure = $e->transient ? $e : new UnrecoverableMessageHandlingException($e->getMessage(), 0, $e);
+        } catch (EmbeddingFailed|RetryableException|ConnectionException $e) {
+            $failure = $e instanceof EmbeddingFailed && !$e->transient ? new UnrecoverableMessageHandlingException($e->getMessage(), 0, $e) : $e;
             foreach ($jobs as [, $ack]) {
                 $ack->nack($failure);
             }

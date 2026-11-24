@@ -102,14 +102,6 @@
   "collections.act_done": "Done",
   "collections.act_failed": "Could not run the action",
   "collections.draft_save_failed": "Could not save",
-  "collections.pr_label": "AI agent suggestions",
-  "collections.pr_header": {
-    "one": "The AI agent suggested {count} edit",
-    "other": "The AI agent suggested {count} edits"
-  },
-  "collections.pr_note": "{note}. Nothing changes until you accept it.",
-  "collections.pr_accept": "Accept",
-  "collections.pr_reject": "Reject",
   "collections.pp_send": "Send for publication",
   "collections.pp_title": "What will be published",
   "collections.pp_count": {
@@ -133,7 +125,7 @@
   "collections.mv_copy_from": "Copy {lang}",
   "collections.mv_copy_hint": "All texts and photos go into a draft. All that is left is to translate them.",
   "collections.mv_blank": "Start with an empty record",
-  "collections.mv_blank_hint": "The title, address, switches and photos are kept; the texts will be empty.",
+  "collections.mv_blank_hint": "Start with the default values for this record type.",
   "collections.mv_title": "The {version} of this record does not exist yet",
   "collections.mv_sub": "The record is not shown {site} until you add a translation and publish it.",
   "collections.mv_sub_linked": "The record is not shown {site} until you add a translation and publish it. The page on the site will appear along with it.",
@@ -179,6 +171,7 @@
   "collections.cl_reorder_note_multi": "Drag the cards or use the arrows. {note} The order is the same for all languages.",
   "collections.cl_reorder_note_hidden": "Drag the cards or use the arrows. {note} The order is the same for all languages. Records without a translation are not visible {site}, but their place is kept.",
   "collections.cl_cancel": "Cancel",
+  "collections.cl_order_leave_message": "The order has not been saved. Leave without saving it?",
   "collections.cl_reorder_save": "Save the order",
   "collections.cl_selected_region": "Selected records",
   "collections.cl_selected": "Selected: {count}",
@@ -308,10 +301,6 @@
   "collections.iv_delete_version_text": "“{title}” will stop being shown {site}. The versions in other languages stay. This cannot be undone.",
   "collections.iv_delete_version_text_page": "“{title}” and its page will stop being shown {site}. The versions in other languages stay. This cannot be undone.",
   "collections.iv_version_deleted": "The {version} was deleted",
-  "collections.iv_accepted": "The edit was accepted and is in the draft: it will reach the site after publishing",
-  "collections.iv_accept_failed": "Could not accept the edit",
-  "collections.iv_rejected": "The edit was rejected",
-  "collections.iv_reject_failed": "Could not reject it",
   "collections.iv_not_found": "There is no such record",
   "collections.iv_not_loaded": "The record did not load",
   "collections.iv_deleted_hint": "It may have been deleted. Go back to the list.",
@@ -333,5 +322,7 @@
   "collections.first_publication": "first publication",
   "collections.unsaved_first": "Not done: your edits were not saved ({reason})",
   "collections.leave_unsaved_text": "Your last edits were not saved ({reason}). If you leave now, they will be lost.",
-  "collections.wait_busy": "Wait: an update is in progress. The action was not done"
+  "collections.wait_busy": "Wait: an update is in progress. The action was not done",
+  "collections.cl_incomplete": "Showing {loaded} of {total} records. Refine the search to see the others.",
+  "collections.cl_tree_incomplete": "The structure is incomplete. Moving is disabled to preserve parent links. Reload the list or refine the search."
 }

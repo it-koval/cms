@@ -6,6 +6,8 @@ namespace Itk\Cms\Mail;
 
 use Itk\Cms\Notification\Notification;
 use Itk\Cms\Notification\NotifierInterface;
+use Itk\Cms\Security\DeliverPasswordLink;
+use Itk\Cms\Security\RequestPasswordLink;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
 use Symfony\Component\Messenger\Event\WorkerMessageFailedEvent;
@@ -29,9 +31,14 @@ final class MailFailureListener
     public function __invoke(WorkerMessageFailedEvent $event): void
     {
         $mail = $event->getEnvelope()->getMessage();
-        if (!$mail instanceof SendMail || $event->willRetry()) {
+        if ((!$mail instanceof SendMail && !$mail instanceof DeliverPasswordLink && !$mail instanceof RequestPasswordLink) || $event->willRetry()) {
             return;
         }
+        if ($mail instanceof RequestPasswordLink && !$mail->trusted) {
+            return;
+        }
+        $account = !$mail instanceof SendMail;
+        $kind = $mail instanceof RequestPasswordLink ? SendMail::RESET : $mail->kind;
         $reason = null;
         for ($e = $event->getThrowable(), $i = 0; null !== $e && $i < 10; $e = $e->getPrevious(), ++$i) {
             if ($e instanceof MailDeliveryException) {
@@ -40,29 +47,38 @@ final class MailFailureListener
                 break;
             }
         }
-        $request = SendMail::REQUEST === $mail->kind && null !== $mail->ref;
+        $request = $mail instanceof SendMail && SendMail::REQUEST === $mail->kind && null !== $mail->ref;
         try {
             $this->notifier->notify(Notification::translated(
                 type: Notification::MAIL_FAILED,
-                titleKey: $request ? 'i18n.notification_mail_failed_request' : 'i18n.notification_mail_failed',
-                titleParams: $request ? ['id' => $mail->ref] : ['subject' => self::subject($mail)],
+                titleKey: $request ? 'i18n.notification_mail_failed_request' : ($account ? 'i18n.notification_mail_failed_account' : 'i18n.notification_mail_failed'),
+                titleParams: $request ? ['id' => $mail->ref] : ($account ? [] : ['subject' => self::subject($mail)]),
                 body: \mb_substr((string) $reason, 0, 500),
                 bodyKey: null === $reason ? 'i18n.notification_mail_refused' : null,
                 link: $request ? '/requests/' . $mail->ref : '/settings/mail',
                 level: Notification::ERROR,
                 audience: $request ? 'requests:edit' : 'set:mail:edit',
-                payload: ['kind' => $mail->kind] + ($request ? ['requestId' => (int) $mail->ref] : []),
-                key: self::key($mail),
+                payload: ['kind' => $kind] + ($request ? ['requestId' => (int) $mail->ref] : []),
+                key: $account ? Notification::MAIL_FAILED . ':account:' . $kind : self::key($mail),
             ));
         } catch (\Throwable $e) {
-            $this->logger->error('Could not tell about a failed {kind} letter: {error}', ['kind' => $mail->kind, 'error' => $e->getMessage()]);
+            $this->logger->error('Could not tell about a failed {kind} letter', ['kind' => $kind]);
         }
     }
 
-    /** One notification for a matter: the request, else the kind of the letter and its subject. */
+    /** One request warning per mail recipient; other channels and recipients resolve independently. */
     public static function key(SendMail $mail): string
     {
+        if (SendMail::REQUEST === $mail->kind && null !== $mail->ref && '' !== $mail->ref) {
+            return self::requestKey($mail->ref, $mail->to);
+        }
+
         return Notification::MAIL_FAILED . ':' . ($mail->ref ?? $mail->kind . ':' . \substr(\hash('sha256', $mail->subject), 0, 12));
+    }
+
+    public static function requestKey(string $requestId, string $recipient): string
+    {
+        return Notification::MAIL_FAILED . ':' . $requestId . ':' . RequestMailCheckpoint::recipientKey($requestId, $recipient);
     }
 
     private static function subject(SendMail $mail): string

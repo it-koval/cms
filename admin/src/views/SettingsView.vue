@@ -34,7 +34,7 @@ import ReadOnlyNote from '@/components/ui/ReadOnlyNote.vue'
 import { domId } from '@/components/form/fieldProps.js'
 import { onLang } from '@/utils/langWords.js'
 import { textsLabel } from '@/components/settings/langText.js'
-import { GROUPS, NAV, buildSections, groupOfKey, itemAreas, itemOfKey, resolveTab, settingsErrors } from '@/components/settings/settingsSchema.js'
+import { GROUPS, NAV, buildSections, groupOfKey, itemAreas, resolveTab, settingsErrors } from '@/components/settings/settingsSchema.js'
 import { getSettingsFields } from '@/schema/settings.js'
 import { flattenItems, menuErrorCount } from '@/components/settings/menuModel.js'
 import { changedKeys } from '@/utils/fields.js'
@@ -43,6 +43,7 @@ import { rebaseSettings } from '@/components/settings/rebaseSettings.js'
 import { useToast } from '@/components/ui/useToast.js'
 import { useConfirm } from '@/components/ui/useConfirm.js'
 import { t } from '@/i18n/index.js'
+import { previewField, resolvePreviewPath } from '@/components/editor/previewTarget.js'
 
 const route = useRoute()
 const router = useRouter()
@@ -71,21 +72,29 @@ const loadError = ref('')
 const saving = ref(false)
 const savedSettings = ref(null)
 const draftSettings = ref(null)
+const savedNotifications = ref(null)
+const draftNotifications = ref(null)
 const savedMenus = ref(null)
 const draftMenus = ref(null)
 const menuAreas = ref([])
 const forms = ref([])
+const settingsForms = ref([])
 
 const READ_ONLY = ['tgFallback', 'tgReady', 'maxFallback', 'mailReady', 'maxReady'] // yes / no answers of the server, never sent back
 
-function normalize(s) {
+function normalizeNotifications(s) {
   const o = clone(s)
   o.tgOn ??= true
   o.maxOn ??= true
-  if (!o.tgRoutes || Array.isArray(o.tgRoutes)) o.tgRoutes = {} // an empty PHP array arrives as []
-  if (!o.maxRoutes || Array.isArray(o.maxRoutes)) o.maxRoutes = {}
-  if (!o.mailRoutes || Array.isArray(o.mailRoutes)) o.mailRoutes = {}
+  for (const key of ['tgRoutes', 'maxRoutes', 'mailRoutes']) {
+    // Legacy responses may encode the map as an array when the form key is "0".
+    o[key] = o[key] && typeof o[key] === 'object' ? { ...o[key] } : {}
+  }
   o.forms ??= true
+  return o
+}
+function normalize(s) {
+  const o = clone(s)
   getSettingsFields().forEach((f) => { if (f.t === 'repeater') o[f.k] ??= [] })
   return o
 }
@@ -95,10 +104,12 @@ async function load() {
   try {
     // menus need the right to Меню; a role without it gets none (the server answers 403)
     const menus = can('set:menus')
-    const [s, m, f, areas] = await Promise.all([api.settings.get(LOC), menus ? api.settings.getMenus(LOC) : {}, api.requests.forms(), menus ? api.settings.getMenuAreas() : []])
+    const [s, m, f, areas, n] = await Promise.all([api.settings.get(LOC), menus ? api.settings.getMenus(LOC) : {}, api.requests.forms(), menus ? api.settings.getMenuAreas() : [], can('set:notifications') ? api.settings.getNotifications() : {}])
     menuAreas.value = areas
     savedSettings.value = normalize(s)
     draftSettings.value = clone(savedSettings.value)
+    savedNotifications.value = normalizeNotifications(n)
+    draftNotifications.value = clone(savedNotifications.value)
     savedMenus.value = m
     draftMenus.value = clone(m)
     forms.value = f
@@ -122,13 +133,15 @@ const cards = computed(() => GROUPS.filter((g) => can(g.area)).map((g) => {
 // the errors that stop saving: only of the places the role can edit (a group it only views cannot be fixed by it)
 const errors = computed(() => {
   if (!draftSettings.value) return {}
-  return Object.fromEntries(Object.entries(settingsErrors(draftSettings.value, changedPatch())).filter(([k]) => (['tgRoutes', 'maxRoutes', 'mailRoutes'].includes(k) ? can('set:notifications', 'edit') : can('set:' + groupOfKey(k), 'edit'))))
+  const site = Object.entries(settingsErrors(draftSettings.value, changedPatch(), 'site')).filter(([k]) => can('set:' + groupOfKey(k), 'edit'))
+  const notifications = can('set:notifications', 'edit') ? Object.entries(settingsErrors(draftNotifications.value, notificationPatch(), 'notifications')).map(([k, v]) => ['notification:' + k, v]) : []
+  return Object.fromEntries([...site, ...notifications])
 })
 
 const counts = computed(() => {
   if (!draftSettings.value) return {}
-  const d = draftSettings.value
-  const s = savedSettings.value
+  const d = draftNotifications.value
+  const s = savedNotifications.value
   return {
     notifications: (same(d.tgOn, s.tgOn) ? 0 : 1) + (same(d.forms, s.forms) ? 0 : 1) + (same(d.tgRoutes, s.tgRoutes) ? 0 : 1) + (same(d.maxOn, s.maxOn) ? 0 : 1) + (same(d.maxRoutes, s.maxRoutes) ? 0 : 1) + (same(d.mailRoutes, s.mailRoutes) ? 0 : 1),
     menus: menuAreas.value.filter((a) => !same(draftMenus.value[a.key], savedMenus.value[a.key])).length,
@@ -169,6 +182,10 @@ function changedPatch() {
   return Object.fromEntries(Object.keys(d).filter((k) => !READ_ONLY.includes(k) && !same(d[k], s[k])).map((k) => [k, d[k]]))
 }
 
+function notificationPatch() {
+  return Object.fromEntries(Object.entries(draftNotifications.value).filter(([k, v]) => !READ_ONLY.includes(k) && !same(v, savedNotifications.value[k])))
+}
+function setNotification(k, v) { draftNotifications.value = { ...draftNotifications.value, [k]: v } }
 function setField(k, v) { draftSettings.value = { ...draftSettings.value, [k]: v } }
 function revertField(k) {
   setField(k, clone(savedSettings.value[k]))
@@ -176,20 +193,26 @@ function revertField(k) {
 }
 function onBotsSaved(next) {
   for (const [key, bot] of [['tgReady', 'telegram'], ['maxReady', 'max']]) {
-    savedSettings.value[key] = draftSettings.value[key] = next[bot].ready
+    savedNotifications.value[key] = draftNotifications.value[key] = next[bot].ready
   }
 }
 function discard() {
   draftSettings.value = clone(savedSettings.value)
   draftMenus.value = clone(savedMenus.value)
+  draftNotifications.value = clone(savedNotifications.value)
   toast.show(t('settings.changes_discarded'))
 }
 
 /* ---- navigation: items, segments, links to the cards of «Основное» ---- */
 const smooth = () => (window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth')
-function goItem(key) {
+async function goItem(key) {
   if (key === item.value && (key !== 'general' || !(target.value && target.value.group))) return
-  router.push({ name: 'settings', params: { tab: key } }).then(() => window.scrollTo({ top: 0 }))
+  const failure = await router.push({ name: 'settings', params: { tab: key } })
+  if (!failure) window.scrollTo({ top: 0 })
+}
+async function selectItem(event) {
+  const select = event.currentTarget
+  try { await goItem(select.value) } finally { select.value = item.value }
 }
 function goSegment(key) { if (key !== segment.value) router.push({ name: 'settings', params: { tab: SEGMENT_TAB[key] } }) }
 
@@ -232,10 +255,11 @@ watch([() => route.params.tab, loading], ([, busy], old) => {
 
 // the field with an error: «Основное» (or the item the error belongs to), scrolled to, in focus
 async function reveal(k) {
-  const to = itemOfKey(k)
+  const to = k.startsWith('notification:') ? 'notifications' : 'general'
+  k = k.replace(/^notification:/, '')
   if (item.value !== to || (target.value && target.value.group)) await router.push({ name: 'settings', params: { tab: to } })
   await nextTick()
-  const prefix = { tgRoutes: 'tn-', maxRoutes: 'mx-', mailRoutes: 'mn-' }[k]
+  const prefix = to === 'notifications' ? { tgRoutes: 'tn-', maxRoutes: 'mx-', mailRoutes: 'mn-' }[k] : null
   const el = prefix
     ? document.querySelector(`input[id^="${prefix}"][aria-invalid="true"]`)
     : document.getElementById(domId('set', k))
@@ -246,12 +270,26 @@ async function reveal(k) {
   if (control) control.focus({ preventScroll: true })
 }
 
+watch([loading, () => route.query.field, () => route.query.rows], async ([busy, path, rows]) => {
+  const field = previewField(getSettingsFields(), path)
+  if (busy || loadError.value || !field || !can('set:' + groupOfKey(field.k), 'view')) return
+  const currentPath = resolvePreviewPath(getSettingsFields(), draftSettings.value, path, rows)
+  if (!currentPath) { toast.show(t('editor.preview_item_unavailable')); return }
+  if (item.value !== 'general') await router.push({ name: 'settings', params: { tab: 'general' }, query: route.query })
+  await nextTick()
+  for (const form of settingsForms.value) {
+    if (await form.focusField(currentPath)) break
+  }
+})
+
 /* ---- save ---- */
-async function save() {
+let savePromise = null
+
+function save() {
   if (saving.value || !total.value) return
   const keys = Object.keys(errors.value)
   if (settingsDirty.value && keys.length) {
-    reveal(keys.find((k) => itemOfKey(k) === item.value) || keys[0])
+    reveal(keys.find((k) => (k.startsWith('notification:') ? 'notifications' : 'general') === item.value) || keys[0])
     toast.error(t('settings.save_fix_fields'))
     return
   }
@@ -261,15 +299,26 @@ async function save() {
     return
   }
   // Both requests use the data validated by this click. Edits made while either waits stay in the draft.
-  const patch = settingsDirty.value ? clone(changedPatch()) : null
+  const patch = counts.value.general ? clone(changedPatch()) : null
+  const notifications = counts.value.notifications ? clone(notificationPatch()) : null
+  const sentNotifications = notifications ? clone(draftNotifications.value) : null
   const sentSettings = patch ? clone(draftSettings.value) : null
   const sentMenus = menusDirty.value ? clone(draftMenus.value) : null
+  savePromise = persist(patch, sentSettings, notifications, sentNotifications, sentMenus)
+}
+
+async function persist(patch, sentSettings, notifications, sentNotifications, sentMenus) {
   saving.value = true
   try {
     if (patch) {
       const res = normalize(await api.settings.update(patch, LOC))
       savedSettings.value = res
       draftSettings.value = rebaseSettings(res, sentSettings, draftSettings.value)
+    }
+    if (notifications) {
+      const res = normalizeNotifications(await api.settings.updateNotifications(notifications))
+      savedNotifications.value = res
+      draftNotifications.value = rebaseSettings(res, sentNotifications, draftNotifications.value)
     }
     if (sentMenus) {
       const res = await api.settings.saveMenus(sentMenus, LOC)
@@ -281,29 +330,25 @@ async function save() {
     toast.error(e.message || t('settings.save_failed'))
   } finally {
     saving.value = false
+    savePromise = null
   }
 }
 
-onBeforeRouteLeave(async (to) => {
-  if (to.name === 'settings' || !total.value) return true
+async function confirmUnsaved(languageSwitch = false) {
+  if (savePromise) await savePromise
+  if (!total.value) return true
   return confirm({
-    title: t('settings.leave_title'),
-    message: t('settings.leave_message', { total: total.value }),
-    confirmLabel: t('settings.leave_confirm'), cancelLabel: t('settings.stay'), danger: true,
+    title: t(languageSwitch ? 'settings.switch_title' : 'settings.leave_title'),
+    message: t(languageSwitch ? 'settings.switch_message' : 'settings.leave_message', { total: total.value }),
+    confirmLabel: t(languageSwitch ? 'settings.switch_confirm' : 'settings.leave_confirm'), cancelLabel: t('settings.stay'), danger: true,
   })
-})
+}
+
+onBeforeRouteLeave((to) => to.name === 'settings' || confirmUnsaved())
 
 const unsavedBar = t('settings.unsaved_bar').split('{total}') // the number stands in bold between the halves of the sentence
 
-// the content language is switched from the rail or from the line above the panel: both re-mount this screen, so unsaved edits are asked about first
-useLocaleGuard(async () => {
-  if (!total.value) return true
-  return confirm({
-    title: t('settings.switch_title'),
-    message: t('settings.switch_message', { total: total.value }),
-    confirmLabel: t('settings.switch_confirm'), cancelLabel: t('settings.stay'), danger: true,
-  })
-})
+useLocaleGuard(() => confirmUnsaved(true))
 </script>
 
 <template>
@@ -338,9 +383,9 @@ useLocaleGuard(async () => {
         </nav>
         <div class="snav-sel">
           <label class="sr" for="set-sel">{{ t('settings.section_label') }}</label>
-          <select id="set-sel" @change="goItem($event.target.value)">
+          <select id="set-sel" :value="item" @change="selectItem">
             <optgroup v-for="n in navGroups" :key="n.heading" :label="n.heading">
-              <option v-for="i in n.items" :key="i.key" :value="i.key" :selected="item === i.key">{{ i.label }}{{ counts[i.key] ? ` (${counts[i.key]})` : '' }}</option>
+              <option v-for="i in n.items" :key="i.key" :value="i.key">{{ i.label }}{{ counts[i.key] ? ` (${counts[i.key]})` : '' }}</option>
             </optgroup>
           </select>
         </div>
@@ -359,7 +404,7 @@ useLocaleGuard(async () => {
                 </button>
               </nav>
               <SettingsFormTab
-                v-for="c in cards" :key="c.key" :sections="c.sections" :data="draftSettings" :changed="c.changed" :errors="errors" :marks="isMulti()" :locale="LOC"
+                v-for="c in cards" :key="c.key" ref="settingsForms" :sections="c.sections" :data="draftSettings" :changed="c.changed" :errors="errors" :marks="isMulti()" :locale="LOC"
                 :readonly="!c.editable" @set="setField" @revert="revertField"
               />
               <div v-if="!cards.length" class="sheet set-load">{{ t('settings.none_available') }}</div>
@@ -391,7 +436,7 @@ useLocaleGuard(async () => {
                 <BotsPanel v-else-if="item === 'bots'" @saved="onBotsSaved" />
                 <McpPanel v-else-if="item === 'mcp'" />
                 <RedirectsPanel v-else-if="item === 'redirects'" />
-                <NotificationsPanel v-else-if="item === 'notifications'" :data="draftSettings" :saved="savedSettings" :forms="forms" @set="setField" />
+                <NotificationsPanel v-else-if="item === 'notifications'" :data="draftNotifications" :saved="savedNotifications" :forms="forms" @set="setNotification" />
               </div>
             </template>
           </template>

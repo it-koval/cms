@@ -19,6 +19,7 @@ final class PageSectionRemoveTool extends SectionTool
         return 'Remove one section from the DRAFT of a page. The live page keeps it until the page is published, and an editor can bring it back from the history. This is the only removal this server offers (pages, records and files cannot be deleted here).' . self::EDITOR_NOTE;
     }
 
+    /** @return array<string, mixed> */
     public function inputSchema(): array
     {
         return self::schema(self::pageIdProperties() + ['section_id' => self::string('Section to remove.', 64)], ['page_id', 'section_id']);

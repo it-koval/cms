@@ -10,7 +10,11 @@ use Doctrine\ORM\Query\Parser;
 use Doctrine\ORM\Query\SqlWalker;
 use Doctrine\ORM\Query\TokenType;
 
-/** DQL: JSON_TEXT(i.translations, '{"ru","draft","title"}') — the value at a JsonPath as plain text, NULL when it is missing or null (jsonb #>>; registered by the bundle). */
+/**
+ * DQL: JSON_TEXT(i.translations, '{"ru","draft","title"}') — the value at a JsonPath as plain text, NULL when it is missing or null (jsonb #>>; registered by the bundle).
+ *
+ * @internal
+ */
 final class JsonText extends FunctionNode
 {
     private Node $json;

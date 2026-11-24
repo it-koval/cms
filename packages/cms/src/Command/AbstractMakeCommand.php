@@ -19,6 +19,8 @@ use Symfony\Component\Console\Style\SymfonyStyle;
 /**
  * Generators of the site code: a PHP class of the resource in src/Itk/… (and a Twig / JS stub where it is needed) from packages/cms/skeleton/.
  * Questions are asked when an argument is missing (and the call is interactive); every question has a flag. A class that exists is never overwritten without --force.
+ *
+ * @internal
  */
 abstract class AbstractMakeCommand extends Command
 {

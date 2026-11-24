@@ -4,11 +4,13 @@ declare(strict_types=1);
 
 namespace Itk\Cms\Health;
 
+use Doctrine\DBAL\ArrayParameterType;
 use Doctrine\DBAL\Connection;
 use Itk\Cms\CriticalCss\CriticalCssService;
 use Itk\Cms\CriticalCss\Stylesheets;
 use Itk\Cms\Entity\CriticalCss;
 use Itk\Cms\Entity\PageTranslation;
+use Itk\Cms\I18n\ContentLocales;
 use Itk\Cms\I18n\I18n;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\Process\Process;
@@ -42,6 +44,7 @@ final class CriticalCssHealthCheck implements HealthCheckInterface
         private readonly string $node,
         #[Autowire(param: 'kernel.project_dir')]
         private readonly string $projectDir,
+        private readonly ?ContentLocales $contentLocales = null,
     ) {
     }
 
@@ -67,21 +70,33 @@ final class CriticalCssHealthCheck implements HealthCheckInterface
             return HealthResult::fail(I18n::t('ops.health_critical_css_no_crittr'));
         }
 
+        // Legacy health counted every published row, including historical languages and empty snapshots.
+        $localeSql = '';
+        $localeParams = $localeTypes = [];
+        if ($this->contentLocales?->isConfigured()) {
+            $path = "lower(btrim(COALESCE(t.published->>'url', t.published_url, ''), :localeTrim))";
+            $segment = 'split_part(' . $path . ", '/', 2)";
+            $localeSql = ' AND t.published IS NOT NULL AND t.locale IN (:locales) AND t.locale = CASE WHEN left(' . $path . ", 1) = '/' AND " . $segment . ' IN (:locales) THEN ' . $segment . ' ELSE :mainLocale END';
+            $localeParams = ['locales' => $this->contentLocales->codes(), 'mainLocale' => $this->contentLocales->main(), 'localeTrim' => " \t\n\r\x0B"];
+            $localeTypes = ['locales' => ArrayParameterType::STRING];
+        }
         $counts = $this->db->fetchAssociative(
             'SELECT COUNT(*) AS live,
                     COUNT(*) FILTER (WHERE css.status = :ready AND css.stamp = :stamp) AS current,
                     COUNT(*) FILTER (WHERE css.status = :ready) AS ready,
                     COUNT(*) FILTER (WHERE css.status = :failed) AS failed
              FROM itk_page_translation t LEFT JOIN itk_critical_css css ON css.translation_id = t.id
-             WHERE t.status = :published',
-            ['stamp' => $this->critical->stamp(), 'ready' => CriticalCss::READY, 'failed' => CriticalCss::FAILED, 'published' => PageTranslation::PUBLISHED],
+             WHERE t.status = :published' . $localeSql,
+            ['stamp' => $this->critical->stamp(), 'ready' => CriticalCss::READY, 'failed' => CriticalCss::FAILED, 'published' => PageTranslation::PUBLISHED] + $localeParams,
+            $localeTypes,
         );
         $failed = (int) ($counts['failed'] ?? 0);
         if ($failed > 0) {
             $reason = (string) $this->db->fetchOne(
                 'SELECT css.error FROM itk_critical_css css JOIN itk_page_translation t ON t.id = css.translation_id
-                 WHERE css.status = ? AND t.status = ? ORDER BY css.generated_at DESC LIMIT 1',
-                [CriticalCss::FAILED, PageTranslation::PUBLISHED],
+                 WHERE css.status = :failed AND t.status = :published' . $localeSql . ' ORDER BY css.generated_at DESC LIMIT 1',
+                ['failed' => CriticalCss::FAILED, 'published' => PageTranslation::PUBLISHED] + $localeParams,
+                $localeTypes,
             );
 
             return HealthResult::warn(I18n::t('ops.health_critical_css_failed', ['count' => $failed, 'reason' => MessengerMonitor::scrub($reason)]));

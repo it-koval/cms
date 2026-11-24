@@ -8,6 +8,7 @@ use Itk\Cms\Analytics\AnalyticsConfig;
 use Itk\Cms\Field\FieldInterface;
 use Itk\Cms\I18n\I18n;
 use Itk\Cms\IndexNow\IndexNowSite;
+use Symfony\Component\Config\Definition\Exception\InvalidConfigurationException;
 
 /**
  * The builder a site's config/itk/schema.php receives:
@@ -29,8 +30,6 @@ final class SchemaBuilder
 {
     /** @var list<string> */
     private array $headlineMarks = [];
-    /** @var array<string, bool> */
-    private array $features = ['ai' => false];
     /** @var array<string, MenuAreaDef> */
     private array $menuAreas = [];
     /** @var array{top: list<string>, bottom: list<string>}|null */
@@ -45,7 +44,11 @@ final class SchemaBuilder
     private array $settings = [];
     /** @var array<string, FormDef> */
     private array $forms = [];
-    /** Who described what: "kind:key" => 'core' | file | class. Two descriptions of one key are an error (a core template may be changed). */
+    /**
+     * Who described what: "kind:key" => 'core' | file | class. Two descriptions of one key are an error (a core template may be changed).
+     *
+     * @var array<string, string>
+     */
     private array $origins = [];
     private string $source = 'core';
     /** @var list<string> what validate() of the built schema reports besides the definitions themselves */
@@ -105,11 +108,17 @@ final class SchemaBuilder
         return $this;
     }
 
-    public function feature(string $name, bool $on = true): self
+    /**
+     * @internal
+     *
+     * @deprecated since 0.3.0
+     */
+    public function feature(string $name): never
     {
-        $this->features[$name] = $on;
-
-        return $this;
+        throw new InvalidConfigurationException(\sprintf(
+            'SchemaBuilder::feature() was removed in ITK CMS 0.3.0. Remove the call for "%s" from your schema (usually config/itk/schema.php). See https://github.com/it-koval/cms/blob/main/UPGRADE.md#030',
+            $name,
+        ));
     }
 
     public function menuArea(string $key, string $name, int $depth = 1): self
@@ -178,6 +187,13 @@ final class SchemaBuilder
 
     public function build(): Schema
     {
+        $reserved = \array_intersect(\array_keys($this->settings), Schema::RESERVED_SETTINGS_GROUP_KEYS);
+        if ([] !== $reserved) {
+            throw new \LogicException(\sprintf(
+                'Settings group keys %s are reserved for CMS permissions and history. Rename the group in SchemaBuilder::settings() or SettingsResource::key(), then update saved role permissions and field canSee references to set:<new-key>. Keep field keys unchanged to retain their stored values.',
+                \implode(', ', \array_map(static fn (string $key): string => '"' . $key . '"', $reserved)),
+            ));
+        }
         foreach ($this->collections as $collection) {
             $collection->checkViews();
         }
@@ -216,7 +232,6 @@ final class SchemaBuilder
         return new Schema(
             mainLocale: $this->mainLocale,
             headlineMarks: $this->headlineMarks,
-            features: $this->features,
             menuAreas: $areas,
             layout: $layout,
             sections: $this->sections,

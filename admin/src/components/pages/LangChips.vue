@@ -22,5 +22,17 @@ const rows = computed(() => app.languages.list.map((l) => {
 </script>
 
 <template>
-  <LangChip v-for="r in rows" :key="r.code" :code="r.code" :state="r.s.key" :word="r.word" :to="withLang(to, r.code)" :hint="hint(r.code, r.s)" />
+  <span class="version-links">
+    <span class="version-chips"><LangChip v-for="r in rows" :key="r.code" :code="r.code" :state="r.s.key" :word="r.word" :to="withLang(to, r.code)" :hint="hint(r.code, r.s)" /></span>
+  </span>
 </template>
+
+<style scoped>
+.version-links { display: block; min-width: 0; max-width: 100%; }
+.version-chips { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.version-chips :deep(.lc-w) { display: none; }
+.version-chips :deep(.lc.link) { justify-content: center; min-width: 44px; padding-inline: 6px; }
+@media (min-width: 768px) {
+  .version-chips :deep(.lc-w) { display: inline; }
+}
+</style>

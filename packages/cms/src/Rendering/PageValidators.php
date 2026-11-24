@@ -4,10 +4,16 @@ declare(strict_types=1);
 
 namespace Itk\Cms\Rendering;
 
+use Doctrine\DBAL\ArrayParameterType;
 use Doctrine\DBAL\Connection;
+use Itk\Cms\Analytics\AnalyticsAsset;
+use Itk\Cms\Analytics\AnalyticsConfig;
 use Itk\Cms\CriticalCss\Stylesheets;
 use Itk\Cms\Doctrine\JsonPath;
 use Itk\Cms\Entity\PageTranslation;
+use Itk\Cms\I18n\ContentLocales;
+use Itk\Cms\Mail\PublicUrl;
+use Itk\Cms\Security\CspNonce;
 use Itk\Cms\Support\Json;
 use Psr\Clock\ClockInterface;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
@@ -17,8 +23,8 @@ use Symfony\Component\HttpFoundation\Request;
  * ETag and Last-Modified of a live page, worked out by the database without drawing the page (the 304 of PageController), and the fingerprint they are made of, which is also the key of PageCache.
  * The fingerprint is a hash of everything a page can show: the page itself (its publication date and the snapshot), the live pages of the language (menus show only live links, lists show pages),
  * the place of those pages in the tree (a list shows pages in that order), the settings, the menus, the live records of the collections, the frames saved for pictures (they decide the address of a picture),
- * the SEO rules, the critical CSS of the page and the stamp of the stylesheets (both are what itk_stylesheets() prints), the query of the request,
- * the build of the container (a deploy that clears the cache changes it) and the day (UTC): a page that shows what is on right now
+ * the SEO rules, the live language versions of that same page, the critical CSS of the page and the stamp of the stylesheets (both are what itk_stylesheets() prints), the query of the request,
+ * the analytics start mode and loader version, the build of the container (a deploy that clears the cache changes it) and the day (UTC): a page that shows what is on right now
  * (the tours that have not started yet) is out of date by the evening, so no tag lives longer than a day. The tag is the start of the fingerprint.
  * Drafts stay out of it: the tag is public, so it must not tell when somebody edits a page or a record that is not on the site, and an autosave must not cost the visitors their 304.
  * A live record counts by the time of its publication and not by its snapshot: reading the snapshots of a big collection on every request is ten times the work. Records published before that time was kept count by updatedAt.
@@ -41,6 +47,11 @@ final class PageValidators
         private readonly string $containerClass,
         private readonly ClockInterface $clock,
         private readonly Stylesheets $stylesheets,
+        private readonly ?ContentLocales $locales = null,
+        private readonly ?PublicUrl $publicUrl = null,
+        #[Autowire(param: 'itk_cms.analytics.start')]
+        private readonly string $analyticsStart = AnalyticsConfig::AUTO,
+        private readonly AnalyticsAsset $analyticsAsset = new AnalyticsAsset(),
     ) {
     }
 
@@ -57,6 +68,19 @@ final class PageValidators
             return null;
         }
         $locale = $t->locale;
+        $seo = '(SELECT CONCAT(COUNT(*), \'|\', COALESCE(MAX(updated_at)::text, \'\')) FROM itk_seo_rule)';
+        $versions = '';
+        $versionParams = [];
+        $types = [];
+        if ($this->locales?->isMultilingual()) {
+            // A rule for another language can hide an alternate even when its stored timestamp has not changed.
+            $seo = '(SELECT COALESCE(SUM(hashtext(to_jsonb(r)::text)), 0) FROM itk_seo_rule r)';
+            $versions = ',
+                (SELECT COALESCE(SUM(hashtext(CONCAT(locale, \'|\', COALESCE(published->>\'url\', \'\'), \'|\', COALESCE(published->\'seo\'->>\'robots\', \'\'), \'|\', published_at::text))), 0)
+                    FROM itk_page_translation WHERE page_id = :pid AND status = :live4 AND published IS NOT NULL AND locale IN (:enabledLocales)) AS versions';
+            $versionParams = ['pid' => $t->page->id, 'live4' => PageTranslation::PUBLISHED, 'enabledLocales' => $this->locales->codes()];
+            $types = ['enabledLocales' => ArrayParameterType::STRING];
+        }
         $row = $this->db->fetchAssociative(
             'SELECT
                 (SELECT COUNT(*) FROM itk_page_translation WHERE locale = :locale AND status = :live) AS pages,
@@ -66,13 +90,14 @@ final class PageValidators
                 (SELECT COALESCE(SUM(hashtext(CONCAT(id, \'|\', crops::text))), 0) FROM itk_media_file WHERE crops IS NOT NULL) AS frames,
                 (SELECT COALESCE(SUM(hashtext(CONCAT(area_key, \'|\', name, \'|\', depth, \'|\', items::text))), 0) FROM itk_menu_area) AS menus,
                 (SELECT COALESCE(SUM(hashtext(CONCAT(id, \'|\', collection_key, \'|\', position, \'|\', COALESCE(parent_id, \'\'), \'|\', COALESCE(translations #>> CAST(:stamp AS text[]), translations #>> CAST(:updated AS text[]), \'\')))), 0) FROM itk_collection_item WHERE translations #>> CAST(:status AS text[]) = :itemLive) AS records,
-                (SELECT CONCAT(COUNT(*), \'|\', COALESCE(MAX(updated_at)::text, \'\')) FROM itk_seo_rule) AS seo,
-                (SELECT CONCAT(basis, \'|\', status, \'|\', generated_at) FROM itk_critical_css WHERE translation_id = :tid) AS critical',
+                ' . $seo . ' AS seo,
+                (SELECT CONCAT(basis, \'|\', status, \'|\', generated_at) FROM itk_critical_css WHERE translation_id = :tid) AS critical' . $versions,
             [
                 'locale' => $locale, 'live' => PageTranslation::PUBLISHED, 'locale2' => $locale, 'live2' => PageTranslation::PUBLISHED, 'locale3' => $locale, 'live3' => PageTranslation::PUBLISHED,
                 'stamp' => JsonPath::of($locale, 'publishedAt'), 'updated' => JsonPath::of($locale, 'updatedAt'), 'status' => JsonPath::of($locale, 'status'), 'itemLive' => 'published',
                 'tid' => $t->id,
-            ],
+            ] + $versionParams,
+            $types,
         );
         if (false === $row) {
             return null;
@@ -80,7 +105,13 @@ final class PageValidators
         $published = $t->publishedAt;
         $newest = \is_string($row['newest']) ? new \DateTimeImmutable($row['newest']) : $published;
 
-        $parts = [$this->build(), $t->page->id, $locale, $published->format('Y-m-d H:i:s'), \sha1(Json::encode(Json::canonical($t->published))), $request->getQueryString() ?? '', $this->clock->now()->setTimezone(new \DateTimeZone('UTC'))->format('Y-m-d'), $this->stylesheets->stamp(), ...\array_values($row)];
+        $parts = [$this->build(), $t->page->id, $locale, $published->format('Y-m-d H:i:s'), \sha1(Json::encode(Json::canonical($t->published))), $request->getQueryString() ?? '', $this->clock->now()->setTimezone(new \DateTimeZone('UTC'))->format('Y-m-d'), $this->stylesheets->stamp(), $this->analyticsStart, $this->analyticsAsset->version(), ...\array_values($row)];
+        $parts[] = $this->publicUrl?->seoBase() ?? '';
+        if ($this->locales?->isMultilingual()) {
+            $parts[] = Json::encode(\array_map(fn (string $code): array => [
+                $code, $this->locales->name($code), $this->locales->htmlLang($code), $this->locales->ogLocale($code),
+            ], $this->locales->codes()));
+        }
         $fingerprint = \sha1(\implode("\x1f", $parts));
         $this->last = [$fingerprint, $newest > $published ? $newest : $published];
 
@@ -94,7 +125,7 @@ final class PageValidators
      */
     public function forPage(PageTranslation $t, Request $request, ?string $fingerprint = null): ?array
     {
-        if (!$this->enabled || $this->debug || null === $t->publishedAt || $request->headers->has('Authorization') || $request->hasPreviousSession()) {
+        if (!$this->enabled || $this->debug || null === $t->publishedAt || $request->headers->has('Authorization') || $request->hasPreviousSession() || null !== CspNonce::fromRequest($request)) {
             return null;
         }
         if (null === $fingerprint || $fingerprint !== ($this->last[0] ?? null)) {

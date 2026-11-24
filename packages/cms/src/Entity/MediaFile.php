@@ -9,7 +9,11 @@ use Doctrine\ORM\Mapping as ORM;
 use Itk\Cms\Repository\MediaFileRepository;
 use Symfony\Component\Uid\Uuid;
 
-/** A file of the media library, stored in public/uploads/media/Y/m/. */
+/**
+ * A file of the media library, stored in public/uploads/media/Y/m/.
+ *
+ * @internal
+ */
 #[ORM\Entity(repositoryClass: MediaFileRepository::class)]
 #[ORM\Table(name: 'itk_media_file')]
 #[ORM\Index(name: 'itk_media_file_folder_idx', columns: ['folder_id'])]
@@ -51,11 +55,19 @@ class MediaFile
     #[ORM\JoinColumn(name: 'folder_id', referencedColumnName: 'id', nullable: true, onDelete: 'SET NULL')]
     public ?MediaFolder $folder = null;
 
-    /** Focal point of an image: { x, y }, 0..1 of the width and the height (as the picture looks). Null: the centre. */
+    /**
+     * Focal point of an image: { x, y }, 0..1 of the width and the height (as the picture looks). Null: the centre.
+     *
+     * @var array{x: float, y: float}|null
+     */
     #[ORM\Column(type: Types::JSON, nullable: true, options: ['jsonb' => true])]
     public ?array $focal = null;
 
-    /** Frames by ratio: { "16:9": { x, y, w, h }, … }, each 0..1 of the picture. Used by the ratio variants (media_url(img, 960, '16:9')). */
+    /**
+     * Frames by ratio: { "16:9": { x, y, w, h }, … }, each 0..1 of the picture. Used by the ratio variants (itk_media_url(img, 960, '16:9')).
+     *
+     * @var array<string, array{x: float, y: float, w: float, h: float}>|null
+     */
     #[ORM\Column(type: Types::JSON, nullable: true, options: ['jsonb' => true])]
     public ?array $crops = null;
 

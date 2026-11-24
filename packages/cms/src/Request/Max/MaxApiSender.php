@@ -6,16 +6,25 @@ namespace Itk\Cms\Request\Max;
 
 use Itk\Cms\Bots\BotSettings;
 use Itk\Cms\I18n\I18n;
+use Itk\Cms\Request\DeliveryUncertainException;
+use Itk\Cms\Request\HttpDeliveryFailure;
+use MaxMessenger\Bot\Exception\Validation\ValidationException;
 use MaxMessenger\Bot\MaxApiClient;
 use MaxMessenger\Bot\MaxApiConfig;
 use MaxMessenger\Bot\Model\Enum\TextFormat;
 use MaxMessenger\Bot\Model\Request\NewMessageBody;
+use Mj4444\SimpleHttpClient\CurlHttpClient;
+use Mj4444\SimpleHttpClient\Exceptions\GeneralException;
+use Mj4444\SimpleHttpClient\Exceptions\HttpClientErrorException;
+use Mj4444\SimpleHttpClient\Exceptions\HttpResponse\Http\HttpException;
 use Psr\Log\LoggerInterface;
 use Symfony\Contracts\Service\ResetInterface;
 
 /**
  * The admin token wins, then the site's bundle client is the fallback. Secrets are read again before each delivery.
  * The MAX client package is optional; an absent package or token leaves requests pending.
+ *
+ * @internal
  */
 final class MaxApiSender implements MaxSender, ResetInterface
 {
@@ -91,6 +100,10 @@ final class MaxApiSender implements MaxSender, ResetInterface
         $this->broken = false;
     }
 
+    /**
+     * @throws DeliveryUncertainException when the provider may already have accepted the message
+     * @throws MaxDeliveryException when a send is refused or no connection is available
+     */
     public function send(int|string $chatId, string $html): void
     {
         $this->resolve();
@@ -101,9 +114,27 @@ final class MaxApiSender implements MaxSender, ResetInterface
         if (false === $id) {
             throw new MaxDeliveryException('MAX chat id must be a whole number');
         }
+        $wire = null;
         try {
+            $wire = $this->api->getHttpClient()->getHttpClient();
+            if ($wire instanceof CurlHttpClient) {
+                // The optional SDK otherwise discards progress on failure, making connect and response timeouts indistinguishable.
+                $wire->curlInfoRequired = true;
+                $wire->lastCurlInfo = null;
+            }
             $this->api->sendMessageToChat($id, new NewMessageBody(self::cut($html), format: TextFormat::Html), true);
         } catch (\Throwable $e) {
+            $status = $e instanceof HttpException ? $e->getResponse()->getHttpCode() : 0;
+            $info = $wire instanceof CurlHttpClient ? ($wire->lastCurlInfo ?? []) : [];
+            $connectionFailure = \in_array($e->getCode(), [GeneralException::COULDNT_RESOLVE_HOST, GeneralException::COULDNT_CONNECT, GeneralException::SSL_CONNECT_ERROR, GeneralException::SSL_CERTPROBLEM, GeneralException::SSL_CIPHER, GeneralException::SSL_PEER_CERTIFICATE], true)
+                && 0 === (int) ($info['redirect_count'] ?? 0) && 0 === (int) ($info['http_code'] ?? 0)
+                && 0.0 === (float) ($info['size_upload'] ?? 0) && 0 === (int) ($info['request_size'] ?? 0);
+            $beforeSend = $e instanceof HttpClientErrorException && (
+                $connectionFailure || HttpDeliveryFailure::beforeSend($info)
+            );
+            if (!$beforeSend && !$e instanceof ValidationException && ($status < 400 || $status >= 500 || 408 === $status)) {
+                throw new DeliveryUncertainException(I18n::t('http.request_delivery_uncertain'));
+            }
             $reason = '' !== \trim($e->getMessage()) ? $e->getMessage() : $e::class;
 
             throw new MaxDeliveryException($this->scrub($reason));
@@ -153,14 +184,18 @@ final class MaxApiSender implements MaxSender, ResetInterface
                 if (null === $this->client) {
                     return;
                 }
-                $token = $this->readToken();
+                $server = null === $this->config ? null : ($this->config)();
+                $token = self::readToken($server);
                 $this->token = $token ?? '';
                 $hasToken = null === $token || '' !== \trim($token);
                 if (!$hasToken) {
                     return;
                 }
                 $this->route = 'server';
-                $api = ($this->client)();
+                // The bundle's default HTTP client can repeat POST on a timeout or 5xx.
+                $api = $server instanceof MaxApiConfig
+                    ? new MaxApiClient((clone $server)->setRetryAttempts([]))
+                    : ($this->client)();
                 $source = 'server';
             }
             if (!$api instanceof MaxApiClient) {
@@ -180,10 +215,9 @@ final class MaxApiSender implements MaxSender, ResetInterface
     }
 
     /** The client does not tell its token; the configuration does. Null when there is no configuration service: the client is then taken as configured. */
-    private function readToken(): ?string
+    private static function readToken(?object $config): ?string
     {
-        $config = null === $this->config ? null : ($this->config)();
-        if (!\is_object($config) || !\method_exists($config, 'getAccessToken')) {
+        if (null === $config || !\method_exists($config, 'getAccessToken')) {
             return null;
         }
         $token = $config->getAccessToken();
@@ -195,15 +229,6 @@ final class MaxApiSender implements MaxSender, ResetInterface
     /** The token goes in a header, but an error text may quote more than it should: never show or log it. */
     private function scrub(string $message): string
     {
-        if ('' !== $this->token) {
-            $json = \json_encode($this->token);
-            $variants = [$this->token, \rawurlencode($this->token), \urlencode($this->token), \base64_encode($this->token)];
-            if (\is_string($json)) {
-                $variants[] = \substr($json, 1, -1);
-            }
-            $message = \str_replace($variants, '***', $message);
-        }
-
-        return (string) \preg_replace('~([a-z][a-z0-9+.-]*://)[^\s"\'@/]*@~i', '$1***@', $message);
+        return \Itk\Cms\Logging\SecretScrubber::scrub($message, [$this->token]);
     }
 }

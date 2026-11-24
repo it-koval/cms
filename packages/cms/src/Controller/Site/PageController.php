@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Itk\Cms\Controller\Site;
 
 use Itk\Cms\Content\RedirectService;
+use Itk\Cms\I18n\ContentLocales;
 use Itk\Cms\I18n\I18n;
 use Itk\Cms\Rendering\PageCache;
 use Itk\Cms\Rendering\PageCacheStatus;
@@ -12,7 +13,6 @@ use Itk\Cms\Rendering\PageRenderer;
 use Itk\Cms\Rendering\PageValidators;
 use Itk\Cms\Repository\PageTranslationRepository;
 use Itk\Cms\Support\Url;
-use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\HttpFoundation\RedirectResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -36,8 +36,7 @@ final class PageController
         private readonly PageRenderer $renderer,
         private readonly PageValidators $validators,
         private readonly PageCache $cache,
-        #[Autowire(param: 'itk_cms.main_locale')]
-        private readonly string $mainLocale,
+        private readonly ContentLocales $locales,
     ) {
     }
 
@@ -46,19 +45,19 @@ final class PageController
     {
         $url = Url::fromPath($path);
 
-        $redirect = $this->redirects->lookup($url);
+        $redirect = $this->redirects->lookup($url, $request->getQueryString());
         if (null !== $redirect) {
             return new RedirectResponse($redirect->toPath, $redirect->code);
         }
-        $t = $this->translations->findLive($this->mainLocale, Url::key($url));
+        $locale = $this->locales->fromPath($url);
+        $t = $this->translations->findLiveAtPath($locale, $url, $locale !== $this->locales->main());
         if (null === $t) {
             throw new NotFoundHttpException(I18n::t('http.page_not_found'));
         }
         $stored = (string) ($t->published['url'] ?? '');
-        if ('' !== $path && '/' !== $path && $this->spelledOtherwise($request, $stored)) { // the page's own spelling is canonical; any other goes there
-            $qs = $request->getQueryString();
-
-            return new RedirectResponse(Url::encodePath(Url::spelling($stored)) . (null !== $qs ? '?' . $qs : ''), 301);
+        $canonical = Url::canonicalRedirect($path, $request->getPathInfo(), $stored, $request->server->getString('QUERY_STRING'));
+        if (null !== $canonical) {
+            return new RedirectResponse($canonical, 301);
         }
 
         $bypass = $this->cache->bypasses($request, $t);
@@ -85,16 +84,5 @@ final class PageController
         }
 
         return $status->stamp($response);
-    }
-
-    /** Whether the path was typed with other slashes than the page's own: a trailing slash the page lacks (or the other way round), doubled or %2F-coded slashes. Letter case and the rest stay as served. */
-    private function spelledOtherwise(Request $request, string $stored): bool
-    {
-        $path = $request->getPathInfo();
-        $own = Url::encodePath(Url::spelling($stored)); // a saved address that itself has `//` or `%2F` must not redirect to itself
-
-        return (\str_contains($path, '//') && !\str_contains($own, '//'))
-            || (false !== \stripos($path, '%2F') && false === \stripos($own, '%2F'))
-            || Url::hasTrailingSlash($stored) !== \str_ends_with($path, '/');
     }
 }

@@ -86,7 +86,8 @@ final class MailController extends AbstractApiController
             throw ContentException::invalid($this->mailer->problem() ?? I18n::t('http.mail_not_configured'), ['code' => 'mail_not_configured']);
         }
         try {
-            $this->mailer->deliver($this->composer->test($to));
+            $mail = $this->composer->test($to);
+            $this->mailer->deliver($mail);
         } catch (MailDeliveryException $e) {
             throw new ContentException(I18n::t('http.mail_not_sent', ['reason' => $e->getMessage()]), 502, ['code' => 'mail_failed']);
         }

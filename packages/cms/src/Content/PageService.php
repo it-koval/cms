@@ -4,14 +4,18 @@ declare(strict_types=1);
 
 namespace Itk\Cms\Content;
 
+use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use Doctrine\DBAL\LockMode;
 use Doctrine\ORM\EntityManagerInterface;
+use Doctrine\ORM\Query;
+use Doctrine\Persistence\ManagerRegistry;
 use Itk\Cms\Entity\Page;
 use Itk\Cms\Entity\PageTranslation;
 use Itk\Cms\Entity\Revision;
 use Itk\Cms\Entity\User;
 use Itk\Cms\Field\FieldInterface;
 use Itk\Cms\History\HistoryService;
+use Itk\Cms\I18n\ContentLocales;
 use Itk\Cms\I18n\I18n;
 use Itk\Cms\Repository\PageRepository;
 use Itk\Cms\Repository\PageTranslationRepository;
@@ -24,6 +28,7 @@ use Itk\Cms\Support\Json;
 use Itk\Cms\Support\Url;
 use Symfony\Bundle\SecurityBundle\Security;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
+use Symfony\Contracts\Service\Attribute\Required;
 
 /**
  * Pages: draft save, publish, revert, unpublish, submit for publication, return to author, listing.
@@ -39,6 +44,10 @@ final class PageService
     /** The key of the text of the 404 for a language the page has no version in: I18n::t(PageService::NO_VERSION). */
     public const NO_VERSION = 'content.no_version';
 
+    private readonly ContentLocales $locales;
+    private ?ManagerRegistry $registry = null;
+
+    /** @internal Core implementation; excluded from the site API. */
     public function __construct(
         private readonly EntityManagerInterface $em,
         private readonly PageRepository $pages,
@@ -59,7 +68,16 @@ final class PageService
         private readonly DraftVersion $versions,
         #[Autowire(param: 'itk_cms.main_locale')]
         private readonly string $mainLocale,
+        ?ContentLocales $locales = null,
     ) {
+        $this->locales = $locales ?? new ContentLocales($mainLocale);
+    }
+
+    /** @internal Supplies the registry for recovering the container-managed EntityManager. */
+    #[Required]
+    public function setManagerRegistry(ManagerRegistry $registry): void
+    {
+        $this->registry = $registry;
     }
 
     /**
@@ -70,6 +88,8 @@ final class PageService
      * @param \Closure(): T $work
      *
      * @return T
+     *
+     * @internal core implementation; excluded from the site API
      */
     public function locked(string $id, \Closure $work): mixed
     {
@@ -83,6 +103,7 @@ final class PageService
 
     /* ---------- reading ---------- */
 
+    /** @internal Core implementation; excluded from the site API. */
     public function find(string $id): Page
     {
         return $this->pages->find($id) ?? throw ContentException::notFound(I18n::t('content.page_not_found'));
@@ -159,33 +180,59 @@ final class PageService
         ];
     }
 
-    /** @return array<string, mixed>|null the live snapshot (null while the version is a draft or unpublished) */
+    /**
+     * @return array<string, mixed>|null the live snapshot (null while the version is a draft or unpublished)
+     *
+     * @internal
+     */
     public function liveSnapshot(PageTranslation $t): ?array
     {
         return $t->isLive() ? $t->published : null;
     }
 
-    /** Number of unpublished changes (0 when the version was never published). */
+    /**
+     * Number of unpublished changes (0 when the version was never published).
+     *
+     * @internal
+     */
     public function changeCount(PageTranslation $t): int
     {
         $live = $this->liveSnapshot($t);
 
-        return null === $live ? 0 : \count($this->changes->pageChanges($t->draft, $t->page->template, $live));
+        return null === $live ? 0 : $this->changes->pageChangeCount($t->draft, $t->page->template, $live);
     }
 
-    /** @return list<array<string, mixed>> */
+    /**
+     * @return list<array<string, mixed>>
+     *
+     * @internal
+     */
     public function changesOf(PageTranslation $t): array
     {
         return $this->changes->pageChanges($t->draft, $t->page->template, $this->liveSnapshot($t));
     }
 
-    /** The page's one H1 id (section id or null). */
+    /**
+     * The page's one H1 id (section id or null).
+     *
+     * @param array<string, mixed> $draftOrSnapshot
+     *
+     * @internal core implementation; excluded from the site API
+     */
     public function h1Id(array $draftOrSnapshot, string $template): ?string
     {
         return $this->h1->pageH1Id($draftOrSnapshot['sections'] ?? [], $this->schema->template($template));
     }
 
-    /** Required fields that block publishing: sections' ones { sectionId, path, field, message } and the template's own { sectionId: null, scope: 'fields', … }. */
+    /**
+     * Required fields that block publishing: sections' ones { sectionId, path, field, message } and the template's own { sectionId: null, scope: 'fields', … }.
+     *
+     * @param array<string, mixed> $draft
+     *
+     * @return list<array<string, mixed>>
+     *
+     * @internal core implementation; excluded from the site API
+     */
     public function requiredErrors(array $draft, string $template): array
     {
         $out = [];
@@ -208,13 +255,134 @@ final class PageService
     /* ---------- writing ---------- */
 
     /**
+     * A new language version belongs to the same page; only its draft is copied.
+     *
+     * @param callable(Page): void|null $guard Internal bundle authorization callback. Site code must omit it or pass null.
+     *
+     * @return array<string, mixed>
+     */
+    public function addTranslation(string $id, string $locale, ?string $from, ?callable $guard = null): array
+    {
+        if (!$this->locales->has($locale)) {
+            throw ContentException::invalid(I18n::t('content.locale_unknown', ['locale' => $locale]));
+        }
+        if (null !== $from && ('' === $from || $from === $locale)) {
+            throw ContentException::invalid(I18n::t('content.translation_source_invalid'));
+        }
+        if (null !== $from) {
+            $this->locales->assertUsable($from);
+        }
+
+        try {
+            return $this->lock->publish('page', $id, function () use ($id, $locale, $from, $guard): array {
+                $p = $this->reloadTranslations($id);
+                if (null !== $guard) {
+                    $guard($p);
+                }
+                if (null !== $p->translation($locale)) {
+                    throw $this->translationExists($locale);
+                }
+                $source = null !== $from ? $p->translation($from) : ($p->translation($this->mainLocale) ?? ($p->translations->first() ?: null));
+                if (null === $source) {
+                    throw ContentException::invalid(I18n::t('content.translation_source_missing', ['language' => $this->locales->name($from ?? $this->mainLocale)]), ['code' => 'translation_source_missing']);
+                }
+                $tpl = $this->schema->template($p->template) ?? throw ContentException::invalid(I18n::t('content.page_template_unknown'));
+                $title = \trim((string) ($source->draft['title'] ?? ''));
+                if ('' === $title) {
+                    throw ContentException::invalid(I18n::t('content.page_title_required'));
+                }
+                $url = $this->translationAddress($locale, $source->locale, (string) ($source->draft['url'] ?? ''));
+                $fields = $this->values->defaults($tpl->fieldList(), true);
+                $nameKey = $this->nameKey($tpl);
+                if (null !== $nameKey && '' === \trim((string) ($fields[$nameKey] ?? ''))) {
+                    $fields[$nameKey] = $this->titleAsField($tpl->field($nameKey), $title);
+                }
+                if (null !== $from) {
+                    $draft = $this->snapshot($source->draft);
+                    $draft['fields'] = $this->access->input($tpl->fieldList(), (array) $draft['fields']) + $fields;
+                    $draft['sections'] = $this->guardSections((array) $draft['sections'], []);
+                } else {
+                    $sections = !$tpl->hasSections() || null !== $tpl->h1Field() ? [] : $this->defaultSections($title);
+                    $draft = ['seo' => ['title' => '', 'description' => ''], 'fields' => $fields, 'sections' => $this->normalizeSections($sections)];
+                }
+                $draft['title'] = $title;
+                $draft['url'] = $url;
+                $this->raw->assertFields($tpl->fieldList(), [], (array) $draft['fields']);
+                $this->raw->assertSections([], (array) $draft['sections']);
+                $t = new PageTranslation($p, $locale);
+                $t->draft = $draft;
+                $p->translations->set($locale, $t);
+                $this->em->persist($t);
+                $this->history->page($p, $t, Revision::CREATE);
+                $this->em->flush();
+                $this->hooks->translationAdded($this->record($p, $t));
+
+                return $this->flat($p, $t);
+            });
+        } catch (UniqueConstraintViolationException $e) {
+            // A writer that does not take our advisory lock can still reach the database constraint first.
+            if (!\str_contains($e->getMessage(), 'itk_page_translation_page_locale')) {
+                throw $e;
+            }
+            if (!$this->em->isOpen()) {
+                $this->registry?->resetManager();
+            }
+
+            throw $this->translationExists($locale);
+        }
+    }
+
+    /**
+     * Removes one language, retaining the shared page and all its other versions.
+     *
+     * @param callable(Page): void|null $guard Internal bundle authorization callback. Site code must omit it or pass null.
+     */
+    public function removeTranslation(string $id, string $locale, ?callable $guard = null): void
+    {
+        $this->assertTranslationLocale($locale);
+        $this->lock->publish('page', $id, function () use ($id, $locale, $guard): void {
+            $p = $this->reloadTranslations($id);
+            if (null !== $guard) {
+                $guard($p);
+            }
+            $t = $this->version($p, $locale);
+            if ($locale === $this->mainLocale) {
+                throw ContentException::conflict(I18n::t('content.translation_main_required'));
+            }
+            if (\count($p->translations) < 2) {
+                throw ContentException::conflict(I18n::t('content.translation_last_required'));
+            }
+            $record = $this->record($p, $t);
+            $removed = clone $t;
+            if ($t->isLive()) {
+                $this->unpublishVersion($p, $t, true);
+            }
+            $this->history->pageTranslationRemoved($p, $removed);
+            $p->translations->remove($locale);
+            $this->em->remove($t);
+            $this->em->flush();
+            $this->hooks->translationRemoved($record);
+        });
+    }
+
+    /**
      * New page, born in the main language as a draft.
      *
-     * @param array{title?: string, url?: string, parentId?: ?string, template?: string, sections?: ?array, fields?: ?array, id?: ?string, locale?: string, seo?: array} $input
+     * @param array<string, mixed> $input
      *
      * @return array<string, mixed>
      */
     public function create(array $input): array
+    {
+        return $this->lock->transactional(fn () => $this->createPage($input));
+    }
+
+    /**
+     * @param array<string, mixed> $input
+     *
+     * @return array<string, mixed>
+     */
+    private function createPage(array $input): array
     {
         $templateKey = (string) ($input['template'] ?? 'default');
         $locale = (string) ($input['locale'] ?? $this->mainLocale);
@@ -228,14 +396,12 @@ final class PageService
         $title = \trim((string) ($input['title'] ?? ''));
         $url = \trim((string) ($input['url'] ?? ''));
         $parentId = $input['parentId'] ?? null;
-        if ('' === $title) {
-            throw ContentException::invalid(I18n::t('content.page_title_required'));
-        }
-        if (!\str_starts_with($url, '/')) {
-            throw ContentException::invalid(I18n::t('content.page_url_slash'));
-        }
+        $this->assertPageTitle($title);
+        $this->assertPageAddress($locale, $url);
         $tpl = $this->schema->template($templateKey) ?? throw ContentException::invalid(I18n::t('content.page_template_unknown'));
         self::assertNotReserved($url);
+        $this->assertLocaleAddress($locale, $url);
+        $this->lockAddress($locale, $url);
         if ($this->urlTaken($locale, $url, null)) {
             throw ContentException::conflict(I18n::t('content.page_url_exists'));
         }
@@ -254,6 +420,7 @@ final class PageService
         $nameKey = $this->nameKey($tpl);
         if (null !== $nameKey && '' === \trim((string) ($fields[$nameKey] ?? ''))) {
             $fields[$nameKey] = $this->titleAsField($tpl->field($nameKey), $title);
+            $fields = $this->values->normalize([$tpl->field($nameKey)], [$nameKey => $fields[$nameKey]]) + $fields;
         }
         $sections = $input['sections'] ?? null;
         $sections = !$tpl->hasSections() || (null !== $tpl->h1Field() && !$sections) ? [] : $this->normalizeSections($sections ?: $this->defaultSections($title));
@@ -267,7 +434,7 @@ final class PageService
         $t->draft = [
             'title' => $title,
             'url' => $url,
-            'seo' => (array) ($input['seo'] ?? []) + ['title' => $title, 'description' => ''],
+            'seo' => $this->normalizeSeo((array) ($input['seo'] ?? []) + ['title' => $title, 'description' => '']),
             'sections' => $sections,
             'fields' => $fields,
         ];
@@ -285,18 +452,15 @@ final class PageService
      * With `$baseVersion` (the `version` of the page the editor loaded or saved last) the draft must still be that one, else 409 `conflict` and nothing is written.
      * The check and the write are one step under the lock of the page, on the copy read after the lock was taken. Without a version the save is not checked.
      *
+     * @param array<string, mixed> $data
+     * @param (callable(Page, string): void)|null $guard Internal bundle authorization callback for the refreshed page and effective target template under the write lock. Site code must omit it or pass null.
+     *
      * @return array<string, mixed> flat page + changed
      */
-    public function saveDraft(string $id, ?string $locale, array $data, ?string $baseVersion = null): array
+    public function saveDraft(string $id, ?string $locale, array $data, ?string $baseVersion = null, ?callable $guard = null): array
     {
         $locale ??= $this->mainLocale;
-        $flat = null === $baseVersion
-            ? $this->writeVersion($id, $locale, $data, true)
-            : $this->locked($id, function () use ($id, $locale, $data, $baseVersion): array {
-                $this->requireDraftVersion($id, $locale, $baseVersion);
-
-                return $this->writeVersion($id, $locale, $data, true);
-            });
+        $flat = $this->writeVersion($id, $locale, $data, true, baseVersion: $baseVersion, guard: $guard);
         $t = $this->find($id)->translation($locale);
 
         return $flat + ['changed' => $this->changeCount($t) > 0];
@@ -305,11 +469,14 @@ final class PageService
     /**
      * List-level edit: title, url, seo, fields of that language + parentId, template (shared). No sections.
      *
+     * @param array<string, mixed> $patch
+     * @param (callable(Page, string): void)|null $guard Internal bundle authorization callback. Site code must omit it or pass null.
+     *
      * @return array<string, mixed>
      */
-    public function update(string $id, ?string $locale, array $patch): array
+    public function update(string $id, ?string $locale, array $patch, ?callable $guard = null): array
     {
-        return $this->writeVersion($id, $locale ?? $this->mainLocale, $patch, false);
+        return $this->writeVersion($id, $locale ?? $this->mainLocale, $patch, false, guard: $guard);
     }
 
     /**
@@ -319,6 +486,8 @@ final class PageService
      * @param array<string, mixed> $draft
      *
      * @return array<string, mixed> the flat page
+     *
+     * @internal core implementation; excluded from the site API
      */
     public function restoreVersion(string $id, ?string $locale, array $draft): array
     {
@@ -333,8 +502,20 @@ final class PageService
      * @param array<string, mixed> $snapshot
      *
      * @return array<string, mixed> the flat page (main language, else the first one)
+     *
+     * @internal core implementation; excluded from the site API
      */
     public function restoreRemoved(array $snapshot): array
+    {
+        return $this->lock->transactional(fn () => $this->restorePage($snapshot));
+    }
+
+    /**
+     * @param array<string, mixed> $snapshot
+     *
+     * @return array<string, mixed>
+     */
+    private function restorePage(array $snapshot): array
     {
         $meta = (array) ($snapshot['page'] ?? []);
         $versions = (array) ($snapshot['versions'] ?? []);
@@ -354,9 +535,17 @@ final class PageService
         if (!$place['ok']) {
             throw ContentException::invalid($place['reason']);
         }
-        foreach ($versions as $locale => $v) {
+        $ordered = $versions;
+        \ksort($ordered);
+        foreach ($ordered as $locale => $v) {
             $url = (string) ($v['draft']['url'] ?? '');
-            if ($this->urlTaken((string) $locale, $url, null) || $this->urlTaken((string) $locale, (string) ($v['published']['url'] ?? ''), null)) {
+            $publishedUrl = (string) ($v['published']['url'] ?? '');
+            $addresses = \array_unique([Url::key($url), Url::key($publishedUrl)]);
+            \sort($addresses, \SORT_STRING);
+            foreach ($addresses as $address) {
+                $this->lockAddress((string) $locale, $address);
+            }
+            if ($this->urlTaken((string) $locale, $url, null) || $this->urlTaken((string) $locale, $publishedUrl, null)) {
                 throw ContentException::conflict(I18n::t('content.page_url_taken_restore', ['url' => $url]));
             }
         }
@@ -384,7 +573,7 @@ final class PageService
 
     /**
      * @param list<string> $ids ALL sibling page ids in the new order
-     * @param callable(Page): void|null $guard called for every page whose place really changes (the controller checks the right to edit its template); nothing is written before all of them passed
+     * @param callable(Page): void|null $guard Internal bundle authorization callback for every page whose place changes, before any write. Site code must omit it or pass null.
      */
     public function reorder(array $ids, ?callable $guard = null): void
     {
@@ -412,7 +601,7 @@ final class PageService
      * `$guard` is called for every page that really moves (the controller checks the right to edit its template); nothing changes before all of them passed.
      *
      * @param list<array<string, mixed>> $nodes
-     * @param callable(Page): void|null $guard
+     * @param callable(Page): void|null $guard Internal bundle authorization callback. Site code must omit it or pass null.
      *
      * @return int how many pages changed their parent
      */
@@ -489,10 +678,16 @@ final class PageService
         }
         $record = $this->recordOf($p);
         $this->hooks->deleting($record);
+        $liveVersions = [];
+        foreach ($p->translations as $t) {
+            if (null !== $version = $this->liveAddress($t)) {
+                $liveVersions[] = $version;
+            }
+        }
         $this->history->pageRemoved($p);
         $this->em->remove($p);
         $this->em->flush();
-        $this->hooks->deleted($record);
+        $this->hooks->deleted($record, ['liveVersions' => $liveVersions]);
     }
 
     /**
@@ -503,14 +698,28 @@ final class PageService
     public function massRemove(array $ids): int
     {
         $records = $this->records($ids);
+        $depth = [];
+        foreach ($records as $record) {
+            $seen = [];
+            for ($page = $this->find($record->id); null !== $page->parent && !isset($seen[$page->id]); $page = $page->parent) {
+                $seen[$page->id] = true;
+            }
+            $depth[$record->id] = \count($seen);
+        }
+        \usort($records, static fn (Record $a, Record $b): int => $depth[$b->id] <=> $depth[$a->id]);
         foreach ($this->byTemplate($records) as $template => $group) {
             $this->hooks->mass('delete', 'before', 'page', $template, $this->mainLocale, $group);
         }
-        $this->hooks->deferAfter(fn () => $this->em->wrapInTransaction(function () use ($records): void {
-            foreach ($records as $r) {
-                $this->remove($r->id);
-            }
-        }));
+        try {
+            $this->lock->transactional(function () use ($records): void {
+                foreach ($records as $r) {
+                    $this->remove($r->id);
+                }
+            });
+        } catch (\Throwable $e) {
+            $this->em->clear(); // discard removals scheduled before a later page rejected the batch
+            throw $e;
+        }
         foreach ($this->byTemplate($records) as $template => $group) {
             $this->hooks->mass('delete', 'after', 'page', $template, $this->mainLocale, $group);
         }
@@ -561,14 +770,19 @@ final class PageService
         return $out;
     }
 
+    /** @internal Core implementation; excluded from the site API. */
     public function record(Page $p, PageTranslation $t): Record
     {
-        $d = $t->draft;
+        return $this->recordFrom($p, $t, $t->draft);
+    }
 
-        return new Record($p->id, 'page', $p->template, $t->locale, (array) ($d['fields'] ?? []), $t->status, [
-            'title' => (string) ($d['title'] ?? ''),
-            'url' => (string) ($d['url'] ?? ''),
-            'seo' => (array) ($d['seo'] ?? []),
+    /** @param array<string, mixed> $snapshot */
+    private function recordFrom(Page $p, PageTranslation $t, array $snapshot): Record
+    {
+        return new Record($p->id, 'page', $p->template, $t->locale, (array) ($snapshot['fields'] ?? []), $t->status, [
+            'title' => (string) ($snapshot['title'] ?? ''),
+            'url' => (string) ($snapshot['url'] ?? ''),
+            'seo' => (array) ($snapshot['seo'] ?? []),
             'parentId' => $p->parentId(),
             'template' => $p->template,
         ]);
@@ -587,20 +801,24 @@ final class PageService
         }
         $p = $this->find($id);
         $t = $this->version($p, $locale);
+        $this->assertPageTitle((string) ($t->draft['title'] ?? ''));
         $errors = $this->requiredErrors($t->draft, $p->template);
         if ([] !== $errors) {
             throw ContentException::invalid(I18n::t('content.page_publish_required'), $errors);
         }
-        $url = Url::key((string) ($t->draft['url'] ?? ''));
+        $address = (string) ($t->draft['url'] ?? '');
+        $url = Url::key($address);
         if ('' === $url) {
             throw ContentException::invalid(I18n::t('content.page_publish_url_required'));
         }
+        $this->assertPageAddress($locale, $address);
         foreach ($this->translations->findForLocale($locale) as $other) {
             if ($other->id !== $t->id && $other->publishedUrl === $url) {
                 throw ContentException::conflict(I18n::t('content.page_url_taken_published'));
             }
         }
         $this->hooks->publishing($this->record($p, $t));
+        $previous = $this->liveAddress($t);
         $was = $this->history->pageState($p, $t);
         $before = $t->isLive() ? (string) ($t->published['url'] ?? '') : null;
         $t->published = $this->snapshot($t->draft);
@@ -610,17 +828,21 @@ final class PageService
         $t->returned = null;
         $t->migrated = false;
         $t->updatedAt = $t->publishedAt = new \DateTimeImmutable();
-        if (null !== $before) {
+        if (null !== $before && $this->mayRedirect($t, $before)) {
             $this->redirects->moved($before, (string) $t->published['url']);
         }
         $this->history->page($p, $t, Revision::PUBLISH, $was);
         $this->em->flush();
-        $this->hooks->published($this->record($p, $t));
+        $this->hooks->published($this->record($p, $t), ['liveVersions' => \array_values(\array_filter([$previous, $this->liveAddress($t)]))]);
 
         return $this->flat($p, $t);
     }
 
-    /** Throws away unpublished changes of that language. */
+    /**
+     * Throws away unpublished changes of that language.
+     *
+     * @return array<string, mixed>
+     */
     public function revert(string $id, ?string $locale = null): array
     {
         $p = $this->find($id);
@@ -639,7 +861,11 @@ final class PageService
         return $this->flat($p, $t);
     }
 
-    /** «Отправить на публикацию» for a person who may edit but not publish. */
+    /**
+     * «Отправить на публикацию» for a person who may edit but not publish.
+     *
+     * @return array<string, mixed>
+     */
     public function submit(string $id, ?string $locale = null): array
     {
         $p = $this->find($id);
@@ -655,7 +881,11 @@ final class PageService
         return $this->flat($p, $t);
     }
 
-    /** «Вернуть автору»: the version stops waiting; its text stays as the author left it. */
+    /**
+     * «Вернуть автору»: the version stops waiting; its text stays as the author left it.
+     *
+     * @return array<string, mixed>
+     */
     public function returnToAuthor(string $id, ?string $locale = null): array
     {
         $p = $this->find($id);
@@ -667,29 +897,85 @@ final class PageService
         return $this->flat($p, $t);
     }
 
-    /** «Снять с публикации»: the version leaves the site and becomes a draft; the live copy is kept for republish(). */
+    /**
+     * «Снять с публикации»: the version leaves the site and becomes a draft; the live copy is kept for republish().
+     *
+     * @return array<string, mixed>
+     */
     public function unpublish(string $id, ?string $locale = null): array
     {
         $p = $this->find($id);
         $t = $this->version($p, $locale ?? $this->mainLocale);
-        if ($this->isRoot($p)) {
+
+        $this->unpublishVersion($p, $t);
+
+        return $this->flat($p, $t);
+    }
+
+    /** The same transition is used when deleting a live translation, with its after hook deferred until commit. */
+    private function unpublishVersion(Page $p, PageTranslation $t, bool $removing = false): void
+    {
+        if ($this->isRoot($p) && ($t->locale === $this->mainLocale || (!$removing && !$this->locales->isConfigured()))) {
             throw ContentException::conflict(I18n::t('content.page_home_not_unpublishable'));
         }
         if (!$t->isLive()) {
             throw ContentException::conflict(I18n::t('content.page_already_unpublished'));
         }
         $this->hooks->unpublishing($this->record($p, $t));
+        $previous = $this->liveAddress($t);
         $was = $this->history->pageState($p, $t);
         $t->status = PageTranslation::DRAFT;
         $t->publishedUrl = null;
         $this->history->page($p, $t, Revision::UNPUBLISH, $was);
         $this->em->flush();
-        $this->hooks->unpublished($this->record($p, $t));
-
-        return $this->flat($p, $t);
+        $this->hooks->unpublished($this->record($p, $t), ['liveVersions' => null !== $previous ? [$previous] : []]);
     }
 
-    /** Takes back unpublish(): the version is on the site again exactly as it was. */
+    /** A moved historical translation must not redirect a path routed to another version. */
+    private function mayRedirect(PageTranslation $moved, string $before): bool
+    {
+        if (Url::key($before) === Url::key((string) ($moved->published['url'] ?? ''))) {
+            return false;
+        }
+        if (!$this->locales->isMultilingual()) {
+            return true;
+        }
+        if (!$this->locales->serves($moved->locale, $before)) {
+            return false;
+        }
+        $key = Url::key($before);
+        $fallback = $moved->locale !== $this->mainLocale && \str_contains($key, '//')
+            ? \preg_replace('~/+~', '/', $key) : null;
+        $keys = null === $fallback ? [$key] : \array_values(\array_unique([$key, $fallback]));
+        foreach ($this->translations->findOtherLiveAtKeys($moved->locale, $keys, $moved->id) as $other) {
+            $path = (string) ($other->published['url'] ?? $other->publishedUrl);
+            if ($this->locales->serves($other->locale, $path)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * Capture the last live path and its SEO before a mutation: after hooks may run after the version or the whole page has been removed.
+     *
+     * @return array{locale: string, url: string, seo: array<string, mixed>}|null
+     */
+    private function liveAddress(PageTranslation $t): ?array
+    {
+        if (!$t->isLive()) {
+            return null;
+        }
+
+        return ['locale' => $t->locale, 'url' => (string) ($t->published['url'] ?? $t->publishedUrl), 'seo' => (array) ($t->published['seo'] ?? [])];
+    }
+
+    /**
+     * Takes back unpublish(): the version is on the site again exactly as it was.
+     *
+     * @return array<string, mixed>
+     */
     public function republish(string $id, ?string $locale = null): array
     {
         $locale ??= $this->mainLocale;
@@ -698,18 +984,26 @@ final class PageService
         if ($t->isLive() || null === $t->published) {
             throw ContentException::conflict(I18n::t('content.page_republished'));
         }
-        $url = Url::key((string) ($t->published['url'] ?? ''));
+        $address = (string) ($t->published['url'] ?? '');
+        $url = Url::key($address);
+        $this->assertPageTitle((string) ($t->published['title'] ?? ''));
+        $this->assertPageAddress($locale, $address);
         foreach ($this->translations->findForLocale($locale) as $other) {
             if ($other->id !== $t->id && $other->publishedUrl === $url) {
                 throw ContentException::conflict(I18n::t('content.page_url_taken_published'));
             }
         }
+        $live = clone $t;
+        $live->draft = $t->published;
+        $this->hooks->publishing($this->record($p, $live));
         $was = $this->history->pageState($p, $t);
         $t->status = PageTranslation::PUBLISHED;
         $t->publishedUrl = $url;
         $this->history->page($p, $t, Revision::PUBLISH, $was);
         $this->em->flush();
-        $this->hooks->published($this->record($p, $t)); // live again: the sitemap and llms.txt caches and the hooks of the site hear it as a publish
+        $live->status = PageTranslation::PUBLISHED;
+        $record = $this->record($p, $live); // hooks see the restored live snapshot, not unpublished edits
+        $this->hooks->published($record, ['liveVersions' => [$this->liveAddress($t)]] + $record->snapshot());
 
         return $this->flat($p, $t);
     }
@@ -720,6 +1014,8 @@ final class PageService
      * The flat page of one language version.
      *
      * @return array<string, mixed>
+     *
+     * @internal core implementation; excluded from the site API
      */
     public function flat(Page $p, PageTranslation $t): array
     {
@@ -745,7 +1041,11 @@ final class PageService
         ];
     }
 
-    /** What the editor sends back as `baseVersion`: it changes when the draft, the place of the page or its template change (not with publishing). */
+    /**
+     * What the editor sends back as `baseVersion`: it changes when the draft, the place of the page or its template change (not with publishing).
+     *
+     * @internal
+     */
     public function versionOf(Page $p, PageTranslation $t): string
     {
         return $this->versions->of(['draft' => $t->draft, 'parentId' => $p->parentId(), 'template' => $p->template]);
@@ -757,6 +1057,8 @@ final class PageService
      * @param array<string, mixed> $v draft or snapshot
      *
      * @return array<string, mixed>
+     *
+     * @internal core implementation; excluded from the site API
      */
     public function present(array $v): array
     {
@@ -773,13 +1075,18 @@ final class PageService
         return $v;
     }
 
-    /** @return array<string, mixed> the ROW of the list */
+    /**
+     * @return array<string, mixed> the ROW of the list
+     *
+     * @internal
+     */
     public function row(Page $p, string $locale): array
     {
         $t = $p->translation($locale);
         $src = $t ?? $p->translation($this->mainLocale) ?? ($p->translations->first() ?: null);
         $d = null !== $src ? $this->access->pageOutput($this->schema, $p->template, $this->present($src->draft), false) : ['title' => '', 'url' => '', 'seo' => ['title' => '', 'description' => ''], 'sections' => [], 'fields' => new \stdClass()];
-        $n = null !== $t ? $this->changeCount($t) : 0;
+        $summary = $this->summary($p);
+        $n = $summary[$locale]['changes'] ?? 0;
 
         return [
             'id' => $p->id,
@@ -802,11 +1109,15 @@ final class PageService
             'published' => null !== $t && $t->isLive(),
             'awaiting' => $t?->awaiting,
             'returned' => $t?->returned,
-            'locales' => $this->summary($p),
+            'locales' => $summary,
         ];
     }
 
-    /** @return array<string, array<string, mixed>|null> */
+    /**
+     * @return array<string, array<string, mixed>|null>
+     *
+     * @internal
+     */
     public function summary(Page $p): array
     {
         $out = [$this->mainLocale => null];
@@ -830,6 +1141,7 @@ final class PageService
         return $out;
     }
 
+    /** @internal Core implementation; excluded from the site API. */
     public function iso(\DateTimeImmutable $d): string
     {
         return $d->setTimezone(new \DateTimeZone('UTC'))->format('Y-m-d\TH:i:s.v\Z');
@@ -837,15 +1149,84 @@ final class PageService
 
     /* ---------- internals ---------- */
 
+    private function assertTranslationLocale(string $locale): void
+    {
+        if ('' === $locale) {
+            throw ContentException::invalid(I18n::t('content.locale_unknown', ['locale' => $locale]));
+        }
+        $this->locales->assertUsable($locale);
+    }
+
+    private function translationExists(string $locale): ContentException
+    {
+        return ContentException::conflict(I18n::t('content.translation_exists', ['language' => $this->locales->name($locale)]), ['code' => 'translation_exists', 'locale' => $locale]);
+    }
+
+    /** Refresh both the shared row and its collection after acquiring the resource lock and starting the transaction. */
+    private function reloadTranslations(string $id): Page
+    {
+        $p = $this->find($id);
+        $this->em->refresh($p, LockMode::PESSIMISTIC_WRITE);
+
+        return $this->pages->createQueryBuilder('p')->addSelect('t')->leftJoin('p.translations', 't')
+            ->where('p.id = :id')->setParameter('id', $id)->getQuery()->setHint(Query::HINT_REFRESH, true)->getSingleResult();
+    }
+
+    private function assertTranslationAddress(string $locale, string $url): void
+    {
+        if (null !== PageInputRules::addressProblem($url)) {
+            throw ContentException::invalid(I18n::t('content.translation_address_invalid'));
+        }
+        self::assertNotReserved($url);
+        $this->assertLocaleAddress($locale, $url);
+    }
+
+    private function translationAddress(string $locale, string $sourceLocale, string $sourceUrl): string
+    {
+        $sourceUrl = \trim($sourceUrl);
+        if (!Url::isLocalPath($sourceUrl) || false !== \strpbrk($sourceUrl, '?#\\')) {
+            throw ContentException::invalid(I18n::t('content.translation_address_invalid'));
+        }
+        $prefix = $this->locales->prefix($sourceLocale);
+        $sourceKey = Url::key($sourceUrl);
+        $prefixKey = Url::key($prefix);
+        $ownLegacyPrefix = !$this->locales->isConfigured() && '' !== $prefix && ($sourceKey === $prefixKey || \str_starts_with($sourceKey, $prefixKey . '/'));
+        if ($this->locales->fromPath($sourceUrl) !== $sourceLocale && !$ownLegacyPrefix) {
+            $prefix = '';
+        }
+        $path = '' !== $prefix ? \substr($sourceUrl, \strlen($prefix)) : $sourceUrl;
+        $path = '/' . \trim($path, '/');
+        $trailing = '/' !== $path && Url::hasTrailingSlash($sourceUrl) ? '/' : '';
+        $url = $this->locales->prefix($locale) . ('/' === $path ? '' : $path) . $trailing;
+        $url = '' === $url ? '/' : $url;
+        $candidate = $url;
+        for ($suffix = 2;; ++$suffix) {
+            $this->assertTranslationAddress($locale, $candidate);
+            $this->lockAddress($locale, $candidate);
+            if (!$this->urlTaken($locale, $candidate, null)) {
+                return $candidate;
+            }
+            if ('/' === $path) {
+                throw ContentException::conflict(I18n::t('content.page_url_exists'));
+            }
+            $candidate = \rtrim($url, '/') . '-' . $suffix . $trailing;
+        }
+    }
+
     private function requireDraftVersion(string $id, string $locale, string $expected, LockMode $lock = LockMode::NONE): void
     {
         $p = $this->find($id);
         $this->em->refresh($p, $lock);
         $t = $this->version($p, $locale);
         $this->em->refresh($t, $lock);
+        $this->assertDraftVersion($p, $t, $expected);
+    }
+
+    private function assertDraftVersion(Page $p, PageTranslation $t, string $expected): void
+    {
         $current = $this->versionOf($p, $t);
         if (!\hash_equals($current, $expected)) {
-            throw $this->versions->stale(Revision::PAGE, $id, $locale, $current);
+            throw $this->versions->stale(Revision::PAGE, $p->id, $t->locale, $current);
         }
     }
 
@@ -960,7 +1341,11 @@ final class PageService
         return (bool) $this->schema->template($p->template)?->isRoot();
     }
 
-    /** @return array<string, mixed> */
+    /**
+     * @param array<string, mixed> $draft
+     *
+     * @return array<string, mixed>
+     */
     private function snapshot(array $draft): array
     {
         return [
@@ -972,7 +1357,11 @@ final class PageService
         ];
     }
 
-    /** The pages table as the template guards read it: { id, parentId, template, title }. @return list<array<string, mixed>> */
+    /**
+     * The pages table as the template guards read it: { id, parentId, template, title }.
+     *
+     * @return list<array<string, mixed>>
+     */
     private function guardRows(): array
     {
         $out = [];
@@ -984,12 +1373,17 @@ final class PageService
         return $out;
     }
 
-    /** Addresses the core answers itself, before any page: a page there would never be shown. Address => what is there (for the message). */
-    private const RESERVED_URLS = [
+    /**
+     * Addresses handled by the core, mapped to their message keys.
+     *
+     * @internal
+     */
+    public const RESERVED_URLS = [
         '/mcp' => 'content.reserved_url_mcp',
         '/healthz' => 'content.reserved_url_healthz',
         '/robots.txt' => 'content.reserved_url_robots',
         '/llms.txt' => 'content.reserved_url_llms',
+        '/sitemap.xml' => 'content.reserved_url_sitemap',
     ];
 
     private static function assertNotReserved(string $url): void
@@ -1000,6 +1394,69 @@ final class PageService
         }
     }
 
+    /** @internal Shared address-shape error for transports that aggregate input problems before writing. */
+    public static function addressShapeProblem(string $url): ?string
+    {
+        return PageInputRules::addressProblem($url);
+    }
+
+    private function assertPageTitle(string $title): void
+    {
+        if (null !== ($problem = PageInputRules::titleProblem($title))) {
+            throw ContentException::invalid($problem);
+        }
+    }
+
+    /**
+     * @param array<string, mixed> $seo
+     *
+     * @return array<string, string>
+     */
+    private function normalizeSeo(array $seo): array
+    {
+        $out = ['title' => \trim((string) ($seo['title'] ?? '')), 'description' => \trim((string) ($seo['description'] ?? ''))];
+        foreach (['robots', 'canonical', 'ogImage'] as $key) {
+            if (\array_key_exists($key, $seo)) {
+                $out[$key] = \trim((string) $seo[$key]);
+            }
+        }
+
+        return $out;
+    }
+
+    private function assertPageAddress(string $locale, string $url): void
+    {
+        if (null !== ($problem = self::addressShapeProblem($url))) {
+            throw ContentException::invalid($problem);
+        }
+        self::assertNotReserved($url);
+        $this->assertLocaleAddress($locale, $url);
+    }
+
+    private function lockAddress(string $locale, string $url): void
+    {
+        $key = Url::key($url);
+        if ('' !== $key) {
+            $this->lock->inTransaction('page-url', $locale . ':' . $key);
+        }
+    }
+
+    /** i18n-dynamic: content.url_locale_prefix, content.url_other_locale_prefix (returned by ContentLocales::addressProblem). */
+    private function assertLocaleAddress(string $locale, string $url): void
+    {
+        $problem = $this->locales->addressProblem($locale, $url);
+        if (null === $problem) {
+            return;
+        }
+        $language = 'content.url_other_locale_prefix' === $problem ? $this->locales->fromPath($url) : $locale;
+
+        throw ContentException::invalid(I18n::t($problem, [
+            'url' => \trim($url),
+            'prefix' => $this->locales->prefix($language),
+            'language' => $this->locales->name($language),
+        ]));
+    }
+
     /** Is `url` already the address of another page version in `locale` (draft or live)? An empty address is never «taken». */
     private function urlTaken(string $locale, string $url, ?string $exceptPageId): bool
     {
@@ -1007,11 +1464,11 @@ final class PageService
         if ('' === $key) {
             return false;
         }
-        foreach ($this->translations->findForLocale($locale) as $t) {
-            if ($t->page->id === $exceptPageId) {
+        foreach ($this->translations->findAddresses($locale) as $address) {
+            if ($address['pageId'] === $exceptPageId) {
                 continue;
             }
-            if (Url::key((string) ($t->draft['url'] ?? '')) === $key || $t->publishedUrl === $key) {
+            if (Url::key($address['draftUrl']) === $key || $address['publishedUrl'] === $key) {
                 return true;
             }
         }
@@ -1032,13 +1489,35 @@ final class PageService
 
     /**
      * @param array<string, mixed> $data
+     * @param (callable(Page, string): void)|null $guard
      *
      * @return array<string, mixed> the flat page
      */
-    private function writeVersion(string $id, string $locale, array $data, bool $withSections, string $action = Revision::EDIT): array
+    private function writeVersion(string $id, string $locale, array $data, bool $withSections, string $action = Revision::EDIT, ?string $baseVersion = null, ?callable $guard = null): array
     {
-        $p = $this->find($id);
-        $t = $this->version($p, $locale);
+        return $this->lock->publish('page', $id, function () use ($id, $locale, $data, $withSections, $action, $baseVersion, $guard): array {
+            $p = $this->reloadTranslations($id);
+            $requestedTemplate = $this->templateForChange($p, $data);
+            if (null !== $guard) {
+                $guard($p, $requestedTemplate);
+            }
+            $t = $this->version($p, $locale);
+            if (null !== $baseVersion) {
+                $this->assertDraftVersion($p, $t, $baseVersion);
+            }
+
+            return $this->applyVersion($p, $t, $data, $withSections, $action, $guard);
+        });
+    }
+
+    /**
+     * @param array<string, mixed> $data
+     * @param (callable(Page, string): void)|null $guard
+     *
+     * @return array<string, mixed> the flat page
+     */
+    private function applyVersion(Page $p, PageTranslation $t, array $data, bool $withSections, string $action, ?callable $guard = null): array
+    {
         $was = $this->history->pageState($p, $t);
         $cur = $t->draft;
         $known = $this->schema->template($p->template);
@@ -1049,32 +1528,51 @@ final class PageService
             $data['sections'] = $this->guardSections($data['sections'], (array) ($cur['sections'] ?? []));
         }
         $data = $this->hooks->updating($this->record($p, $t), $data);
+        $nextTemplate = $this->templateForChange($p, $data);
+        if (null !== $guard) {
+            $guard($p, $nextTemplate);
+        }
 
-        // the home page keeps its address and its place at the top level
+        $currentAddress = (string) ($cur['url'] ?? '');
+        $nextAddress = \array_key_exists('url', $data) ? \trim((string) $data['url']) : $currentAddress;
         if ($this->isRoot($p)) {
-            if (isset($data['url']) && \trim((string) $data['url']) !== (string) ($cur['url'] ?? '')) {
+            $fixingLegacyAddress = '/' === $currentAddress && $t->locale !== $this->mainLocale
+                && $nextAddress === $this->locales->prefix($t->locale);
+            if ($nextAddress !== $currentAddress && !$fixingLegacyAddress) {
                 throw ContentException::invalid(I18n::t('content.page_home_url_locked'));
             }
             if (\array_key_exists('parentId', $data) && ($data['parentId'] ?: null) !== $p->parentId()) {
                 throw ContentException::invalid(I18n::t('content.page_home_top_level'));
             }
         }
+        // Existing secondary drafts may have a legacy prefix or no address yet; publishing still checks the full invariant.
+        if (!('' === $nextAddress && $t->locale !== $this->mainLocale) && null !== ($problem = self::addressShapeProblem($nextAddress))) {
+            throw ContentException::invalid($problem);
+        }
+        if ($nextAddress !== $currentAddress) {
+            if ('' !== $nextAddress) {
+                $this->assertPageAddress($t->locale, $nextAddress);
+            }
+            if (Url::key($nextAddress) !== Url::key($currentAddress)) {
+                $this->lockAddress($t->locale, $nextAddress);
+                if ($this->urlTaken($t->locale, $nextAddress, $p->id)) {
+                    throw ContentException::conflict(I18n::t('content.page_url_exists'));
+                }
+            }
+        }
 
         $templateWas = $p->template;
-        $tplChanged = $this->applySharedChange($p, $data);
+        $tplChanged = $this->applySharedChange($p, $data, $nextTemplate);
         $next = $t->draft;
         $tpl = $this->schema->template($p->template);
         if (\array_key_exists('title', $data)) {
             $next['title'] = \trim((string) $data['title']);
         }
         if (\array_key_exists('url', $data)) {
-            $next['url'] = \trim((string) $data['url']);
+            $next['url'] = $nextAddress;
         }
         if (\array_key_exists('seo', $data) && \is_array($data['seo'])) {
-            $next['seo'] = [
-                'title' => \trim((string) ($data['seo']['title'] ?? '')),
-                'description' => \trim((string) ($data['seo']['description'] ?? '')),
-            ];
+            $next['seo'] = $this->normalizeSeo($data['seo']);
         }
         if ($withSections && !$tplChanged && \array_key_exists('sections', $data) && \is_array($data['sections'])) {
             $next['sections'] = false === $tpl?->hasSections() ? [] : $this->normalizeSections($data['sections']);
@@ -1083,18 +1581,11 @@ final class PageService
             $next['fields'] = $this->values->normalize($tpl->fieldList(), $data['fields']) + (array) ($next['fields'] ?? []);
         }
         if (null !== $tpl) {
+            $next = $this->syncH1($tpl, $cur, $next);
             $this->raw->assertFields($tpl->fieldList(), (array) ($cur['fields'] ?? []), (array) ($next['fields'] ?? []));
         }
+        $this->assertPageTitle((string) ($next['title'] ?? ''));
         $this->raw->assertSections((array) ($cur['sections'] ?? []), (array) ($next['sections'] ?? []));
-        if (null !== $tpl) {
-            $next = $this->syncH1($tpl, $cur, $next);
-        }
-        if (Url::key((string) ($next['url'] ?? '')) !== Url::key((string) ($cur['url'] ?? ''))) {
-            self::assertNotReserved((string) $next['url']);
-            if ($this->urlTaken($locale, (string) $next['url'], $p->id)) {
-                throw ContentException::conflict(I18n::t('content.page_url_exists'));
-            }
-        }
         $t->draft = $next;
         $t->migrated = false;
         $t->updatedAt = new \DateTimeImmutable();
@@ -1108,15 +1599,27 @@ final class PageService
         return $this->flat($p, $t);
     }
 
+    /** @param array<string, mixed> $data */
+    private function templateForChange(Page $page, array $data): string
+    {
+        if (!\array_key_exists('template', $data)) {
+            return $page->template;
+        }
+        if (!\is_string($data['template'])) {
+            throw ContentException::invalid(I18n::t('content.page_template_unknown'));
+        }
+
+        return '' === $data['template'] ? $page->template : $data['template'];
+    }
+
     /**
      * The shared part of a change: the parent page and the template. Returns true when the template changed.
      *
      * @param array<string, mixed> $patch
      */
-    private function applySharedChange(Page $p, array $patch): bool
+    private function applySharedChange(Page $p, array $patch, string $nextTpl): bool
     {
         $nextParentId = \array_key_exists('parentId', $patch) ? ($patch['parentId'] ?: null) : $p->parentId();
-        $nextTpl = !empty($patch['template']) ? (string) $patch['template'] : $p->template;
         $moved = $nextParentId !== $p->parentId();
         $tplChanged = $nextTpl !== $p->template;
         if (!$moved && !$tplChanged) {
@@ -1134,13 +1637,13 @@ final class PageService
             if ($parent->id === $p->id) {
                 throw ContentException::invalid(I18n::t('content.page_own_parent'));
             }
-            for ($cur = $parent, $guard = 0; null !== $cur && $guard < 50; $cur = $cur->parent, ++$guard) {
-                if ($cur->id === $p->id) {
-                    throw ContentException::invalid(I18n::t('content.page_parent_is_descendant'));
-                }
-            }
         }
         $rows = $this->guardRows();
+        $current = [];
+        foreach ($rows as $row) {
+            $current[$row['id']] = [$row['parentId'], 0];
+        }
+        TreeMove::resolve($current, [$p->id => [$nextParentId, 0]]);
         $parentRow = null !== $parent ? ['id' => $parent->id, 'template' => $parent->template] : null;
         $me = ['id' => $p->id, 'parentId' => $nextParentId, 'template' => $p->template, 'title' => ''];
         $r = $tplChanged ? $this->placement->canChangeTemplate($me, $nextTpl, $rows) : $this->placement->canPlace($p->template, $parentRow, $rows, $p->id);
@@ -1207,6 +1710,9 @@ final class PageService
             }
             $next['fields'] = $f;
         }
+        if (($f[$k] ?? null) !== (($cur['fields'] ?? [])[$k] ?? null)) {
+            $next['fields'] = $this->values->normalize([$field], [$k => $f[$k] ?? '']) + $f;
+        }
 
         return $next;
     }
@@ -1221,6 +1727,8 @@ final class PageService
      * @param list<array<string, mixed>> $sections
      *
      * @return list<array<string, mixed>>
+     *
+     * @internal core implementation; excluded from the site API
      */
     public function normalizeSections(array $sections): array
     {
@@ -1253,6 +1761,8 @@ final class PageService
      * The first section a new page gets: the first «Первый экран» type, with the title as its headline.
      *
      * @return list<array<string, mixed>>
+     *
+     * @internal core implementation; excluded from the site API
      */
     public function defaultSections(string $title): array
     {

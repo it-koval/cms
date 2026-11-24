@@ -11,6 +11,7 @@ use Itk\Cms\Mail\MailComposer;
 use Itk\Cms\Mail\SiteMailer;
 use Itk\Cms\Notification\Notification;
 use Itk\Cms\Notification\NotificationChannelInterface;
+use Itk\Cms\Request\RequestQueue;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -18,6 +19,8 @@ use Psr\Log\LoggerInterface;
  * (the form's own list, else the list of «остальные формы»), put into the queue; the worker sends it through the mail server of «Настройки → Почта».
  * Nothing is sent while mail is not configured or no address is given. A letter that fails for good shows in the bell and on «Состояние сайта» (MailFailureListener).
  * Telegram is a separate channel and works as before. Other notifications do not go by e-mail.
+ *
+ * @internal
  */
 final class EmailChannel implements NotificationChannelInterface
 {
@@ -27,6 +30,7 @@ final class EmailChannel implements NotificationChannelInterface
         private readonly SiteMailer $mailer,
         private readonly MailComposer $composer,
         private readonly LoggerInterface $logger,
+        private readonly ?RequestQueue $queue = null,
     ) {
     }
 
@@ -58,7 +62,12 @@ final class EmailChannel implements NotificationChannelInterface
         }
         foreach ($to as $address) {
             try {
-                $this->mailer->queue($this->composer->newRequest($request, $address));
+                $mail = $this->composer->newRequest($request, $address);
+                if (null !== $this->queue) {
+                    $this->queue->enqueueMail($mail);
+                } else {
+                    $this->mailer->queue($mail);
+                }
             } catch (\Throwable $e) {
                 // the request is saved and Telegram goes its own way; the others on the list still get their letter
                 $this->logger->error('Could not queue the letter about request #{id}: {error}', ['id' => $id, 'error' => $e->getMessage()]);

@@ -12,6 +12,7 @@ use Itk\Cms\Entity\Role;
 use Itk\Cms\Entity\User;
 use Itk\Cms\Health\AppSecretHealthCheck;
 use Itk\Cms\Health\MessengerMonitor;
+use Itk\Cms\Health\TransportNames;
 use Itk\Cms\I18n\AdminLocale;
 use Itk\Cms\I18n\I18n;
 use Itk\Cms\Repository\PageRepository;
@@ -32,10 +33,14 @@ use Symfony\Contracts\Service\ServiceProviderInterface;
 /**
  * First-time setup (safe to run again): built-in roles, menu areas from the schema, default settings, the home page, the first administrator.
  * Run after doctrine:migrations:migrate.
+ *
+ * @internal
  */
 #[AsCommand(name: 'itk:install', description: 'ops.cmd_install_description')]
 final class InstallCommand extends Command
 {
+    private const MAX_PASSWORD_FILE_BYTES = 4096;
+
     public function __construct(
         private readonly RoleSeeder $roles,
         private readonly MenuService $menus,
@@ -59,7 +64,8 @@ final class InstallCommand extends Command
         $this
             ->addOption('email', null, InputOption::VALUE_REQUIRED, I18n::t('ops.install_email_option'))
             ->addOption('name', null, InputOption::VALUE_REQUIRED, I18n::t('ops.install_name_option'))
-            ->addOption('password', null, InputOption::VALUE_REQUIRED, I18n::t('ops.install_password_option'))
+            ->addOption('password', null, InputOption::VALUE_REQUIRED, I18n::t('ops.install_password_option', ['min' => UserManager::MIN_PASSWORD_LENGTH]))
+            ->addOption('password-file', null, InputOption::VALUE_REQUIRED, I18n::t('ops.install_password_file_option', ['min' => UserManager::MIN_PASSWORD_LENGTH]))
             ->addOption('site-name', null, InputOption::VALUE_REQUIRED, I18n::t('ops.install_site_name_option'))
             ->addOption('domain', null, InputOption::VALUE_REQUIRED, I18n::t('ops.install_domain_option'))
             ->addOption('no-home', null, InputOption::VALUE_NONE, I18n::t('ops.install_no_home_option'));
@@ -110,9 +116,20 @@ final class InstallCommand extends Command
 
             return Command::SUCCESS;
         }
-        $password = $input->getOption('password') ?: (\getenv('ITK_ADMIN_PASSWORD') ?: null);
+        $passwordFile = $input->getOption('password-file');
+        if (\is_string($passwordFile)) {
+            $raw = \is_file($passwordFile) ? @\file_get_contents($passwordFile, false, null, 0, self::MAX_PASSWORD_FILE_BYTES + 1) : false;
+            $password = false === $raw ? '' : \rtrim($raw, "\r\n");
+            if (false === $raw || \strlen($raw) > self::MAX_PASSWORD_FILE_BYTES || '' === $password) {
+                $io->error(I18n::t('ops.install_password_file_invalid'));
+
+                return Command::FAILURE;
+            }
+        } else {
+            $password = $input->getOption('password') ?: (\getenv('ITK_ADMIN_PASSWORD') ?: null);
+        }
         if (!$password && $input->isInteractive()) {
-            $q = (new Question(I18n::t('ops.install_password_question')))->setHidden(true)->setHiddenFallback(false);
+            $q = (new Question(I18n::t('ops.install_password_question', ['min' => UserManager::MIN_PASSWORD_LENGTH])))->setHidden(true)->setHiddenFallback(false);
             $password = $io->askQuestion($q);
         }
         if (!$password) {
@@ -137,10 +154,7 @@ final class InstallCommand extends Command
     private function setupTransports(SymfonyStyle $io): void
     {
         $done = 0;
-        foreach (\array_keys($this->transports->getProvidedServices()) as $name) {
-            if (\str_contains((string) $name, '.')) { // the locator knows each transport twice: by its name and by its service id
-                continue;
-            }
+        foreach (TransportNames::of($this->transports) as $name) {
             try {
                 $transport = $this->transports->get((string) $name);
                 if ($transport instanceof SetupableTransportInterface) {

@@ -1,14 +1,14 @@
 <script setup>
 // Route /collections/:col/:id — one record of a collection (product, athlete, article, review, partner) as a form.
 // Left: tabs «Содержимое» / «Для поисковиков» (SchemaForm; articles use the RichText body). Right: how the record looks on the site, live.
-// Edits autosave to the draft (api.collections.update); «Опубликовать» lists the changes first; the AI agent's suggestions sit above the form.
+// Edits autosave to the draft (api.collections.update); «Опубликовать» lists the changes first.
 // Every save names the version of the record it found (baseVersion); a record changed meanwhile (an assistant, another person) stops the autosave and EditConflict asks: show the new version or keep my edits.
 // The view is NOT re-mounted when only :id changes: it watches route.params. The options matrix (record 'main') lives in the list route.
 // It works in the CONTENT LANGUAGE (app.locale, fixed per mount: the route is re-mounted when the language changes): the form edits that language's version of the
 // record. A record with no version in that language shows a message instead of the form (the screens for translations replace it by the «Версии ещё нет» state).
 // RIGHTS (area col:<key>): without «Править» the form is read-only (a calm line, inert form, no publish / revert / AI); without «Публиковать» the button is «Отправить на публикацию» (the version then wears «Ждёт публикации»
 // and shows up on «Сегодня» of those who may publish; they get «Вернуть автору» next to «Опубликовать»); without «Удалять» there is no delete.
-import { computed, nextTick, onMounted, ref, shallowRef, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 import { onBeforeRouteLeave, onBeforeRouteUpdate, useRoute, useRouter } from 'vue-router'
 import { api } from '@/api/index.js'
 import { app, can, refreshCounters, switchContentLocale, useLocaleGuard } from '@/stores/app.js'
@@ -27,7 +27,6 @@ import ActionDialog from '@/components/collections/actions/ActionDialog.vue'
 import { useActions } from '@/components/collections/actions/useActions.js'
 import Popover from '@/components/ui/Popover.vue'
 import HistoryDrawer from '@/components/history/HistoryDrawer.vue'
-import ProposalBlock from '@/components/collections/ProposalBlock.vue'
 import PublishPopover from '@/components/collections/PublishPopover.vue'
 import { isConflict, useDraftSave } from '@/components/collections/useDraftSave.js'
 import EditConflict from '@/components/ui/EditConflict.vue'
@@ -41,6 +40,7 @@ import { t } from '@/i18n/index.js'
 import { carryTab, takeTab } from '@/components/collections/lang.js'
 import { recordChanges } from '@/utils/changes.js'
 import { isMissing, reqMessage, validate, valuesEqual } from '@/utils/fields.js'
+import { previewField, resolvePreviewPath } from '@/components/editor/previewTarget.js'
 
 const route = useRoute()
 const router = useRouter()
@@ -66,12 +66,13 @@ const translated = ref(true) // false: the record has no version in the content 
 const summary = ref(null) // api `locales`: { [code]: { status, changed, changes, title, updatedAt } | null } for the language select
 const langSel = ref(null)
 const startBusy = ref('') // 'copy' | 'blank' while a translation is being made
-const proposals = ref([])
 const tab = ref('')
 const form = ref(null)
 const quiet = ref(false) // a new, never published record shows no red «required» errors until the first publish attempt
 let target = { col: '', id: '' } // the record on screen: the autosave always carries its own target
 let seq = 0
+let alive = true
+onBeforeUnmount(() => { alive = false; seq++ })
 
 // the saver hands over the version the server last named (baseVersion) and takes the new one from the answer; a refused save (the record was changed meanwhile) shows the banner that asks
 const saver = useDraftSave(async ({ col, id, data }, baseVersion) => {
@@ -94,16 +95,20 @@ async function settled() {
 }
 /** Leaving the record: the same, except that a failed save lets the person decide (the edits are lost with the screen). A conflict keeps them here, the banner asks. */
 async function mayLeave() {
+  // A successful form action may redirect while its own busy state is still set.
+  if (working.value || startBusy.value) return false
   if (await saver.flush()) return true
   if (saver.conflict.value) { toast.error(t('collections.iv_settle_first')); return false }
-  return confirm({
+  const discard = await confirm({
     title: t('settings.leave_title'), message: t('collections.leave_unsaved_text', { reason: saver.error.value || t('collections.error_word') }),
     confirmLabel: t('settings.leave_confirm'), cancelLabel: t('people.btn_stay'), danger: true,
   })
+  if (discard) saver.reset()
+  return discard
 }
 // leaving the record (another record, the list, another section) with edits that were not saved: the person stays or leaves knowingly (false = stay)
 onBeforeRouteLeave(mayLeave)
-onBeforeRouteUpdate(mayLeave)
+onBeforeRouteUpdate((to, from) => to.params.col === from.params.col && to.params.id === from.params.id ? true : mayLeave())
 /** «Показать новую версию»: the edits on screen are dropped, the record is loaded as it is now. */
 async function showNewVersion() {
   working.value = true
@@ -142,16 +147,17 @@ const runFormAction = async (a) => {
 
 /* ---------- loading ---------- */
 async function load({ silent = false, focus = false } = {}) {
+  if (!alive) return
   const c = cfg.value
   if (!c) return
-  if (c.view === 'matrix') { router.replace('/collections/' + c.key); return }
+  if (c.view === 'matrix') { router.replace({ path: '/collections/' + c.key, query: route.query, hash: route.hash }); return }
   const { col, id } = route.params
   const my = ++seq
   target = { col, id }
   if (!silent) loading.value = true
   const saves = saver.saves()
   try {
-    const [res, props] = await Promise.all([api.collections.get(col, id, LOC), api.proposals.list({ locale: LOC }).catch(() => [])])
+    const res = await api.collections.get(col, id, LOC)
     if (my !== seq) return
     summary.value = res.locales
     translated.value = res.translated
@@ -159,7 +165,6 @@ async function load({ silent = false, focus = false } = {}) {
     saver.setVersion(res.item && res.item.version, saves)
     published.value = res.published
     if (!silent) quiet.value = !res.published
-    proposals.value = res.translated ? props.filter((p) => p.kind === 'collection' && p.collection === col && p.itemId === id) : []
     notFound.value = false
     failed.value = ''
   } catch (e) {
@@ -177,7 +182,7 @@ async function load({ silent = false, focus = false } = {}) {
 // a record just created in the list opens with ?new=1: the title is focused, the query is dropped
 function newFlag() {
   const on = !!route.query.new
-  if (on) router.replace({ path: route.path })
+  if (on) { const { new: _new, ...query } = route.query; router.replace({ path: route.path, query }) }
   return on
 }
 const carried = takeTab(route.params.col, route.params.id) // a language switch just re-mounted this screen: same tab, focus back on the language select
@@ -191,7 +196,7 @@ onMounted(async () => {
 watch(() => [route.params.col, route.params.id], async ([col, id], [oc, oi]) => {
   if (route.name !== 'collection-item' || (col === oc && id === oi)) return
   popOpen.value = false
-  await saver.flush() // the previous record is saved under its own target
+  // The route guard has already saved or explicitly discarded the previous record.
   saver.reset()
   tab.value = ''
   await load({ focus: newFlag() })
@@ -266,14 +271,13 @@ function revertAddr() {
   onEdit({ ...draft.value, [addrField.value.k]: published.value[addrField.value.k] })
   toast.show(t('collections.iv_change_undone'))
 }
-const itemProposals = computed(() => (canEdit.value && activeTab.value && activeTab.value.key === tabs.value[0].key ? proposals.value : []))
 const awaiting = computed(() => (draft.value && draft.value.awaiting) || null) // { by, at } while the version waits for somebody to publish it
 const returned = computed(() => (draft.value && draft.value.returned) || null) // { by, at } after a publisher sent it back to the author
 
 /* ---------- editing ---------- */
 function onEdit(next) {
   if (!canEdit.value) return
-  // while a write that ends in a reload is on its way (publish, submit, return, revert, accepting a proposal, deleting) the form stands still (inert): its answer reloads the record, and what was changed meanwhile would be lost. What still reaches here
+  // while a write that ends in a reload is on its way (publish, submit, return, revert, deleting) the form stands still (inert): its answer reloads the record, and what was changed meanwhile would be lost. What still reaches here
   // (the «Отменить» of a toast) is refused aloud: applying it over the reloaded record would be a guess at what the person wants published
   if (locked.value) { toast.error(t('collections.wait_busy')); return }
   draft.value = next
@@ -302,6 +306,15 @@ async function focusError(path) {
   }
   if (form.value) await form.value.focusField(path)
 }
+
+// A click in the real page preview arrives on this record in the same content language.
+watch([loading, () => route.query.field, () => route.query.rows], async ([busy, path, rows]) => {
+  if (busy || !draft.value || typeof path !== 'string' || !can(area.value, 'view') || !previewField(tabs.value.flatMap((tab) => tab.fields), path)) return
+  const currentPath = resolvePreviewPath(tabs.value.flatMap((tab) => tab.fields), draft.value, path, rows)
+  if (!currentPath) { toast.show(t('editor.preview_item_unavailable')); return }
+  await nextTick()
+  await focusError(currentPath)
+})
 
 /* ---------- publish / revert / delete ---------- */
 const pubBtn = ref(null)
@@ -416,8 +429,8 @@ async function doDelete() {
   if (!ok) return
   working.value = true
   try {
-    saver.reset() // nothing to save for a record that is going away
     await api.collections.remove(target.col, target.id)
+    saver.reset()
     refreshCounters()
     router.replace('/collections/' + cfg.value.key)
     toast.show(t('collections.deleted'))
@@ -445,7 +458,7 @@ async function onRestored() {
   refreshCounters()
 }
 /* ---------- other languages: make a version, remove a version ---------- */
-// from: the main language = copy every field, null = a blank start (title, address, switches, dates and photos stay). Either way a DRAFT: it is not on the site until published.
+// from: the main language = copy its fields, null = schema defaults. Either way a draft, visible only after publication.
 async function startTranslation(from) {
   if (startBusy.value) return
   startBusy.value = from ? 'copy' : 'blank'
@@ -462,6 +475,7 @@ async function startTranslation(from) {
   }
 }
 async function removeVersion() {
+  if (!canDelete.value || IS_MAIN || locked.value) return
   const ok = await confirm({
     title: cap(t('collections.iv_delete_version_title', { version: verAcc(LOC) })),
     message: t(cfg.value.pageKind ? 'collections.iv_delete_version_text_page' : 'collections.iv_delete_version_text', { title: title.value, site: siteIn(LOC) }),
@@ -471,8 +485,8 @@ async function removeVersion() {
   working.value = true
   try {
     popOpen.value = false
-    saver.reset() // nothing to save for a version that is going away
     await api.collections.removeTranslation(target.col, target.id, LOC)
+    saver.reset()
     await load({ silent: true })
     refreshCounters()
     toast.show(t('collections.iv_version_deleted', { version: up(verNom(LOC)) }))
@@ -486,43 +500,13 @@ async function removeVersion() {
 // Both ways go through the guard: the edits of this version are saved under their own language and the open tab is carried over to the new screen.
 useLocaleGuard(async () => {
   popOpen.value = false
-  if (!draft.value || !translated.value) return true
   if (!(await mayLeave())) return false
+  if (!draft.value || !translated.value) return true
   carryTab(target.col, target.id, activeTab.value && activeTab.value.key)
   return true
 })
 const pickLang = (code) => switchContentLocale(code)
 
-/* ---------- AI agent ---------- */
-const propBusy = ref('')
-async function acceptProposal(p) {
-  propBusy.value = p.id
-  working.value = true
-  try {
-    if (!(await settled())) return // our own edits first: the agent's value is applied on top of the saved draft
-    await api.proposals.accept(p.id)
-    await load({ silent: true })
-    refreshCounters()
-    toast.show(t('collections.iv_accepted'))
-  } catch (e) {
-    toast.error(e.message || t('collections.iv_accept_failed'))
-  } finally {
-    working.value = false
-    propBusy.value = ''
-  }
-}
-async function rejectProposal(p) {
-  propBusy.value = p.id
-  try {
-    await api.proposals.reject(p.id)
-    proposals.value = proposals.value.filter((x) => x.id !== p.id)
-    toast.show(t('collections.iv_rejected'))
-  } catch (e) {
-    toast.error(e.message || t('collections.iv_reject_failed'))
-  } finally {
-    propBusy.value = ''
-  }
-}
 </script>
 
 <template>
@@ -544,7 +528,7 @@ async function rejectProposal(p) {
         <div class="cl-h1">
           <h1 v-if="draft || summary">{{ headTitle }}</h1>
           <h1 v-else class="cl-h-sk">&nbsp;</h1>
-          <LanguageSelect v-if="MULTI && summary" ref="langSel" :model-value="LOC" :languages="app.languages.list" :statuses="states" :label="t('collections.iv_language')" @update:model-value="pickLang" />
+          <LanguageSelect v-if="MULTI && summary" ref="langSel" :model-value="LOC" :languages="app.languages.list" :statuses="states" :label="t('collections.iv_language')" :disabled="locked || !!startBusy" @update:model-value="pickLang" />
         </div>
       </div>
       <div v-if="!loading && !translated" class="actions"><StatusChip status="missing" :label="t('collections.state_missing')" /></div>
@@ -599,7 +583,6 @@ async function rejectProposal(p) {
             >{{ tb.label }}<span v-if="tabErrors[tb.key]" class="cl-dot" :title="t('collections.iv_tab_errors')" /></button>
           </div>
           <div id="cl-panel" :class="['cl-panel', { 'ro-zone': !canEdit }]" :inert="!canEdit || locked" role="tabpanel" :aria-labelledby="tabs.length > 1 ? 'cl-tab-' + activeTab.key : undefined">
-            <ProposalBlock :items="itemProposals" :fields="fields" :busy-id="propBusy" @accept="acceptProposal" @reject="rejectProposal" />
             <AddressField
               v-if="addrField" :key="'adr:' + activeTab.key" :field="addrField" :path="addrField.k" :model-value="draft[addrField.k]" top :changed="addrChanged" :error="addrError"
               :locale="LOC" :mode="addrField.k === 'slug' ? 'slug' : 'url'" @update:model-value="setAddr" @revert="revertAddr"

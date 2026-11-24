@@ -1,6 +1,6 @@
 <script setup>
 // Menus of the site: one section per MENU AREA (header, footers, legal links...; the areas come from the `areas` prop). An area is a place for a menu: it has a snippet that the developers insert into a site template
-// ({{ menu('footer_main') }}, with «Скопировать»), the list of templates it is inserted in («Пока нигде не вставлена» when none), and can be added, renamed and deleted (saved at once: structure, not content).
+// ({{ itk_menu('footer_main') }}, with «Скопировать»), the list of templates it is inserted in («Пока нигде не вставлена» when none), and can be added, renamed and deleted (saved at once: structure, not content).
 // The items of an area: each links to a page or an address; items can be moved up/down and nested one level (a nested item belongs to the item above it).
 // Edits a plain object; saving the ITEMS is the view's job. After an area changed the view gets `areas` (fresh list) so it can keep its saved / draft menus in step.
 // LANGUAGE: the menus belong to the content language app.locale. The page picker lists only the pages that have a version in that language
@@ -8,8 +8,8 @@
 // A language whose menu is still empty can take the items of the main language's menu (links are mapped to the translated pages).
 import { computed, onMounted, ref } from 'vue'
 import { api } from '@/api/index.js'
-import { app } from '@/stores/app.js'
-import { isMain, isMulti } from '@/utils/locales.js'
+import { app, can } from '@/stores/app.js'
+import { isMain, isMulti, prefix } from '@/utils/locales.js'
 import { useToast } from '@/components/ui/useToast.js'
 import Icon from '@/components/ui/Icon.vue'
 import StatusChip from '@/components/ui/StatusChip.vue'
@@ -38,14 +38,23 @@ const MAIN = app.languages.main
 
 const rows = ref([]) // pages of the site (flat rows of the content language)
 const ready = ref(false)
+const pagesFailed = ref(false)
 const mainMenus = ref(null) // the saved menus of the main language, for «Скопировать …» (only when another language is open)
 
-onMounted(async () => {
+async function loadPages() {
+  if (!can('pages')) return
+  pagesFailed.value = false
   try {
-    const [list, main] = await Promise.all([api.pages.list({ locale: LOC }), isMain(LOC) ? null : api.settings.getMenus(MAIN)])
-    rows.value = list
-    mainMenus.value = main
-  } catch (e) { /* the picker stays empty, the warnings stay off */ } finally { ready.value = true }
+    rows.value = await api.pages.list({ locale: LOC })
+    ready.value = true
+  } catch {
+    pagesFailed.value = true
+  }
+}
+
+onMounted(() => {
+  loadPages()
+  if (!isMain(LOC)) api.settings.getMenus(MAIN).then((menus) => { mainMenus.value = menus }).catch(() => {})
 })
 
 const pages = computed(() => rows.value.filter((p) => p.translated).map((p) => ({ value: p.url, label: p.title, draft: p.status !== 'published' })))
@@ -84,7 +93,7 @@ function remove(key, id) {
 }
 // a new item leads to the home page OF THIS LANGUAGE (the main language's home is '/', the English one '/en'), else to the first page there is
 function add(key) {
-  const home = pages.value.find((p) => p.value === '/' || p.value === '/' + LOC)
+  const home = pages.value.find((p) => p.value === prefix('/', LOC))
   setList(key, [...list(key), newMenuItem(home ? home.value : (pages.value[0] || {}).value || '')])
 }
 
@@ -129,7 +138,10 @@ async function copySnippet(a) {
 const usedText = (a) => (a.usedInAll ? t('settings.area_used_all') : t('settings.area_used_some', { templates: a.usedIn.map((tpl) => tpl.name).join(', ') }))
 
 /* ---- «Скопировать из меню на русском» ---- */
-const canCopy = (key) => !isMain(LOC) && !list(key).length && ((mainMenus.value || {})[key] || []).length > 0
+const sourceItems = (key) => mainMenus.value?.[key] || []
+const pointsToPage = (item) => item.link?.kind === 'page'
+const needsPageMap = (key) => sourceItems(key).some((item) => pointsToPage(item) || item.children?.some(pointsToPage))
+const canCopy = (key) => !isMain(LOC) && !list(key).length && sourceItems(key).length > 0 && (ready.value || !needsPageMap(key))
 // the page of this language that is the translation of the main language's page at `url` ('' when it has none yet)
 function mapPage(url) {
   const r = rows.value.find((x) => x.locales && x.locales[MAIN] && x.locales[MAIN].url === url)
@@ -142,7 +154,8 @@ function copyItem(it) {
   return out
 }
 function copyFromMain(key) {
-  const items = (((mainMenus.value || {})[key]) || []).map(copyItem)
+  if (!canCopy(key)) return
+  const items = sourceItems(key).map(copyItem)
   setList(key, items)
   const gaps = items.reduce((n, it) => n + (it.link.kind === 'page' && !it.link.page ? 1 : 0) + (it.children || []).filter((c) => c.link.kind === 'page' && !c.link.page).length, 0)
   toast.show(gaps ? t('settings.menu_copied_gaps', { count: gaps }) : t('settings.menu_copied'))
@@ -154,6 +167,10 @@ function copyFromMain(key) {
     <div class="ar-intro">
       <p>{{ t('settings.menus_intro') }}</p>
       <button type="button" class="btn" @click="openDialog()"><Icon name="plus" size="s16" />{{ t('settings.menus_add_area') }}</button>
+    </div>
+    <div v-if="pagesFailed" class="alert err-a mn-page-load" role="alert">
+      <span>{{ t('settings.menu_pages_load_failed') }}</span>
+      <button type="button" class="btn sm" @click="loadPages">{{ t('settings.retry') }}</button>
     </div>
 
     <section v-for="a in areas" :key="a.key" class="sheet set-sec">
@@ -210,6 +227,7 @@ function copyFromMain(key) {
 .mn-add{margin:6px 0 10px}
 .mn-empty{display:flex;gap:8px;align-items:center;color:var(--ink-2);font-size:var(--t-sm);padding:10px 12px;border:1px dashed var(--ctl);border-radius:var(--r)}
 .mn-copy{margin-left:auto}
+.mn-page-load{margin-bottom:12px;flex-wrap:wrap}
 .mn-chg{display:inline-flex;align-items:center;gap:6px;font-size:var(--t-xs);font-weight:620;color:var(--accent-text-d)}
 .ar-intro{display:flex;align-items:center;gap:16px;margin-bottom:14px}
 .ar-intro p{flex:1;color:var(--ink-2);font-size:var(--t-sm);line-height:1.5;max-width:64ch}

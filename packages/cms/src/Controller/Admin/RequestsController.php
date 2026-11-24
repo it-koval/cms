@@ -14,9 +14,9 @@ use Symfony\Component\Routing\Attribute\Route;
 
 /**
  * Requests (заявки). Item: see RequestService::present() (id, dt, locale, form, place, phone, name, city, note, st 'delivered'|'failed', work 'new'|'progress'|'closed'|'spam', comment, log).
- *   GET requests?status=&form=&q=&period=&from=&to=&locale=   newest first. status: a work status or 'failed'. form: the form key or its title
+ *   GET requests?status=&form=&q=&period=&from=&to=&locale=&page=&perPage=   { items, total, page, perPage }. status: a work status or 'failed'. form: the form key or its title
  *   GET requests/counts { total, new, failed }     GET requests/forms ['Заявка на звонок', …]     GET requests/{id}
- *   PATCH requests/{id} { work?, comment? } item   POST requests/{id}/resend { channel? } item (delivery tried again right now: to the messenger 'telegram' | 'max' asked for, else to each one that failed). Item: channels [{channel, state 'pending'|'sent'|'failed', error}].
+ *   PATCH requests/{id} { work?, comment? } item   POST requests/{id}/resend { channel? } item (up to 20 formatted parts synchronously; longer deliveries return 202 + queuedChannels: to the messenger 'telegram' | 'max' asked for, else to each one that failed). Item: channels [{channel, state 'pending'|'sent'|'failed', error}].
  *
  * @internal
  */
@@ -42,12 +42,13 @@ final class RequestsController extends AbstractApiController
                 $form = $def->key();
             }
         }
-        $rows = $this->requests->search([
+        [$page, $perPage, $offset] = $this->listPage($request);
+        $rows = $this->requests->page([
             'status' => (string) $q->get('status', ''), 'form' => $form, 'q' => (string) $q->get('q', ''), 'period' => (string) $q->get('period', ''),
             'from' => (string) $q->get('from', ''), 'to' => (string) $q->get('to', ''), 'locale' => (string) $q->get('locale', ''),
-        ]);
+        ], $offset, $perPage, (string) $q->get('cursor', ''));
 
-        return $this->json(\array_map($this->requests->present(...), $rows));
+        return $this->json(['items' => \array_map($this->requests->present(...), $rows['items']), 'page' => $page, 'perPage' => $perPage] + $rows);
     }
 
     #[Route('/counts', name: 'counts', methods: ['GET'])]
@@ -90,6 +91,13 @@ final class RequestsController extends AbstractApiController
     {
         $this->access->require('requests', 'edit');
 
-        return $this->json($this->requests->card($this->requests->resend($id, $this->deliveryChannel($request))));
+        $result = $this->requests->resendResult($id, $this->deliveryChannel($request));
+
+        $body = $this->requests->card($result['request']) + ['outcomes' => $result['outcomes']];
+        if (502 === $result['status']) {
+            $body['error'] = (string) (\reset($result['outcomes'])['error'] ?? '');
+        }
+
+        return $this->json($body, $result['status']);
     }
 }

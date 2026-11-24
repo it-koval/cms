@@ -1,6 +1,6 @@
 {# Fallback layout of ITK CMS. A site normally has its own templates/layout.html.twig with the same blocks. #}
 <!doctype html>
-<html lang="{{ page.locale|default('ru') }}">
+<html lang="{{ page.html_lang|default(page.locale|default('ru')) }}">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -8,8 +8,8 @@
     <title>{% block title %}{{ seo.title }}{% endblock %}</title>
     {% if seo.description != '' %}<meta name="description" content="{{ seo.description }}">{% endif %}
     {% if seo.robots != '' %}<meta name="robots" content="{{ seo.robots }}">{% endif %}
-    {% if seo.canonical != '' %}<link rel="canonical" href="{{ seo.canonical }}">{% endif %}
-    {% if seo.ogImage != '' %}<meta property="og:image" content="{{ seo.ogImage }}">{% endif %}
+    {% if seo.canonical != '' %}<link rel="canonical" href="{{ seo.canonical }}">{% endif %}{% for alternate in seo.alternates %}<link rel="alternate" hreflang="{{ alternate.hreflang }}" href="{{ alternate.href }}">{% endfor %}
+    {% if seo.ogImage != '' %}<meta property="og:image" content="{{ seo.ogImage }}">{% endif %}{% if page.og_locale|default(null) %}<meta property="og:locale" content="{{ page.og_locale }}">{% endif %}
     {% block head %}{% endblock %}
 </head>
 <body>

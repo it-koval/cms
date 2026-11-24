@@ -13,6 +13,7 @@ use Itk\Cms\Field\FieldInterface;
 use Itk\Cms\Field\Headline;
 use Itk\Cms\Field\Image;
 use Itk\Cms\Field\Photos;
+use Itk\Cms\Field\PublicFieldInterface;
 use Itk\Cms\Field\Repeater;
 use Itk\Cms\Field\Select;
 use Itk\Cms\Field\Text;
@@ -28,7 +29,7 @@ use Itk\Cms\Schema\Schema;
  * What is never indexed, so that every chunk is public and no consumer needs to filter by viewer:
  *   the draft (only LiveSource::$published reaches here), hidden sections, section types the schema does not know (the renderer skips them),
  *   raw() fields (embed codes, scripts), Note, the variant() select, Number, Toggle, Date, DateTime, Link, Relation,
- *   and any field with canSee() (AbstractField::isPublic() false).
+ *   and fields without an explicit public-visibility contract or with isPublic() false.
  *
  * @internal
  */
@@ -44,6 +45,11 @@ final class Extractor
     public function extract(LiveSource $live): array
     {
         return SourceKind::Page === $live->source->kind ? $this->page($live) : $this->item($live);
+    }
+
+    public static function allowsField(?FieldInterface $field): bool
+    {
+        return $field instanceof PublicFieldInterface && $field->isPublic() && !$field->isNote() && !$field->isRaw();
     }
 
     /**
@@ -63,7 +69,9 @@ final class Extractor
             $live->source->title,
             'fields.',
             '' === $description ? [] : [$description],
-            '' === $description ? 'title' : 'seo.description',
+            '' === $description ? null : 'seo.description',
+            null,
+            true,
         );
         $hasNoHeadBlock = [] === $blocks || null !== $blocks[0]->sectionId;
         if ($hasNoHeadBlock) {
@@ -108,7 +116,7 @@ final class Extractor
      *
      * @return list<Block>
      */
-    private function fields(array $fields, array $values, ?string $sectionId, ?string $sectionType, ?string $heading, string $path, array $lead = [], ?string $leadField = null, ?string $skip = null): array
+    private function fields(array $fields, array $values, ?string $sectionId, ?string $sectionType, ?string $heading, string $path, array $lead = [], ?string $leadField = null, ?string $skip = null, bool $splitFields = false): array
     {
         $blocks = [];
         $plain = $lead;
@@ -129,6 +137,9 @@ final class Extractor
             $got = $this->contribution($f, $value);
             if (null === $got) {
                 continue;
+            }
+            if ($splitFields && null !== $plainField && $plainField !== $field) {
+                $flush();
             }
             if ('heading' === $got) {
                 $text = $this->html->oneLine($value);
@@ -195,7 +206,7 @@ final class Extractor
             }
         }
         foreach ($repeater->subFields() as $sub) {
-            if ($sub instanceof Text && $sub->isPublic() && \is_string($row[$sub->key()] ?? null) && '' !== \trim($row[$sub->key()])) {
+            if ($sub instanceof Text && self::allowsField($sub) && \is_string($row[$sub->key()] ?? null) && '' !== \trim($row[$sub->key()])) {
                 return [\trim($row[$sub->key()]), $sub->key()];
             }
         }
@@ -228,7 +239,7 @@ final class Extractor
      */
     private function contribution(FieldInterface $f, mixed $value): array|string|null
     {
-        if ($f->isNote() || $f->isRaw() || ($f instanceof AbstractField && !$f->isPublic())) {
+        if (!self::allowsField($f)) {
             return null;
         }
 
@@ -240,7 +251,18 @@ final class Extractor
             $f instanceof Image => self::line(\is_array($value) ? ($value['alt'] ?? null) : null),
             $f instanceof Photos => self::alts($value),
             $f instanceof Repeater => 'repeater',
-            default => null,
+            // Custom implementations opt into the public contract and one of the supported text formats.
+            // Core classes keep their explicit policy above (Date, for example, also has wire type "text").
+            default => $f instanceof AbstractField ? null : match ($f->type()) {
+                'text' => self::line($value),
+                'headline' => 'heading',
+                'textarea' => $f->isRich() ? 'runs' : self::line($value),
+                'select' => $this->choice($f, $value),
+                'image' => self::line(\is_array($value) ? ($value['alt'] ?? null) : null),
+                'photos' => self::alts($value),
+                'repeater' => 'repeater',
+                default => null,
+            },
         };
     }
 

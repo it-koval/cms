@@ -12,6 +12,7 @@ use Itk\Cms\CriticalCss\Model\GenerateCriticalCss;
 use Itk\Cms\CriticalCss\Model\When;
 use Itk\Cms\Entity\CriticalCss;
 use Itk\Cms\Entity\PageTranslation;
+use Itk\Cms\I18n\ContentLocales;
 use Itk\Cms\Rendering\PageValidators;
 use Psr\Cache\CacheItemPoolInterface;
 use Psr\Log\LoggerInterface;
@@ -37,6 +38,7 @@ final class CriticalCssService
         #[Autowire(service: 'cache.app')]
         private readonly CacheItemPoolInterface $asked,
         private readonly LoggerInterface $logger,
+        private readonly ?ContentLocales $contentLocales = null,
     ) {
     }
 
@@ -47,7 +49,7 @@ final class CriticalCssService
      */
     public function forLiveRender(PageTranslation $t): ?CriticalStyles
     {
-        if (!$this->stylesheets->enabled || !$t->isLive()) {
+        if (!$this->stylesheets->enabled || !$t->isLive() || !($this->contentLocales?->serves($t->locale, (string) ($t->published['url'] ?? $t->publishedUrl)) ?? true)) {
             return null;
         }
         try {
@@ -69,7 +71,7 @@ final class CriticalCssService
      */
     public function request(PageTranslation $t, When $when = When::Outdated): bool
     {
-        if (!$this->stylesheets->enabled || !$t->isLive()) {
+        if (!$this->stylesheets->enabled || !$t->isLive() || !($this->contentLocales?->serves($t->locale, (string) ($t->published['url'] ?? $t->publishedUrl)) ?? true)) {
             return false;
         }
         $wanted = $this->wanted($t);

@@ -26,6 +26,7 @@ use Symfony\Component\Routing\Attribute\Route;
  * The mail server (Настройки → Почта) is NOT here: it has its own calls with a password that never leaves (MailController).
  *   GET   settings         flat settings of the language, without the groups the person may not view and without the fields he may not see (canSee); the notification keys only for those who may see notifications (`tgFallback` / `maxFallback` = does the server have chats of its own, `tgReady` / `maxReady` = is the corresponding bot connected, `mailReady` = can the site send mail: all a yes / no)
  *   PATCH settings { key: value, … }   saved at once; returns the merged settings. 403 when the patch touches a group the person may not edit; a field he may not see or that is readonly() is ignored
+ *   GET and PATCH settings?scope=notifications select delivery settings even when the site defines a field with the same key.
  *   POST  settings/telegram-test { chatId? | form? | chat? }   sends a test message → { ok, chat, sent }.
  *   POST  settings/max-test { chatId? | form? | chat? }        the same to MAX → { ok, chat, sent }; 502 with the reason when MAX is not connected or refused.
  *
@@ -52,6 +53,13 @@ final class SettingsController extends AbstractApiController
     #[Route('', name: 'get', methods: ['GET'])]
     public function get(Request $request): JsonResponse
     {
+        if ('notifications' === $request->query->get('scope')) {
+            $this->access->require(self::NOTIFICATIONS, 'view');
+            $all = $this->settings->notificationSettings();
+            $this->telegramKeys($all, true);
+
+            return $this->json($all);
+        }
         $all = $this->visible($this->without($this->settings->all($this->locale($request)), ...$this->crawlerKeys()));
         $this->telegramKeys($all);
 
@@ -64,6 +72,13 @@ final class SettingsController extends AbstractApiController
         $body = $this->body($request);
         $locale = $this->locale($request, $body);
         $patch = $this->without($body, 'locale', ...$this->crawlerKeys());
+        if ('notifications' === $request->query->get('scope')) {
+            $this->access->require(self::NOTIFICATIONS, 'edit');
+            $merged = $this->settings->updateNotifications($patch, $locale);
+            $this->telegramKeys($merged, true);
+
+            return $this->json($merged);
+        }
         $owner = [];
         foreach ($this->schema->settingsGroups() as $g) {
             foreach ($g->fieldList() as $f) {
@@ -71,7 +86,7 @@ final class SettingsController extends AbstractApiController
             }
         }
         foreach (Schema::CORE_SETTING_KEYS as $k) {
-            $owner[$k] = self::NOTIFICATIONS;
+            $owner[$k] ??= self::NOTIFICATIONS;
         }
         $areas = [];
         foreach (\array_keys($patch) as $key) {
@@ -111,8 +126,14 @@ final class SettingsController extends AbstractApiController
     }
 
     /** @param array<string, mixed> $settings */
-    private function telegramKeys(array &$settings): void
+    private function telegramKeys(array &$settings, bool $notifications = false): void
     {
+        foreach (['tgRoutes', 'maxRoutes', 'mailRoutes'] as $key) {
+            if (\array_key_exists($key, $settings) && ($notifications || null === $this->schema->settingsField($key))) {
+                // PHP encodes [] and a route for the form key "0" as arrays; the API always exposes maps.
+                $settings[$key] = (object) $settings[$key];
+            }
+        }
         if ($this->access->can(self::NOTIFICATIONS, 'view')) {
             $settings['tgFallback'] = $this->settings->hasFallbackChat();
             $settings['tgReady'] = $this->telegram->isConnected();
@@ -120,7 +141,11 @@ final class SettingsController extends AbstractApiController
             $settings['maxReady'] = $this->max->isConnected();
             $settings['mailReady'] = $this->mailer->isConfigured();
         } else {
-            unset($settings['tgOn'], $settings['tgRoutes'], $settings['maxOn'], $settings['maxRoutes'], $settings['mailRoutes']);
+            foreach (Schema::CORE_SETTING_KEYS as $key) {
+                if (null === $this->schema->settingsField($key)) {
+                    unset($settings[$key]);
+                }
+            }
         }
     }
 

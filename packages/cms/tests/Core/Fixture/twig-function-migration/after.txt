@@ -1,0 +1,49 @@
+Outside Twig: menu() settings() {{- itk_menu('header') -}}.
+{{ itk_settings('site') }} {{ itk_listing(page) }} {{ itk_media_url(image) }}
+{{ itk_media_srcset(image) }} {{ itk_media_width(image) }} {{ itk_media_ratio(4, 3) }}
+{{ itk_page_url(page) }} {{ itk_render_sections(page) }}
+{% set value = itk_settings ('site') %}
+{% for i in 1..itk_settings('n') %}{{ i }}{% endfor %}
+{% for i in itk_settings('start')..itk_settings('end') %}{{ i }}{% endfor %}
+{{ [...itk_menu('a'), ...itk_settings('b')] }}
+{{ {a: {b: 1}}|merge({m: itk_menu('x')}) }}
+{{ {key: {foo: 1}}|merge({more: itk_menu('header')}) }}
+{{ {key: {foo: 1}}|merge({more: itk_menu('header'), text: "literal {{ menu() }}"}) }}
+{{ itk_menu('a') # note }} {{ itk_settings('b') }}
+{% set value = itk_menu('a') # settings('comment') %}{{ itk_settings('b') }}
+{{ itk_menu('a') # settings('comment')
+  ~ itk_settings('b') }}
+{{ itk_menu('a') # comment with { [ (
+  ~ itk_settings('b') }}
+{{ {a: {b: 1, c: {d: itk_menu('x')}}}, menu: itk_settings('site')} }}
+{{ itk_menu({items: [itk_settings('a'), {url: itk_page_url(page)}]}) }}
+{{ "plain menu() {{ settings() }} {% listing() %}" }}
+{{ 'plain menu() {{ settings() }} {% listing() %}' }}
+{{ "escaped \"menu()\" and \\ then #{itk_menu('header')}" }}
+{{ "#{itk_menu('header')} / #{itk_settings('site')}" }}
+{{ "#{itk_menu('header') ~ 'literal settings()'}" }}
+{{ "#{itk_menu('header') ~ "literal settings()"}" }}
+{{ "#{itk_menu({key: {foo: 1}, text: 'literal {{ settings() }}'})}" }}
+{{ "#{itk_menu('header') ~ "nested #{itk_settings('site')} literal menu()"}" }}
+{{ "escaped \#{menu('literal')} / #{itk_menu('real')}" }}
+{{ '#{menu("literal")}' }}
+{{ "#{foo.menu('method') ~ value|settings('filter') ~ itk_menu('direct')}" }}
+{{ foo.menu('method') }} {{ foo . settings('method') }}
+{{ value|media_url() }} {{ value | media_srcset(640) }}
+{{ value is menu() }} {{ value is not settings() }}
+{% macro menu(value) %}{{ itk_settings('site') }}{% endmacro %}
+{{ _self.menu('macro') }} {{ custom_menu() }} {{ itk_menu() }}
+{{ not itk_menu('direct') }} {{ is_menu() }}
+{# menu() {{ settings() }} #}
+{% verbatim %}{{ menu('raw') }} {% set x = settings('raw') %}{% endverbatim %}
+{%- verbatim -%}{{ menu('raw') }}{%- endverbatim -%}
+{{~ itk_menu('trim') ~}}
+{{ itk_menu('a') # literal }} {{ menu('comment') }}
+  ~ itk_settings('b') }}
+{% set value = itk_menu('a') # literal %}{{ settings('comment') }}
+  ~ itk_settings('b') %}
+{{ "#{itk_menu('a') # ignored } menu('comment')
+  ~ itk_settings('b')}" }}
+{{ itk_menu # comment
+  ('a') }}
+{% apply media_url() %}{{ itk_menu('a') }}{% endapply %}

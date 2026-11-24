@@ -12,6 +12,8 @@ use Symfony\Component\Uid\Uuid;
 /**
  * A link that lets a person set a password: «забыл пароль» (purpose reset), «пригласили» (invite). The link holds a random token; the database holds only its hash,
  * so a copy of the database cannot be used to take over an account. A token works once (`usedAt`) and until `expiresAt`.
+ *
+ * @internal
  */
 #[ORM\Entity(repositoryClass: PasswordResetRepository::class)]
 #[ORM\Table(name: 'itk_password_reset')]

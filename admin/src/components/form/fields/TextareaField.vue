@@ -3,7 +3,7 @@
 import { computed, inject, ref } from 'vue'
 import FieldShell from '../FieldShell.vue'
 import RichText from '../RichTextAsync.js'
-import { domId, fieldEmits, fieldProps } from '../fieldProps.js'
+import { domId, fieldAria, fieldEmits, fieldProps } from '../fieldProps.js'
 import { budgetLength } from '@/utils/fields.js'
 
 const props = defineProps(fieldProps)
@@ -16,8 +16,8 @@ defineExpose({ focus: () => rt.value && rt.value.focus() })
 </script>
 
 <template>
-  <FieldShell :label="field.label" :path="path" :for-id="field.rich ? '' : id" :label-id="id + '_l'" :help-id="id + '_h'" :help="field.help" :error="error" :changed="changed" :top="top" :budget="budget" @revert="emit('revert')">
-    <RichText v-if="field.rich" ref="rt" :model-value="modelValue ?? ''" :mode="field.article ? 'article' : 'rich'" :invalid="!!error" :aria-labelledby="id + '_l'" :aria-describedby="field.help ? id + '_h' : undefined" :min-height="(field.rows || 6) * 22" @update:model-value="emit('update:modelValue', $event)" />
-    <textarea v-else :id="id" :rows="field.rows || 3" :value="modelValue ?? ''" :aria-describedby="field.help ? id + '_h' : undefined" :aria-invalid="error ? 'true' : undefined" @input="emit('update:modelValue', $event.target.value)" />
+  <FieldShell :error-id="id + '_e'" :label="field.label" :path="path" :for-id="field.rich ? '' : id" :label-id="id + '_l'" :help-id="id + '_h'" :help="field.help" :error="error" :changed="changed" :top="top" :budget="budget" @revert="emit('revert')">
+    <RichText v-if="field.rich" ref="rt" :model-value="modelValue ?? ''" :mode="field.article ? 'article' : 'rich'" :invalid="!!error" :aria-labelledby="id + '_l'" v-bind="fieldAria(id, field.help, error)" :min-height="(field.rows || 6) * 22" @update:model-value="emit('update:modelValue', $event)" />
+    <textarea v-else :id="id" :rows="field.rows || 3" :value="modelValue ?? ''" v-bind="fieldAria(id, field.help, error)" @input="emit('update:modelValue', $event.target.value)" />
   </FieldShell>
 </template>

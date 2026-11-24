@@ -14,6 +14,8 @@ use Doctrine\ORM\Mapping as ORM;
  * Gone with its source by the foreign key (page version or item), whoever deletes it; its chunks go with it by theirs.
  * Whether it is still right is not stored: KnowledgeBase\Model\Freshness derives it from `basis` and the plan of the live source.
  * The CHECK constraint (exactly one of page_translation_id / item_id, matching kind) is in the migration only: DBAL does not compare checks.
+ *
+ * @internal
  */
 #[ORM\Entity]
 #[ORM\Table(name: 'itk_kb_document')]

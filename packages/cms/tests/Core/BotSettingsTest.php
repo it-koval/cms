@@ -36,7 +36,7 @@ final class BotSettingsTest extends TestCase
     public function tokensAreSealedSharedKeptOnEmptyAndRemovedExplicitly(): void
     {
         $this->settings->save(['telegram' => ['token' => self::TELEGRAM], 'max' => ['token' => self::MAX]]);
-        foreach (['telegramBot' => self::TELEGRAM, 'maxBot' => self::MAX] as $key => $token) {
+        foreach (['itk:telegramBot' => self::TELEGRAM, 'itk:maxBot' => self::MAX] as $key => $token) {
             self::assertSame('*', $this->rows[$key]->locale);
             self::assertStringStartsWith('v1.', $this->rows[$key]->value['token']);
             self::assertStringNotContainsString($token, (string) \json_encode($this->rows[$key]->value));
@@ -92,7 +92,7 @@ final class BotSettingsTest extends TestCase
     #[Test]
     public function unreadableSealedTokensCountAsAbsent(): void
     {
-        $this->rows['telegramBot'] = new Setting('telegramBot', '*', ['token' => (new SecretBox('old-secret'))->seal(self::TELEGRAM)]);
+        $this->rows['itk:telegramBot'] = new Setting('itk:telegramBot', '*', ['token' => (new SecretBox('old-secret'))->seal(self::TELEGRAM)]);
         self::assertNull($this->settings->token('telegram'));
         self::assertTrue($this->settings->unreadable('telegram'));
         self::assertFalse($this->settings->unreadable('max'));

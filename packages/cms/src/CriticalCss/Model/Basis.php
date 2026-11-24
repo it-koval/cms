@@ -12,6 +12,8 @@ use Itk\Cms\Support\Json;
  * (in production the templates only change with a deploy) and Stylesheets::stamp() (the configured stylesheets and the generator config).
  * Settings, menus and collections are left out on purpose: they rarely change which rules style the first screen, and with them in,
  * every settings edit would regenerate every page.
+ *
+ * @internal
  */
 final readonly class Basis
 {

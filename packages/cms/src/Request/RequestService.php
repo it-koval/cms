@@ -17,11 +17,16 @@ use Itk\Cms\Schema\Schema;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\Messenger\MessageBusInterface;
 
-/** Requests (заявки): accepting them from the site forms, the staff's work on them, delivery to the messengers (Telegram, MAX). */
+/**
+ * Requests (заявки): accepting them from the site forms, the staff's work on them, delivery to the messengers (Telegram, MAX).
+ *
+ * @internal
+ */
 final class RequestService
 {
-    /** A field without max() keeps this many characters and one more, the rest is dropped. */
+    /** The effective character limit for a field without max(). */
     public const MAX_LENGTH = 1000;
+    public const MAX_FIELDS = 1000;
 
     public function __construct(
         private readonly EntityManagerInterface $em,
@@ -32,12 +37,12 @@ final class RequestService
         private readonly MaxNotifier $max,
         private readonly RequestDeliverer $deliverer,
         private readonly NotifierInterface $notifier,
-        #[Autowire(service: 'messenger.bus.default')]
         private readonly MessageBusInterface $bus,
         #[Autowire(param: 'kernel.secret')]
         private readonly string $secret,
         #[Autowire(param: 'itk_cms.main_locale')]
         private readonly string $mainLocale,
+        private readonly ?RequestQueue $queue = null,
     ) {
     }
 
@@ -50,6 +55,7 @@ final class RequestService
     public function submit(string $form, array $input, array $meta = []): Request
     {
         $def = $this->schema->form($form) ?? throw ContentException::notFound(I18n::t('http.request_no_form'));
+        self::validateInput(\array_intersect_key($input, \array_fill_keys(\array_map(static fn (FieldInterface $field): string => $field->key(), $def->fieldList()), true)));
         if (!$this->settings->acceptsRequests()) {
             throw ContentException::forbidden(I18n::t('http.request_intake_off'));
         }
@@ -63,19 +69,21 @@ final class RequestService
                 $errors[$f->key()] = I18n::t('http.request_field_required', ['label' => $f->label()]);
                 continue;
             }
-            if (!$empty && \is_string($value)) {
-                if (null !== $f->maxLength() && \mb_strlen($value) > $f->maxLength()) {
-                    $errors[$f->key()] = I18n::t('http.request_field_too_long', ['label' => $f->label(), 'count' => $f->maxLength()]);
-                    continue;
-                }
-                if (null !== $f->regex() && !self::matches($f->regex(), $value)) {
-                    $errors[$f->key()] = $f->regexMessage();
-                    continue;
-                }
+            if ($empty) {
+                continue;
             }
-            if (!$empty) {
-                $data[$f->key()] = $value;
+            if (\is_string($value) && null === $f->maxLength() && \mb_strlen($value) > self::MAX_LENGTH) {
+                $errors[$f->key()] = I18n::t('http.request_field_too_long', ['label' => $f->label(), 'count' => self::MAX_LENGTH]);
+                continue;
             }
+            $problems = \Itk\Cms\Content\FieldValueRules::problems($f, $value, plainText: true);
+            if ([] !== $problems) {
+                $errors[$f->key()] = 'max' === $problems[0]['code']
+                    ? I18n::t('http.request_field_too_long', ['label' => $f->label(), 'count' => $f->maxLength()])
+                    : $problems[0]['message'];
+                continue;
+            }
+            $data[$f->key()] = $value;
         }
         if ([] !== $errors) {
             throw ContentException::invalid((string) \reset($errors), $errors);
@@ -89,19 +97,23 @@ final class RequestService
         $r->sourceUrl = isset($meta['url']) ? \mb_substr((string) $meta['url'], 0, 512) : null;
         $r->locale = $meta['locale'] ?? $this->mainLocale;
         $r->ipHash = !empty($meta['ip']) && '' !== \trim($this->secret) ? \hash_hmac('sha256', (string) $meta['ip'], $this->secret) : null; // no key, no hash: with an empty one every address could be guessed
-        $this->em->persist($r);
-        $this->em->flush();
+        $this->em->wrapInTransaction(function () use ($r): void {
+            $this->em->persist($r);
+            $this->em->flush();
 
-        // the bell of the admin and the messenger deliveries (TelegramChannel and MaxChannel queue them; a queue that is down marks the request «не доставлена» for that messenger)
-        $this->notifier->notify(Notification::translated(
-            type: Notification::REQUEST_NEW,
-            titleKey: 'i18n.notification_request_new',
-            titleParams: ['id' => $r->id],
-            body: $this->summary($r),
-            link: '/requests/' . $r->id,
-            audience: 'requests',
-            payload: ['requestId' => $r->id, 'form' => $r->form],
-        ));
+            // the bell of the admin and the messenger deliveries (TelegramChannel and MaxChannel queue them; a queue that is down marks the request «не доставлена» for that messenger)
+            $this->notifier->notify(Notification::translated(
+                type: Notification::REQUEST_NEW,
+                titleKey: 'i18n.notification_request_new',
+                titleParams: ['id' => $r->id],
+                body: $this->summary($r),
+                link: '/requests/' . $r->id,
+                audience: 'requests',
+                payload: ['requestId' => $r->id, 'form' => $r->form],
+            ));
+        });
+        // An ambient transaction defers publication to the worker; an owned transaction is already committed.
+        $this->queue?->recover(500, (int) $r->id);
 
         return $r;
     }
@@ -129,13 +141,33 @@ final class RequestService
      *
      * @return list<Request>
      */
-    public function search(array $filter = []): array
+    public function search(array $filter = [], ?int $limit = null): array
+    {
+        return $this->requests->search($this->searchFilter($filter), $limit);
+    }
+
+    /**
+     * @param array{status?: string, form?: string, q?: string, period?: string, from?: string, to?: string, locale?: string} $filter
+     *
+     * @return array{items: list<Request>, total: int, nextCursor: ?string, previousCursor: ?string}
+     */
+    public function page(array $filter, int $offset, int $limit, string $cursor = ''): array
+    {
+        return $this->requests->page($this->searchFilter($filter), $offset, $limit, $cursor);
+    }
+
+    /**
+     * @param array{status?: string, form?: string, q?: string, period?: string, from?: string, to?: string, locale?: string} $filter
+     *
+     * @return array{status?: string, form?: string, q?: string, period?: string, from?: string, to?: string, locale?: string}
+     */
+    private function searchFilter(array $filter): array
     {
         if (isset($filter['status'])) {
             $filter['status'] = $this->work((string) $filter['status']);
         }
 
-        return $this->requests->search($filter);
+        return $filter;
     }
 
     /** @return array{total: int, new: int, failed: int} */
@@ -173,7 +205,7 @@ final class RequestService
     }
 
     /**
-     * Sends the request again, right now (the admin shows the result): to the messenger asked for, else to every messenger that failed,
+     * Sends the request again (up to 20 parts now; longer messages are queued): to the messenger asked for, else to every messenger that failed,
      * else (none failed) to every messenger that is on.
      * A messenger asked for by name is sent «again» only after a failure. One that never got the request (the «Отправить в MAX» button)
      * gets a first send, with no «delivered again» line, and is skipped if a worker delivered it after the drawer was opened.
@@ -182,16 +214,45 @@ final class RequestService
      */
     public function resend(int|string $id, ?string $channel = null): Request
     {
+        return $this->resendResult($id, $channel)['request'];
+    }
+
+    /** @return array{request: Request, queuedChannels: list<string>, outcomes: array<string, array{state: string, error: ?string}>, status: int} */
+    public function resendResult(int|string $id, ?string $channel = null): array
+    {
         $r = $this->find($id);
         if (null !== $channel && !isset(Request::CHANNELS[$channel])) {
             throw ContentException::invalid(I18n::t('http.request_bad_channel'));
         }
+        $outcomes = [];
         foreach (null !== $channel ? [$channel] : $this->channelsToResend($r) as $one) {
-            $again = null === $channel || Request::DELIVERY_FAILED === $r->channelState($one);
-            $this->deliverer->deliver((int) $r->id, $one, $again);
+            $wasFailed = Request::DELIVERY_FAILED === $r->channelState($one);
+            $again = null === $channel || $wasFailed;
+            if ($this->deliverer->partCount($r, $one, $again) <= 20) {
+                $this->deliverer->deliverSynchronously((int) $r->id, $one, $again, static function (EntityManagerInterface $manager, string $job) use ($r, $one, $again): void {
+                    // A process dying after the committed reservation leaves a delayed, replayable intent.
+                    RequestQueue::stageJob($manager, new SendRequestNotification((int) $r->id, $again, $one, $job), 30);
+                }, onlyIfFailed: $wasFailed);
+            } else {
+                $entry = null;
+                $this->deliverer->reserveForDispatch((int) $r->id, $one, $again, static function (EntityManagerInterface $manager, string $job) use ($r, $one, $again, &$entry): void {
+                    $entry = RequestQueue::stageJob($manager, new SendRequestNotification((int) $r->id, $again, $one, $job));
+                }, onlyIfFailed: $wasFailed);
+                if (null !== $entry) {
+                    ($this->queue ?? new RequestQueue($this->em, $this->bus, new \Psr\Log\NullLogger()))->publish($entry);
+                }
+            }
+            $this->em->refresh($r);
+            $outcomes[$one] = ['state' => \in_array($one, $r->queuedChannels(), true) ? 'queued' : $r->channelState($one), 'error' => $r->channelError($one)];
+        }
+        if ($this->em->getConnection()->isTransactionActive()) {
+            $this->em->refresh($r); // delivery committed on its own connection
         }
 
-        return $r;
+        $selectedQueued = \in_array('queued', \array_column($outcomes, 'state'), true);
+        $status = $selectedQueued ? 202 : 200;
+
+        return ['request' => $r, 'queuedChannels' => $r->queuedChannels(), 'outcomes' => $outcomes, 'status' => $status];
     }
 
     /** @return list<string> */
@@ -217,18 +278,51 @@ final class RequestService
         return Request::CHANNEL_MAX === $channel ? $this->max->isActive() : $this->telegram->isActive();
     }
 
-    /** Queues every request whose delivery failed, to the messengers it failed for. @return int number of requests queued */
+    /** Queues every request whose delivery failed, to the messengers it failed for. @return int number of requests still waiting */
     public function requeueFailed(): int
     {
-        $n = 0;
+        return $this->requeueFailedResult()['queued'];
+    }
+
+    /**
+     * Queue counts requests; outcomes and skipped uncertain channels count channel deliveries. A synchronous bus can finish before publication returns.
+     *
+     * @return array{queued: int, sent: int, failed: int, pending: int, uncertain: int}
+     */
+    public function requeueFailedResult(): array
+    {
+        $result = ['queued' => 0, 'sent' => 0, 'failed' => 0, 'pending' => 0, 'uncertain' => 0];
         foreach ($this->requests->findBy(['delivery' => Request::DELIVERY_FAILED]) as $r) {
+            $waiting = false;
             foreach ($this->failedChannels($r) as $channel) {
-                $this->bus->dispatch(new SendRequestNotification((int) $r->id, true, $channel));
+                if ('uncertain' === $r->channelJobPhase($channel)) {
+                    ++$result['uncertain'];
+                    continue;
+                }
+                $entry = null;
+                $this->deliverer->reserveForDispatch((int) $r->id, $channel, true, static function (EntityManagerInterface $manager, string $job) use ($r, $channel, &$entry): void {
+                    $entry = RequestQueue::stageJob($manager, new SendRequestNotification((int) $r->id, true, $channel, $job));
+                }, onlyIfFailed: true);
+                if (null !== $entry) {
+                    ($this->queue ?? new RequestQueue($this->em, $this->bus, new \Psr\Log\NullLogger()))->publish($entry);
+                    $this->em->refresh($r);
+                    if (\in_array($channel, $r->queuedChannels(), true)) {
+                        $waiting = true;
+                    } else {
+                        $state = 'uncertain' === $r->channelJobPhase($channel) ? 'uncertain' : $r->channelState($channel);
+                        ++$result[$state];
+                    }
+                } else {
+                    $this->em->refresh($r);
+                    if ('uncertain' === $r->channelJobPhase($channel)) {
+                        ++$result['uncertain'];
+                    }
+                }
             }
-            ++$n;
+            $result['queued'] += (int) $waiting;
         }
 
-        return $n;
+        return $result;
     }
 
     /**
@@ -261,7 +355,7 @@ final class RequestService
         $out = [];
         foreach (Request::CHANNELS as $key => $name) {
             $notifier = Request::CHANNEL_MAX === $key ? $this->max : $this->telegram;
-            if (!isset($states[$key]) && $notifier->reaches($r->form)) {
+            if (Request::DELIVERY_PENDING === ($states[$key]['state'] ?? Request::DELIVERY_PENDING) && !\in_array($key, $r->queuedChannels(), true) && $notifier->reaches($r->form)) {
                 $out[] = $key;
             }
         }
@@ -313,6 +407,7 @@ final class RequestService
             'delivery' => $r->delivery,
             'deliveryError' => $r->deliveryError,
             'channels' => $this->channels($r),
+            'queuedChannels' => $r->queuedChannels(),
             'sendable' => $this->sendable($r),
             'work' => Request::WORK_IN_WORK === $r->work ? 'progress' : $r->work,
             'comment' => (string) $r->comment,
@@ -342,21 +437,24 @@ final class RequestService
         return null !== $column && \is_string($sent) && \str_starts_with($sent, $column) ? $sent : (string) $column;
     }
 
-    /** A long value can exhaust the small stack of the PCRE JIT, and a valid value would be refused: then the interpreter checks it. */
-    private static function matches(string $regex, string $value): bool
-    {
-        $found = \preg_match($regex, $value);
-        if (false === $found && \PREG_JIT_STACKLIMIT_ERROR === \preg_last_error()) {
-            $regex = \ltrim($regex);
-            $found = \preg_match($regex[0] . '(*NO_JIT)' . \substr($regex, 1), $value);
-        }
-
-        return 1 === $found;
-    }
-
     private function work(string $w): string
     {
         return 'progress' === $w ? Request::WORK_IN_WORK : $w;
+    }
+
+    /** JSON validates every member; ordinary POST and direct callers validate their declared form fields.
+     * @param array<string, mixed> $input
+     */
+    public static function validateInput(array $input): void
+    {
+        if (\count($input) > self::MAX_FIELDS) {
+            throw ContentException::invalid(I18n::t('http.request_bad_input'));
+        }
+        foreach ($input as $value) {
+            if (null !== $value && !\is_scalar($value)) {
+                throw ContentException::invalid(I18n::t('http.request_bad_input'));
+            }
+        }
     }
 
     private function clean(FieldInterface $f, mixed $raw): string|bool|null
@@ -368,9 +466,7 @@ final class RequestService
             return null;
         }
 
-        $limit = $f->maxLength() ?? self::MAX_LENGTH;
-
-        // one character over max() is enough for submit() to refuse the value; min(): max(PHP_INT_MAX) must not overflow
-        return PlainText::from((string) $raw, \min($limit, \PHP_INT_MAX - 1) + 1);
+        // Explicit max() is checked on the whole cleaned text; an accepted value is never silently shortened.
+        return PlainText::from((string) $raw, null === $f->maxLength() ? self::MAX_LENGTH + 1 : \PHP_INT_MAX);
     }
 }

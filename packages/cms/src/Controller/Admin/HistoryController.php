@@ -12,7 +12,8 @@ use Symfony\Component\Routing\Attribute\Route;
 
 /**
  * History of changes and the trash. Rights: `view` of the thing for reading, `edit` for returning (pages by template, `col:<key>`, `set:<group>`, `set:menus`). Locale: ?locale=ru.
- *   GET  history/{kind}/{id}?limit=&offset=     { items: [{ id, action, userName, title, summary, createdAt, updatedAt, baseline }], total, limit, offset, keep, days }
+ *   GET  history/{kind}/{id}?limit=&offset=&scope=all  { items: [{ id, locale, current, action, userName, title, summary, createdAt, updatedAt, baseline }], total, limit, offset, keep, days }
+ *                                               scope=all combines stored languages; without it, locale defaults to the main language
  *                                               kind: page | item | settings | menu (id of the page or record; key of the group or the menu)
  *   GET  history/revision/{id}                  one entry + `against` (what returning to it would change now), `current`, `inTrash`
  *   POST history/revision/{id}/restore          { ok, kind, id, key, locale, restored: 'version'|'trash' } — the draft becomes that version; a deletion brings the page or record back
@@ -50,6 +51,6 @@ final class HistoryController extends AbstractApiController
     #[Route('/{kind}/{id}', name: 'list', requirements: ['kind' => 'page|item|settings|menu', 'id' => '[^/]+'], methods: ['GET'])]
     public function list(Request $request, string $kind, string $id): JsonResponse
     {
-        return $this->json($this->history->entries($kind, $id, $this->locale($request), (int) $request->query->get('limit', 50), (int) $request->query->get('offset', 0)));
+        return $this->json($this->history->entries($kind, $id, $this->locale($request), (int) $request->query->get('limit', 50), (int) $request->query->get('offset', 0), 'all' === $request->query->get('scope')));
     }
 }

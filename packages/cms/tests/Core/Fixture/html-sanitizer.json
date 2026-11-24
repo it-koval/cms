@@ -1,0 +1,26 @@
+[
+  {
+    "name": "links",
+    "mode": "rich",
+    "input": "<p><a href=\"//cdn.example/offer\">relative host</a> <a href=\"/\\cdn.example/offer\">backslash host</a> <a href=\"/catalog?view=short&amp;page=2\">catalog</a> <a href=\"#hours\">hours</a> <a href=\"mailto:info@example.test\">email</a> <a href=\"tel:+123456\">phone</a> <a href=\"https://example.test\">site</a></p>",
+    "expected": "<p>relative host backslash host <a href=\"/catalog?view=short&amp;page=2\">catalog</a> <a href=\"#hours\">hours</a> <a href=\"mailto:info@example.test\">email</a> <a href=\"tel:+123456\">phone</a> <a href=\"https://example.test\" target=\"_blank\" rel=\"noopener noreferrer\">site</a></p>"
+  },
+  {
+    "name": "article images",
+    "mode": "article",
+    "input": "<img src=\"//cdn.example/picture.png\"><img src=\"/\\cdn.example/picture.png\"><img src=\"/assets/cover.png\" width=\"0300\" height=\"200\" data-align=\"CENTER\" alt=\" Cover \">",
+    "expected": "<img src=\"/assets/cover.png\" alt=\"Cover\" width=\"300\" height=\"200\" data-align=\"center\">"
+  },
+  {
+    "name": "article table",
+    "mode": "article",
+    "input": "<table><tr><th colspan=\"2\">Hours</th></tr><tr><td><b>Monday</b></td><td>9 to 5</td></tr></table>",
+    "expected": "<table><thead><tr><th colspan=\"2\">Hours</th></tr></thead><tbody><tr><td><strong>Monday</strong></td><td>9 to 5</td></tr></tbody></table>"
+  },
+  {
+    "name": "headline spacing",
+    "mode": "headline",
+    "input": "<div>Hello</div><p><strong>world</strong></p><br><br>",
+    "expected": "Hello<br>world<br>"
+  }
+]

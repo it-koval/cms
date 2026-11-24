@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Itk\Cms\Request;
 
+use Doctrine\DBAL\Connection;
 use Itk\Cms\Content\ContentException;
 use Itk\Cms\Content\HtmlSanitizer;
 use Itk\Cms\Content\SettingsService;
@@ -14,6 +15,8 @@ use Itk\Cms\Schema\Schema;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\Notifier\Bridge\Telegram\TelegramOptions;
+use Symfony\Component\Notifier\Exception\TransportException;
+use Symfony\Component\Notifier\Exception\TransportExceptionInterface;
 use Symfony\Component\Notifier\Message\ChatMessage;
 use Symfony\Component\Notifier\Transport\TransportInterface;
 use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
@@ -27,6 +30,8 @@ use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
  * Telegram is optional. A site without a transport, with a TELEGRAM_DSN nobody set, with null://null, with a DSN that cannot be built, or without a chat keeps its requests
  * in the admin: the delivery stays «pending» (the same neutral state as a switched-off Telegram), nothing is retried and nobody is told about a failure.
  * Only a message that a connected Telegram refused is a failure.
+ *
+ * @internal
  */
 final class TelegramNotifier implements ChannelNotifier
 {
@@ -46,7 +51,7 @@ final class TelegramNotifier implements ChannelNotifier
         $this->connection = $chatter instanceof TelegramConnection ? $chatter : new TelegramConnection($chatter, $logger);
     }
 
-    /** Is there a Telegram to send to: the Notifier is installed, a chatter transport is configured and can be built? */
+    /** Whether Telegram has a usable transport. The token saved in the admin takes priority over the site's chatter. */
     public function isConnected(): bool
     {
         return null !== $this->connection->transport();
@@ -88,7 +93,7 @@ final class TelegramNotifier implements ChannelNotifier
         return $this->record($r, $this->attempt($r, $resend));
     }
 
-    public function attempt(Request $r, bool $resend = false): ChannelOutcome
+    public function attempt(Request $r, bool $resend = false, ?DeliveryProgress $progress = null): ChannelOutcome
     {
         $chatter = $this->enabled && $this->settings->isTelegramOn() ? $this->connection->transport() : null;
         $chats = null === $chatter ? [] : $this->chatsFor($r->form);
@@ -96,46 +101,54 @@ final class TelegramNotifier implements ChannelNotifier
             return ChannelOutcome::pending();
         }
 
-        $parts = MessageParts::telegram($this->buildText($r, $resend));
+        $texts = $r->channelTexts(Request::CHANNEL_TELEGRAM);
+        $parts = null === $texts ? $this->parts($r, $resend) : MessageParts::restore($texts, Request::CHANNEL_TELEGRAM);
         $errors = [];
-        foreach ($chats as $chat) {
+        $uncertain = false;
+        $refused = false;
+        foreach (\array_unique($chats) as $chat) {
             foreach ($parts->texts as $i => $text) {
-                $parts->pauseBefore($i, $this->sleep);
                 try {
-                    $chatter->send((new ChatMessage($text))->options(
-                        (new TelegramOptions())->chatId($chat)->parseMode(TelegramOptions::PARSE_MODE_HTML)->disableWebPagePreview(true),
-                    ));
-                } catch (\Throwable $e) {
+                    DeliveryProgress::send($progress, $chat, $i, $text, fn () => $parts->pauseBefore($i, $this->sleep), static function () use ($chatter, $chat, $text): void {
+                        try {
+                            $chatter->send((new ChatMessage($text))->options(
+                                (new TelegramOptions())->chatId($chat)->parseMode(TelegramOptions::PARSE_MODE_HTML)->disableWebPagePreview(true),
+                            ));
+                        } catch (TransportException $failure) {
+                            if (TelegramTransportGuard::refused($failure)) {
+                                throw new DeliveryRefusedException($failure->getMessage());
+                            }
+                            throw new DeliveryUncertainException(I18n::t('http.request_delivery_uncertain'));
+                        } catch (TransportExceptionInterface|\Symfony\Contracts\HttpClient\Exception\ExceptionInterface) {
+                            throw new DeliveryUncertainException(I18n::t('http.request_delivery_uncertain'));
+                        }
+                    });
+                } catch (DeliveryRefusedException|DeliveryUncertainException $e) {
+                    $uncertain = $uncertain || $e instanceof DeliveryUncertainException;
+                    $refused = $refused || $e instanceof DeliveryRefusedException;
                     $error = $parts->failure($i, $this->connection->scrubError($e->getMessage()));
                     $errors[] = $chat . ': ' . $error;
                     $this->logger->error('Telegram delivery failed for request #{id}, chat {chat}: {error}', ['id' => $r->id, 'chat' => $chat, 'error' => $error]);
-                    break; // the rest would arrive out of order; a retry starts from the first
+                    break; // the rest of this chat's messages would arrive out of order
                 }
             }
         }
 
-        return [] !== $errors ? ChannelOutcome::failed(\implode("\n", $errors)) : ChannelOutcome::sent();
+        // An uncertain chat keeps its checkpoint and waits for an operator; other chats' definite refusals still need the queue retry.
+        return $uncertain && !$refused ? ChannelOutcome::uncertain(\implode("\n", $errors)) : ([] !== $errors ? ChannelOutcome::failed(\implode("\n", $errors)) : ChannelOutcome::sent());
+    }
+
+    /** @internal */
+    public function announce(RequestDelivery $event): void
+    {
+        $this->events->dispatch($event);
     }
 
     /** Writes the outcome of attempt() into the request and announces it. Returns true when it needs no retry. */
-    public function record(Request $r, ChannelOutcome $outcome): bool
+    /** @param (\Closure(\Closure(): void): void)|null $defer */
+    public function record(Request $r, ChannelOutcome $outcome, ?\Closure $defer = null, ?Connection $deliveryConnection = null): bool
     {
-        if ($outcome->isPending()) {
-            $wasFailed = Request::DELIVERY_FAILED === $r->channelState(Request::CHANNEL_TELEGRAM);
-            $r->markChannel(Request::CHANNEL_TELEGRAM, Request::DELIVERY_PENDING);
-            if ($wasFailed) {
-                $this->events->dispatch(new RequestDelivery($r, false, null, true));
-            }
-
-            return true;
-        }
-        if ($outcome->isFailed()) {
-            return $this->fail($r, (string) $outcome->error);
-        }
-        $r->markChannel(Request::CHANNEL_TELEGRAM, Request::DELIVERY_SENT);
-        $this->events->dispatch(new RequestDelivery($r, true));
-
-        return true;
+        return $outcome->record($r, Request::CHANNEL_TELEGRAM, $this->events, $defer, $deliveryConnection);
     }
 
     /**
@@ -166,11 +179,9 @@ final class TelegramNotifier implements ChannelNotifier
         return RequestText::build($this->schema, $r, $resend, HtmlSanitizer::escape(...));
     }
 
-    private function fail(Request $r, string $error): bool
+    /** The exact formatter used by delivery and by the synchronous resend limit. */
+    public function parts(Request $r, bool $resend = false): MessageParts
     {
-        $r->markChannel(Request::CHANNEL_TELEGRAM, Request::DELIVERY_FAILED, $error);
-        $this->events->dispatch(new RequestDelivery($r, false, $error));
-
-        return false;
+        return MessageParts::telegram($this->buildText($r, $resend));
     }
 }

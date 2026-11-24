@@ -14,5 +14,6 @@
 'i18n.notification_max_failed': 'Өтінім №{id} MAX-қа жетпеді'
 'i18n.notification_mail_failed_request': 'Өтінім №{id} туралы хат жетпеді'
 'i18n.notification_mail_failed': 'Хат жіберілмеді: {subject}'
+'i18n.notification_mail_failed_account': 'Құпиясөзді қалпына келтіру немесе шақыру хаты жеткізілмеді'
 'i18n.notification_mail_refused': 'Пошта сервері хатты қабылдамады'
 'i18n.plural_example': '{count} бет|{count} бет'

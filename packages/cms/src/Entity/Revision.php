@@ -18,6 +18,8 @@ use Itk\Cms\Repository\RevisionRepository;
  *           a deleted page { page: { id, parentId, position, template, createdAt }, versions: { locale: { draft, published, status, … } } }
  *           a deleted record { position, parentId, createdAt, translations: { locale: { draft, published, status, … } } }
  * summary:  the changes against the entry before: [{ kind, name?, label, val, old, key?, sec? }] (the format of ChangeDetector)
+ *
+ * @internal
  */
 #[ORM\Entity(repositoryClass: RevisionRepository::class)]
 #[ORM\Table(name: 'itk_revision')]
@@ -31,14 +33,17 @@ class Revision
     public const MENU = 'menu';
     public const KINDS = [self::PAGE, self::ITEM, self::SETTINGS, self::MENU];
 
+    public const NOTIFICATION_SETTINGS_KEY = 'itk:notifications';
+
     public const EDIT = 'edit';
     public const PUBLISH = 'publish';
     public const UNPUBLISH = 'unpublish';
     public const REVERT = 'revert';
     public const DELETE = 'delete';
+    public const DELETE_TRANSLATION = 'delete_locale';
     public const RESTORE = 'restore';
     public const CREATE = 'create';
-    public const ACTIONS = [self::EDIT, self::PUBLISH, self::UNPUBLISH, self::REVERT, self::DELETE, self::RESTORE, self::CREATE];
+    public const ACTIONS = [self::EDIT, self::PUBLISH, self::UNPUBLISH, self::REVERT, self::DELETE, self::DELETE_TRANSLATION, self::RESTORE, self::CREATE];
 
     #[ORM\Id]
     #[ORM\GeneratedValue]
@@ -63,7 +68,7 @@ class Revision
     #[ORM\Column(type: Types::STRING, length: 16)]
     public string $action;
 
-    /** Who did it; null for the system (console, import, queue). There is no foreign key: the history outlives the person. */
+    /** Who did it; null for the system (console, queue). There is no foreign key because the history outlives the person. */
     #[ORM\Column(name: 'user_id', type: Types::STRING, length: 36, nullable: true)]
     public ?string $userId = null;
 
@@ -110,5 +115,16 @@ class Revision
     public function isBaseline(): bool
     {
         return 'baseline' === ($this->summary[0]['kind'] ?? null);
+    }
+
+    public function settingsGroup(): string
+    {
+        return self::SETTINGS === $this->kind && self::NOTIFICATION_SETTINGS_KEY === $this->resourceKey ? 'notifications' : $this->resourceKey;
+    }
+
+    public function isLegacyNotificationSettings(): bool
+    {
+        // Before the namespace, site fields and system values could share the same snapshot key.
+        return self::SETTINGS === $this->kind && 'notifications' === $this->resourceKey;
     }
 }

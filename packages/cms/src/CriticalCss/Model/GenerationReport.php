@@ -4,7 +4,11 @@ declare(strict_types=1);
 
 namespace Itk\Cms\CriticalCss\Model;
 
-/** What one CriticalCssGenerator::generate() call did: the command prints it, the handler logs the failures. */
+/**
+ * What one CriticalCssGenerator::generate() call did: the command prints it, the handler logs the failures.
+ *
+ * @internal
+ */
 final readonly class GenerationReport
 {
     /**

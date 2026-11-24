@@ -18,6 +18,17 @@ final class SourceCssTest extends TestCase
     }
 
     #[Test]
+    public function cssStringsKeepCommentsBracesAndEscapes(): void
+    {
+        $rule = <<<'CSS'
+.first::before{content:"a\"/* text */{} url(keep.svg)";background:url("pic).svg")}
+CSS;
+        $read = self::reader(['/css/site.css' => '/* remove */' . $rule . '.empty{}.next{color:red}']);
+
+        self::assertSame(\str_replace('pic).svg', '/css/pic).svg', $rule) . '.next{color:red}', SourceCss::prepare(['/css/site.css'], $read));
+    }
+
+    #[Test]
     public function filesAreConcatenatedInConfigOrderAndAMissingOneIsNamed(): void
     {
         $read = self::reader(['/css/a.css' => 'a{x:1}', '/css/b.css' => 'b{y:2}']);

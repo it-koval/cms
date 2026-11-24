@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Itk\Cms\Notification;
 
+use Doctrine\DBAL\Connection;
 use Doctrine\ORM\EntityManagerInterface;
 use Itk\Cms\Entity\StoredNotification;
 use Itk\Cms\Entity\User;
@@ -13,6 +14,8 @@ use Itk\Cms\Security\Viewer;
 /**
  * The bell of the admin from the side of the reader: what a person sees (by the audience of each notification), what is unread, marking as read.
  * A person does not see what was sent before he joined. Writing is DatabaseChannel's job.
+ *
+ * @internal
  */
 final class NotificationInbox
 {
@@ -78,9 +81,9 @@ final class NotificationInbox
     }
 
     /** Takes back the notification of a matter that has been settled (a request delivered after a failure). Returns how many were removed. */
-    public function resolve(string $key): int
+    public function resolve(string $key, ?Connection $connection = null): int
     {
-        return (int) $this->em->createQuery('DELETE FROM Itk\Cms\Entity\StoredNotification n WHERE n.dedupeKey = :k')->setParameter('k', $key)->execute();
+        return (int) ($connection ?? $this->em->getConnection())->delete('itk_notification', ['dedupe_key' => $key]);
     }
 
     /** Deletes notifications older than the given number of days. Returns how many. */

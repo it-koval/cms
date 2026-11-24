@@ -21,7 +21,7 @@ use Symfony\Component\Routing\Attribute\Route;
  *   GET  health                          the report (see HealthService)
  *   POST health/messenger/{id}/retry     a failed message goes back to the queue it came from           { ok }
  *   POST health/messenger/{id}/delete    a failed message is dropped                                      { ok }
- *   POST health/requests/{id}/resend     a request that was not delivered is sent again now, to { channel? } or to each messenger that failed   { ok, delivery, error, channels }
+ *   POST health/requests/{id}/resend     a failed request is sent now (up to 20 parts) or queued (202 + queuedChannels), to { channel? } or to each messenger that failed   { ok, delivery, error, channels }
  *   POST health/updates/refresh          asks the update source again                                     { ok, updates }
  *   POST health/page-cache/clear         forgets every page kept by PageCache                             { ok }, or 500 { error } when the pool refused.
  *
@@ -70,7 +70,11 @@ final class HealthController extends AbstractApiController
     {
         $this->access->require('dev', 'edit');
 
-        return $this->json(['ok' => true] + $this->health->resendRequest($id, $this->deliveryChannel($request)));
+        $result = $this->health->resendRequest($id, $this->deliveryChannel($request));
+        $status = $result['httpStatus'];
+        unset($result['httpStatus']);
+
+        return $this->json(['ok' => 502 !== $status] + $result, $status);
     }
 
     #[Route('/updates/refresh', name: 'updates_refresh', methods: ['POST'])]

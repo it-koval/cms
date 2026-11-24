@@ -9,7 +9,11 @@ use Doctrine\ORM\Mapping as ORM;
 use Itk\Cms\Repository\MediaFolderRepository;
 use Symfony\Component\Uid\Uuid;
 
-/** A folder of the media library. Folders form a tree; a file lies in one folder or in none. */
+/**
+ * A folder of the media library. Folders form a tree; a file lies in one folder or in none.
+ *
+ * @internal
+ */
 #[ORM\Entity(repositoryClass: MediaFolderRepository::class)]
 #[ORM\Table(name: 'itk_media_folder')]
 #[ORM\Index(name: 'itk_media_folder_parent_idx', columns: ['parent_id'])]

@@ -4,12 +4,14 @@ declare(strict_types=1);
 
 namespace Itk\Cms\Request;
 
+use Doctrine\DBAL\Connection;
 use Itk\Cms\Content\ContentException;
 use Itk\Cms\Content\SettingsService;
 use Itk\Cms\Entity\Request;
 use Itk\Cms\Event\RequestDelivery;
 use Itk\Cms\I18n\I18n;
 use Itk\Cms\Request\Max\MaxApiSender;
+use Itk\Cms\Request\Max\MaxDeliveryException;
 use Itk\Cms\Request\Max\MaxSender;
 use Itk\Cms\Schema\Schema;
 use Psr\Log\LoggerInterface;
@@ -23,6 +25,8 @@ use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
  *
  * MAX is optional. A site without the MAX bundle or its token, with MAX switched off, or without a chat keeps the MAX delivery «pending»: nothing is retried and nobody is told about a failure.
  * Only a message that a connected MAX refused is a failure.
+ *
+ * @internal
  */
 final class MaxNotifier implements ChannelNotifier
 {
@@ -83,54 +87,54 @@ final class MaxNotifier implements ChannelNotifier
         return $this->record($r, $this->attempt($r, $resend));
     }
 
-    public function attempt(Request $r, bool $resend = false): ChannelOutcome
+    public function attempt(Request $r, bool $resend = false, ?DeliveryProgress $progress = null): ChannelOutcome
     {
         $chats = $this->chatsFor($r->form);
         if ([] === $chats) { // off, not connected, or no chat to send to (the health screen says which): not a failure
             return ChannelOutcome::pending();
         }
 
-        $parts = MessageParts::max($this->buildText($r, $resend));
+        $texts = $r->channelTexts(Request::CHANNEL_MAX);
+        $parts = null === $texts ? $this->parts($r, $resend) : MessageParts::restore($texts, Request::CHANNEL_MAX);
         $errors = [];
-        foreach ($chats as $chat) {
+        $uncertain = false;
+        $refused = false;
+        foreach (\array_unique($chats) as $chat) {
             foreach ($parts->texts as $i => $text) {
-                $parts->pauseBefore($i, $this->sleep);
                 try {
-                    $this->sender->send($chat, $text);
-                } catch (\Throwable $e) {
+                    DeliveryProgress::send($progress, $chat, $i, $text, fn () => $parts->pauseBefore($i, $this->sleep), function () use ($chat, $text): void {
+                        try {
+                            $this->sender->send($chat, $text);
+                        } catch (MaxDeliveryException $failure) {
+                            throw new DeliveryRefusedException($failure->getMessage());
+                        }
+                    });
+                } catch (DeliveryRefusedException|DeliveryUncertainException $e) {
+                    $uncertain = $uncertain || $e instanceof DeliveryUncertainException;
+                    $refused = $refused || $e instanceof DeliveryRefusedException;
                     $error = $parts->failure($i, $e->getMessage());
                     $errors[] = $chat . ': ' . $error;
                     $this->logger->error('MAX delivery failed for request #{id}, chat {chat}: {error}', ['id' => $r->id, 'chat' => $chat, 'error' => $error]);
-                    break; // the rest would arrive out of order; a retry starts from the first
+                    break; // the rest of this chat's messages would arrive out of order
                 }
             }
         }
 
-        return [] !== $errors ? ChannelOutcome::failed(\implode("\n", $errors)) : ChannelOutcome::sent();
+        // An uncertain chat keeps its checkpoint and waits for an operator; other chats' definite refusals still need the queue retry.
+        return $uncertain && !$refused ? ChannelOutcome::uncertain(\implode("\n", $errors)) : ([] !== $errors ? ChannelOutcome::failed(\implode("\n", $errors)) : ChannelOutcome::sent());
+    }
+
+    /** @internal */
+    public function announce(RequestDelivery $event): void
+    {
+        $this->events->dispatch($event);
     }
 
     /** Writes the outcome of attempt() into the request and announces it. Returns true when it needs no retry. */
-    public function record(Request $r, ChannelOutcome $outcome): bool
+    /** @param (\Closure(\Closure(): void): void)|null $defer */
+    public function record(Request $r, ChannelOutcome $outcome, ?\Closure $defer = null, ?Connection $deliveryConnection = null): bool
     {
-        if ($outcome->isPending()) {
-            $wasFailed = Request::DELIVERY_FAILED === $r->channelState(Request::CHANNEL_MAX);
-            $r->markChannel(Request::CHANNEL_MAX, Request::DELIVERY_PENDING);
-            if ($wasFailed) {
-                $this->events->dispatch(new RequestDelivery($r, false, null, true, Request::CHANNEL_MAX));
-            }
-
-            return true;
-        }
-        if ($outcome->isFailed()) {
-            $r->markChannel(Request::CHANNEL_MAX, Request::DELIVERY_FAILED, $outcome->error);
-            $this->events->dispatch(new RequestDelivery($r, false, $outcome->error, false, Request::CHANNEL_MAX));
-
-            return false;
-        }
-        $r->markChannel(Request::CHANNEL_MAX, Request::DELIVERY_SENT);
-        $this->events->dispatch(new RequestDelivery($r, true, null, false, Request::CHANNEL_MAX));
-
-        return true;
+        return $outcome->record($r, Request::CHANNEL_MAX, $this->events, $defer, $deliveryConnection);
     }
 
     /**
@@ -155,6 +159,12 @@ final class MaxNotifier implements ChannelNotifier
     public function buildText(Request $r, bool $resend = false): string
     {
         return RequestText::build($this->schema, $r, $resend, self::escape(...));
+    }
+
+    /** The exact formatter used by delivery and by the synchronous resend limit. */
+    public function parts(Request $r, bool $resend = false): MessageParts
+    {
+        return MessageParts::max($this->buildText($r, $resend));
     }
 
     /** MAX takes &, <, > and " as named entities; HtmlSanitizer::escape writes the apostrophe as a numeric entity, and MAX may show those as they are. */

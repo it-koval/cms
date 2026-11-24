@@ -17,6 +17,8 @@ use Itk\Cms\Security\TwoFactor\TwoFactorService;
  * Keys of AI assistants. A key is `itk_` + 43 signs of base64url (32 random bytes); only its sha256 is stored. The key works as long as it is not
  * revoked and not expired and its owner is not blocked. Blocking the owner stops every key at once (the keys stay in the list and work again if he is
  * unblocked); a new password of the owner does NOT stop them: revoke the keys for that. A key never has more rights than its owner has at the moment of the call.
+ *
+ * @internal
  */
 final class ApiTokenService
 {

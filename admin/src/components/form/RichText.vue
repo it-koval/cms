@@ -106,6 +106,7 @@ const editor = useEditor({
   editorProps: {
     attributes: {
       role: 'textbox',
+      ...(props.invalid ? { 'aria-invalid': 'true' } : {}),
       'aria-multiline': headline ? 'false' : 'true',
       ...(props.ariaLabel ? { 'aria-label': props.ariaLabel } : {}),
       ...(props.ariaLabelledby ? { 'aria-labelledby': props.ariaLabelledby } : {}),
@@ -128,7 +129,20 @@ const editor = useEditor({
   onBlur: () => emit('blur'),
 })
 
-// outside changes (revert, undo, proposals) -> editor
+// Validation can arrive after the editor mounted; update the actual focused textbox.
+watch(() => [props.invalid, props.ariaDescribedby, props.ariaLabel, props.ariaLabelledby], () => {
+  const ed = editor.value
+  if (!ed) return
+  ed.setOptions({ editorProps: { ...ed.options.editorProps, attributes: {
+    role: 'textbox', 'aria-multiline': headline ? 'false' : 'true', spellcheck: 'true',
+    ...(props.invalid ? { 'aria-invalid': 'true' } : {}),
+    ...(props.ariaDescribedby ? { 'aria-describedby': props.ariaDescribedby } : {}),
+    ...(props.ariaLabel ? { 'aria-label': props.ariaLabel } : {}),
+    ...(props.ariaLabelledby ? { 'aria-labelledby': props.ariaLabelledby } : {}),
+  } } })
+})
+
+// outside changes (revert, undo) -> editor
 watch(() => props.modelValue, (v) => {
   const ed = editor.value
   if (!ed) return
@@ -142,7 +156,7 @@ const empty = computed(() => (editor.value ? editor.value.isEmpty : !props.model
 /* ---- toolbar ---- */
 const on = (name) => !!editor.value && editor.value.isActive(name)
 
-/** «Градиент» with the caret inside a word and nothing selected: take the whole word (like the prototype). */
+/** Gradient with the caret inside a word and nothing selected: take the whole word. */
 function wordRange(ed) {
   const { $from, empty: caretOnly } = ed.state.selection
   if (!caretOnly) return null

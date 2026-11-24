@@ -22,6 +22,8 @@ use Symfony\Component\Console\Style\SymfonyStyle;
  * itk:knowledge-base:search "<query>" [--locale=ru] [--limit=8] [--template=x]… [--collection=y]…
  * Prints the hits of KnowledgeSearch::search() as a table: score, title, address (or collection and id), section, the first 120 characters.
  * For the developer: does the index answer what the site is about, before a site search or a chatbot is built on it.
+ *
+ * @internal
  */
 #[AsCommand(name: 'itk:knowledge-base:search', description: 'ops.cmd_knowledge_base_search_description')]
 final class KnowledgeBaseSearchCommand extends Command

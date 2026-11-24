@@ -37,6 +37,12 @@ final class MessageParts
     {
     }
 
+    /** @param non-empty-list<string> $texts exact persisted parts, without rendering or splitting again */
+    public static function restore(array $texts, string $channel): self
+    {
+        return new self($texts, 'max' === $channel ? \PHP_INT_MAX : self::BURST);
+    }
+
     public static function telegram(string $html): self
     {
         if (self::telegramTakesWhole($html)) {

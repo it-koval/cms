@@ -24,6 +24,7 @@ use Itk\Cms\Request\SendRequestNotificationHandler;
 use Itk\Cms\Security\RequestPasswordLink;
 use Itk\Cms\Security\RoleLabel;
 use Itk\Cms\Security\UserManager;
+use Itk\Cms\Tests\App\TestKernel;
 use Itk\Cms\Tests\Core\Fixture\MailSupport;
 use PHPUnit\Framework\Attributes\Test;
 use Psr\Log\NullLogger;
@@ -31,6 +32,7 @@ use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 use Symfony\Component\HttpKernel\Event\ResponseEvent;
 use Symfony\Component\HttpKernel\KernelEvents;
+use Symfony\Component\HttpKernel\KernelInterface;
 use Symfony\Component\Messenger\Envelope;
 use Symfony\Component\Messenger\Event\WorkerMessageFailedEvent;
 use Symfony\Component\Messenger\Event\WorkerMessageReceivedEvent;
@@ -49,6 +51,17 @@ final class I18nLocaleTest extends WebTestCase
     private string $csrf = '';
     /** The language of the moment the answer was made: nothing can be read about it after the request. */
     private ?string $spoke = null;
+
+    /** @param array<string, mixed> $options */
+    protected static function createKernel(array $options = []): KernelInterface
+    {
+        return new TestKernel($options['environment'] ?? 'test', $options['debug'] ?? true, framework: ['default_locale' => 'en']);
+    }
+
+    private function assertResponseLocale(string $expected): void
+    {
+        self::assertSame($expected, $this->spoke);
+    }
 
     protected function setUp(): void
     {
@@ -198,10 +211,10 @@ final class I18nLocaleTest extends WebTestCase
             $this->client->request('GET', $path);
             self::assertResponseIsSuccessful();
             self::assertStringContainsString('<html lang="ru">', (string) $this->client->getResponse()->getContent());
-            self::assertSame('ru', $this->spoke);
+            $this->assertResponseLocale('ru');
         }
         $this->api('GET', 'me', null, 401);
-        self::assertSame('ru', $this->spoke);
+        $this->assertResponseLocale('ru');
     }
 
     #[Test]
@@ -210,9 +223,9 @@ final class I18nLocaleTest extends WebTestCase
         $this->signIn($this->person(Role::EDITOR, 'kk'));
 
         $this->api('PUT', 'me/locale', ['locale' => 'en'], 403, false); // the CSRF check runs before any controller
-        self::assertSame('kk', $this->spoke);
+        $this->assertResponseLocale('kk');
         $this->api('GET', 'users', null, 403); // a right the person does not have
-        self::assertSame('kk', $this->spoke);
+        $this->assertResponseLocale('kk');
     }
 
     #[Test]
@@ -254,7 +267,7 @@ final class I18nLocaleTest extends WebTestCase
     {
         $this->signIn($this->person(Role::ADMIN, 'kk'));
         self::assertSame('kk', $this->spoke);
-        self::assertSame('ru', I18n::locale(), 'between requests: the language of the site, not the one of the last person');
+        self::assertSame('en', I18n::locale(), 'between requests: framework.default_locale of the application');
 
         $this->client->restart();
         $this->client->request('GET', '/admin/login');
@@ -328,8 +341,8 @@ final class I18nLocaleTest extends WebTestCase
     #[Test]
     public function outsideARequestTheLanguageIsTheOneOfTheSite(): void
     {
-        self::assertSame('ru', I18n::locale());
-        self::assertSame('Выберите язык из списка', I18n::t('i18n.locale_unknown_field'));
+        self::assertSame('en', I18n::locale());
+        self::assertSame('Choose a language from the list', I18n::t('i18n.locale_unknown_field'));
     }
 
     #[Test]
@@ -345,73 +358,38 @@ final class I18nLocaleTest extends WebTestCase
     #[Test]
     public function theLettersOfAWorkerGoInTheLanguageOfTheirPersonAndNothingStays(): void
     {
-        self::getContainer()->get(MailSettings::class)->save(['enabled' => true, 'host' => 'localhost', 'port' => 25, 'encryption' => 'none', 'username' => '', 'clearPassword' => true, 'fromAddress' => 'test-site@example.com', 'fromName' => 'Тест']);
+        self::getContainer()->get(MailSettings::class)->save(['enabled' => true, 'host' => '127.0.0.1', 'port' => 1, 'encryption' => 'none', 'username' => '', 'clearPassword' => true, 'fromAddress' => 'test-site@example.com', 'fromName' => 'Тест']);
         $kazakh = $this->person(Role::EDITOR, 'kk');
         $default = $this->person(Role::EDITOR);
         $english = $this->person(Role::EDITOR, 'en');
         $bus = self::getContainer()->get(MessageBusInterface::class);
         foreach ([$kazakh, $default, $english] as $user) {
-            $bus->dispatch(new RequestPasswordLink($user->email, 'https://site.test'));
+            $bus->dispatch(new RequestPasswordLink($user->email, 'https://site.test', trusted: true));
         }
 
         $transport = self::getContainer()->get('messenger.transport.async');
-        $languages = [];
         $events = self::getContainer()->get('event_dispatcher');
-        $listen = function (WorkerRunningEvent $event) use (&$languages): void {
-            $languages[] = \count($this->lettersIn()) >= 3 ? $event->getWorker()->stop() : null;
+        $worker = new Worker(['async' => $transport], $bus, $events);
+        $stopWhenIdle = static function (WorkerRunningEvent $event): void {
+            if ($event->isWorkerIdle()) {
+                $event->getWorker()->stop();
+            }
         };
-        $events->addListener(WorkerRunningEvent::class, $listen);
-        (new Worker(['async' => new class($transport) implements \Symfony\Component\Messenger\Transport\Receiver\ReceiverInterface {
-            /** @var array<string, true> */
-            private array $done = [];
+        $events->addListener(WorkerRunningEvent::class, $stopWhenIdle);
+        try {
+            $letters = $this->capturePasswordMail(static function () use ($worker): void {
+                $worker->run(['sleep' => 0]);
+            });
+        } finally {
+            $events->removeListener(WorkerRunningEvent::class, $stopWhenIdle);
+        }
 
-            public function __construct(private readonly \Symfony\Component\Messenger\Transport\InMemory\InMemoryTransport $transport)
-            {
-            }
-
-            public function get(): iterable
-            {
-                foreach ($this->transport->getSent() as $envelope) { // one by one and only the requests: the letters stay in the queue for the test to read
-                    $id = \spl_object_hash($envelope->getMessage());
-                    if ($envelope->getMessage() instanceof RequestPasswordLink && !isset($this->done[$id])) {
-                        $this->done[$id] = true;
-
-                        return [$envelope];
-                    }
-                }
-
-                return [];
-            }
-
-            public function ack(Envelope $envelope): void
-            {
-            }
-
-            public function reject(Envelope $envelope): void
-            {
-            }
-        }], $bus, $events))->run(['sleep' => 0]);
-        $events->removeListener(WorkerRunningEvent::class, $listen);
-
-        $letters = $this->lettersIn();
         self::assertCount(3, $letters);
         self::assertSame([$kazakh->email, $default->email, $english->email], \array_map(static fn (SendMail $m): string => $m->to, $letters));
         self::assertStringContainsString('<html lang="kk">', $letters[0]->html);
         self::assertStringContainsString('<html lang="ru">', $letters[1]->html);
         self::assertStringContainsString('<html lang="en">', $letters[2]->html);
-    }
-
-    /** @return list<SendMail> */
-    private function lettersIn(): array
-    {
-        $out = [];
-        foreach (self::getContainer()->get('messenger.transport.async')->getSent() as $envelope) {
-            if ($envelope->getMessage() instanceof SendMail) {
-                $out[] = $envelope->getMessage();
-            }
-        }
-
-        return $out;
+        self::assertSame('en', I18n::locale(), 'after the worker: framework.default_locale of the application');
     }
 
     #[Test]
@@ -422,7 +400,7 @@ final class I18nLocaleTest extends WebTestCase
 
         self::getContainer()->get('event_dispatcher')->dispatch(new WorkerMessageReceivedEvent(new Envelope(new \stdClass()), 'async'));
 
-        self::assertSame('ru', I18n::locale());
+        self::assertSame('en', I18n::locale());
     }
 
     #[Test]
@@ -430,14 +408,19 @@ final class I18nLocaleTest extends WebTestCase
     {
         $locale = self::getContainer()->get(AdminLocale::class);
         self::assertSame('kk', $locale->run('kk', static fn (): string => I18n::locale()));
-        self::assertSame('ru', I18n::locale());
+        $this->assertCurrentLocale('en');
         try {
             $locale->run('en', static function (): void {
                 throw new \RuntimeException('in the middle of a letter');
             });
         } catch (\RuntimeException) {
         }
-        self::assertSame('ru', I18n::locale());
+        $this->assertCurrentLocale('en');
+    }
+
+    private function assertCurrentLocale(string $expected): void
+    {
+        self::assertSame($expected, I18n::locale());
     }
 
     #[Test]
@@ -491,7 +474,7 @@ final class I18nLocaleTest extends WebTestCase
         $reader = $this->person(Role::EDITOR, 'kk');
         $stored = self::getContainer()->get(EntityManagerInterface::class)->getRepository(StoredNotification::class)->findOneBy(['type' => 'test.i18n']);
         self::assertInstanceOf(StoredNotification::class, $stored);
-        self::assertSame('Заявка №7 не дошла в Telegram', $stored->title, 'the fallback, in the language of the moment');
+        self::assertSame('Request #7 did not reach Telegram', $stored->title, 'the fallback, in the language of the moment');
         $reader->createdAt = new \DateTimeImmutable('-1 day');
         self::getContainer()->get(EntityManagerInterface::class)->flush();
 
@@ -509,7 +492,7 @@ final class I18nLocaleTest extends WebTestCase
         self::assertInstanceOf(StoredNotification::class, $stored);
         $stored->i18n = ['title' => ['key' => 'i18n.left_the_catalogues', 'params' => []]];
         self::getContainer()->get(EntityManagerInterface::class)->flush();
-        self::assertSame('Заявка №7 не дошла в Telegram', $byType($this->api('GET', 'notifications'))['test.i18n']['title']);
+        self::assertSame('Request #7 did not reach Telegram', $byType($this->api('GET', 'notifications'))['test.i18n']['title']);
     }
 
     #[Test]
@@ -526,10 +509,10 @@ final class I18nLocaleTest extends WebTestCase
 
         $rows = $em->getRepository(StoredNotification::class)->findBy(['type' => Notification::MAIL_FAILED], ['id' => 'DESC'], 2);
         [$second, $first] = $rows;
-        self::assertSame('Письмо не отправлено: Проверка', $first->title);
-        self::assertSame('Почтовый сервер не принял письмо', $first->body);
+        self::assertSame('Email not sent: Проверка', $first->title);
+        self::assertSame('The mail server did not accept the email', $first->body);
         self::assertSame('i18n.notification_mail_refused', $first->i18n['body']['key'] ?? null);
-        self::assertSame('Письмо о заявке №77 не дошло', $second->title);
+        self::assertSame('The email about request #77 was not delivered', $second->title);
         self::assertSame('550 refused', $second->body);
         self::assertArrayNotHasKey('body', $second->i18n ?? []);
         self::assertSame('The email about request #77 was not delivered', self::getContainer()->get(AdminLocale::class)->run('en', static fn (): mixed => NotificationInbox::present($second, false)['title']));

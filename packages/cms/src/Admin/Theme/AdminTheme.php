@@ -18,10 +18,12 @@ use Symfony\Component\DependencyInjection\Attribute\Autowire;
  * The theme becomes CSS variables (vars()): the shell page puts them into a <style> before the admin starts, so there is no flash of the old colours,
  * and the admin sets the same variables on the page after a save. The palette 50..950 and every derived colour are made here, in OKLCH (Palette).
  * The values that reach the CSS are only checked hex colours and whole numbers.
+ *
+ * @internal
  */
 final class AdminTheme
 {
-    public const KEY = 'adminTheme';
+    public const KEY = 'itk:adminTheme';
     public const DEFAULTS = ['brand' => '#0B5D80', 'accent' => '#C8217A', 'radius' => 6];
     public const MAX_RADIUS = 16;
     public const MAX_NAME = 40;
@@ -39,7 +41,11 @@ final class AdminTheme
     ) {
     }
 
-    /** What the developer set (or the built-in look): { brand, accent, radius }. @return array{brand: string, accent: string, radius: int} */
+    /**
+     * What the developer set (or the built-in look): { brand, accent, radius }.
+     *
+     * @return array{brand: string, accent: string, radius: int}
+     */
     public function defaults(): array
     {
         return [
@@ -70,7 +76,11 @@ final class AdminTheme
         return null !== $this->stored();
     }
 
-    /** The look in force: the override, field by field over the defaults. @return array{brand: string, accent: string, radius: int} */
+    /**
+     * The look in force: the override, field by field over the defaults.
+     *
+     * @return array{brand: string, accent: string, radius: int}
+     */
     public function effective(): array
     {
         $theme = $this->defaults();

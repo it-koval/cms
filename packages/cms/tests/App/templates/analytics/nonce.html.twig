@@ -1,0 +1,8 @@
+<!doctype html>
+<html>
+<head>
+    <title>Site nonce fixture</title>
+    {{ itk_stylesheets({nonce: app.request.attributes.get('csp_nonce')}) }}
+</head>
+<body><main>Site nonce fixture</main></body>
+</html>

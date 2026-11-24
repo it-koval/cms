@@ -17,6 +17,7 @@ use Itk\Cms\CriticalCss\Model\SourcePage;
 use Itk\Cms\CriticalCss\Model\When;
 use Itk\Cms\Entity\CriticalCss;
 use Itk\Cms\Entity\PageTranslation;
+use Itk\Cms\I18n\ContentLocales;
 use Itk\Cms\Rendering\PageRenderer;
 use Psr\Clock\ClockInterface;
 use Psr\Log\LoggerInterface;
@@ -38,6 +39,7 @@ final class CriticalCssGenerator
         private readonly CssExtractor $extractor,
         private readonly ClockInterface $clock,
         private readonly LoggerInterface $logger,
+        private readonly ?ContentLocales $contentLocales = null,
     ) {
     }
 
@@ -71,12 +73,18 @@ final class CriticalCssGenerator
 
         /** @var array<string, array{0: PageTranslation, 1: Basis, 2: string, 3: SourcePage}> $todo */
         $todo = [];
+        $translations = [];
         foreach ($ids as $id => $when) {
             $t = $this->em->find(PageTranslation::class, $id);
-            if (null === $t || !$t->isLive()) {
+            if (null === $t || !$t->isLive() || !($this->contentLocales?->serves($t->locale, (string) ($t->published['url'] ?? $t->publishedUrl)) ?? true)) {
                 ++$skipped;
                 continue;
             }
+            $translations[$id] = $t;
+        }
+        $this->renderer->prepareSources(\array_values($translations));
+        foreach ($translations as $id => $t) {
+            $when = $ids[$id];
             $basis = $this->critical->wanted($t);
             $row = $this->em->find(CriticalCss::class, $t->id);
             if (!$when->admits(Freshness::of($row, $basis))) {

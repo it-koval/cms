@@ -26,7 +26,11 @@ final readonly class PageCacheEntry
         return ['html' => $this->html, 'status' => $this->status, 'contentType' => $this->contentType, 'created' => $this->created];
     }
 
-    /** The pool may hold anything after an upgrade; a value of another shape is not an entry. @param array<mixed> $data */
+    /**
+     * The pool may hold anything after an upgrade; a value of another shape is not an entry.
+     *
+     * @param array<mixed> $data
+     */
     public static function fromArray(array $data): ?self
     {
         if (!\is_string($data['html'] ?? null) || !\is_int($data['status'] ?? null) || !\is_string($data['contentType'] ?? null) || !\is_int($data['created'] ?? null)) {

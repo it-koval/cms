@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Itk\Cms\Repository;
 
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
+use Doctrine\ORM\QueryBuilder;
 use Doctrine\Persistence\ManagerRegistry;
 use Itk\Cms\Entity\Revision;
 
@@ -21,11 +22,9 @@ class RevisionRepository extends ServiceEntityRepository
     }
 
     /** The newest entry of one version of an object. */
-    public function latest(string $kind, string $id, string $locale): ?Revision
+    public function latest(string $kind, string $id, string $locale, ?string $resourceKey = null): ?Revision
     {
-        return $this->createQueryBuilder('r')
-            ->where('r.kind = :k AND r.resourceId = :i AND r.locale = :l')
-            ->setParameter('k', $kind)->setParameter('i', $id)->setParameter('l', $locale)
+        return $this->forObject($kind, $id, $locale, $resourceKey)
             ->orderBy('r.id', 'DESC')->setMaxResults(1)->getQuery()->getOneOrNullResult();
     }
 
@@ -41,27 +40,52 @@ class RevisionRepository extends ServiceEntityRepository
     /** The entry right before `$r` (same object and language). */
     public function before(Revision $r): ?Revision
     {
-        return $this->createQueryBuilder('x')
-            ->where('x.kind = :k AND x.resourceId = :i AND x.locale = :l AND x.id < :id')
-            ->setParameter('k', $r->kind)->setParameter('i', $r->resourceId)->setParameter('l', $r->locale)->setParameter('id', $r->id)
-            ->orderBy('x.id', 'DESC')->setMaxResults(1)->getQuery()->getOneOrNullResult();
+        $key = Revision::SETTINGS === $r->kind && 'notifications' === $r->settingsGroup() ? $r->resourceKey : null;
+
+        return $this->forObject($r->kind, $r->resourceId, $r->locale, $key)
+            ->andWhere('r.id < :id')->setParameter('id', $r->id)
+            ->orderBy('r.id', 'DESC')->setMaxResults(1)->getQuery()->getOneOrNullResult();
     }
 
     /** @return list<Revision> newest first */
-    public function history(string $kind, string $id, string $locale, int $limit, int $offset = 0): array
+    public function history(string $kind, string $id, ?string $locale, int $limit, int $offset = 0, ?string $resourceKey = null): array
     {
-        return $this->createQueryBuilder('r')
-            ->where('r.kind = :k AND r.resourceId = :i AND r.locale = :l')
-            ->setParameter('k', $kind)->setParameter('i', $id)->setParameter('l', $locale)
+        return $this->forObject($kind, $id, $locale, $resourceKey)
             ->orderBy('r.id', 'DESC')->setFirstResult($offset)->setMaxResults($limit)->getQuery()->getResult();
     }
 
-    public function countOf(string $kind, string $id, string $locale): int
+    public function countOf(string $kind, string $id, ?string $locale, ?string $resourceKey = null): int
     {
-        return (int) $this->createQueryBuilder('r')->select('COUNT(r.id)')
-            ->where('r.kind = :k AND r.resourceId = :i AND r.locale = :l')
-            ->setParameter('k', $kind)->setParameter('i', $id)->setParameter('l', $locale)
-            ->getQuery()->getSingleScalarResult();
+        return (int) $this->forObject($kind, $id, $locale, $resourceKey)
+            ->select('COUNT(r.id)')->getQuery()->getSingleScalarResult();
+    }
+
+    /** @return array<string, int> The current revision id of each language, independent of the requested history page. */
+    public function latestIds(string $kind, string $id, ?string $resourceKey = null): array
+    {
+        $rows = $this->forObject($kind, $id, null, $resourceKey)->select('r.locale AS locale, MAX(r.id) AS id')
+            ->groupBy('r.locale')->getQuery()->getArrayResult();
+        $out = [];
+        foreach ($rows as $row) {
+            $out[(string) $row['locale']] = (int) $row['id'];
+        }
+
+        return $out;
+    }
+
+    private function forObject(string $kind, string $id, ?string $locale, ?string $resourceKey): QueryBuilder
+    {
+        $qb = $this->createQueryBuilder('r')
+            ->where('r.kind = :k AND r.resourceId = :i')
+            ->setParameter('k', $kind)->setParameter('i', $id);
+        if (null !== $locale) {
+            $qb->andWhere('r.locale = :l')->setParameter('l', $locale);
+        }
+        if (null !== $resourceKey) {
+            $qb->andWhere('r.resourceKey = :key')->setParameter('key', $resourceKey);
+        }
+
+        return $qb;
     }
 
     /** Is there anything recorded for the object, in any language? */

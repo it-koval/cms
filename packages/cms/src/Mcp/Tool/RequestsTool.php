@@ -21,6 +21,8 @@ use Itk\Cms\Request\RequestService;
  */
 abstract class RequestsTool extends AbstractMcpTool implements McpConditionalTool
 {
+    private const FULL_VALUE_MAX = 6000;
+
     public function __construct(protected readonly RequestService $requests)
     {
     }
@@ -47,10 +49,10 @@ abstract class RequestsTool extends AbstractMcpTool implements McpConditionalToo
     {
         $out = [
             'id' => $p['id'], 'receivedAt' => $p['dt'], 'form' => $p['form'], 'formTitle' => $p['place'], 'name' => Format::untrusted($p['name'], 120), 'phone' => Format::untrusted($p['phone'], 40), 'city' => Format::untrusted($p['city'], 120),
-            'status' => 'progress' === $p['work'] ? 'in_work' : $p['work'], 'delivered' => 'failed' !== $p['st'], 'message' => Format::untrusted($p['note'], $full ? 2000 : 200), 'comment' => Format::text($p['comment'], 500),
+            'status' => 'progress' === $p['work'] ? 'in_work' : $p['work'], 'delivered' => 'failed' !== $p['st'], 'message' => Format::untrusted($p['note'], $full ? self::FULL_VALUE_MAX : 200), 'comment' => Format::text($p['comment'], 500),
         ];
         if ($full) {
-            $out['data'] = Format::untrustedTree($p['data']);
+            $out['data'] = Format::untrustedTree($p['data'], self::FULL_VALUE_MAX);
             $out['sourceUrl'] = Format::untrusted($p['sourceUrl'], 300);
             $out['locale'] = $p['locale'];
         }

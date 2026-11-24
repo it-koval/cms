@@ -48,7 +48,7 @@ final class BotsControllerTest extends TestCase
         $this->role->builtin = true;
         $roles = $this->createStub(RoleRepository::class);
         $roles->method('find')->willReturnCallback(fn (): Role => $this->role);
-        $schema = new Schema('ru', [], [], [], ['top' => [], 'bottom' => []], [], [], [], [], []);
+        $schema = new Schema('ru', [], [], ['top' => [], 'bottom' => []], [], [], [], [], []);
         $security = $this->createStub(Security::class);
         $security->method('getUser')->willReturn(new User('bots@example.com', 'Bots', 'admin'));
         $access = new Access($security, new RoleResolver($schema, $roles));
@@ -60,7 +60,11 @@ final class BotsControllerTest extends TestCase
         $this->controller = new BotsController($bots, $telegram, $max, $access);
     }
 
-    /** @param array<string, mixed> $body @return array<string, mixed> */
+    /**
+     * @param array<string, mixed> $body
+     *
+     * @return array<string, mixed>
+     */
     private function save(array $body): array
     {
         $request = Request::create('/admin/api/settings/bots', 'PUT', server: ['CONTENT_TYPE' => 'application/json'], content: \json_encode($body));

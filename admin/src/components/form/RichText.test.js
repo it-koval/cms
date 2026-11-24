@@ -166,3 +166,22 @@ describe('RichText: Tiptap 3 document and editing contract', () => {
     expect(changes.mock.lastCall[0]).not.toContain('<table>')
   })
 })
+
+it('updates validation on the actual rich textbox while preserving content and caret focus', async () => {
+  const { props, box, editor, changes } = await mountEditor({ mode: 'rich', modelValue: '<p>Keep my words</p>', ariaDescribedby: 'hint' })
+  const textbox = box.querySelector('.tiptap')
+  textbox.focus()
+  props.invalid = true
+  props.ariaDescribedby = 'hint field-error'
+  await settle()
+  expect(textbox.getAttribute('aria-invalid')).toBe('true')
+  expect(textbox.getAttribute('aria-describedby')).toBe('hint field-error')
+  expect(document.activeElement).toBe(textbox)
+  props.invalid = false
+  props.ariaDescribedby = 'hint'
+  await settle()
+  expect(textbox.hasAttribute('aria-invalid')).toBe(false)
+  expect(textbox.getAttribute('aria-describedby')).toBe('hint')
+  expect(editor.getText()).toBe('Keep my words')
+  expect(changes).not.toHaveBeenCalled()
+})

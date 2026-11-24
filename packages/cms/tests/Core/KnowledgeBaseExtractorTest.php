@@ -33,7 +33,11 @@ final class KnowledgeBaseExtractorTest extends KernelTestCase
         return new LiveSource(new Source(SourceKind::Page, 'p1', 'ru', $template, (string) ($published['title'] ?? ''), '/p'), $published, 't1');
     }
 
-    /** @return list<array{0: ?string, 1: string, 2: ?string, 3: list<string>}> section id, field, heading, paragraphs */
+    /**
+     * @param array<array-key, mixed> $blocks
+     *
+     * @return list<array{0: ?string, 1: string, 2: ?string, 3: list<string>}> section id, field, heading, paragraphs
+     */
     private static function flat(array $blocks): array
     {
         return \array_map(static fn (Block $b): array => [$b->sectionId, $b->field, $b->heading, $b->paragraphs], $blocks);
@@ -101,5 +105,20 @@ final class KnowledgeBaseExtractorTest extends KernelTestCase
         $live = new LiveSource(new Source(SourceKind::Item, 'i1', 'ru', 'tours', 'Алматы', null), ['city' => 'Алматы', 'dateStart' => '2026-05-01', 'dateEnd' => '2026-05-09'], null);
 
         self::assertSame([], self::flat(self::extractor()->extract($live)), 'the title is the heading, dates give no text: nothing to embed');
+    }
+
+    #[Test]
+    public function templateFragmentsNameTheirActualFieldInsteadOfThePageTitle(): void
+    {
+        self::bootKernel();
+        self::getContainer()->get(Schema::class)->template('default')->fields(
+            \Itk\Cms\Field\Text::make('Вступление', 'intro'),
+            \Itk\Cms\Field\Text::make('Условия', 'terms'),
+        );
+        $blocks = self::extractor()->extract(self::page(['title' => 'Правила', 'fields' => ['intro' => 'Вступительный текст.', 'terms' => 'Условия возврата.']]));
+        self::assertSame([
+            [null, 'fields.intro', 'Правила', ['Вступительный текст.']],
+            [null, 'fields.terms', 'Правила', ['Условия возврата.']],
+        ], self::flat($blocks));
     }
 }

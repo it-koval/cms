@@ -1,0 +1,3 @@
+{% for alternate in itk_seo().alternates %}
+    <link rel="alternate" hreflang="{{ alternate.hreflang }}" href="{{ alternate.href }}">
+{% endfor %}

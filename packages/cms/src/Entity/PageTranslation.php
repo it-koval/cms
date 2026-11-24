@@ -14,6 +14,8 @@ use Symfony\Component\Uid\Uuid;
  *
  * draft / published: { title, url, seo: { title, description }, sections: [{ id, type, hidden, data }], fields: {} }
  * published is the snapshot of draft taken at publication; status 'published' means the snapshot is live on the site.
+ *
+ * @internal
  */
 #[ORM\Entity(repositoryClass: PageTranslationRepository::class)]
 #[ORM\Table(name: 'itk_page_translation')]

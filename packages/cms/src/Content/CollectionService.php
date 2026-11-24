@@ -10,11 +10,13 @@ use Itk\Cms\Entity\CollectionItem;
 use Itk\Cms\Entity\Revision;
 use Itk\Cms\Entity\User;
 use Itk\Cms\History\HistoryService;
+use Itk\Cms\I18n\ContentLocales;
 use Itk\Cms\I18n\I18n;
 use Itk\Cms\Repository\CollectionItemRepository;
 use Itk\Cms\Resource\HookDispatcher;
 use Itk\Cms\Resource\Record;
 use Itk\Cms\Schema\Collection;
+use Itk\Cms\Schema\Key;
 use Itk\Cms\Schema\Schema;
 use Itk\Cms\Support\Json;
 use Symfony\Bundle\SecurityBundle\Security;
@@ -28,6 +30,8 @@ use Symfony\Component\DependencyInjection\Attribute\Autowire;
  */
 final class CollectionService
 {
+    private readonly ContentLocales $locales;
+
     public function __construct(
         private readonly EntityManagerInterface $em,
         private readonly CollectionItemRepository $items,
@@ -43,7 +47,10 @@ final class CollectionService
         private readonly DraftVersion $versions,
         #[Autowire(param: 'itk_cms.main_locale')]
         private readonly string $mainLocale,
+        ?ContentLocales $locales = null,
+        private readonly ?ContentReader $reader = null,
     ) {
+        $this->locales = $locales ?? new ContentLocales($mainLocale);
     }
 
     /**
@@ -77,26 +84,74 @@ final class CollectionService
         $out = [];
         foreach ($this->schema->collections() as $c) {
             $rows = $this->items->findByCollection($c->key());
-            $open = fn (CollectionItem $i, string $loc): bool => null !== ($t = $i->translations[$loc] ?? null) && ('draft' === ($t['status'] ?? 'draft') || $this->countChanges($c, $t) > 0);
+            $locales = $this->localeCounts($c, $rows);
             $count = \count($rows);
             if ('matrix' === $c->viewName()) {
                 $count = isset($rows[0]) ? \count($rows[0]->translations[$this->mainLocale]['draft']['cols'] ?? []) : 0;
             }
-            $unpublished = 0;
-            foreach ($rows as $i) {
-                if ($locale ? $open($i, $locale) : $open($i, $this->mainLocale)) {
-                    ++$unpublished;
-                }
+            $unpublished = null !== $locale ? ($locales[$locale]['unpublished'] ?? 0) : \array_sum(\array_column($locales, 'unpublished'));
+            if (null !== $locale && !isset($locales[$locale]) && !$this->locales->isConfigured()) {
+                $unpublished = $this->countLocale($c, $rows, $locale)['unpublished'];
             }
             $a = $c->toArray();
             $out[] = [
                 'key' => $c->key(), 'title' => $c->title(), 'singular' => $a['singular'], 'newLabel' => $a['newLabel'], 'icon' => $a['icon'],
                 'view' => $a['view'], 'description' => $a['description'], 'count' => $count, 'unpublished' => $unpublished,
-                'locales' => [$this->mainLocale => ['count' => \count($rows), 'unpublished' => $unpublished]],
+                'locales' => $locales,
             ];
         }
 
         return $out;
+    }
+
+    /**
+     * Existing language versions, including zeroes for enabled languages. A matrix is one record, independently of its column count.
+     *
+     * @param list<CollectionItem> $items
+     *
+     * @return array<string, array{count: int, unpublished: int}>
+     */
+    private function localeCounts(Collection $c, array $items): array
+    {
+        $out = [];
+        foreach ($this->locales->codes() as $locale) {
+            $out[$locale] = $this->countLocale($c, $items, $locale);
+        }
+
+        return $out;
+    }
+
+    /**
+     * @param list<CollectionItem> $items
+     *
+     * @return array{count: int, unpublished: int}
+     */
+    private function countLocale(Collection $c, array $items, string $locale): array
+    {
+        $out = ['count' => 0, 'unpublished' => 0];
+        foreach ($items as $item) {
+            $status = $this->versionStatus($c, $item, $locale);
+            if ('missing' === $status) {
+                continue;
+            }
+            ++$out['count'];
+            if ('draft' === $status) {
+                ++$out['unpublished'];
+            }
+        }
+
+        return $out;
+    }
+
+    /** Admin status for counts and filtering. A live version with pending changes is counted as a draft. @internal */
+    public function versionStatus(Collection $c, CollectionItem $item, string $locale): string
+    {
+        $t = $item->translations[$locale] ?? null;
+        if (null === $t) {
+            return 'missing';
+        }
+
+        return 'draft' === ($t['status'] ?? 'draft') || $this->countChanges($c, $t) > 0 ? 'draft' : 'published';
     }
 
     /**
@@ -108,11 +163,14 @@ final class CollectionService
     {
         $c = $this->collection($collection);
         $locale ??= $this->mainLocale;
-        $this->ensureSingleton($c);
         $this->hooks->loaded('item', $collection, $locale);
         $needle = \mb_strtolower(\trim($q));
         $out = [];
-        foreach ($this->items->findByCollection($collection) as $i) {
+        $items = $this->items->findByCollection($collection);
+        if ([] === $items && null !== ($initial = $this->initialSingleton($c))) {
+            $items[] = $initial;
+        }
+        foreach ($items as $i) {
             $row = $this->row($c, $i, $locale);
             if ('' !== $needle) {
                 $hay = \mb_strtolower((string) ($row[$c->titleFieldKey()] ?? '') . ' ' . (string) ($row[(string) ($c->toArray()['subField'] ?? '')] ?? ''));
@@ -140,9 +198,9 @@ final class CollectionService
     {
         $c = $this->collection($collection);
         $locale ??= $this->mainLocale;
-        $this->ensureSingleton($c);
         $this->hooks->loaded('item', $collection, $locale);
-        $i = $this->find($collection, $id);
+        $initial = $id === $c->singletonId() ? $this->initialSingleton($c) : null;
+        $i = $initial ?? $this->find($collection, $id);
         $t = $i->translations[$locale] ?? null;
         $live = null !== $t ? $this->live($t) : null;
         $hidden = $this->access->hiddenKeys($c->fieldList());
@@ -164,6 +222,17 @@ final class CollectionService
      */
     public function create(string $collection, array $data = [], ?string $locale = null, ?string $id = null): array
     {
+        return $this->createRecord($collection, $data, $locale, $id);
+    }
+
+    /**
+     * @param array<string, mixed> $data
+     * @param array<string, mixed>|null $firstUpdate a singleton's first PATCH, included in its single creation snapshot
+     *
+     * @return array<string, mixed>
+     */
+    private function createRecord(string $collection, array $data, ?string $locale, ?string $id, ?array $firstUpdate = null): array
+    {
         $c = $this->collection($collection);
         $locale ??= $this->mainLocale;
         if (null !== $c->singletonId() && $this->items->find($c->singletonId())) {
@@ -178,12 +247,88 @@ final class CollectionService
         $i->position = $this->items->nextPosition($collection);
         $i->parentId = $parentId;
         $i->translations = [$locale => ['draft' => $draft, 'published' => null, 'status' => 'draft', 'updatedAt' => Json::now()]];
+        if (null !== $firstUpdate) {
+            $patch = $this->hooks->updating($this->record($c, $i, $locale), $this->access->input($c->fieldList(), $firstUpdate));
+            $next = $this->normalized($c, $patch) + $draft;
+            $this->raw->assertFields($c->fieldList(), $draft, $next);
+            $this->put($i, $locale, ['draft' => $next, 'published' => null, 'status' => 'draft', 'updatedAt' => Json::now()]);
+        }
         $this->em->persist($i);
         $this->history->item($collection, $i, $locale, Revision::CREATE);
         $this->em->flush();
         $this->hooks->created($this->record($c, $i, $locale));
+        if (null !== $firstUpdate) {
+            $this->hooks->updated($this->record($c, $i, $locale));
+        }
 
         return $this->flat($c, $i, $locale);
+    }
+
+    /**
+     * Add one language to the existing record; its position, parent and singleton identity stay shared.
+     *
+     * @return array<string, mixed>
+     */
+    public function addTranslation(string $collection, string $id, string $locale, ?string $from): array
+    {
+        $c = $this->collection($collection);
+        if (!$this->locales->has($locale)) {
+            throw ContentException::invalid(I18n::t('content.locale_unknown', ['locale' => $locale]));
+        }
+        if (null !== $from) {
+            if ('' === $from || $from === $locale) {
+                throw ContentException::invalid(I18n::t('content.translation_source_invalid'));
+            }
+            $this->locales->assertUsable($from);
+        }
+
+        return $this->mutate($collection, $id, function (CollectionItem $i) use ($c, $collection, $locale, $from): array {
+            if (isset($i->translations[$locale])) {
+                throw ContentException::conflict(I18n::t('content.translation_exists', ['language' => $this->locales->name($locale)]), ['code' => 'translation_exists', 'locale' => $locale]);
+            }
+            $data = [];
+            if (null !== $from) {
+                $source = $i->translations[$from] ?? throw ContentException::invalid(I18n::t('content.translation_source_missing', ['language' => $this->locales->name($from)]), ['code' => 'translation_source_missing']);
+                $data = $this->access->input($c->fieldList(), (array) ($source['draft'] ?? []));
+            }
+            $draft = $this->normalized($c, $data) + $this->values->defaults($c->fieldList()) + $this->matrixDefaults($c);
+            $this->raw->assertFields($c->fieldList(), [], $draft);
+            $this->put($i, $locale, ['draft' => $draft, 'published' => null, 'status' => 'draft', 'updatedAt' => Json::now()]);
+            $this->history->item($collection, $i, $locale, Revision::CREATE);
+            $this->em->flush();
+            $this->hooks->translationAdded($this->record($c, $i, $locale));
+
+            return $this->flat($c, $i, $locale);
+        });
+    }
+
+    /** Remove only the requested JSON language key, keeping the record and the other versions. */
+    public function removeTranslation(string $collection, string $id, string $locale): void
+    {
+        $c = $this->collection($collection);
+        if ('' === $locale) {
+            throw ContentException::invalid(I18n::t('content.locale_unknown', ['locale' => $locale]));
+        }
+        $this->locales->assertUsable($locale);
+        $this->mutate($collection, $id, function (CollectionItem $i) use ($c, $locale): void {
+            $t = $i->translations[$locale] ?? throw new ContentException(I18n::t(PageService::NO_VERSION), 404, ['code' => 'no_translation', 'locale' => $locale]);
+            if ($locale === $this->mainLocale) {
+                throw ContentException::conflict(I18n::t('content.translation_main_required'));
+            }
+            if (\count($i->translations) <= 1) {
+                throw ContentException::conflict(I18n::t('content.item_translation_last_required'));
+            }
+            $record = $this->record($c, $i, $locale);
+            if (null !== $this->live($t)) {
+                $this->unpublishVersion($c, $i, $locale, $t);
+            }
+            $this->history->itemTranslationRemoved($i, $locale, $t);
+            $all = $i->translations;
+            unset($all[$locale]);
+            $i->translations = $all;
+            $this->em->flush();
+            $this->hooks->translationRemoved($record);
+        });
     }
 
     /**
@@ -199,27 +344,36 @@ final class CollectionService
     {
         $c = $this->collection($collection);
         $locale ??= $this->mainLocale;
-        if (null !== $baseVersion) {
-            return $this->locked($collection, $id, function () use ($collection, $id, $data, $locale, $action, $baseVersion): array {
-                $this->requireDraftVersion($collection, $id, $locale, $baseVersion);
 
-                return $this->update($collection, $id, $data, $locale, $action);
-            });
-        }
-        $i = $this->find($collection, $id);
-        $t = $i->translations[$locale] ?? throw new ContentException(I18n::t(PageService::NO_VERSION), 404, ['code' => 'no_translation', 'locale' => $locale]);
-        $data = $this->hooks->updating($this->record($c, $i, $locale), $this->access->input($c->fieldList(), $data));
-        $next = $this->normalized($c, $data) + (array) $t['draft'];
-        $this->raw->assertFields($c->fieldList(), (array) $t['draft'], $next);
-        $was = $this->history->itemState($i, $locale);
-        $t['draft'] = $next;
-        $t['updatedAt'] = Json::now();
-        $this->put($i, $locale, $t);
-        $this->history->item($collection, $i, $locale, $action, $was);
-        $this->em->flush();
-        $this->hooks->updated($this->record($c, $i, $locale));
+        return $this->mutate($collection, $id, function (CollectionItem $i) use ($c, $collection, $data, $locale, $action, $baseVersion): array {
+            if (null !== $baseVersion) {
+                $this->requireDraftVersion($i, $locale, $baseVersion);
+            }
+            $t = $i->translations[$locale] ?? throw new ContentException(I18n::t(PageService::NO_VERSION), 404, ['code' => 'no_translation', 'locale' => $locale]);
+            $data = $this->hooks->updating($this->record($c, $i, $locale), $this->access->input($c->fieldList(), $data));
+            $next = $this->normalized($c, $data) + (array) $t['draft'];
+            $this->raw->assertFields($c->fieldList(), (array) $t['draft'], $next);
+            $was = $this->history->itemState($i, $locale);
+            $t['draft'] = $next;
+            $t['updatedAt'] = Json::now();
+            $this->put($i, $locale, $t);
+            $this->history->item($collection, $i, $locale, $action, $was);
+            $this->em->flush();
+            $this->hooks->updated($this->record($c, $i, $locale));
 
-        return $this->flat($c, $i, $locale);
+            return $this->flat($c, $i, $locale);
+        }, function (CollectionItem $initial) use ($collection, $id, $data, $locale, $action, $baseVersion): array {
+            if (null !== $baseVersion) {
+                $this->requireDraftVersion($initial, $this->mainLocale, $baseVersion);
+            }
+            if ($locale === $this->mainLocale) {
+                return $this->createRecord($collection, [], $this->mainLocale, $id, $data);
+            }
+            $this->create($collection, [], $this->mainLocale, $id);
+            $this->addTranslation($collection, $id, $locale, null);
+
+            return $this->update($collection, $id, $data, $locale, $action);
+        });
     }
 
     /**
@@ -357,11 +511,27 @@ final class CollectionService
         return $done;
     }
 
-    /** «Снять с публикации»: the record leaves the site and becomes a draft. @return array<string, mixed> */
+    /**
+     * «Снять с публикации»: the record leaves the site and becomes a draft.
+     *
+     * @return array<string, mixed>
+     */
     public function unpublish(string $collection, string $id, ?string $locale = null): array
     {
         $c = $this->collection($collection);
-        [$i, $t, $locale] = $this->version($collection, $id, $locale);
+        $locale ??= $this->mainLocale;
+
+        return $this->mutate($collection, $id, function (CollectionItem $i) use ($c, $locale): array {
+            $t = $this->translation($i, $locale);
+            $this->unpublishVersion($c, $i, $locale, $t);
+
+            return $this->flat($c, $i, $locale);
+        });
+    }
+
+    /** @param array<string, mixed> $t */
+    private function unpublishVersion(Collection $c, CollectionItem $i, string $locale, array $t): void
+    {
         if (null === $this->live($t)) {
             throw ContentException::conflict(I18n::t('content.item_already_unpublished'));
         }
@@ -369,11 +539,9 @@ final class CollectionService
         $was = $this->history->itemState($i, $locale);
         $t['status'] = 'draft';
         $this->put($i, $locale, $t);
-        $this->history->item($collection, $i, $locale, Revision::UNPUBLISH, $was);
+        $this->history->item($c->key(), $i, $locale, Revision::UNPUBLISH, $was);
         $this->em->flush();
         $this->hooks->unpublished($this->record($c, $i, $locale));
-
-        return $this->flat($c, $i, $locale);
     }
 
     /**
@@ -406,80 +574,91 @@ final class CollectionService
     public function publish(string $collection, string $id, ?string $locale = null, ?string $baseVersion = null): array
     {
         $locale ??= $this->mainLocale;
-        if (null !== $baseVersion) {
-            return $this->lock->publish('item', $collection . ':' . $id, function () use ($collection, $id, $locale, $baseVersion): array {
-                $this->requireDraftVersion($collection, $id, $locale, $baseVersion, LockMode::PESSIMISTIC_WRITE);
-
-                return $this->publish($collection, $id, $locale);
-            });
-        }
         $c = $this->collection($collection);
-        [$i, $t, $locale] = $this->version($collection, $id, $locale);
-        $errors = 'matrix' === $c->viewName() ? [] : $this->values->validate($c->fieldList(), $t['draft']);
-        if ([] !== $errors) {
-            throw ContentException::invalid(I18n::t('content.item_publish_required'), $errors);
-        }
-        $this->hooks->publishing($this->record($c, $i, $locale));
-        $was = $this->history->itemState($i, $locale);
-        unset($t['awaiting'], $t['returned']);
-        $t['published'] = $t['draft'];
-        $t['status'] = 'published';
-        $t['updatedAt'] = $t['publishedAt'] = Json::now();
-        $this->put($i, $locale, $t);
-        $this->history->item($collection, $i, $locale, Revision::PUBLISH, $was);
-        $this->em->flush();
-        $this->hooks->published($this->record($c, $i, $locale));
 
-        return $this->flat($c, $i, $locale);
+        return $this->mutate($collection, $id, function (CollectionItem $i) use ($c, $collection, $locale, $baseVersion): array {
+            if (null !== $baseVersion) {
+                $this->requireDraftVersion($i, $locale, $baseVersion);
+            }
+            $t = $this->translation($i, $locale);
+            $errors = 'matrix' === $c->viewName() ? [] : $this->values->validate($c->fieldList(), $t['draft']);
+            if ([] !== $errors) {
+                throw ContentException::invalid(I18n::t('content.item_publish_required'), $errors);
+            }
+            $this->hooks->publishing($this->record($c, $i, $locale));
+            $was = $this->history->itemState($i, $locale);
+            unset($t['awaiting'], $t['returned']);
+            $t['published'] = $t['draft'];
+            $t['status'] = 'published';
+            $t['updatedAt'] = $t['publishedAt'] = Json::now();
+            $this->put($i, $locale, $t);
+            $this->history->item($collection, $i, $locale, Revision::PUBLISH, $was);
+            $this->em->flush();
+            $this->hooks->published($this->record($c, $i, $locale));
+
+            return $this->flat($c, $i, $locale);
+        });
     }
 
     /** @return array<string, mixed> */
     public function revert(string $collection, string $id, ?string $locale = null): array
     {
         $c = $this->collection($collection);
-        [$i, $t, $locale] = $this->version($collection, $id, $locale);
-        if (null === $this->live($t)) {
-            throw ContentException::conflict(I18n::t('content.item_never_published'));
-        }
-        $was = $this->history->itemState($i, $locale);
-        unset($t['awaiting'], $t['returned']);
-        $t['draft'] = $t['published'];
-        $t['updatedAt'] = Json::now();
-        $this->put($i, $locale, $t);
-        $this->history->item($collection, $i, $locale, Revision::REVERT, $was);
-        $this->em->flush();
+        $locale ??= $this->mainLocale;
 
-        return $this->flat($c, $i, $locale);
+        return $this->mutate($collection, $id, function (CollectionItem $i) use ($c, $collection, $locale): array {
+            $t = $this->translation($i, $locale);
+            if (null === $this->live($t)) {
+                throw ContentException::conflict(I18n::t('content.item_never_published'));
+            }
+            $was = $this->history->itemState($i, $locale);
+            unset($t['awaiting'], $t['returned']);
+            $t['draft'] = $t['published'];
+            $t['updatedAt'] = Json::now();
+            $this->put($i, $locale, $t);
+            $this->history->item($collection, $i, $locale, Revision::REVERT, $was);
+            $this->em->flush();
+
+            return $this->flat($c, $i, $locale);
+        });
     }
 
     /** @return array<string, mixed> */
     public function submit(string $collection, string $id, ?string $locale = null): array
     {
         $c = $this->collection($collection);
-        [$i, $t, $locale] = $this->version($collection, $id, $locale);
-        $errors = 'matrix' === $c->viewName() ? [] : $this->values->validate($c->fieldList(), $t['draft']);
-        if ([] !== $errors) {
-            throw ContentException::invalid(I18n::t('content.item_submit_required'), $errors);
-        }
-        unset($t['returned']);
-        $t['awaiting'] = ['by' => $this->actor(), 'at' => Json::now()];
-        $this->put($i, $locale, $t);
-        $this->em->flush();
+        $locale ??= $this->mainLocale;
 
-        return $this->flat($c, $i, $locale);
+        return $this->mutate($collection, $id, function (CollectionItem $i) use ($c, $locale): array {
+            $t = $this->translation($i, $locale);
+            $errors = 'matrix' === $c->viewName() ? [] : $this->values->validate($c->fieldList(), $t['draft']);
+            if ([] !== $errors) {
+                throw ContentException::invalid(I18n::t('content.item_submit_required'), $errors);
+            }
+            unset($t['returned']);
+            $t['awaiting'] = ['by' => $this->actor(), 'at' => Json::now()];
+            $this->put($i, $locale, $t);
+            $this->em->flush();
+
+            return $this->flat($c, $i, $locale);
+        });
     }
 
     /** @return array<string, mixed> */
     public function returnToAuthor(string $collection, string $id, ?string $locale = null): array
     {
         $c = $this->collection($collection);
-        [$i, $t, $locale] = $this->version($collection, $id, $locale);
-        unset($t['awaiting']);
-        $t['returned'] = ['by' => $this->actor(), 'at' => Json::now()];
-        $this->put($i, $locale, $t);
-        $this->em->flush();
+        $locale ??= $this->mainLocale;
 
-        return $this->flat($c, $i, $locale);
+        return $this->mutate($collection, $id, function (CollectionItem $i) use ($c, $locale): array {
+            $t = $this->translation($i, $locale);
+            unset($t['awaiting']);
+            $t['returned'] = ['by' => $this->actor(), 'at' => Json::now()];
+            $this->put($i, $locale, $t);
+            $this->em->flush();
+
+            return $this->flat($c, $i, $locale);
+        });
     }
 
     /** @param list<string> $ids ALL record ids in the new order (sortable collections only) */
@@ -567,6 +746,9 @@ final class CollectionService
     public function published(string $collection, ?string $locale = null): array
     {
         $locale ??= $this->mainLocale;
+        if (null !== $this->reader && Key::isValid($locale) && null !== $this->schema->collection($collection)) {
+            return $this->reader->collection($collection, [], $locale);
+        }
         $out = [];
         foreach ($this->items->findByCollection($collection) as $i) {
             $t = $i->translations[$locale] ?? null;
@@ -614,7 +796,8 @@ final class CollectionService
     {
         $t = $i->translations[$locale] ?? null;
         $src = $t ?? ($i->translations[$this->mainLocale] ?? \reset($i->translations) ?: ['draft' => []]);
-        $n = null !== $t ? $this->countChanges($c, $t) : 0;
+        $summary = $this->summary($c, $i);
+        $n = $summary[$locale]['changes'] ?? 0;
 
         return $this->present($c, (array) $src['draft']) + ($c->isTree() ? ['parentId' => $i->parentId] : []) + [
             'id' => $i->id,
@@ -628,18 +811,28 @@ final class CollectionService
             'returned' => $t['returned'] ?? null,
             'changed' => $n > 0,
             'changes' => $n,
-            'locales' => $this->summary($c, $i),
+            'locales' => $summary,
         ];
     }
 
     /** @return array<string, array<string, mixed>|null> */
     public function summary(Collection $c, CollectionItem $i): array
     {
+        return $this->summarizeTranslations($c, $i->translations);
+    }
+
+    /**
+     * @param array<string, array<string, mixed>> $translations
+     *
+     * @return array<string, array<string, mixed>|null>
+     */
+    public function summarizeTranslations(Collection $c, array $translations): array
+    {
         $out = [$this->mainLocale => null];
         $titleKey = $c->titleFieldKey();
         $field = $c->field($titleKey);
         $showTitle = null === $field || [] !== $this->access->visible([$field]);
-        foreach ($i->translations as $locale => $t) {
+        foreach ($translations as $locale => $t) {
             $n = $this->countChanges($c, $t);
             $out[$locale] = ['status' => $t['status'] ?? 'draft', 'changed' => $n > 0, 'changes' => $n, 'title' => $showTitle ? ($t['draft'][$titleKey] ?? '') : '', 'updatedAt' => $t['updatedAt'] ?? null, 'awaiting' => $t['awaiting'] ?? null];
         }
@@ -681,25 +874,55 @@ final class CollectionService
         return null !== $i && $i->collection === $collection ? $i : throw ContentException::notFound(I18n::t('content.item_not_found'));
     }
 
-    private function requireDraftVersion(string $collection, string $id, string $locale, string $expected, LockMode $lock = LockMode::NONE): void
+    /**
+     * The JSON column contains every language: refresh under the shared item lock before reading or replacing any of its keys.
+     *
+     * @template T
+     *
+     * @param \Closure(CollectionItem): T $work
+     * @param \Closure(CollectionItem): T|null $initialize operation-specific first save of an unpersisted singleton
+     *
+     * @return T
+     */
+    private function mutate(string $collection, string $id, \Closure $work, ?\Closure $initialize = null): mixed
     {
-        $i = $this->find($collection, $id);
-        $this->em->refresh($i, $lock);
-        [, $t] = $this->version($collection, $id, $locale);
-        $current = $this->versionOf($i, $t);
-        if (!\hash_equals($current, $expected)) {
-            throw $this->versions->stale(Revision::ITEM, $id, $locale, $current);
+        $materialized = false;
+        try {
+            return $this->lock->publish('item', $collection . ':' . $id, function () use ($collection, $id, $work, $initialize, &$materialized): mixed {
+                $c = $this->collection($collection);
+                if ($id === $c->singletonId() && null !== ($initial = $this->initialSingleton($c))) {
+                    $materialized = true;
+                    if (null !== $initialize) {
+                        return $initialize($initial);
+                    }
+                    // Only an explicit mutation enters here. GET uses the same defaults without hooks or history.
+                    $this->create($collection, [], $this->mainLocale, $id);
+                }
+                $i = $this->find($collection, $id);
+                $this->em->refresh($i, LockMode::PESSIMISTIC_WRITE);
+
+                return $work($i);
+            });
+        } catch (\Throwable $e) {
+            if ($materialized) {
+                $this->em->clear(); // a failed first mutation must not retain objects from the rolled-back materialization
+            }
+            throw $e;
         }
     }
 
-    /** @return array{0: CollectionItem, 1: array<string, mixed>, 2: string} */
-    private function version(string $collection, string $id, ?string $locale): array
+    private function requireDraftVersion(CollectionItem $i, string $locale, string $expected): void
     {
-        $locale ??= $this->mainLocale;
-        $i = $this->find($collection, $id);
-        $t = $i->translations[$locale] ?? throw new ContentException(I18n::t(PageService::NO_VERSION), 404, ['code' => 'no_translation', 'locale' => $locale]);
+        $current = $this->versionOf($i, $this->translation($i, $locale));
+        if (!\hash_equals($current, $expected)) {
+            throw $this->versions->stale(Revision::ITEM, $i->id, $locale, $current);
+        }
+    }
 
-        return [$i, $t, $locale];
+    /** @return array<string, mixed> */
+    private function translation(CollectionItem $i, string $locale): array
+    {
+        return $i->translations[$locale] ?? throw new ContentException(I18n::t(PageService::NO_VERSION), 404, ['code' => 'no_translation', 'locale' => $locale]);
     }
 
     /** @param array<string, mixed> $t */
@@ -710,7 +933,11 @@ final class CollectionService
         $i->translations = $all; // reassign: Doctrine tracks the JSON column by value
     }
 
-    /** @param array<string, mixed> $t @return null|array<string, mixed> */
+    /**
+     * @param array<string, mixed> $t
+     *
+     * @return array<string, mixed>|null
+     */
     private function live(array $t): ?array
     {
         return 'published' === ($t['status'] ?? '') && \is_array($t['published'] ?? null) ? $t['published'] : null;
@@ -721,7 +948,7 @@ final class CollectionService
     {
         $live = $this->live($t);
 
-        return null === $live ? 0 : \count($this->changes->recordChanges($c, (array) $t['draft'], $live));
+        return null === $live ? 0 : $this->changes->recordChangeCount($c, (array) $t['draft'], $live);
     }
 
     /**
@@ -749,12 +976,25 @@ final class CollectionService
         return 'matrix' === $c->viewName() ? ['cols' => [], 'rows' => []] : [];
     }
 
-    /** The only record of a singleton collection (the tariff matrix) exists from the first read. */
-    private function ensureSingleton(Collection $c): void
+    /** @internal Explicitly materialize a singleton; read paths use initialSingleton() instead. */
+    public function ensureSingleton(Collection $c): void
     {
         if (null !== $c->singletonId() && null === $this->items->find($c->singletonId())) {
             $this->create($c->key(), [], null, $c->singletonId());
         }
+    }
+
+    /** @internal Initial singleton editor state; never persisted by a read. */
+    public function initialSingleton(Collection $c): ?CollectionItem
+    {
+        $id = $c->singletonId();
+        if (null === $id || null !== $this->items->find($id)) {
+            return null;
+        }
+        $item = new CollectionItem($c->key(), $id);
+        $item->translations = [$this->mainLocale => ['draft' => $this->values->defaults($c->fieldList()) + $this->matrixDefaults($c), 'published' => null, 'status' => 'draft']];
+
+        return $item;
     }
 
     /**

@@ -12,10 +12,12 @@ use Symfony\Contracts\Service\ResetInterface;
 /**
  * The switch «Настройки → ИИ-ассистенты → Включить». Off by default: while it is off /mcp answers 404, `itk:mcp` refuses to start, keys cannot be
  * made, and no tool can be called. The value is the setting `mcpEnabled` (shared by all languages).
+ *
+ * @internal
  */
 final class McpSettings implements ResetInterface
 {
-    public const KEY = 'mcpEnabled';
+    public const KEY = 'itk:mcpEnabled';
 
     private ?bool $enabled = null;
 

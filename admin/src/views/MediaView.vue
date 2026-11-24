@@ -1,15 +1,17 @@
 <script setup>
 // Медиатека: folder tree on the left; grid of photos and PDFs, search + type filter, upload (file input and drag-and-drop), details drawer.
-// Port of the prototype mediaView(). Uploads go through api.media.upload (into the open folder); «Где используется» is asked from the server for the file that is open (api.media.usage).
+// Uploads go through api.media.upload (into the open folder); «Где используется» is asked from the server for the file that is open (api.media.usage).
 // Files go to a folder by dragging a tile onto the tree, or by ticking tiles and choosing «Перенести в…». The open folder is kept in ?folder= ('' all, 'none' no folder, or an id).
 // RIGHTS (area media): without «Править» there is no upload (button and drop zone), no folders work and no moving, and the captions only read; without «Удалять» the drawer has no «Удалить».
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { api } from '@/api/index.js'
 import { thumbUrl } from '@/utils/media.js'
 import Icon from '@/components/ui/Icon.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import Skeleton from '@/components/ui/Skeleton.vue'
+import ListPager from '@/components/collections/list/ListPager.vue'
+import { useListCursor } from '@/composables/useListCursor.js'
 import MediaDrawer from '@/components/media/MediaDrawer.vue'
 import { useMediaUsage } from '@/components/media/useMediaUsage.js'
 import FolderTree from '@/components/media/FolderTree.vue'
@@ -26,6 +28,9 @@ const toast = useToast()
 const route = useRoute()
 const router = useRouter()
 const items = ref([])
+const total = ref(0)
+const page = ref(1)
+const perPage = ref(50)
 const tree = ref({ folders: [], total: 0, unfiled: 0, ratios: undefined })
 const picked = ref([]) // ids ticked for moving
 const moveTarget = ref('')
@@ -35,10 +40,13 @@ const folder = computed({
 })
 const folderTitle = computed(() => (folder.value === 'none' ? t('forms.no_folder') : folder.value ? (tree.value.folders.find((f) => f.id === folder.value) || {}).name || t('forms.folder') : t('forms.tree_all')))
 const loading = ref(true)
+const replacing = ref(true)
+const { cursors, position, accept, parameters } = useListCursor()
 const loadError = ref('')
 const q = ref('')
 const type = ref('')
-const selectedId = ref(null)
+const selected = ref(null)
+const selectedId = computed(() => selected.value?.id ?? null)
 const { usage, usageError, retryUsage } = useMediaUsage(selectedId, (id) => api.media.usage(id))
 const dragging = ref(false)
 const progress = ref(null) // { done, total } while uploading
@@ -47,12 +55,7 @@ const camInput = ref(null)
 const foldersOpen = ref(false) // a phone: the folder tree is a sheet
 function chooseFolder(v) { folder.value = v; foldersOpen.value = false }
 
-const shown = computed(() => {
-  const needle = q.value.trim().toLowerCase()
-  return items.value.filter((m) => (!needle || `${m.name} ${m.alt || ''}`.toLowerCase().includes(needle)) && (!type.value || m.type === type.value))
-})
-const selected = computed(() => items.value.find((m) => m.id === selectedId.value) || null)
-const countText = computed(() => t('forms.media_count', { shown: shown.value.length, total: items.value.length }))
+const countText = computed(() => t('forms.media_count', { shown: items.value.length, total: total.value }))
 const folderOptions = computed(() => {
   const kids = new Map()
   for (const f of tree.value.folders) {
@@ -74,22 +77,63 @@ async function loadTree() {
     /* the files still show; the tree stays as it was */
   }
 }
-async function load() {
+let seq = 0
+let timer = null
+async function load(replace = false) {
+  const my = ++seq
+  loading.value = true
+  if (replace) replacing.value = true
+  loadError.value = ''
   try {
-    items.value = await api.media.list({ folder: folder.value })
-    picked.value = picked.value.filter((id) => items.value.some((m) => m.id === id))
-    loadError.value = ''
+    const paging = parameters()
+    const result = await api.media.list({ q: q.value, type: type.value, folder: folder.value, page: page.value, perPage: perPage.value, ...paging })
+    if (my !== seq) return
+    const last = Math.max(1, Math.ceil(result.total / result.perPage))
+    if (!result.items.length && (result.page > last || paging.cursor)) return go(Math.min(result.page, last), true)
+    accept(result)
+    items.value = result.items
+    total.value = result.total
+    const fresh = items.value.find((m) => m.id === selectedId.value)
+    if (fresh) selected.value = fresh
+    replacing.value = false
   } catch (e) {
-    loadError.value = e.message || t('forms.media_load_failed')
+    if (my === seq) loadError.value = e.message || t('forms.media_load_failed')
   } finally {
-    loading.value = false
+    if (my === seq) loading.value = false
   }
 }
-watch(folder, () => { selectedId.value = null; picked.value = []; loading.value = true; load() })
+function go(next, reset = false) {
+  clearTimeout(timer)
+  position(next, reset)
+  page.value = next
+  return load(true)
+}
+function setPerPage(size) {
+  perPage.value = size
+  go(1, true)
+}
+watch(folder, () => { selected.value = null; picked.value = []; go(1, true) })
+watch(type, () => go(1, true))
+watch(q, () => {
+  ++seq
+  position(1, true)
+  page.value = 1
+  replacing.value = loading.value = true
+  clearTimeout(timer)
+  timer = setTimeout(() => go(1, true), 180)
+})
+onBeforeUnmount(() => { ++seq; clearTimeout(timer) })
 onMounted(() => { loadTree(); load() })
 const refresh = () => Promise.all([loadTree(), load()])
 
-const select = (id) => { selectedId.value = id }
+function onChanged(item) {
+  const belongs = !folder.value || (item.folderId || 'none') === folder.value
+  if (!belongs) picked.value = picked.value.filter((id) => id !== item.id)
+  if (item.id === selectedId.value) {
+    selected.value = belongs ? item : null
+  }
+  refresh()
+}
 const canUploadTo = computed(() => (folder.value && folder.value !== 'none' ? folder.value : null))
 function reset() { q.value = ''; type.value = '' }
 
@@ -105,11 +149,11 @@ async function uploadFiles(list) {
     progress.value = { ...progress.value, done: progress.value.done + 1 }
   }
   progress.value = null
-  await refresh()
+  await Promise.all([loadTree(), page.value === 1 ? load() : go(1, true)])
   if (ok) toast.show(ok === 1 ? t('forms.media_uploaded_one', { name: last.name }) : t('forms.media_uploaded_many', { count: ok }))
   if (fails.length === 1) toast.error(t('forms.media_fail_one', { name: fails[0].name, message: fails[0].message }))
   else if (fails.length) toast.error(t('forms.media_fail_many', { count: fails.length, message: fails[0].message }))
-  if (ok === 1 && !fails.length && last) select(last.id) // one new file: show its details
+  if (ok === 1 && !fails.length && last) selected.value = last // one new file: show its details
 }
 function onPick(e) {
   const files = [...e.target.files]
@@ -123,7 +167,8 @@ function onDrop(e) {
 const onEnter = (e) => { if (!hasDrag(e)) dragging.value = true }
 
 async function onDeleted(id) {
-  if (selectedId.value === id) selectedId.value = null
+  if (selectedId.value === id) selected.value = null
+  picked.value = picked.value.filter((pickedId) => pickedId !== id)
   await refresh()
 }
 
@@ -175,7 +220,7 @@ function moveChosen() {
       <FolderTree :model-value="folder" :folders="tree.folders" :total="tree.total" :unfiled="tree.unfiled" :can-edit="canEdit" @update:model-value="(v) => (folder = v)" @changed="refresh" @drop-files="moveFiles" />
     </div>
 
-    <div class="sheet ml-main">
+    <div class="sheet ml-main" :aria-busy="loading">
       <div class="toolbar">
         <h2 v-if="!vp.phone" class="ml-title">{{ folderTitle }}</h2>
         <button v-else type="button" class="btn ml-fold" aria-haspopup="dialog" @click="foldersOpen = true"><Icon name="folder" size="s16" /><span class="nm">{{ folderTitle }}</span><Icon name="chevD" size="s14" /></button>
@@ -189,7 +234,7 @@ function moveChosen() {
           <option value="img">{{ t('forms.media_type_img') }}</option>
           <option value="pdf">{{ t('forms.media_type_pdf') }}</option>
         </select>
-        <span class="grow num" aria-live="polite">{{ loading ? '' : countText }}</span>
+        <span class="grow num" aria-live="polite">{{ replacing ? '' : countText }}</span>
       </div>
 
       <label
@@ -213,13 +258,13 @@ function moveChosen() {
         <button type="button" class="btn sm" @click="picked = []">{{ t('forms.media_unselect') }}</button>
       </div>
 
-      <div v-if="loading" class="md-pad"><Skeleton :rows="5" /></div>
-      <div v-else-if="loadError" class="md-pad"><div class="alert err-a"><Icon name="alert" size="s16" /><span>{{ loadError }}</span><button type="button" class="btn sm" @click="load">{{ t('forms.retry') }}</button></div></div>
-      <div v-else-if="shown.length" class="mgrid">
-        <div v-for="m in shown" :key="m.id" class="mcell">
+      <div v-if="loadError" class="md-pad"><div class="alert err-a" role="alert"><Icon name="alert" size="s16" /><span>{{ loadError }}</span><button type="button" class="btn sm" @click="load()">{{ t('forms.retry') }}</button></div></div>
+      <div v-if="replacing && loading" class="md-pad"><Skeleton :rows="5" /></div>
+      <div v-else-if="!replacing && items.length" class="mgrid">
+        <div v-for="m in items" :key="m.id" class="mcell">
           <button
             type="button" class="mdi" aria-haspopup="dialog" :aria-pressed="picked.includes(m.id)" :draggable="canEdit"
-            @click="($event.ctrlKey || $event.metaKey) && canEdit ? togglePick(m.id) : select(m.id)" @dragstart="onTileDrag($event, m)"
+            @click="($event.ctrlKey || $event.metaKey) && canEdit ? togglePick(m.id) : selected = m" @dragstart="onTileDrag($event, m)"
           >
             <span class="pic">
               <span v-if="m.type === 'pdf'" class="pdf"><Icon name="doc" size="s20" />PDF</span>
@@ -230,18 +275,19 @@ function moveChosen() {
           <input v-if="canEdit" type="checkbox" class="mpick" :checked="picked.includes(m.id)" :aria-label="t('forms.media_pick_file', { name: m.name })" @change="togglePick(m.id)">
         </div>
       </div>
-      <EmptyState v-else-if="items.length" icon="search" :title="t('forms.media_none_title')" :text="t('forms.media_none_text')">
+      <EmptyState v-else-if="!loadError && (q.trim() || type)" icon="search" :title="t('forms.media_none_title')" :text="t('forms.media_none_text')">
         <button type="button" class="btn" @click="reset">{{ t('forms.media_reset') }}</button>
       </EmptyState>
-      <EmptyState v-else-if="folder" icon="folder" :title="t('forms.media_folder_empty_title')" :text="canEdit ? t('forms.media_folder_empty_edit') : t('forms.media_folder_empty_read')" />
-      <EmptyState v-else icon="image" :title="t('forms.media_empty_title')" :text="canEdit ? t('forms.media_empty_edit') : t('forms.media_empty_read')" />
+      <EmptyState v-else-if="!loadError && folder" icon="folder" :title="t('forms.media_folder_empty_title')" :text="canEdit ? t('forms.media_folder_empty_edit') : t('forms.media_folder_empty_read')" />
+      <EmptyState v-else-if="!loadError" icon="image" :title="t('forms.media_empty_title')" :text="canEdit ? t('forms.media_empty_edit') : t('forms.media_empty_read')" />
+      <ListPager v-if="total" :page="page" :per-page="perPage" :sizes="[25, 50, 100]" :total="total" :cursors="cursors" :busy="replacing && loading" @update:page="go" @update:per-page="setPerPage" />
     </div>
     </div>
 
     <Modal v-model:open="foldersOpen" :title="t('forms.tree_title')" :width="420">
       <FolderTree :model-value="folder" :folders="tree.folders" :total="tree.total" :unfiled="tree.unfiled" :can-edit="canEdit" @update:model-value="chooseFolder" @changed="refresh" @drop-files="moveFiles" />
     </Modal>
-    <MediaDrawer :item="selected" :usage="usage" :usage-error="usageError" :folders="tree.folders" :ratios="tree.ratios" @retry-usage="retryUsage" @close="selectedId = null" @changed="refresh" @deleted="onDeleted" />
+    <MediaDrawer :item="selected" :usage="usage" :usage-error="usageError" :folders="tree.folders" :ratios="tree.ratios" @retry-usage="retryUsage" @close="selected = null" @changed="onChanged" @deleted="onDeleted" />
   </div>
 </template>
 

@@ -85,3 +85,14 @@ describe('settingsErrors of the MAX table', () => {
     expect(itemOfKey('maxOn')).toBe('notifications')
   })
 })
+
+
+describe('separate settings scopes', () => {
+  it('validates a site field called maxRoutes as a site field', () => {
+    loadSchema({ settings: { groups: [{ key: 'site', fields: [{ k: 'maxRoutes', t: 'text', label: 'Site route', req: true }] }] } })
+    expect(settingsErrors({ maxRoutes: 'Site route' }, { maxRoutes: 'Site route' }, 'site')).toEqual({})
+    expect(settingsErrors({ maxRoutes: '' }, { maxRoutes: '' }, 'site').maxRoutes).toBeTruthy()
+    expect(settingsErrors({ maxRoutes: { '*': '-23' } }, { maxRoutes: { '*': '-23' } }, 'notifications')).toEqual({})
+    expect(settingsErrors({ maxRoutes: { '*': 'invalid' } }, { maxRoutes: { '*': 'invalid' } }, 'notifications').maxRoutes).toBeTruthy()
+  })
+})

@@ -11,6 +11,8 @@ use Doctrine\Migrations\AbstractMigration;
 /**
  * ITK CMS: itk_critical_css.stamp, the page-independent part of the basis (the container build and the stylesheets stamp).
  * Rows made before the column existed have none and count as not current in the health check until the worker rewrites them.
+ *
+ * @internal
  */
 final class Version20261110200000 extends AbstractMigration
 {

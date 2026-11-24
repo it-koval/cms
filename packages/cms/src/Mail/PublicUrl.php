@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Itk\Cms\Mail;
 
 use Itk\Cms\Content\SettingsService;
+use Itk\Cms\Content\SiteAddress;
 use Itk\Cms\I18n\I18n;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\HttpFoundation\Request;
@@ -17,7 +18,9 @@ use Symfony\Component\HttpFoundation\RequestStack;
  *   2. the address of the request that is being served, only when the site has framework.trusted_hosts (Symfony has then answered an untrusted Host with 400 already);
  *   3. the setting «domain» (https:// unless it carries a scheme);
  *   4. the address of the request as it came, only in debug mode (development).
- * With none of these there is no trusted address: base() says null, and a link of a password letter is not made (a link must never lead to a Host that a stranger sent).
+ * These fallbacks apply to ordinary site links through base(). Password and invitation links use only the explicit full origin through trustedBase().
+ *
+ * @internal
  */
 final class PublicUrl
 {
@@ -34,7 +37,8 @@ final class PublicUrl
     /** Is this an address of the form «https://example.com» (a trailing slash is allowed, a path and a query are not)? */
     public static function isValid(string $url): bool
     {
-        return 1 === \preg_match('~^https?://[^\s/?#]+$~i', \rtrim($url, '/'));
+        // A configured origin is written as is: whitespace or a control byte anywhere means it is not one.
+        return 1 !== \preg_match('/[\x00-\x20\x7f]/', $url) && null !== SiteAddress::fromUrl($url);
     }
 
     /**
@@ -42,26 +46,60 @@ final class PublicUrl
      *
      * @throws \UnexpectedValueException when itk_cms.public_url (an %env()% placeholder is only known now) holds something that is not an address
      */
-    public function base(): ?string
+    public function base(bool $strict = true): ?string
     {
-        $base = \trim((string) $this->configured);
-        if ('' !== $base && !self::isValid($base)) {
-            throw new \UnexpectedValueException(I18n::t('http.mail_public_url_invalid', ['value' => $base]));
+        $configured = $this->configuredAddress($strict);
+        if (null !== $configured) {
+            return $configured->origin();
         }
-        if ('' === $base && [] !== Request::getTrustedHosts()) {
-            $base = $this->requests->getMainRequest()?->getSchemeAndHttpHost() ?? '';
-        }
-        if ('' === $base) {
-            $domain = \trim((string) $this->settings->get('domain', null, ''));
-            if ('' !== $domain) {
-                $base = \preg_match('~^https?://~i', $domain) ? $domain : 'https://' . $domain;
-            }
-        }
-        if ('' === $base && $this->debug) {
-            $base = $this->requests->getMainRequest()?->getSchemeAndHttpHost() ?? '';
+        $request = $this->requests->getMainRequest();
+        $trusted = [] !== Request::getTrustedHosts() && null !== $request ? SiteAddress::fromUrl($request->getSchemeAndHttpHost()) : null;
+        $address = $trusted ?? $this->domainAddress();
+        if (null === $address && $this->debug && null !== $request) {
+            $address = SiteAddress::fromUrl($request->getSchemeAndHttpHost());
         }
 
-        return '' === $base ? null : \rtrim($base, '/');
+        return $address?->origin();
+    }
+
+    /** The address configured by the site, independent of the current request. */
+    public function siteAddress(): ?SiteAddress
+    {
+        return $this->configuredAddress(false) ?? $this->domainAddress();
+    }
+
+    /** Optional configured origin, without falling back to a request or the domain setting. */
+    public function configuredSiteAddress(): ?SiteAddress
+    {
+        return $this->configuredAddress(false);
+    }
+
+    private function configuredAddress(bool $strict = true): ?SiteAddress
+    {
+        $base = \trim((string) $this->configured);
+        $address = '' === $base ? null : SiteAddress::fromUrl($base);
+        if ($strict && '' !== $base && null === $address) {
+            throw new \UnexpectedValueException(I18n::t('http.mail_public_url_invalid', ['value' => $base]));
+        }
+
+        return $address;
+    }
+
+    private function domainAddress(): ?SiteAddress
+    {
+        return SiteAddress::fromDomain((string) $this->settings->get('domain', null, ''));
+    }
+
+    /** The normalized site-configured SEO origin, independent of requests; an invalid optional public_url falls back to domain. */
+    public function seoBase(): ?string
+    {
+        return $this->siteAddress()?->origin();
+    }
+
+    /** Password and invitation links require a configured full origin: trusted_hosts validates only a hostname, not a scheme or port. */
+    public function trustedBase(): ?string
+    {
+        return $this->configuredAddress()?->origin();
     }
 
     /**

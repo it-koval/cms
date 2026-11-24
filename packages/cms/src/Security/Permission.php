@@ -9,6 +9,8 @@ namespace Itk\Cms\Security;
  * and, for pages, the template of the page (a role may be limited to some templates).
  *
  *   $this->isGranted(PermissionVoter::ATTRIBUTE, new Permission('pages', 'publish', template: 'blog_article'))
+ *
+ * @internal
  */
 final class Permission
 {

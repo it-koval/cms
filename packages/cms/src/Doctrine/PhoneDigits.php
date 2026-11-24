@@ -10,7 +10,11 @@ use Doctrine\ORM\Query\Parser;
 use Doctrine\ORM\Query\SqlWalker;
 use Doctrine\ORM\Query\TokenType;
 
-/** ITK_PHONE_DIGITS(r.phone) returns the ASCII digits of a stored phone number for substring searches. */
+/**
+ * ITK_PHONE_DIGITS(r.phone) returns the ASCII digits of a stored phone number for substring searches.
+ *
+ * @internal
+ */
 final class PhoneDigits extends FunctionNode
 {
     private Node $phone;

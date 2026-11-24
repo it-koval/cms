@@ -11,6 +11,8 @@ use Doctrine\Persistence\ManagerRegistry;
 use Itk\Cms\I18n\I18n;
 use Monolog\Attribute\WithMonologChannel;
 use Psr\Log\LoggerInterface;
+use Symfony\Component\DependencyInjection\Attribute\Autowire;
+use Symfony\Contracts\Service\ResetInterface;
 
 /**
  * The stdio transport: one JSON-RPC message per line on the input, one answer per line on the output, nothing else on the output.
@@ -41,6 +43,8 @@ final class McpStdio
         private readonly LoggerInterface $logger,
         ?\Closure $pause = null,
         private readonly int $attempts = self::ATTEMPTS,
+        #[Autowire(service: 'services_resetter')]
+        private readonly ?ResetInterface $resetter = null,
     ) {
         $this->pause = $pause ?? static function (int $seconds): void {
             \sleep($seconds);
@@ -119,6 +123,7 @@ final class McpStdio
      */
     private function check(string $plain, $err, ?McpContext &$context): bool
     {
+        $this->resetter?->reset();
         if (!$this->em->isOpen()) {
             $this->registry->resetManager(); // a failed flush closes the manager for good; a program that runs for days starts with a new one
         }

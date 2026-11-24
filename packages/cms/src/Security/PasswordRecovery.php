@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Itk\Cms\Security;
 
+use Doctrine\DBAL\LockMode;
 use Doctrine\ORM\EntityManagerInterface;
 use Itk\Cms\Admin\AdminPath;
 use Itk\Cms\Content\ContentException;
@@ -32,6 +33,8 @@ use Symfony\Component\RateLimiter\RateLimiterFactoryInterface;
  * «Забыл пароль» always looks the same from outside: the same answer, and the same work in the request for a known and an unknown address (the visitor's request only
  * queues RequestPasswordLink; the worker finds the person and writes the letter), so neither the words nor the time tell whether the address exists.
  * It is limited per address and per visitor.
+ *
+ * @internal
  */
 final class PasswordRecovery
 {
@@ -50,7 +53,6 @@ final class PasswordRecovery
         private readonly AdminPath $admin,
         private readonly LoggerInterface $logger,
         private readonly AdminLocale $locale,
-        #[Autowire(service: 'messenger.bus.default')]
         private readonly MessageBusInterface $bus,
         #[Autowire(service: 'limiter.itk_password_reset_ip')]
         private readonly RateLimiterFactoryInterface $perVisitor,
@@ -87,14 +89,14 @@ final class PasswordRecovery
         if (!$this->isAvailable()) {
             return true;
         }
-        $base = $this->urls->base();
+        $base = $this->urls->trustedBase();
         if (null === $base) {
-            $this->logger->error('A password link was asked for, but the site has no trusted address for it: set itk_cms.public_url, framework.trusted_hosts or the setting «domain»');
+            $this->logger->error('A password link was asked for, but the site has no trusted address for it: set itk_cms.public_url');
 
             return true;
         }
         try {
-            $this->bus->dispatch(new RequestPasswordLink($email, $base));
+            $this->bus->dispatch(new RequestPasswordLink($email, $base, true));
         } catch (\Throwable $e) {
             $this->logger->error('Could not queue a password link request: {error}', ['error' => $e->getMessage()]);
         }
@@ -102,18 +104,14 @@ final class PasswordRecovery
         return true;
     }
 
-    /** The worker's half of request(): a known, not blocked person gets the letter, anybody else nothing. Errors go to the log only. */
+    /** The worker's half of request(): a known, not blocked person gets the letter, anybody else nothing. Failures propagate so Messenger can retry. */
     public function sendRequested(string $email, string $baseUrl): void
     {
         $user = $this->users->findOneByEmail($email);
         if (null === $user || User::BLOCKED === $user->status || !$this->isAvailable()) {
             return;
         }
-        try {
-            $this->sendLink($user, SendMail::RESET, self::RESET_TTL, $baseUrl);
-        } catch (\Throwable $e) {
-            $this->logger->error('Could not send a password link: {error}', ['error' => $e->getMessage()]);
-        }
+        $this->deliverLink(new DeliverPasswordLink($user->id, $user->email, \hash('sha256', $user->passwordHash), SendMail::RESET, self::RESET_TTL, $baseUrl));
     }
 
     /** Takes every unused link of a person out of use (his password or address changed, or he was blocked). */
@@ -123,7 +121,7 @@ final class PasswordRecovery
     }
 
     /**
-     * Makes a link for a person and puts the letter into the queue.
+     * Queues a delivery job for a person, without a token or rendered letter.
      *
      * @param string $kind SendMail::RESET | SendMail::INVITE
      * @param string $ttl how long the link works (an ISO 8601 interval)
@@ -133,34 +131,60 @@ final class PasswordRecovery
      */
     public function sendLink(User $user, string $kind, string $ttl, ?string $base = null): void
     {
-        $base ??= $this->urls->base();
+        $base ??= $this->urls->trustedBase();
         if (null === $base) {
-            $this->logger->error('A password link was not made: the site has no trusted address (itk_cms.public_url, framework.trusted_hosts or the setting «domain»)');
+            $this->logger->error('A password link was not made: the site has no trusted address (itk_cms.public_url)');
 
             throw new ContentException(I18n::t('http.recovery_no_url'), 503, ['code' => 'no_public_url']);
         }
-        $now = new \DateTimeImmutable();
-        $expires = $now->add(new \DateInterval($ttl));
-        $token = \rtrim(\strtr(\base64_encode(\random_bytes(32)), '+/', '-_'), '=');
-        $link = new PasswordReset($user, self::hash($token), SendMail::INVITE === $kind ? PasswordReset::INVITE : PasswordReset::RESET, $expires);
-        $this->em->persist($link);
-        $this->em->flush();
-
+        if (!$this->isAvailable()) {
+            throw new ContentException(I18n::t('http.mail_not_configured'), 503, ['code' => 'mail_not_configured']);
+        }
         try {
-            // the letter speaks the language of the person it goes to, whoever sends it: himself, an administrator, the worker
-            $mail = $this->locale->runFor($user, fn (): SendMail => $this->composer->passwordLink($user, $kind, $this->urls->to($this->admin->to('/reset-password/' . $token), $base), self::words($now, $expires), $this->urls->to($this->admin->to(), $base)));
-            $this->mailer->queue($mail);
+            $this->bus->dispatch(new DeliverPasswordLink($user->id, $user->email, \hash('sha256', $user->passwordHash), $kind, $ttl, $base));
+        } catch (\Throwable $e) {
+            throw new ContentException(I18n::t('http.mail_queue_failed'), 503);
+        }
+    }
+
+    /** The worker creates the token immediately before SMTP delivery. A failed attempt leaves no usable link and can be retried. */
+    public function deliverLink(DeliverPasswordLink $job): void
+    {
+        $prepared = $this->em->wrapInTransaction(function () use ($job): ?array {
+            $user = $this->users->find($job->userId);
+            if (null === $user) {
+                return null;
+            }
+            $this->em->refresh($user, LockMode::PESSIMISTIC_WRITE);
+            if (User::BLOCKED === $user->status || $job->email !== $user->email || !\hash_equals($job->credentialVersion, \hash('sha256', $user->passwordHash))) {
+                return null;
+            }
+            $now = new \DateTimeImmutable();
+            $expires = $now->add(new \DateInterval($job->ttl));
+            $token = \rtrim(\strtr(\base64_encode(\random_bytes(32)), '+/', '-_'), '=');
+            $link = new PasswordReset($user, self::hash($token), SendMail::INVITE === $job->kind ? PasswordReset::INVITE : PasswordReset::RESET, $expires);
+            $this->em->persist($link);
+
+            return [$user, $link, $now, $expires, $token];
+        });
+        if (null === $prepared) {
+            return;
+        }
+        [$user, $link, $now, $expires, $token] = $prepared;
+        try {
+            $mail = $this->locale->runFor($user, fn (): SendMail => $this->composer->passwordLink($user, $job->kind, $this->urls->to($this->admin->to('/reset-password/' . $token), $job->baseUrl), self::words($now, $expires), $this->urls->to($this->admin->to(), $job->baseUrl)));
+            $this->mailer->deliver($mail);
         } catch (\Throwable $e) {
             $this->em->remove($link);
             $this->em->flush();
 
-            throw $e instanceof ContentException ? $e : new ContentException(I18n::t('http.mail_queue_failed'), 503);
+            throw $e;
         }
         $this->links->purge($now);
     }
 
     /** The link is alive: not used, not expired. Wrong guesses are counted per visitor. */
-    public function find(string $token, ?string $ip = null): ?PasswordReset
+    public function find(#[\SensitiveParameter] string $token, ?string $ip = null): ?PasswordReset
     {
         if (!\preg_match('/^[A-Za-z0-9_-]{20,100}$/', $token)) {
             $this->guesses->create($ip ?? 'unknown')->consume();
@@ -188,23 +212,36 @@ final class PasswordRecovery
      *
      * @throws ContentException 410 when the link does not work (any more), 422 for a weak password or a repeat that differs
      */
-    public function complete(string $token, string $password, string $repeat, ?string $ip = null): User
+    public function complete(#[\SensitiveParameter] string $token, #[\SensitiveParameter] string $password, #[\SensitiveParameter] string $repeat, ?string $ip = null): User
     {
         $link = $this->find($token, $ip) ?? throw new ContentException(I18n::t('http.link_gone'), 410, ['code' => 'link_gone']);
-        $user = $link->user;
-        if (User::BLOCKED === $user->status) {
-            throw new ContentException(I18n::t('http.link_gone'), 410, ['code' => 'link_gone']);
-        }
-        UserManager::checkPasswordPolicy($password);
-        if ($password !== $repeat) {
-            throw ContentException::invalid(I18n::t('http.passwords_differ'), ['repeat' => I18n::t('http.passwords_differ')]);
-        }
-        $this->manager->setPassword($user, $password); // burns every link of the person, this one too
+        $connection = $this->em->getConnection();
+        $connection->beginTransaction();
+        try {
+            $user = $link->user;
+            // All account-link delivery and completion serialize on the same parent user.
+            // Refresh both objects: another request may have consumed a link cached before this lock.
+            $this->em->refresh($user, LockMode::PESSIMISTIC_WRITE);
+            $this->em->refresh($link, LockMode::PESSIMISTIC_WRITE);
+            if (!$link->isUsable() || User::BLOCKED === $user->status) {
+                throw new ContentException(I18n::t('http.link_gone'), 410, ['code' => 'link_gone']);
+            }
+            UserManager::checkPasswordPolicy($password);
+            if ($password !== $repeat) {
+                throw ContentException::invalid(I18n::t('http.passwords_differ'), ['repeat' => I18n::t('http.passwords_differ')]);
+            }
+            $this->manager->setPassword($user, $password); // burns every link in this transaction
+            $connection->commit();
 
-        return $user;
+            return $user;
+        } catch (\Throwable $error) {
+            $connection->rollBack();
+
+            throw $error;
+        }
     }
 
-    public static function hash(string $token): string
+    public static function hash(#[\SensitiveParameter] string $token): string
     {
         return \hash('sha256', $token);
     }

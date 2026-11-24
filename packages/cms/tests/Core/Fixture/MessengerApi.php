@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Itk\Cms\Tests\Core\Fixture;
 
+use Itk\Cms\Request\DeliveryRefusedException;
 use Mj4444\SimpleHttpClient\Contracts\HttpClientInterface;
 use Mj4444\SimpleHttpClient\Contracts\HttpRequestInterface;
 use Mj4444\SimpleHttpClient\Contracts\HttpResponseInterface;
@@ -25,6 +26,7 @@ final class MessengerApi implements TransportInterface, HttpClientInterface
     /** The number of the send to refuse, counted from 1 over all chats; 0 = none. */
     public int $refuseAttempt = 0;
     public int $attempts = 0;
+    public ?\Closure $beforeAttempt = null;
     /** @var list<array{channel: string, chat: string, text: string}> */
     private array $taken = [];
     private float $now = 0.0;
@@ -64,6 +66,7 @@ final class MessengerApi implements TransportInterface, HttpClientInterface
 
     private function take(string $channel, string $chat, string $text): ?string
     {
+        $this->beforeAttempt?->__invoke();
         if (++$this->attempts === $this->refuseAttempt) {
             return 'test refusal';
         }
@@ -125,7 +128,7 @@ final class MessengerApi implements TransportInterface, HttpClientInterface
         \assert($message instanceof ChatMessage);
         $error = $this->take('telegram', (string) ($message->getOptions()?->toArray()['chat_id'] ?? ''), $message->getSubject());
         if (null !== $error) {
-            throw new \RuntimeException($error);
+            throw new DeliveryRefusedException($error);
         }
 
         return new SentMessage($message, (string) $this);

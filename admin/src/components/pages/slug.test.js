@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest'
+import slugCases from '../../../../packages/cms/tests/Fixtures/slug-cases.json'
 import { autoUrl, normalizeUrl, pageWithUrl, slugify, urlError, urlKey } from './slug.js'
 
 describe('slugify', () => {
+  it.each(slugCases)('transliterates "$in" with a limit of $max', ({ in: text, out, max }) => {
+    expect(slugify(text, max)).toBe(out)
+  })
+
   it('transliterates Russian and drops everything that is no address character', () => {
     expect(slugify('Доставка и оплата')).toBe('dostavka-i-oplata')
     expect(slugify('Щётка № 5, «Ёж»!')).toBe('schetka-5-ezh')
@@ -10,6 +15,10 @@ describe('slugify', () => {
 
   it('cuts at the limit without a dangling dash', () => {
     expect(slugify('один два три', 8)).toBe('odin-dva')
+  })
+
+  it('keeps the default limit for an editor address', () => {
+    expect(slugify('Қ'.repeat(70))).toBe('q'.repeat(48))
   })
 })
 
@@ -37,9 +46,9 @@ describe('addresses', () => {
 
   it('checks an address and says why not, in Russian', () => {
     expect(urlError('', pages)).toMatch(/Укажите адрес/)
-    expect(urlError('about', pages)).toMatch(/начинаться со слэша/)
+    expect(urlError('about', pages)).toMatch(/Начните адрес с \//)
     expect(urlError('/a b', pages)).toMatch(/пробелов/)
-    expect(urlError('/a//b', pages)).toMatch(/Два слэша/)
+    expect(urlError('/a//b', pages)).toMatch(/Уберите второй \//)
     expect(urlError('/страница', pages)).toMatch(/латинские/)
     expect(urlError('/about', pages)).toMatch(/уже занят: страница «О нас»/)
     expect(urlError('/about', pages, 'p1')).toBe('')

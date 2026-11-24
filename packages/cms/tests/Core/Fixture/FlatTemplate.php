@@ -26,6 +26,7 @@ final class FlatTemplate extends TemplateResource
         yield Text::make('Подпись', 'caption')->max(20);
     }
 
+    /** @return array<array-key, mixed> */
     public function parents(): array
     {
         return ['default'];

@@ -20,7 +20,11 @@ use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\HttpFoundation\File\UploadedFile;
 use Symfony\Component\Messenger\MessageBusInterface;
 
-/** The media library: files in public/uploads/media/Y/m/, rows in itk_media_file, usage lookup across pages, records and settings. */
+/**
+ * The media library: files in public/uploads/media/Y/m/, rows in itk_media_file, usage lookup across pages, records and settings.
+ *
+ * @internal
+ */
 final class MediaService
 {
     private const TYPES = [
@@ -39,7 +43,6 @@ final class MediaService
         private readonly Schema $schema,
         private readonly ImageVariants $variants,
         private readonly MediaFolderRepository $folders,
-        #[Autowire(service: 'messenger.bus.default')]
         private readonly MessageBusInterface $bus,
         #[Autowire(param: 'itk_cms.upload_dir')]
         private readonly string $uploadDir,
@@ -58,6 +61,12 @@ final class MediaService
     public function list(string $q = '', string $type = '', string $folder = ''): array
     {
         return $this->files->search($q, $type, $folder);
+    }
+
+    /** @return array{items: list<MediaFile>, total: int, nextCursor: ?string, previousCursor: ?string} */
+    public function page(string $q, string $type, string $folder, int $offset, int $limit, string $cursor = ''): array
+    {
+        return $this->files->page($q, $type, $folder, $offset, $limit, $cursor);
     }
 
     public function find(string $id): MediaFile
@@ -190,10 +199,11 @@ final class MediaService
 
     /**
      * Where the file is used: pages, collection records and settings that contain its address.
+     * An explicit audience is required; trusted background code may pass Viewer::system().
      *
      * @return list<array{label: string, to: string}>
      */
-    public function usage(MediaFile $m, ?Viewer $viewer = null): array
+    public function usage(MediaFile $m, Viewer $viewer): array
     {
         $like = '%' . \addcslashes($m->path, '%_\\') . '%';
         $out = [];
@@ -204,19 +214,17 @@ final class MediaService
         );
         foreach ($rows as $r) {
             $template = (string) $r['template'];
-            if (null !== $viewer && !$viewer->can('pages', 'view', $template)) {
+            if (!$viewer->can('pages', 'view', $template)) {
                 continue;
             }
             $draft = (array) \json_decode((string) $r['draft'], true);
-            if (null !== $viewer) {
-                $published = (array) \json_decode((string) $r['published'], true);
-                $versions = [];
-                foreach ([$draft, $published] as $version) {
-                    $versions[] = FieldAccess::pageOutputFor($this->schema, $template, $version, $viewer);
-                }
-                if (!self::containsPath($versions, $m->path)) {
-                    continue;
-                }
+            $published = (array) \json_decode((string) $r['published'], true);
+            $versions = [];
+            foreach ([$draft, $published] as $version) {
+                $versions[] = FieldAccess::pageOutputFor($this->schema, $template, $version, $viewer);
+            }
+            if (!self::containsPath($versions, $m->path)) {
+                continue;
             }
             $out[] = ['label' => I18n::t('http.media_used_page', ['title' => $draft['title'] ?? '']), 'to' => '/pages/' . $r['page_id']];
         }
@@ -224,25 +232,23 @@ final class MediaService
         foreach ($rows as $r) {
             $c = $this->schema->collection((string) $r['collection_key']);
             $tr = \json_decode((string) $r['tr'], true) ?: [];
-            if (null !== $viewer) {
-                if (null === $c || !$viewer->can('col:' . $c->key()) || !$c->isVisibleTo($viewer)) {
-                    continue;
-                }
-                foreach ($tr as $locale => $version) {
-                    foreach (['draft', 'published'] as $state) {
-                        $tr[$locale][$state] = FieldAccess::outputFor($c->fieldList(), (array) ($version[$state] ?? []), $viewer);
-                    }
-                }
-                if (!self::containsPath($tr, $m->path)) {
-                    continue;
+            if (null === $c || !$viewer->can('col:' . $c->key()) || !$c->isVisibleTo($viewer)) {
+                continue;
+            }
+            foreach ($tr as $locale => $version) {
+                foreach (['draft', 'published'] as $state) {
+                    $tr[$locale][$state] = FieldAccess::outputFor($c->fieldList(), (array) ($version[$state] ?? []), $viewer);
                 }
             }
+            if (!self::containsPath($tr, $m->path)) {
+                continue;
+            }
             $first = \reset($tr) ?: [];
-            $name = null !== $c ? (string) ($first['draft'][$c->titleFieldKey()] ?? '') : '';
-            $out[] = ['label' => ($c?->title() ?? $r['collection_key']) . ('' !== $name ? ' · ' . $name : ''), 'to' => '/collections/' . $r['collection_key'] . '/' . $r['id']];
+            $name = (string) ($first['draft'][$c->titleFieldKey()] ?? '');
+            $out[] = ['label' => $c->title() . ('' !== $name ? ' · ' . $name : ''), 'to' => '/collections/' . $r['collection_key'] . '/' . $r['id']];
         }
         $keys = $this->db->fetchFirstColumn('SELECT DISTINCT setting_key FROM itk_setting WHERE setting_value::text LIKE :p', ['p' => $like]);
-        if ([] !== $keys && (null === $viewer || $this->maySeeSetting($keys, $viewer))) {
+        if ([] !== $keys && $this->maySeeSetting($keys, $viewer)) {
             $out[] = ['label' => I18n::t('http.media_used_settings'), 'to' => '/settings'];
         }
 
@@ -279,14 +285,23 @@ final class MediaService
      */
     public function present(MediaFile $m, bool $withUsage = false, ?Viewer $viewer = null): array
     {
+        if ($withUsage && null === $viewer) {
+            throw new \InvalidArgumentException('Media usage requires an explicit Viewer.');
+        }
+        $size = $m->width > 0 && $m->height > 0 ? [$m->width, $m->height] : null;
+        // A legacy JPEG can have raw dimensions saved before EXIF was available. Other formats keep the metadata fast path.
+        if ('image/jpeg' === $m->mime && null !== ($path = $this->variants->pathOf($m->path))) {
+            $size = $this->variants->dimensions($path) ?? $size;
+        }
+
         return [
             'id' => $m->id,
             'name' => $m->title,
             'originalName' => $m->originalName,
             'src' => $m->path,
-            'thumb' => $m->isImage() ? $this->variants->url($m->path, 320) : '',
-            'w' => $m->width,
-            'h' => $m->height,
+            'thumb' => $m->isImage() ? $this->variants->url($m->path, 320, originalSize: $size) : '',
+            'w' => $size[0] ?? $m->width,
+            'h' => $size[1] ?? $m->height,
             'kb' => \max(1, (int) \round($m->size / 1024)),
             'alt' => $m->alt,
             'folderId' => $m->folderId(),

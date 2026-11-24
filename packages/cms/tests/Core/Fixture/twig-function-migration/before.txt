@@ -1,0 +1,49 @@
+Outside Twig: menu() settings() {{- menu('header') -}}.
+{{ settings('site') }} {{ listing(page) }} {{ media_url(image) }}
+{{ media_srcset(image) }} {{ media_width(image) }} {{ media_ratio(4, 3) }}
+{{ page_url(page) }} {{ render_sections(page) }}
+{% set value = settings ('site') %}
+{% for i in 1..settings('n') %}{{ i }}{% endfor %}
+{% for i in settings('start')..settings('end') %}{{ i }}{% endfor %}
+{{ [...menu('a'), ...settings('b')] }}
+{{ {a: {b: 1}}|merge({m: menu('x')}) }}
+{{ {key: {foo: 1}}|merge({more: menu('header')}) }}
+{{ {key: {foo: 1}}|merge({more: menu('header'), text: "literal {{ menu() }}"}) }}
+{{ menu('a') # note }} {{ settings('b') }}
+{% set value = menu('a') # settings('comment') %}{{ settings('b') }}
+{{ menu('a') # settings('comment')
+  ~ settings('b') }}
+{{ menu('a') # comment with { [ (
+  ~ settings('b') }}
+{{ {a: {b: 1, c: {d: menu('x')}}}, menu: settings('site')} }}
+{{ menu({items: [settings('a'), {url: page_url(page)}]}) }}
+{{ "plain menu() {{ settings() }} {% listing() %}" }}
+{{ 'plain menu() {{ settings() }} {% listing() %}' }}
+{{ "escaped \"menu()\" and \\ then #{menu('header')}" }}
+{{ "#{menu('header')} / #{settings('site')}" }}
+{{ "#{menu('header') ~ 'literal settings()'}" }}
+{{ "#{menu('header') ~ "literal settings()"}" }}
+{{ "#{menu({key: {foo: 1}, text: 'literal {{ settings() }}'})}" }}
+{{ "#{menu('header') ~ "nested #{settings('site')} literal menu()"}" }}
+{{ "escaped \#{menu('literal')} / #{menu('real')}" }}
+{{ '#{menu("literal")}' }}
+{{ "#{foo.menu('method') ~ value|settings('filter') ~ menu('direct')}" }}
+{{ foo.menu('method') }} {{ foo . settings('method') }}
+{{ value|media_url() }} {{ value | media_srcset(640) }}
+{{ value is menu() }} {{ value is not settings() }}
+{% macro menu(value) %}{{ settings('site') }}{% endmacro %}
+{{ _self.menu('macro') }} {{ custom_menu() }} {{ itk_menu() }}
+{{ not menu('direct') }} {{ is_menu() }}
+{# menu() {{ settings() }} #}
+{% verbatim %}{{ menu('raw') }} {% set x = settings('raw') %}{% endverbatim %}
+{%- verbatim -%}{{ menu('raw') }}{%- endverbatim -%}
+{{~ menu('trim') ~}}
+{{ menu('a') # literal }} {{ menu('comment') }}
+  ~ settings('b') }}
+{% set value = menu('a') # literal %}{{ settings('comment') }}
+  ~ settings('b') %}
+{{ "#{menu('a') # ignored } menu('comment')
+  ~ settings('b')}" }}
+{{ menu # comment
+  ('a') }}
+{% apply media_url() %}{{ menu('a') }}{% endapply %}

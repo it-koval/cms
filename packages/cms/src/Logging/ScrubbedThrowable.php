@@ -7,6 +7,8 @@ namespace Itk\Cms\Logging;
 /**
  * What SecretScrubProcessor puts in a log record in place of an exception that carried a secret: the same class name, message, place, code and previous
  * exceptions (all scrubbed). The stack trace of the original is dropped: its arguments may hold the secret too.
+ *
+ * @internal
  */
 final class ScrubbedThrowable extends \RuntimeException
 {

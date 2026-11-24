@@ -4,7 +4,7 @@
 
 ITK CMS это бандл для Symfony, который добавляет сайту на PHP систему управления содержимым и админку для редакторов. Вы описываете структуру сайта в PHP и пишете Twig-шаблоны. Редакторы собирают страницы из секций, смотрят черновик и публикуют его в админке. Содержимое хранится в PostgreSQL, админка поставляется собранной, поэтому сайту не нужен Node.
 
-Текущая версия 0.2.2. До версии 1.0.0 минорный релиз может менять публичный API. Правила описаны в [UPGRADE.ru.md](UPGRADE.ru.md).
+Текущая версия 0.3.0. До версии 1.0.0 минорный релиз может менять публичный API. Его границы описаны в [API.ru.md](packages/cms/API.ru.md), правила совместимости и шаги перехода — в [UPGRADE.ru.md](UPGRADE.ru.md).
 
 ## Возможности
 
@@ -25,8 +25,8 @@ ITK CMS это бандл для Symfony, который добавляет са
 ## Требования
 
 - PHP 8.3 или новее с расширениями `ctype`, `dom`, `gd`, `json`, `mbstring`, `pdo_pgsql` и `sodium`. Расширения `exif` и `intl` необязательны. Ставьте свежий патч-релиз: экран «Состояние сайта» предупреждает, если в версии PHP нет известных исправлений безопасности.
-- Symfony 7.4 или 8. Symfony 8 требует PHP 8.4 или новее.
-- PostgreSQL 16 или новее с расширением [pgvector](https://github.com/pgvector/pgvector) версии 0.8 или новее. Миграция ядра выполняет `CREATE EXTENSION vector`, поэтому расширение нужно, даже если база знаний не используется. В образе Docker `pgvector/pgvector:pg17` оно уже есть. MySQL не поддерживается.
+- Symfony 7.4 (7.4.23 или новее) или 8.1.11 и новее. Symfony 8 требует PHP 8.4 или новее. Symfony 8.0 не поддерживается: срок его поддержки закончился.
+- PostgreSQL 16 или новее с расширением [pgvector](https://github.com/pgvector/pgvector) версии 0.8 или новее. Миграция ядра выполняет `CREATE EXTENSION vector`, поэтому расширение нужно, даже если база знаний не используется. В образе Docker `pgvector/pgvector:pg17` оно уже есть.
 - Composer.
 - Node нужен только для сборки админки из исходников и для критического CSS.
 
@@ -89,19 +89,22 @@ ITK CMS это бандл для Symfony, который добавляет са
 
 Это монорепозиторий:
 
-- `packages/cms` это Composer-пакет `itk/cms`: бандл, его тесты, комплект Docker и собранная админка в `packages/cms/public/admin`. При каждом push в `main` и каждом теге `v*` рабочий процесс копирует этот каталог в [it-koval/cms-bundle](https://github.com/it-koval/cms-bundle), который читает Packagist.
+- `packages/cms` содержит Composer-пакет `itk/cms` с бандлом, тестами, комплектом Docker и собранной админкой в `packages/cms/public/admin`. После успешного CI для того же коммита в `main` или теге `v*` рабочий процесс копирует каталог в [it-koval/cms-bundle](https://github.com/it-koval/cms-bundle).
 - `admin` содержит исходники админки (Vue 3 и Vite). `npm run build` записывает сборку в `packages/cms/public/admin`.
 
 ## Разработка
 
-Для работы над бандлом или админкой нужны PHP, Composer и Docker. В Docker работают тестовая база, перехватчик почты и Node для админки. Команды для настройки окружения и запуска проверок перечислены в [CONTRIBUTING.ru.md](CONTRIBUTING.ru.md).
+Для работы над бандлом и админкой используйте Docker Compose. PHP, Composer, PostgreSQL, Mailpit и Node работают в контейнерах. См. [настройку окружения и проверки](CONTRIBUTING.ru.md).
 
 ## Подробнее
 
 - [Справочник бандла](packages/cms/README.ru.md)
+- [Контракт публичного API](packages/cms/API.ru.md)
 - [Правила для ИИ-агента, который делает сайт](packages/cms/SITE-AGENTS.ru.md)
 - [Участие в разработке](CONTRIBUTING.ru.md)
+- [Кодекс поведения](CODE_OF_CONDUCT.ru.md)
 - [Политика безопасности](SECURITY.ru.md)
+- [Выкладка и откат](docs/DEPLOY.ru.md)
 - [Обновление](UPGRADE.ru.md)
 - [Журнал изменений](CHANGELOG.ru.md)
 

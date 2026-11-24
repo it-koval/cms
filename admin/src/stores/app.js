@@ -1,7 +1,7 @@
 // Plain reactive store (no Pinia): the site, its content languages, the signed-in user and the numbers shown in the rail.
 //   import { app, can, refreshCounters, setContentLocale, switchContentLocale, useLocaleGuard, reloadLanguages } from '@/stores/app.js'
 //   app.siteInfo        { key, name, domain } from window.ITK_ADMIN.site
-//   app.languages       { main:'ru', list:[{ code, name }] } (GET languages; the first iteration has the Russian language only: the language UI hides itself for one language)
+//   app.languages       { main:'ru', list:[{ code, name }] } (GET languages; language controls appear only when several languages are configured)
 //   app.locale          the CURRENT CONTENT LANGUAGE: the language Pages, Collections, Settings texts and Menus work in. Remembered in this browser (localStorage), falls back to the main language.
 //                       Change it with setContentLocale(code); views that depend on it are re-mounted by App.vue (route.meta.byLocale), the page editor handles it itself.
 //                       A SWITCH THE USER MAKES (rail, tabs, Settings switcher) goes through switchContentLocale(code): it asks the screen first (useLocaleGuard),
@@ -63,19 +63,36 @@ export function setContentLocale(code) {
 /* A screen that would lose something when the content language changes registers a guard (in setup): `async (nextCode) => boolean`. `false` stops the switch.
    The record screen saves its draft and remembers the open tab; Settings asks about unsaved changes. The guard is dropped when the screen goes away. */
 const localeGuards = new Set()
+let localeNavigation
+let checkingLocale
 export function useLocaleGuard(fn) {
   localeGuards.add(fn)
   onBeforeUnmount(() => localeGuards.delete(fn))
 }
 
-/** The switch the USER makes: runs the guards of the screen on display, then switches. Returns true when the language is now `code`. */
-export async function switchContentLocale(code) {
-  if (code === app.locale) return true
-  if (!app.languages.list.some((l) => l.code === code)) return false
+export function routeLocaleSwitchThrough(navigate) {
+  localeNavigation = navigate
+}
+
+async function runLocaleGuards(code) {
   for (const guard of [...localeGuards]) {
     if ((await guard(code)) === false) return false
   }
-  return setContentLocale(code)
+  return true
+}
+
+export function checkLocaleSwitch(code) {
+  if (code === app.locale) return true
+  checkingLocale ??= runLocaleGuards(code).finally(() => { checkingLocale = undefined })
+  return checkingLocale
+}
+
+/** A switch from a language control uses the same navigation and unsaved-change guard as a language link. */
+export async function switchContentLocale(code) {
+  if (code === app.locale) return true
+  if (!app.languages.list.some((l) => l.code === code)) return false
+  if (localeNavigation) return localeNavigation(code)
+  return (await checkLocaleSwitch(code)) && setContentLocale(code)
 }
 
 /** Re-read the languages of the site. A removed current language falls back to the main one. */

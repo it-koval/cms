@@ -1,4 +1,4 @@
-// Icon paths (24x24 viewBox, stroke icons). Ported from the prototype ICONS. Use via <Icon name="plus" />.
+// Icon paths (24x24 viewBox, stroke icons). Use via <Icon name="plus" />.
 export const ICONS = {
   today: 'M9 6h11M9 12h11M9 18h11M4 6l1 1 2-2M4 12l1 1 2-2M4 18l1 1 2-2',
   pages: 'M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z M14 3v5h5',

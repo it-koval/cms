@@ -58,7 +58,7 @@
   "pages.title_required": "Бет атауын көрсетіңіз",
   "pages.copy_source_required": "Секциялар көшірілетін бетті таңдаңыз",
   "pages.template_label": "Үлгі",
-  "pages.parent_label": "Аталық бет",
+  "pages.parent_label": "Беттің ішіне орналастыру",
   "pages.parent_none": "Жоқ — жоғарғы деңгейдегі бет",
   "pages.choose_page": "Бетті таңдаңыз…",
   "pages.on_site": "Сайтта:",

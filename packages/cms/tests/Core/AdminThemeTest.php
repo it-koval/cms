@@ -235,7 +235,7 @@ final class AdminThemeTest extends WebTestCase
         self::assertTrue($saved['custom']);
         self::assertSame('#1B5E20', $saved['theme']['brand']);
         self::assertSame('#C8217A', $saved['theme']['accent']);
-        $row = self::getContainer()->get(EntityManagerInterface::class)->getRepository(Setting::class)->find(['key' => 'adminTheme', 'locale' => '*']);
+        $row = self::getContainer()->get(EntityManagerInterface::class)->getRepository(Setting::class)->find(['key' => 'itk:adminTheme', 'locale' => '*']);
         self::assertSame(['brand' => '#1B5E20', 'accent' => '#C8217A', 'radius' => 10], $row->value);
         self::assertSame('#1B5E20', $this->theme()->effective()['brand']);
 

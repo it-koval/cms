@@ -7,7 +7,7 @@ namespace Itk\Cms\Tests\Core\Fixture;
 use Doctrine\DBAL\Connection;
 use Doctrine\ORM\EntityManagerInterface;
 
-/** Таблица-источник для проверки переноса строк (создаётся на время теста) и уборка за ним. Нужно ядро в self::getContainer(). */
+/** A test table for schema inspection. Requires a booted test kernel. */
 trait SourceTable
 {
     private const TABLE = 'test_gen_src';
@@ -29,13 +29,10 @@ trait SourceTable
             . ($primary ? ', PRIMARY KEY (id)' : '') . ')',
         );
         $db->executeStatement('COMMENT ON COLUMN ' . self::TABLE . ".note IS 'Комментарий из таблицы'");
-        $db->executeStatement('INSERT INTO ' . self::TABLE . " (city, price, hot, starts_at) VALUES ('Алтай', 12.50, true, '2026-12-01 10:30:00'), ('Байкал', NULL, false, NULL), ('Карелия', 7, true, '2026-11-20 08:00:00')");
     }
 
     private function dropSourceTable(): void
     {
-        $em = self::getContainer()->get(EntityManagerInterface::class);
-        $em->createQuery('DELETE FROM Itk\\Cms\\Entity\\CollectionItem i WHERE i.collection LIKE :c')->setParameter('c', 'test_gen_%')->execute();
         $this->db()->executeStatement('DROP TABLE IF EXISTS ' . self::TABLE);
         $this->db()->executeStatement('DROP TYPE IF EXISTS ' . self::TABLE . '_level');
     }

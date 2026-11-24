@@ -23,6 +23,7 @@ final class RequestPlainTextTest extends WebTestCase
 {
     private KernelBrowser $client;
 
+    /** @param array<string, mixed> $options */
     protected static function createKernel(array $options = []): KernelInterface
     {
         return new TestKernel($options['environment'] ?? 'test', $options['debug'] ?? true, null, '', [], [], ['schema_file' => __DIR__ . '/Fixture/schema_long_requests.php']);
@@ -41,6 +42,7 @@ final class RequestPlainTextTest extends WebTestCase
         parent::tearDown();
     }
 
+    /** @param array<string, mixed> $fields */
     private function post(array $fields): int
     {
         $this->client->request('POST', '/request/long_order', $fields + ['name' => 'Иван', 'phone' => '+79000000011', 'items' => 'Шлем', 'consent' => '1']);
@@ -63,6 +65,7 @@ final class RequestPlainTextTest extends WebTestCase
         return (string) ($this->last()->data['items'] ?? '');
     }
 
+    /** @return iterable<array-key, mixed> */
     public static function textWithAnAngleBracket(): iterable
     {
         yield 'a price' => ['Цена <500 руб, Итого 1000', 'Цена < 500 руб, Итого 1000'];
@@ -97,6 +100,7 @@ final class RequestPlainTextTest extends WebTestCase
         self::assertSame($saved, $this->saved($sent));
     }
 
+    /** @return iterable<array-key, mixed> */
     public static function realTags(): iterable
     {
         yield 'formatting' => ['<p><b>Шлем</b></p>', 'Шлем'];
@@ -115,6 +119,7 @@ final class RequestPlainTextTest extends WebTestCase
         self::assertSame($saved, $this->saved($sent));
     }
 
+    /** @return iterable<array-key, mixed> */
     public static function textThatDidNotChange(): iterable
     {
         yield 'a bracket with a space' => ['2 < 3 и 5 > 4'];
@@ -130,6 +135,7 @@ final class RequestPlainTextTest extends WebTestCase
         self::assertSame($text, $this->saved($text));
     }
 
+    /** @return iterable<array-key, mixed> */
     public static function attemptsToMakeATag(): iterable
     {
         yield 'a tag inside a tag' => ['<scr<b>ipt>alert(1)</scr</b>ipt>'];
@@ -164,10 +170,14 @@ final class RequestPlainTextTest extends WebTestCase
     }
 
     #[Test]
-    public function aFieldWithoutALimitKeepsTheSame1001Characters(): void
+    public function aFieldWithoutALimitCountsTheAddedSpaceInIts1000Characters(): void
     {
-        self::assertSame(200, $this->post(['free' => '<' . \str_repeat('б', 5000)]));
-        self::assertSame('< ' . \str_repeat('б', 999), $this->last()->data['free']);
+        foreach ([999, 5000] as $size) {
+            self::assertSame(422, $this->post(['free' => '<' . \str_repeat('б', $size)]));
+            self::assertNull($this->last());
+        }
+        self::assertSame(200, $this->post(['free' => '<' . \str_repeat('б', 998)]));
+        self::assertSame('< ' . \str_repeat('б', 998), $this->last()->data['free']);
     }
 
     #[Test]

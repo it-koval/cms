@@ -61,6 +61,7 @@ final class PageCacheTest extends WebTestCase
     private bool $domainWasSet = false;
     private mixed $domainBefore = '';
 
+    /** @param array<string, mixed> $options */
     protected static function createKernel(array $options = []): KernelInterface
     {
         return new TestKernel('test', $options['debug'] ?? false, null, '', [], [], $options['itk'] ?? []);
@@ -248,7 +249,7 @@ final class PageCacheTest extends WebTestCase
         $c->get(MediaService::class)->update($file->id, ['crops' => ['16:9' => ['x' => 0, 'y' => 0, 'w' => 1, 'h' => 0.5]]]);
         $missed('a frame of a picture');
 
-        $item = $c->get(CollectionService::class)->create('tours', ['title' => 'Тур для кеша']);
+        $item = $c->get(CollectionService::class)->create('tours', ['city' => 'Тур для кеша', 'dateStart' => '2026-11-01', 'dateEnd' => '2026-11-09']);
         $this->items[] = $item['id'];
         $c->get(CollectionService::class)->publish('tours', $item['id']);
         $missed('a record of a collection that goes live');
@@ -278,7 +279,7 @@ final class PageCacheTest extends WebTestCase
             self::assertSame('HIT', $this->cacheOf($this->visit($client, $url)), $url . ' is kept');
         }
         $body = (string) $this->visit($client, 'https://a.test/test-pc-key')->getContent();
-        self::assertStringContainsString('https://a.test/test-pc-key', $body, 'the canonical of the template follows the request');
+        self::assertStringContainsString('https://a.test/test-pc-key', $body, 'the canonical uses the configured domain origin');
         self::assertStringNotContainsString('http://a.test', $body);
     }
 
@@ -360,8 +361,10 @@ final class PageCacheTest extends WebTestCase
             self::assertSame('HIT', $this->cacheOf($this->visit($client, 'http://a.test/test-pc-trusted')));
             self::assertSame('MISS', $this->cacheOf($this->visit($client, 'http://b.test/test-pc-trusted')), 'the host is part of the entry');
             self::assertSame('HIT', $this->cacheOf($this->visit($client, 'http://b.test/test-pc-trusted')));
-            self::assertStringContainsString('http://b.test/test-pc-trusted', (string) $this->visit($client, 'http://b.test/test-pc-trusted')->getContent());
-            self::assertStringNotContainsString('http://a.test', (string) $this->visit($client, 'http://b.test/test-pc-trusted')->getContent());
+            $body = (string) $this->visit($client, 'http://b.test/test-pc-trusted')->getContent();
+            self::assertStringNotContainsString('rel="canonical"', $body, 'trusted hosts permit caching but do not configure an SEO origin');
+            self::assertStringNotContainsString('http://b.test', $body);
+            self::assertStringNotContainsString('http://a.test', $body);
             self::assertSame(400, $this->visit($client, 'http://evil.test/test-pc-trusted')->getStatusCode(), 'any other host is refused before the controller');
         } finally {
             Request::setTrustedHosts($before);
@@ -437,7 +440,7 @@ final class PageCacheTest extends WebTestCase
         $first = $this->visit($client, '/test-pc-canon');
         self::assertSame('MISS', $this->cacheOf($first));
         self::assertSame('HIT', $this->cacheOf($this->visit($client, '/test-pc-canon')));
-        self::assertStringContainsString('<link rel="canonical" href="http://localhost/test-pc-canon"/>', (string) $this->visit($client, '/test-pc-canon')->getContent(), 'what the shared entry says about the address is the address');
+        self::assertStringContainsString('<link rel="canonical" href="https://localhost/test-pc-canon"/>', (string) $this->visit($client, '/test-pc-canon')->getContent(), 'what the shared entry says about the address is the address');
     }
 
     #[Test]

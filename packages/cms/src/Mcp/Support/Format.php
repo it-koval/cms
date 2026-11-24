@@ -4,7 +4,11 @@ declare(strict_types=1);
 
 namespace Itk\Cms\Mcp\Support;
 
-/** Small helpers that keep tool results compact. */
+/**
+ * Small helpers that keep tool results compact.
+ *
+ * @internal
+ */
 final class Format
 {
     /** Plain text of a value for a list row: tags removed, spaces folded, cut to `$max` signs. */
@@ -83,12 +87,26 @@ final class Format
      */
     public static function page(array $items, int $offset, int $limit): array
     {
-        $total = \count($items);
-
-        return ['items' => \array_slice($items, $offset, $limit), 'total' => $total, 'offset' => $offset, 'limit' => $limit, 'hasMore' => $offset + $limit < $total];
+        return self::pageResult(\array_slice($items, $offset, $limit), \count($items), $offset, $limit);
     }
 
-    /** @param list<array<string, mixed>> $rows change rows of ChangeDetector @return list<array<string, mixed>> */
+    /**
+     * @template T
+     *
+     * @param list<T> $items the rows of a page already selected by the database
+     *
+     * @return array{items: list<T>, total: int, offset: int, limit: int, hasMore: bool}
+     */
+    public static function pageResult(array $items, int $total, int $offset, int $limit): array
+    {
+        return ['items' => $items, 'total' => $total, 'offset' => $offset, 'limit' => $limit, 'hasMore' => $limit < $total - $offset];
+    }
+
+    /**
+     * @param list<array<string, mixed>> $rows change rows of ChangeDetector
+     *
+     * @return list<array<string, mixed>>
+     */
     public static function changes(array $rows, int $max = 20): array
     {
         $out = [];

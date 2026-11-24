@@ -7,6 +7,8 @@ namespace Itk\Cms\Request\Max;
 /**
  * What the CMS needs from MAX: say whether there is a bot to send with, and send one text (MAX HTML) to one chat.
  * The one implementation, MaxApiSender, talks to the Bot API through the bundle yuri-kovalev/max-bot-symfony-bundle; the tests of a site replace it.
+ *
+ * @internal
  */
 interface MaxSender
 {

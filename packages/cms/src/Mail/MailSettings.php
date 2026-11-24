@@ -12,17 +12,19 @@ use Itk\Cms\Repository\SettingRepository;
 use Itk\Cms\Security\TwoFactor\SecretBox;
 
 /**
- * «Настройки → Почта»: the mail server the site sends letters through. One setting `mail` (shared by all languages), kept outside the settings groups
+ * «Настройки → Почта»: the mail server the site sends letters through. One setting `itk:mail` (shared by all languages), kept outside the settings groups
  * of the schema on purpose: the generic settings API never hands it out, so the password cannot leave through it.
  *
  * The password is stored sealed (libsodium secretbox, key from APP_SECRET: Security\TwoFactor\SecretBox). It is never returned: view() says only
  * `passwordSet: true|false`. On save an empty or absent `password` keeps the current one; `clearPassword: true` removes it.
  * The saved password stays bound to the server it was saved for: when the host or the login changes, a new password must come with the change (422 otherwise),
  * so nobody who may edit the settings can point the saved password at a server of his own.
+ *
+ * @internal
  */
 final class MailSettings
 {
-    public const KEY = 'mail';
+    public const KEY = 'itk:mail';
 
     public function __construct(
         private readonly EntityManagerInterface $em,
@@ -79,7 +81,7 @@ final class MailSettings
      *
      * @return array<string, mixed> view()
      */
-    public function save(array $input): array
+    public function save(#[\SensitiveParameter] array $input): array
     {
         $s = $this->stored();
         $errors = [];
@@ -132,6 +134,10 @@ final class MailSettings
             }
         }
 
+        if (!MailConfig::canSendCredentials($encryption, '' !== $sealed)) {
+            $errors['encryption'] = I18n::t('http.mail_password_requires_tls');
+        }
+
         $moved = \strtolower($host) !== \strtolower(\trim((string) ($s['host'] ?? ''))) || $username !== (string) ($s['username'] ?? '');
         if ($moved && '' !== $sealed && !(\is_string($password) && '' !== $password) && !isset($errors['password'])) {
             $errors['password'] = I18n::t('http.mail_server_changed');
@@ -173,7 +179,7 @@ final class MailSettings
     }
 
     /** @param array<string, mixed> $s */
-    private function password(array $s): string
+    private function password(#[\SensitiveParameter] array $s): string
     {
         $sealed = (string) ($s['password'] ?? '');
 
