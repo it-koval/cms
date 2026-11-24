@@ -140,7 +140,7 @@ final class GenerateCriticalCssCommand extends Command
             $all = $this->translations->findAllLive();
         }
 
-        return \array_values(\array_filter($all, fn (PageTranslation $t): bool => $t->isLive() && ($this->contentLocales?->has($t->locale) ?? true) && (null === $locale || $t->locale === $locale)));
+        return \array_values(\array_filter($all, fn (PageTranslation $t): bool => $t->isLive() && ($this->contentLocales?->serves($t->locale, (string) ($t->published['url'] ?? $t->publishedUrl)) ?? true) && (null === $locale || $t->locale === $locale)));
     }
 
     private function label(PageTranslation $t): string

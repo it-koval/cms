@@ -16,9 +16,6 @@ use PHPUnit\Framework\Attributes\Test;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 use Symfony\Component\HttpKernel\KernelInterface;
-use Twig\Environment;
-use Twig\Loader\ArrayLoader;
-use Twig\Loader\ChainLoader;
 
 final class PublicLocaleRouteTest extends WebTestCase
 {
@@ -80,18 +77,15 @@ final class PublicLocaleRouteTest extends WebTestCase
     }
 
     #[Test]
-    public function theBundleLayoutUsesTheConfiguredHtmlLanguageTag(): void
+    public function theBundleLayoutUsesTheConfiguredHtmlAndOpenGraphLanguages(): void
     {
         $client = static::createClient();
-        $this->version('zh', '/zh', '中文首页');
-        $twig = self::getContainer()->get(Environment::class);
-        $twig->setLoader(new ChainLoader([new ArrayLoader([
-            'layout.html.twig' => "{% extends '@ItkCms/layout.html.twig' %}",
-        ]), $twig->getLoader()]));
+        $this->version('zh', '/zh', '中文首页', template: 'stock_locale');
 
         $client->request('GET', '/zh');
         self::assertResponseStatusCodeSame(200);
         self::assertStringContainsString('<html lang="zh-CN">', (string) $client->getResponse()->getContent());
+        self::assertStringContainsString('<meta property="og:locale" content="zh_CN">', (string) $client->getResponse()->getContent());
     }
 
     #[Test]
@@ -99,15 +93,12 @@ final class PublicLocaleRouteTest extends WebTestCase
     {
         $client = static::createClient();
         $client->disableReboot();
-        $this->version('ru', '/test-locale-order', 'RU page');
-        $this->version('kk', '/kk/test-locale-order', 'KK page');
-        $twig = self::getContainer()->get(Environment::class);
-        $twig->setLoader(new ChainLoader([new ArrayLoader([
-            'pages/default.html.twig' => "{{ 'public_locale_route_probe'|trans }} {{ app.request.locale }}",
-        ]), $twig->getLoader()]));
+        $path = '/test-locale-order-' . \bin2hex(\random_bytes(6));
+        $this->version('ru', $path, 'RU page', template: 'locale_route_probe');
+        $this->version('kk', '/kk' . $path, 'KK page', template: 'locale_route_probe');
 
-        foreach ([['/test-locale-order', 'Russian text ru'], ['/kk/test-locale-order', 'Kazakh text kk'], ['/test-locale-order', 'Russian text ru']] as [$path, $text]) {
-            $client->request('GET', $path);
+        foreach ([[$path, 'Russian text ru'], ['/kk' . $path, 'Kazakh text kk'], [$path, 'Russian text ru']] as [$url, $text]) {
+            $client->request('GET', $url);
             self::assertResponseStatusCodeSame(200);
             self::assertStringContainsString($text, (string) $client->getResponse()->getContent());
         }
@@ -194,9 +185,9 @@ final class PublicLocaleRouteTest extends WebTestCase
         }
     }
 
-    private function version(string $locale, string $path, string $title, bool $live = true): PageTranslation
+    private function version(string $locale, string $path, string $title, bool $live = true, string $template = 'default'): PageTranslation
     {
-        $page = new Page();
+        $page = new Page($template);
         $this->pages[] = $page->id;
         $version = new PageTranslation($page, $locale);
         $page->translations->set($locale, $version);

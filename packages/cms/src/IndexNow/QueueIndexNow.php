@@ -69,7 +69,7 @@ final class QueueIndexNow
             foreach ($versions as $version) {
                 $locale = (string) $version['locale'];
                 $path = (string) $version['url'];
-                if ($this->locales->has($locale) && \str_starts_with($path, '/') && !$this->indexable->noindex((array) $version['seo'], $path, $locale)) {
+                if ($this->locales->serves($locale, $path) && \str_starts_with($path, '/') && !$this->indexable->noindex((array) $version['seo'], $path, $locale)) {
                     $paths[$path] = true;
                 }
             }

@@ -149,7 +149,7 @@ final class CriticalCssLocalesTest extends KernelTestCase
         $em = $this->createMock(EntityManagerInterface::class);
         $em->expects(self::never())->method('find');
         $critical = $this->service($em);
-        foreach ([$this->translation('de', '/de/test-critical-css-disabled'), $this->translation('kk', '/kk/test-critical-css-unpublished', false)] as $t) {
+        foreach ([$this->translation('en', '/about'), $this->translation('en', '/en-about'), $this->translation('ru', '/kk/about'), $this->translation('de', '/de/test-critical-css-disabled'), $this->translation('kk', '/kk/test-critical-css-unpublished', false)] as $t) {
             self::assertFalse($critical->request($t));
             self::assertNull($critical->forLiveRender($t));
         }
@@ -161,13 +161,14 @@ final class CriticalCssLocalesTest extends KernelTestCase
         $enabled = $this->translation('kk', '/kk/test-critical-css-noindex');
         $disabled = $this->translation('de', '/de/test-critical-css-disabled');
         $unpublished = $this->translation('tr', '/tr/test-critical-css-unpublished', false);
+        $unserved = $this->translation('en', '/test-critical-css-unserved');
         $em = $this->createStub(EntityManagerInterface::class);
         $em->method('find')->willReturn(null);
         $critical = $this->service($em, 1);
         $translations = $this->createStub(PageTranslationRepository::class);
-        $translations->method('findOneBy')->willReturnOnConsecutiveCalls($disabled, $unpublished, $enabled);
+        $translations->method('findOneBy')->willReturnOnConsecutiveCalls($disabled, $unpublished, $unserved, $enabled);
         $listener = new RequestOnPublish($critical, $translations, new NullLogger(), $this->locales());
-        foreach ([$disabled, $unpublished, $enabled] as $t) {
+        foreach ([$disabled, $unpublished, $unserved, $enabled] as $t) {
             $record = new Record($t->page->id, 'page', 'default', $t->locale, [], $t->status);
             $listener(new RecordPublished('default', 'page', $record, [], Viewer::system()));
         }
@@ -178,16 +179,19 @@ final class CriticalCssLocalesTest extends KernelTestCase
     {
         $disabled = $this->translation('de', '/de/test-critical-css-disabled');
         $removed = $this->translation('kk', '/kk/test-critical-css-unpublished', false);
+        $unserved = $this->translation('en', '/about');
+        $collision = $this->translation('ru', '/kk/about');
+        $bad = [$disabled->id => $disabled, $removed->id => $removed, $unserved->id => $unserved, $collision->id => $collision];
         $em = $this->createStub(EntityManagerInterface::class);
-        $em->method('find')->willReturnCallback(static fn (string $class, string $id): PageTranslation => $id === $disabled->id ? $disabled : $removed);
+        $em->method('find')->willReturnCallback(static fn (string $class, string $id): PageTranslation => $bad[$id]);
         $extractor = new FakeCssExtractor();
         $db = $this->createMock(Connection::class);
         $db->expects(self::never())->method('executeStatement');
         $generator = new CriticalCssGenerator($em, $db, $this->service($em), $this->stylesheets(), $this->renderer(), $extractor, new MockClock(), new NullLogger(), $this->locales());
 
-        $report = $generator->generate([$disabled->id => When::Always, $removed->id => When::Always]);
+        $report = $generator->generate(\array_fill_keys(\array_keys($bad), When::Always));
 
-        self::assertSame(2, $report->skipped);
+        self::assertSame(4, $report->skipped);
         self::assertSame([], $report->failed);
         self::assertSame([], $extractor->calls);
     }
@@ -214,7 +218,7 @@ final class CriticalCssLocalesTest extends KernelTestCase
     #[Test]
     public function sourceRendererRefusesUnservedVersions(): void
     {
-        foreach ([$this->translation('de', '/de/test-critical-css-disabled'), $this->translation('kk', '/kk/test-critical-css-unpublished', false)] as $t) {
+        foreach ([$this->translation('en', '/about'), $this->translation('en', '/en-about'), $this->translation('ru', '/kk/about'), $this->translation('de', '/de/test-critical-css-disabled'), $this->translation('kk', '/kk/test-critical-css-unpublished', false)] as $t) {
             try {
                 $this->renderer()->renderSource($t);
                 self::fail('Unserved versions must not be rendered for the extractor.');
@@ -230,6 +234,7 @@ final class CriticalCssLocalesTest extends KernelTestCase
         $enabled = $this->translation('kk', '/kk/test-critical-css-about');
         $disabled = $this->translation('de', '/de/test-critical-css-about', page: $enabled->page);
         $draft = $this->translation('tr', '/tr/test-critical-css-about', false, $enabled->page);
+        $unserved = $this->translation('en', '/test-critical-css-unserved', page: $enabled->page);
         $em = $this->createStub(EntityManagerInterface::class);
         $em->method('find')->willReturn(null);
         $critical = $this->service($em);
@@ -237,7 +242,7 @@ final class CriticalCssLocalesTest extends KernelTestCase
         $pages = $this->createStub(PageRepository::class);
         $pages->method('find')->willReturn($enabled->page);
         $translations = $this->createStub(PageTranslationRepository::class);
-        $translations->method('findAllLive')->willReturn([$enabled, $disabled, $draft]);
+        $translations->method('findAllLive')->willReturn([$enabled, $disabled, $draft, $unserved]);
         $tester = new CommandTester(new GenerateCriticalCssCommand($this->stylesheets(), $critical, $generator, $pages, $translations, $this->locales()));
 
         foreach ([[], ['--page' => $enabled->page->id]] as $options) {
@@ -245,6 +250,7 @@ final class CriticalCssLocalesTest extends KernelTestCase
             self::assertStringContainsString('/kk/test-critical-css-about', $tester->getDisplay());
             self::assertStringNotContainsString('/de/test-critical-css-about', $tester->getDisplay());
             self::assertStringNotContainsString('/tr/test-critical-css-about', $tester->getDisplay());
+            self::assertStringNotContainsString('/test-critical-css-unserved', $tester->getDisplay());
         }
         self::assertSame(0, $tester->execute(['--dry-run' => true, '--page' => $enabled->page->id, '--locale' => 'de']));
         self::assertStringNotContainsString('/de/test-critical-css-about', $tester->getDisplay());

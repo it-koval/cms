@@ -151,10 +151,12 @@ final class Doctor
         }
         try {
             $conflicts = [];
-            foreach ($this->translations->findAddresses($locales->main()) as $row) {
-                foreach ([$row['draftUrl'], $row['publishedUrl']] as $path) {
-                    if (null !== $path && $locales->fromPath($path) !== $locales->main()) {
-                        $conflicts[$path] = true;
+            foreach ($locales->codes() as $code) {
+                foreach ($this->translations->findAddresses($code) as $row) {
+                    foreach ([$row['draftUrl'], $row['publishedUrl']] as $path) {
+                        if (null !== $path && null !== $locales->addressProblem($code, $path)) {
+                            $conflicts[$path] = true;
+                        }
                     }
                 }
             }

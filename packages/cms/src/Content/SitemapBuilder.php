@@ -28,6 +28,7 @@ final class SitemapBuilder
         private readonly CacheInterface $cache,
         private readonly ?PageVersions $versions = null,
         private readonly ?PublicUrl $publicUrl = null,
+        private readonly ?CrawlerCacheGeneration $generation = null,
     ) {
     }
 
@@ -39,47 +40,33 @@ final class SitemapBuilder
             return null;
         }
 
-        if ($this->isMultilingual()) {
-            $sig = \hash('sha256', $base . "\0" . $this->pages->catalogSignature());
-            $build = function (ItemInterface $item) use ($base, $sig): array {
-                $item->expiresAfter(self::TTL);
+        // Capture before selecting rows: an old build can only save under its old generation.
+        $generation = $this->generations()->current('sitemap');
+        $sig = \hash('sha256', $base . ($this->isMultilingual() ? "\0" . $this->pages->catalogSignature() : ''));
 
-                return ['sig' => $sig, 'xml' => $this->build($base)];
-            };
-            $key = self::KEY . 'locales';
-            $kept = $this->cache->get($key, $build);
-            if (!\is_array($kept) || ($kept['sig'] ?? null) !== $sig) {
-                $this->cache->delete($key);
-                $kept = $this->cache->get($key, $build);
-            }
-
-            return (string) $kept['xml'];
-        }
-
-        return $this->cache->get(self::KEY . \md5($base), function (ItemInterface $item) use ($base): string {
+        return $this->cache->get(self::KEY . $generation . '_' . $sig, function (ItemInterface $item) use ($base): string {
             $item->expiresAfter(self::TTL);
 
             return $this->build($base);
         });
     }
 
-    /** Drops the kept XML (the next request builds it again). */
+    /** Advance only after the content change committed; late writes to the previous generation stay unreachable. */
     public function forget(): void
     {
-        $this->cache->delete(self::KEY . 'locales');
-        $base = $this->domainBase();
-        if (null !== $base) {
-            $this->cache->delete(self::KEY . \md5($base));
-        }
+        $this->generations()->advance('sitemap');
+    }
+
+    private function generations(): CrawlerCacheGeneration
+    {
+        return $this->generation ?? CrawlerCacheGeneration::forCache($this->cache);
     }
 
     /** The trusted SEO base; legacy sites keep their domain-only behavior. Null when no address is available. */
     public function base(): ?string
     {
         if ($this->isMultilingual() && null !== $this->publicUrl) {
-            $base = $this->publicUrl->base();
-
-            return null !== $base && PublicUrl::isValid($base) ? $base : null;
+            return $this->publicUrl->seoBase();
         }
 
         return $this->domainBase();

@@ -915,7 +915,7 @@ The layout outputs the tags with `itk_seo()`. It works in any template and retur
 {% if seo.canonical != '' %}<link rel="canonical" href="{{ seo.canonical }}">{% endif %}
 ```
 
-API: `GET seo-rules?q=&locale=`, `POST seo-rules`, `PATCH|DELETE seo-rules/{id}`. `GET seo-rules/check?path=&locale=` shows what answers the URL (a site route, a redirect, a CMS page or 404), which rules match, and where each tag comes from.
+The API offers `GET seo-rules?q=&locale=`, `POST seo-rules` and `PATCH|DELETE seo-rules/{id}`. `GET seo-rules/check?path=&locale=` shows what answers the URL, the matching rules and the sources of the page's tags. Its `locale` filter applies only to the rules list. The URL's language determines the metadata.
 
 ### sitemap.xml
 
@@ -1529,9 +1529,9 @@ Inject `Itk\Cms\I18n\ContentLocales` to read the site's language codes, display 
 
 #### Public pages and forms
 
-The public route serves each published version at its language's address. Only a whole first segment selects a language, so `/kk/about` selects Kazakh and `/kk-news` stays in the main language. Draft versions return `404` at their public addresses.
+The public route serves each published version at its language's address. Only a whole first segment selects a language, so `/kk/about` selects Kazakh and `/kk-news` stays in the main language. Draft versions return `404` at their public addresses. A canonical slash redirect keeps the original query string, including repeated parameters. Moving a version on a multilingual site creates an automatic redirect only if the old address served that version and no other live version serves it.
 
-In Twig, `page.locale` is the version's language code, `page.html_lang` is the tag for `<html lang>`, and `page.og_locale` is the Open Graph locale or `null`. With `itk_cms.locales` configured, Twig's `|trans` uses the version's language. `page.translations` lists the published versions of the same page as `{code, name, url}`, including the current version if published. The main language comes first, followed by the configuration order. A language switcher can use those URLs directly.
+In Twig, `page.locale` is the version's language code, `page.html_lang` is the tag for `<html lang>`, and `page.og_locale` is the Open Graph locale or `null`. With `itk_cms.locales` configured, Twig's `|trans` uses the version's language. `page.translations` lists the published versions that route to their own language as `{code, name, url}`. The main language comes first, followed by the configuration order. A language switcher can use those URLs directly. Use `itk:doctor` to find legacy addresses that need a different prefix.
 
 ```twig
 {% if page.translations|length > 1 %}
@@ -1545,7 +1545,9 @@ In Twig, `page.locale` is the version's language code, `page.html_lang` is the t
 
 Menus, `site`, `settings()`, `listing()`, `itk_pages()`, `itk_collection()` and `page_url()` use the page's language. A menu link to a page requires a published version in that language. Literal URL links keep their address. Translatable settings read the current language without fallback to the main language. Shared settings have one value across languages, and unsaved settings use their schema defaults.
 
-On a site with `itk_cms.locales`, `POST /request/{form}` records the language from `?locale=` if supplied. An unlisted code returns `422`. Without the query parameter, the form uses the page address from a same-origin `Referer`. With no same-origin referrer it uses the main language. To pass it explicitly, use `action="/request/callback?locale={{ page.locale }}"` on the form. For AJAX, pass the same address and send the form data.
+On a site with `itk_cms.locales`, `POST /request/{form}` records the language from `?locale=` if supplied. Without the query parameter, the form uses the decoded page address from a same-origin `Referer`. The default port may be present or omitted. With no same-origin referrer the form uses the main language. An unlisted explicit code uses the main language for `429` and returns `422` if the request passes the rate limiter and honeypot checks. To pass the language explicitly, use `action="/request/callback?locale={{ page.locale }}"` on the form. For AJAX, pass the same address and send the form data.
+
+Form messages, including `429`, use the submission language whenever the bundle provides a translation. This also applies to sites without `itk_cms.locales`. `admin_locales` controls the admin interface.
 
 ```twig
 <form id="callback" action="/request/callback?locale={{ page.locale }}" method="post">
@@ -1563,9 +1565,9 @@ const result = await response.json();
 
 With two or more configured content languages, `itk_seo().alternates` contains `{hreflang, href}` for the indexable published versions of the same page, including the current version. Language tags use `html_lang`, so `zh` may produce `zh-CN`. The main version comes first, followed by configuration order. At least two indexable versions are required. `x-default` points to the main version when it is published and indexable. Preview and a current `noindex` page expose no SEO alternatives. The language switcher can still use `page.translations` to link to published `noindex` versions.
 
-Absolute links use the trusted base from `PublicUrl::base()`, in order of precedence from `itk_cms.public_url`, a request whose host is covered by `framework.trusted_hosts`, or the `domain` site setting. Debug mode can fall back to the request URL. Configure `public_url` or the site address for consistent links in HTTP requests and workers. Without a base, the language switcher retains relative links and SEO alternatives are empty. A live multilingual page uses its own absolute canonical URL when the page SEO, a rule and the `itk_seo()` defaults leave it empty.
+Absolute links use the trusted base resolved from `itk_cms.public_url`, a request whose host is covered by `framework.trusted_hosts`, or the `domain` site setting, in that order. Debug mode can fall back to the request URL. Configure `public_url` or the site address for consistent links in HTTP requests and workers. If the base is missing or invalid, public pages keep working with relative language links, no `hreflang` and no canonical derived from the base. The generated sitemap returns `404`, and generated `llms.txt` uses relative links. Doctor reports an invalid base. A live multilingual page uses its own absolute canonical URL when the page SEO, a rule and the `itk_seo()` defaults leave it empty.
 
-The stock layout prints the links after the canonical. A custom layout can use the same loop.
+The stock layout prints the links after the canonical and emits `og:locale` when the language has an Open Graph locale. A custom layout can use the same loop.
 
 ```twig
 {% set seo = itk_seo() %}
@@ -1577,7 +1579,7 @@ The stock layout prints the links after the canonical. A custom layout can use t
 
 One `/sitemap.xml` lists all enabled, indexable published versions and adds `xhtml:link` with the same alternates as HTML. Generated `/llms.txt` groups page titles, descriptions and links under language names in configuration order, omitting empty languages. Publishing, moving, unpublishing or deleting a version invalidates both files after commit. Generated multilingual responses revalidate with content ETags, including for changes within one second. Date-only conditional requests receive the current body. A site's `public/sitemap.xml` or `public/llms.txt` takes precedence. Saved SEO text takes precedence over generated `llms.txt`.
 
-IndexNow uses the affected language's full path. Moves include the old and new addresses. Unpublishing and deleting use the last live address. Deleting a page covers its indexable live versions across enabled languages. Critical CSS also uses the full path of each published version of an enabled language, including pages with `noindex`.
+IndexNow uses the affected language's full path. Moves include the old and new addresses when eligible, and republishing at the same address queues one notification. Unpublishing and deleting use the last live address. Deleting a page covers its indexable live versions at their own language addresses. Critical CSS uses the full path of each version served in its language, including pages with `noindex`.
 
 Run `php bin/console itk:doctor --ci` to check the main language and prefixes, home pages, conflicting paths, the SEO base, manual crawler files, and empty settings or menu areas by language. A missing main home page is an error. A missing secondary home page is a warning.
 

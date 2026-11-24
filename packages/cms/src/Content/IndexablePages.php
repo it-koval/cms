@@ -60,13 +60,13 @@ final class IndexablePages
     /** Whether one page version is in that selection: an enabled language, live, at a path, not `noindex` by its SEO or the rule of its address. */
     public function admits(PageTranslation $t): bool
     {
-        if (!($this->locales?->has($t->locale) ?? ($t->locale === $this->mainLocale)) || !$t->isLive()) {
+        if (!$t->isLive()) {
             return false;
         }
         $version = (array) $t->published;
         $url = (string) ($version['url'] ?? $t->publishedUrl);
 
-        return \str_starts_with($url, '/') && !$this->noindex((array) ($version['seo'] ?? []), $url, $t->locale);
+        return ($this->locales?->serves($t->locale, $url) ?? ($t->locale === $this->mainLocale)) && \str_starts_with($url, '/') && !$this->noindex((array) ($version['seo'] ?? []), $url, $t->locale);
     }
 
     public function isMultilingual(): bool

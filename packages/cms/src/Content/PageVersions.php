@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace Itk\Cms\Content;
 
 use Itk\Cms\Entity\Page;
+use Itk\Cms\Entity\PageTranslation;
 use Itk\Cms\I18n\ContentLocales;
 use Itk\Cms\Mail\PublicUrl;
+use Itk\Cms\Repository\PageRepository;
 use Itk\Cms\Support\Url;
 
 /** @internal */
@@ -15,7 +17,23 @@ final class PageVersions
     public function __construct(
         private readonly ContentLocales $locales,
         private readonly IndexablePages $indexable,
+        private readonly ?PageRepository $pages = null,
     ) {
+    }
+
+    /** Load complete translation collections for a renderer batch in one query.
+     *
+     * @param list<PageTranslation> $translations
+     */
+    public function prepare(array $translations): void
+    {
+        if (null === $this->pages || [] === $translations) {
+            return;
+        }
+        $ids = \array_values(\array_unique(\array_map(static fn (PageTranslation $t): string => $t->page->id, $translations)));
+        // Do not filter the joined collection: Doctrine must not mark an incomplete collection initialized.
+        $this->pages->createQueryBuilder('p')->addSelect('t')->leftJoin('p.translations', 't')
+            ->where('p.id IN (:ids)')->setParameter('ids', $ids)->getQuery()->getResult();
     }
 
     /** @return list<array{code: string, name: string, url: string, path: string, noindex: bool}> */
@@ -23,7 +41,7 @@ final class PageVersions
     {
         $live = [];
         foreach ($page->translations as $translation) {
-            if ($translation->isLive() && $this->locales->has($translation->locale)) {
+            if ($translation->isLive() && $this->locales->serves($translation->locale, (string) ($translation->published['url'] ?? $translation->publishedUrl))) {
                 $live[$translation->locale] = $translation->published;
             }
         }
@@ -77,7 +95,7 @@ final class PageVersions
         }
         $urls = [];
         foreach ($rows as $row) {
-            if ($this->locales->has($row['locale']) && \str_starts_with($row['url'], '/')) {
+            if ($this->locales->serves($row['locale'], $row['url']) && \str_starts_with($row['url'], '/')) {
                 $urls[$row['locale']] = \rtrim($base, '/') . Url::encodePath(Url::spelling($row['url']));
             }
         }

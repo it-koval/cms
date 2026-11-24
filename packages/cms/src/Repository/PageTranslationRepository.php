@@ -43,6 +43,20 @@ class PageTranslationRepository extends ServiceEntityRepository
         return $this->findLive($locale, \preg_replace('~/+~', '/', $key) ?? $key);
     }
 
+    /** Other live versions which routing may resolve at one old address (at most two keys).
+     *
+     * @param list<string> $keys
+     *
+     * @return list<PageTranslation>
+     */
+    public function findOtherLiveAtKeys(string $locale, array $keys, string $exceptId): array
+    {
+        return $this->createQueryBuilder('t')
+            ->where('t.locale = :locale AND t.publishedUrl IN (:keys) AND t.id != :except AND t.status = :status AND t.published IS NOT NULL')
+            ->setParameter('locale', $locale)->setParameter('keys', $keys)->setParameter('except', $exceptId)
+            ->setParameter('status', PageTranslation::PUBLISHED)->getQuery()->getResult();
+    }
+
     /** @return list<PageTranslation> all versions of a language with their pages */
     public function findForLocale(string $locale): array
     {

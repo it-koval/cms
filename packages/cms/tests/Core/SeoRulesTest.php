@@ -287,7 +287,7 @@ final class SeoRulesTest extends WebTestCase
         $this->page('Для проверки', '/test-seo-check', ['title' => 'Заголовок из страницы', 'description' => 'Описание из страницы']);
         $this->rules()->create(['path' => '/test-seo-check', 'title' => 'Заголовок из правила']);
 
-        $page = $this->api('GET', 'seo-rules/check?path=' . \urlencode('/test-seo-check/'));
+        $page = $this->api('GET', 'seo-rules/check?path=' . \urlencode('/test-seo-check'));
         self::assertSame('/test-seo-check', $page['path']);
         self::assertSame('page', $page['answer']['kind']);
         self::assertSame(200, $page['answer']['status']);

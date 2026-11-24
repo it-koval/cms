@@ -69,6 +69,12 @@ final class PageRenderer
     ) {
     }
 
+    /** @param list<PageTranslation> $translations */
+    public function prepareSources(array $translations): void
+    {
+        $this->versions?->prepare($translations);
+    }
+
     /**
      * The live page as the critical CSS generator measures it: the published snapshot with the plain stylesheet links, outside any request (worker or console).
      *
@@ -76,11 +82,11 @@ final class PageRenderer
      */
     public function renderSource(PageTranslation $t): string
     {
-        if (!$t->isLive() || !($this->contentLocales?->has($t->locale) ?? true)) {
+        if (!$t->isLive() || !($this->contentLocales?->serves($t->locale, (string) ($t->published['url'] ?? $t->publishedUrl)) ?? true)) {
             throw new \LogicException('Critical CSS requires a live version in an enabled content language.');
         }
         $path = (string) ($t->published['url'] ?? '/');
-        $request = Request::create(($this->publicUrl->base() ?? 'http://localhost') . Url::encodePath('' === $path ? '/' : $path));
+        $request = Request::create(($this->publicUrl->seoBase() ?? 'http://localhost') . Url::encodePath('' === $path ? '/' : $path));
         $request->setSession(new Session(new MockArraySessionStorage()));
         $request->setLocale($t->locale);
         $this->requests->push($request);
@@ -186,8 +192,7 @@ final class PageRenderer
             'h1Id' => $this->h1->pageH1Id($sections, $tpl),
         ];
         if (!$preview && ($this->contentLocales?->isMultilingual() ?? false)) {
-            $base = $this->publicUrl->base();
-            $base = null !== $base && PublicUrl::isValid($base) ? $base : null;
+            $base = $this->publicUrl->seoBase();
             $page['seo_alternates'] = $this->versions?->alternates($p, $base) ?? [];
             $page['seo_canonical'] = null === $base ? '' : $base . Url::encodePath(Url::spelling($page['url']));
         }

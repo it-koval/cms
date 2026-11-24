@@ -49,7 +49,7 @@ final class CriticalCssService
      */
     public function forLiveRender(PageTranslation $t): ?CriticalStyles
     {
-        if (!$this->stylesheets->enabled || !$t->isLive() || !($this->contentLocales?->has($t->locale) ?? true)) {
+        if (!$this->stylesheets->enabled || !$t->isLive() || !($this->contentLocales?->serves($t->locale, (string) ($t->published['url'] ?? $t->publishedUrl)) ?? true)) {
             return null;
         }
         try {
@@ -71,7 +71,7 @@ final class CriticalCssService
      */
     public function request(PageTranslation $t, When $when = When::Outdated): bool
     {
-        if (!$this->stylesheets->enabled || !$t->isLive() || !($this->contentLocales?->has($t->locale) ?? true)) {
+        if (!$this->stylesheets->enabled || !$t->isLive() || !($this->contentLocales?->serves($t->locale, (string) ($t->published['url'] ?? $t->publishedUrl)) ?? true)) {
             return false;
         }
         $wanted = $this->wanted($t);

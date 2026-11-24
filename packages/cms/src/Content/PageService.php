@@ -771,7 +771,7 @@ final class PageService
         $t->returned = null;
         $t->migrated = false;
         $t->updatedAt = $t->publishedAt = new \DateTimeImmutable();
-        if (null !== $before) {
+        if (null !== $before && $this->mayRedirect($t, $before)) {
             $this->redirects->moved($before, (string) $t->published['url']);
         }
         $this->history->page($p, $t, Revision::PUBLISH, $was);
@@ -856,6 +856,32 @@ final class PageService
         $this->history->page($p, $t, Revision::UNPUBLISH, $was);
         $this->em->flush();
         $this->hooks->unpublished($this->record($p, $t), ['liveVersions' => null !== $previous ? [$previous] : []]);
+    }
+
+    /** A moved historical translation must not redirect a path routed to another version. */
+    private function mayRedirect(PageTranslation $moved, string $before): bool
+    {
+        if (Url::key($before) === Url::key((string) ($moved->published['url'] ?? ''))) {
+            return false;
+        }
+        if (!$this->locales->isMultilingual()) {
+            return true;
+        }
+        if (!$this->locales->serves($moved->locale, $before)) {
+            return false;
+        }
+        $key = Url::key($before);
+        $fallback = $moved->locale !== $this->mainLocale && \str_contains($key, '//')
+            ? \preg_replace('~/+~', '/', $key) : null;
+        $keys = null === $fallback ? [$key] : \array_values(\array_unique([$key, $fallback]));
+        foreach ($this->translations->findOtherLiveAtKeys($moved->locale, $keys, $moved->id) as $other) {
+            $path = (string) ($other->published['url'] ?? $other->publishedUrl);
+            if ($this->locales->serves($other->locale, $path)) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /**

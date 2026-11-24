@@ -22,12 +22,19 @@ All notable changes to ITK CMS are recorded in this file. The format follows [Ke
 - IndexNow submits the affected paths for all configured languages. Critical CSS is generated for the published versions of those languages.
 - Publishing or removing a translation refreshes the cached HTML and ETag of the other versions of the same page.
 - On configured sites, live and preview templates translate text in the page's language. JSON-LD uses its HTML language tag.
-- Public forms record the locale from `?locale=`, the same-origin referrer or the main language on configured sites.
-- MCP load hooks run once per resource and language.
+- Public forms record the locale from `?locale=`, the same-origin referrer or the main language on configured sites. Form messages, including `429`, use the submission language when the bundle provides a translation.
+- MCP load hooks run once per resource and language in each request.
 - `Mcp\AbstractMcpTool::locale()` is now non-static. Both `self::locale($args)` and `$this->locale($args)` work inside instance methods. Calls from a static context are no longer supported. See [UPGRADE.md](UPGRADE.md#030).
 - The admin API uses a shared language check and returns `422` for a code outside an explicitly configured list.
 - On sites with several configured languages, page versions use their language's address prefix. The main language's addresses cannot start with another configured language's path segment.
 - PHP and the admin editor transliterate Kazakh letters when generating slugs.
+- Republishing a page at the same address queues one IndexNow notification.
+
+### Fixed
+
+- Language links, crawler files, IndexNow and critical CSS include only versions whose addresses route to their language. Moving a multilingual version preserves any live page at its old address.
+- An invalid public URL leaves public HTML and crawler routes usable. The doctor reports the invalid configuration.
+- Canonical slash redirects preserve the original query string, including repeated parameters. The SEO address check applies the same routing and shows the canonical and rules for the URL's language.
 
 ## [0.2.2] - 2026-11-22
 

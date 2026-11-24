@@ -20,10 +20,11 @@ final class RequestLocaleTest extends WebTestCase
 {
     private KernelBrowser $client;
     private string $marker;
+    private ?string $limitedIp = null;
 
     protected static function createKernel(array $options = []): KernelInterface
     {
-        $itk = ['main_locale' => 'ru'];
+        $itk = ['main_locale' => $options['mainLocale'] ?? 'ru'];
         if ($options['contentLocales'] ?? true) {
             $itk['locales'] = ['ru' => ['name' => 'Русский'], 'kk' => ['name' => 'Қазақша'], 'tr' => ['name' => 'Türkçe'], 'zh' => ['name' => '中文'], 'en' => ['name' => 'English']]; // i18n-ignore: configured language names
         }
@@ -31,22 +32,30 @@ final class RequestLocaleTest extends WebTestCase
             $itk['admin_locales'] = $options['adminLocales'];
         }
 
-        return new TestKernel($options['environment'] ?? 'test', $options['debug'] ?? true, framework: ['http_client' => ['enabled' => true]], itk: $itk);
+        return new TestKernel($options['environment'] ?? 'test', $options['debug'] ?? true, framework: ['http_client' => ['enabled' => true]] + ($options['framework'] ?? []), itk: $itk);
     }
 
     protected function setUp(): void
     {
         $this->client = static::createClient();
         $this->client->disableReboot();
+        $this->client->setServerParameter('REMOTE_ADDR', '10.' . \random_int(1, 250) . '.' . \random_int(1, 250) . '.' . \random_int(1, 250));
         $this->marker = 'test-request-locale-' . \bin2hex(\random_bytes(6));
     }
 
     protected function tearDown(): void
     {
-        $db = self::getContainer()->get(Connection::class);
-        $db->executeStatement("DELETE FROM itk_notification WHERE type = 'request.new' AND link IN (SELECT '/requests/' || id FROM itk_request WHERE city = ?)", [$this->marker]);
-        $db->executeStatement('DELETE FROM itk_request WHERE city = ?', [$this->marker]);
-        parent::tearDown();
+        try {
+            $container = self::getContainer();
+            if (null !== $this->limitedIp) {
+                $container->get('limiter.itk_request_form')->create($this->limitedIp)->reset();
+            }
+            $db = $container->get(Connection::class);
+            $db->executeStatement("DELETE FROM itk_notification WHERE type = 'request.new' AND link IN (SELECT '/requests/' || id FROM itk_request WHERE city = ?)", [$this->marker]);
+            $db->executeStatement('DELETE FROM itk_request WHERE city = ?', [$this->marker]);
+        } finally {
+            parent::tearDown();
+        }
     }
 
     /** @return array<string, mixed> */
@@ -95,6 +104,12 @@ final class RequestLocaleTest extends WebTestCase
     public static function referrers(): iterable
     {
         yield 'same origin Kazakh' => ['http://localhost/kk/contact?x=1#form', 'kk', 'http://localhost'];
+        yield 'standard HTTPS port' => ['https://localhost:443/kk/about', 'kk', 'https://localhost'];
+        yield 'standard HTTP port' => ['http://localhost:80/kk/about', 'kk', 'http://localhost'];
+        yield 'standard port on request' => ['https://localhost/kk/about', 'kk', 'https://localhost:443'];
+        yield 'case insensitive origin' => ['HTTPS://LOCALHOST/kk/about', 'kk', 'https://localhost'];
+        yield 'encoded locale prefix' => ['https://localhost/%6b%6b/about', 'kk', 'https://localhost'];
+        yield 'encoded leading slash' => ['https://localhost/%2Fkk/test-request-locale-contact', 'kk', 'https://localhost'];
         yield 'same origin Turkish' => ['http://localhost/tr/contact', 'tr', 'http://localhost'];
         yield 'same origin primary' => ['http://localhost/contact', 'ru', 'http://localhost'];
         yield 'same origin unconfigured path' => ['http://localhost/de/contact', 'ru', 'http://localhost'];
@@ -130,14 +145,40 @@ final class RequestLocaleTest extends WebTestCase
     }
 
     #[Test]
-    public function anUnavailableInterfaceLanguageKeepsThePublicLanguage(): void
+    public function publicValidationLanguageDoesNotDependOnTheEnabledAdminLanguages(): void
     {
         $this->restart(['adminLocales' => ['ru', 'en']]);
         $out = $this->post('?locale=kk', fields: ['phone' => ''], status: 422);
-        self::assertSame('Поле «Телефон» нужно заполнить', $out['message']);
+        self::assertSame('«Телефон» өрісін толтыру керек', $out['message']);
         self::assertSame([], $this->stored());
         $this->post('?locale=kk');
         self::assertSame('kk', $this->stored()[0]['locale']);
+    }
+
+    #[Test]
+    public function rateLimitUsesThePublicLanguageBeforeReadingTheBodyOrRejectingAnInvalidLocale(): void
+    {
+        $this->startLimitedForm(['adminLocales' => ['ru', 'en']]);
+        $this->post('?locale=kk', fields: ['itk_hp' => 'robot']);
+        $out = $this->post('?locale=kk', fields: ['itk_hp' => 'robot'], status: 429);
+        self::assertSame('Өтінімдер тым көп, кейінірек қайталап көріңіз', $out['message']);
+        self::assertSame('ru', I18n::locale());
+        $out = $this->post('?locale[]=kk', fields: ['itk_hp' => 'robot'], status: 429);
+        self::assertSame('Слишком много заявок, попробуйте позже', $out['message']);
+        self::assertSame([], $this->stored());
+    }
+
+    #[Test]
+    public function legacyFormValidationAndRateLimitUseTheMainLanguage(): void
+    {
+        $this->startLimitedForm(['contentLocales' => false, 'mainLocale' => 'kk', 'adminLocales' => ['ru', 'en']]);
+        $out = $this->post(fields: ['phone' => ''], status: 422);
+        self::assertSame('«Телефон» өрісін толтыру керек', $out['message']);
+
+        $out = $this->post(status: 429);
+        self::assertSame('Өтінімдер тым көп, кейінірек қайталап көріңіз', $out['message']);
+        self::assertSame('ru', I18n::locale());
+        self::assertSame([], $this->stored());
     }
 
     #[Test]
@@ -185,5 +226,15 @@ final class RequestLocaleTest extends WebTestCase
         self::ensureKernelShutdown();
         $this->client = static::createClient($options);
         $this->client->disableReboot();
+    }
+
+    /** @param array<string, mixed> $options */
+    private function startLimitedForm(array $options): void
+    {
+        $this->restart($options + ['framework' => [
+            'rate_limiter' => ['itk_request_form' => ['policy' => 'fixed_window', 'limit' => 1, 'interval' => '1 hour']],
+        ]]);
+        $this->limitedIp = '10.' . \random_int(1, 250) . '.' . \random_int(1, 250) . '.' . \random_int(1, 250);
+        $this->client->setServerParameter('REMOTE_ADDR', $this->limitedIp);
     }
 }

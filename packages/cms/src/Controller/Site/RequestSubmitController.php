@@ -9,6 +9,7 @@ use Itk\Cms\I18n\AdminLocale;
 use Itk\Cms\I18n\ContentLocales;
 use Itk\Cms\I18n\I18n;
 use Itk\Cms\Request\RequestService;
+use Itk\Cms\Support\Url;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
@@ -43,6 +44,19 @@ final class RequestSubmitController
     #[Route('/request/{form}', name: 'itk_request_submit', requirements: ['form' => '[a-z0-9_\-]+'], methods: ['POST'])]
     public function __invoke(Request $request, string $form): JsonResponse
     {
+        // An invalid explicit choice is remembered until after rate limiting and the honeypot.
+        $locale = $this->contentLocales->isConfigured() ? $this->locale($request) : ($request->attributes->get('_locale') ?? $this->mainLocale);
+        $invalidLocale = null === $locale;
+        $locale ??= $this->contentLocales->main();
+        $submit = fn () => $this->submit($request, $form, $locale, $invalidLocale);
+
+        return \array_key_exists($locale, I18n::LOCALES)
+            ? $this->adminLocale->run($locale, $submit)
+            : $submit();
+    }
+
+    private function submit(Request $request, string $form, string $locale, bool $invalidLocale): JsonResponse
+    {
         $limit = $this->limiter->create($request->getClientIp() ?? 'unknown')->consume();
         if (!$limit->isAccepted()) {
             return $this->failure(I18n::t('http.requests_too_many'), Response::HTTP_TOO_MANY_REQUESTS);
@@ -54,17 +68,14 @@ final class RequestSubmitController
         }
 
         try {
-            $locale = $this->contentLocales->isConfigured() ? $this->locale($request) : $request->attributes->get('_locale', $this->mainLocale);
-            $submit = fn () => $this->requests->submit($form, $input, [
+            if ($invalidLocale) {
+                throw ContentException::invalid(I18n::t('http.no_such_language'));
+            }
+            $this->requests->submit($form, $input, [
                 'ip' => $request->getClientIp(),
                 'url' => $request->headers->get('referer'),
                 'locale' => $locale,
             ]);
-            if ($this->contentLocales->isConfigured() && $this->adminLocale->isAvailable($locale)) {
-                $this->adminLocale->run($locale, $submit);
-            } else {
-                $submit();
-            }
         } catch (ContentException $e) {
             return $this->failure($e->getMessage(), $e->status(), \is_array($e->details()) ? $e->details() : null);
         }
@@ -72,12 +83,12 @@ final class RequestSubmitController
         return new JsonResponse(['success' => true]);
     }
 
-    private function locale(Request $request): string
+    private function locale(Request $request): ?string
     {
         if ($request->query->has('locale')) {
             $locale = $request->query->all()['locale'];
             if (!\is_string($locale) || !$this->contentLocales->has($locale)) {
-                throw ContentException::invalid(I18n::t('http.no_such_language'));
+                return null;
             }
 
             return $locale;
@@ -85,13 +96,26 @@ final class RequestSubmitController
 
         $referer = \parse_url($request->headers->get('referer') ?? '');
         if (\is_array($referer) && isset($referer['scheme'], $referer['host'])) {
-            $origin = $referer['scheme'] . '://' . $referer['host'] . (isset($referer['port']) ? ':' . $referer['port'] : '');
-            if ($origin === $request->getSchemeAndHttpHost()) {
-                return $this->contentLocales->fromPath($referer['path'] ?? '/');
+            $requestUrl = \parse_url($request->getSchemeAndHttpHost());
+            if (\is_array($requestUrl) && isset($requestUrl['scheme'], $requestUrl['host']) && $this->origin($referer) === $this->origin($requestUrl)) {
+                return $this->contentLocales->fromPath(Url::fromPath(\rawurldecode($referer['path'] ?? '/')));
             }
         }
 
         return $this->contentLocales->main();
+    }
+
+    /** @param array<string, mixed> $url */
+    private function origin(array $url): string
+    {
+        $scheme = \strtolower($url['scheme']);
+        $host = \strtolower($url['host']);
+        $port = $url['port'] ?? null;
+        if (('http' === $scheme && 80 === $port) || ('https' === $scheme && 443 === $port)) {
+            $port = null;
+        }
+
+        return $scheme . '://' . $host . (null === $port ? '' : ':' . $port);
     }
 
     /** @param array<string, mixed>|null $errors */

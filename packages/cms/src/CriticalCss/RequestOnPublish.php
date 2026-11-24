@@ -36,7 +36,7 @@ final class RequestOnPublish
         }
         try {
             $t = $this->translations->findOneBy(['page' => $event->record->id, 'locale' => $event->record->locale]);
-            if (null !== $t && $t->isLive() && ($this->contentLocales?->has($t->locale) ?? true)) {
+            if (null !== $t && $t->isLive() && ($this->contentLocales?->serves($t->locale, (string) ($t->published['url'] ?? $t->publishedUrl)) ?? true)) {
                 $this->critical->request($t);
             }
         } catch (\Throwable $e) {

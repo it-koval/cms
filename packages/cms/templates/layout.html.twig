@@ -9,7 +9,7 @@
     {% if seo.description != '' %}<meta name="description" content="{{ seo.description }}">{% endif %}
     {% if seo.robots != '' %}<meta name="robots" content="{{ seo.robots }}">{% endif %}
     {% if seo.canonical != '' %}<link rel="canonical" href="{{ seo.canonical }}">{% endif %}{% for alternate in seo.alternates %}<link rel="alternate" hreflang="{{ alternate.hreflang }}" href="{{ alternate.href }}">{% endfor %}
-    {% if seo.ogImage != '' %}<meta property="og:image" content="{{ seo.ogImage }}">{% endif %}
+    {% if seo.ogImage != '' %}<meta property="og:image" content="{{ seo.ogImage }}">{% endif %}{% if page.og_locale|default(null) %}<meta property="og:locale" content="{{ page.og_locale }}">{% endif %}
     {% block head %}{% endblock %}
 </head>
 <body>

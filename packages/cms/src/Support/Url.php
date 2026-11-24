@@ -56,6 +56,16 @@ final class Url
             || self::hasTrailingSlash($stored) !== \str_ends_with($path, '/');
     }
 
+    /** Location for a canonical slash redirect, including the original query bytes. */
+    public static function canonicalRedirect(string $routePath, string $requestPath, string $stored, string $query): ?string
+    {
+        if ('' === $routePath || '/' === $routePath || !self::hasNonCanonicalSlashes($requestPath, $stored)) {
+            return null;
+        }
+
+        return self::encodePath(self::spelling($stored)) . ('' !== $query ? '?' . $query : '');
+    }
+
     /**
      * A path that can go into a `Location` header or an `href` and stays on this site, whatever came in (a request path, a query value, an old link):
      * one leading slash, `\` read as `/` (a browser does the same, so `/\host` would be `//host`), tab / line breaks / other control characters dropped (a browser drops them too).

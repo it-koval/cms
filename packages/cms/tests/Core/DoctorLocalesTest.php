@@ -95,7 +95,7 @@ final class DoctorLocalesTest extends KernelTestCase
         $area->items['ru'] = [['label' => 'Home']];
         $areas->method('findAll')->willReturn([$area]);
         $translations = $this->createStub(PageTranslationRepository::class);
-        $translations->method('findAddresses')->willReturn($addresses);
+        $translations->method('findAddresses')->willReturnCallback(static fn (string $locale): array => \array_values(\array_filter($addresses, static fn (array $row): bool => ($row['locale'] ?? 'ru') === $locale)));
         $translations->method('findLive')->willReturnCallback(static fn (string $locale, string $path): ?PageTranslation => $home && 'ru' === $locale && '/' === $path ? new PageTranslation(new Page(), 'ru') : null);
         $url = new PublicUrl(new RequestStack(), $settings, $base);
         $services = new ServiceLocator([
@@ -166,6 +166,21 @@ final class DoctorLocalesTest extends KernelTestCase
         self::assertStringContainsString('14', $check->message);
         self::assertStringNotContainsString('/kk-news', $check->message);
         self::assertStringNotContainsString('/tr/live-9', $check->message);
+    }
+
+    #[Test]
+    public function warnsAboutSecondaryVersionsOutsideTheirOwnPrefix(): void
+    {
+        $checks = $this->checks($this->doctor(addresses: [
+            ['pageId' => 'one', 'locale' => 'en', 'draftUrl' => '/about', 'publishedUrl' => '/en-about'],
+            ['pageId' => 'two', 'locale' => 'kk', 'draftUrl' => '/en/wrong', 'publishedUrl' => '/kk/valid'],
+        ]));
+        $check = $checks[I18n::t('ops.doctor_name_locale_conflicts')];
+        self::assertSame(HealthResult::WARN, $check->status);
+        foreach (['/about', '/en-about', '/en/wrong'] as $path) {
+            self::assertStringContainsString($path, $check->message);
+        }
+        self::assertStringNotContainsString('/kk/valid', $check->message);
     }
 
     #[Test]

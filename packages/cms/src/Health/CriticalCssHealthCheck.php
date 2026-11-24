@@ -70,16 +70,23 @@ final class CriticalCssHealthCheck implements HealthCheckInterface
             return HealthResult::fail(I18n::t('ops.health_critical_css_no_crittr'));
         }
 
-        $localeSql = null === $this->contentLocales ? '' : ' AND t.locale IN (:locales)';
-        $localeParams = null === $this->contentLocales ? [] : ['locales' => $this->contentLocales->codes()];
-        $localeTypes = null === $this->contentLocales ? [] : ['locales' => ArrayParameterType::STRING];
+        // Legacy health counted every published row, including historical languages and empty snapshots.
+        $localeSql = '';
+        $localeParams = $localeTypes = [];
+        if ($this->contentLocales?->isConfigured()) {
+            $path = "lower(btrim(COALESCE(t.published->>'url', t.published_url, ''), :localeTrim))";
+            $segment = 'split_part(' . $path . ", '/', 2)";
+            $localeSql = ' AND t.published IS NOT NULL AND t.locale IN (:locales) AND t.locale = CASE WHEN left(' . $path . ", 1) = '/' AND " . $segment . ' IN (:locales) THEN ' . $segment . ' ELSE :mainLocale END';
+            $localeParams = ['locales' => $this->contentLocales->codes(), 'mainLocale' => $this->contentLocales->main(), 'localeTrim' => " \t\n\r\x0B"];
+            $localeTypes = ['locales' => ArrayParameterType::STRING];
+        }
         $counts = $this->db->fetchAssociative(
             'SELECT COUNT(*) AS live,
                     COUNT(*) FILTER (WHERE css.status = :ready AND css.stamp = :stamp) AS current,
                     COUNT(*) FILTER (WHERE css.status = :ready) AS ready,
                     COUNT(*) FILTER (WHERE css.status = :failed) AS failed
              FROM itk_page_translation t LEFT JOIN itk_critical_css css ON css.translation_id = t.id
-             WHERE t.status = :published AND t.published IS NOT NULL' . $localeSql,
+             WHERE t.status = :published' . $localeSql,
             ['stamp' => $this->critical->stamp(), 'ready' => CriticalCss::READY, 'failed' => CriticalCss::FAILED, 'published' => PageTranslation::PUBLISHED] + $localeParams,
             $localeTypes,
         );
@@ -87,7 +94,7 @@ final class CriticalCssHealthCheck implements HealthCheckInterface
         if ($failed > 0) {
             $reason = (string) $this->db->fetchOne(
                 'SELECT css.error FROM itk_critical_css css JOIN itk_page_translation t ON t.id = css.translation_id
-                 WHERE css.status = :failed AND t.status = :published AND t.published IS NOT NULL' . $localeSql . ' ORDER BY css.generated_at DESC LIMIT 1',
+                 WHERE css.status = :failed AND t.status = :published' . $localeSql . ' ORDER BY css.generated_at DESC LIMIT 1',
                 ['failed' => CriticalCss::FAILED, 'published' => PageTranslation::PUBLISHED] + $localeParams,
                 $localeTypes,
             );

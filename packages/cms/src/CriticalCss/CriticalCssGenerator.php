@@ -73,12 +73,18 @@ final class CriticalCssGenerator
 
         /** @var array<string, array{0: PageTranslation, 1: Basis, 2: string, 3: SourcePage}> $todo */
         $todo = [];
+        $translations = [];
         foreach ($ids as $id => $when) {
             $t = $this->em->find(PageTranslation::class, $id);
-            if (null === $t || !$t->isLive() || !($this->contentLocales?->has($t->locale) ?? true)) {
+            if (null === $t || !$t->isLive() || !($this->contentLocales?->serves($t->locale, (string) ($t->published['url'] ?? $t->publishedUrl)) ?? true)) {
                 ++$skipped;
                 continue;
             }
+            $translations[$id] = $t;
+        }
+        $this->renderer->prepareSources(\array_values($translations));
+        foreach ($translations as $id => $t) {
+            $when = $ids[$id];
             $basis = $this->critical->wanted($t);
             $row = $this->em->find(CriticalCss::class, $t->id);
             if (!$when->admits(Freshness::of($row, $basis))) {

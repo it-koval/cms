@@ -43,6 +43,7 @@ final class CrawlerFiles
         #[Autowire(param: 'kernel.project_dir')]
         private readonly string $projectDir,
         private readonly ?ContentLocales $locales = null,
+        private readonly ?CrawlerCacheGeneration $generation = null,
     ) {
     }
 
@@ -141,7 +142,7 @@ final class CrawlerFiles
     /** Drops the kept standard llms.txt (the next request builds it again). */
     public function forget(): void
     {
-        $this->cache->delete(self::KEY);
+        $this->generations()->advance('llms');
     }
 
     public function isMultilingual(): bool
@@ -166,18 +167,18 @@ final class CrawlerFiles
         $base = $this->sitemap->base();
         $name = $this->siteName($base);
         $sig = \md5(($base ?? '') . "\0" . $name . ($this->isMultilingual() ? "\0" . $this->pages->catalogSignature() : ''));
-        $build = function (ItemInterface $item) use ($base, $name, $sig): array {
+        $generation = $this->generations()->current('llms');
+
+        return $this->cache->get(self::KEY . '_' . $generation . '_' . $sig, function (ItemInterface $item) use ($base, $name): string {
             $item->expiresAfter(self::TTL);
 
-            return ['sig' => $sig, 'text' => $this->buildLlms($base, $name)];
-        };
-        $kept = $this->cache->get(self::KEY, $build);
-        if (!\is_array($kept) || ($kept['sig'] ?? null) !== $sig) { // the name or the address changed since it was kept
-            $this->cache->delete(self::KEY);
-            $kept = $this->cache->get(self::KEY, $build);
-        }
+            return $this->buildLlms($base, $name);
+        });
+    }
 
-        return (string) $kept['text'];
+    private function generations(): CrawlerCacheGeneration
+    {
+        return $this->generation ?? CrawlerCacheGeneration::forCache($this->cache);
     }
 
     /** The name of the site (main language); else its address without the scheme; else «Site». */

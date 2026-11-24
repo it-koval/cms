@@ -55,10 +55,9 @@ final class PageController
             throw new NotFoundHttpException(I18n::t('http.page_not_found'));
         }
         $stored = (string) ($t->published['url'] ?? '');
-        if ('' !== $path && '/' !== $path && Url::hasNonCanonicalSlashes($request->getPathInfo(), $stored)) { // the page's own spelling is canonical; any other goes there
-            $qs = $request->getQueryString();
-
-            return new RedirectResponse(Url::encodePath(Url::spelling($stored)) . (null !== $qs ? '?' . $qs : ''), 301);
+        $canonical = Url::canonicalRedirect($path, $request->getPathInfo(), $stored, $request->server->getString('QUERY_STRING'));
+        if (null !== $canonical) {
+            return new RedirectResponse($canonical, 301);
         }
 
         $bypass = $this->cache->bypasses($request, $t);

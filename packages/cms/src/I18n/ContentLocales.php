@@ -63,6 +63,14 @@ final class ContentLocales
         return $code === $this->mainLocale || isset($this->locales[$code]);
     }
 
+    /** Whether routing serves this language version at its published path. */
+    public function serves(string $code, string $path): bool
+    {
+        return $this->isConfigured()
+            ? $this->has($code) && $this->fromPath($path) === $code
+            : $code === $this->mainLocale;
+    }
+
     /** The configured display name, built-in language name, or code as a fallback. */
     public function name(string $code): string
     {

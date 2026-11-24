@@ -64,6 +64,18 @@ final class PublicUrl
         return '' === $base ? null : \rtrim($base, '/');
     }
 
+    /** A valid resolved SEO origin, or none; a bad runtime option must not break public HTML and crawler files. */
+    public function seoBase(): ?string
+    {
+        try {
+            $base = $this->base();
+        } catch (\UnexpectedValueException) {
+            return null;
+        }
+
+        return null !== $base && self::isValid($base) ? $base : null;
+    }
+
     /**
      * @param string $path a path of the site starting with «/» (it may carry a query and a #fragment)
      * @param ?string $base an address resolved earlier (a worker has no request); null = base() now. Without any address the path stays relative.
