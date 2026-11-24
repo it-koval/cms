@@ -24,7 +24,9 @@ final class Version20261124090000 extends AbstractMigration
         foreach (self::KEYS as $key) {
             // If the destination exists, the legacy key may already be a site field. Preserve both.
             $shape = \in_array($key, ['mcpEnabled', 'tgOn', 'maxOn'], true) ? 'boolean' : 'object';
-            $this->addSql('UPDATE itk_setting SET setting_key = ? WHERE setting_key = ? AND locale = ? AND jsonb_typeof(setting_value::jsonb) = ? AND NOT EXISTS (SELECT 1 FROM itk_setting WHERE setting_key = ? AND locale = ?)', ['itk:' . $key, $key, '*', $shape, 'itk:' . $key, '*']);
+            // Numeric form keys such as "0" are encoded by PHP as JSON arrays.
+            $shapes = \in_array($key, ['tgRoutes', 'maxRoutes', 'mailRoutes'], true) ? "'object', 'array'" : "'" . $shape . "'";
+            $this->addSql('UPDATE itk_setting SET setting_key = ? WHERE setting_key = ? AND locale = ? AND jsonb_typeof(setting_value::jsonb) IN (' . $shapes . ') AND NOT EXISTS (SELECT 1 FROM itk_setting WHERE setting_key = ? AND locale = ?)', ['itk:' . $key, $key, '*', 'itk:' . $key, '*']);
         }
     }
 

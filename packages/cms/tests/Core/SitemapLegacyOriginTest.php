@@ -32,7 +32,7 @@ final class SitemapLegacyOriginTest extends KernelTestCase
 
     #[Test]
     #[\PHPUnit\Framework\Attributes\DataProvider('configuredOrigins')]
-    public function domainOnlySingleLocaleXmlKeepsLegacySpellingAndCanBeInvalidated(string $configured): void
+    public function domainOnlySingleLocaleXmlUsesTheNormalizedSeoOriginAndCanBeInvalidated(string $configured): void
     {
         $_SERVER['ITK_TEST_LEGACY_PUBLIC_URL'] = $_ENV['ITK_TEST_LEGACY_PUBLIC_URL'] = $configured;
         self::bootKernel();
@@ -52,16 +52,16 @@ final class SitemapLegacyOriginTest extends KernelTestCase
             $em->persist($version);
             $em->flush();
             $settings = self::getContainer()->get(SettingsService::class);
-            foreach (['Пример.рф' => 'https://Пример.рф', 'http://Example.COM:80/' => 'http://Example.COM:80', 'Example.COM:443' => 'https://Example.COM:443'] as $domain => $legacy) {
+            foreach (['Пример.рф' => 'https://xn--e1afmkfd.xn--p1ai', 'http://Example.COM:80/' => 'http://example.com', 'Example.COM:443' => 'https://example.com'] as $domain => $origin) {
                 $settings->set('domain', $domain);
                 $sitemap->forget();
-                self::assertStringContainsString('<loc>' . $legacy . $version->publishedUrl . '</loc>', (string) $sitemap->xml());
-                self::assertNotSame($legacy, $sitemap->address()?->origin(), 'host vouching and IndexNow stay canonical');
+                self::assertStringContainsString('<loc>' . $origin . $version->publishedUrl . '</loc>', (string) $sitemap->xml());
+                self::assertSame($origin, $sitemap->address()?->origin(), 'XML, host vouching and IndexNow share the normalized origin');
                 self::assertSame($sitemap->address()?->origin(), $sitemap->base());
                 $version->published = null;
                 $em->flush();
                 $sitemap->forget();
-                self::assertStringNotContainsString($version->publishedUrl, (string) $sitemap->xml(), 'forget deletes the legacy-spelling XML cache key');
+                self::assertStringNotContainsString($version->publishedUrl, (string) $sitemap->xml(), 'forget refreshes the normalized XML cache entry');
                 $version->published = $version->draft;
                 $em->flush();
                 $sitemap->forget();
@@ -73,7 +73,7 @@ final class SitemapLegacyOriginTest extends KernelTestCase
             $legacy->value = 'http://Legacy.Example///';
             $em->flush();
             $settings->reset();
-            self::assertStringContainsString('<loc>http://Legacy.Example' . $version->publishedUrl . '</loc>', (string) $sitemap->xml());
+            self::assertNull($sitemap->xml(), 'an invalid legacy value is not an SEO origin');
             self::assertNull($sitemap->address());
         } finally {
             $sitemap->forget();

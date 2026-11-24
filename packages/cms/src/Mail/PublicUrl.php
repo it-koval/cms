@@ -88,10 +88,10 @@ final class PublicUrl
         return SiteAddress::fromDomain((string) $this->settings->get('domain', null, ''));
     }
 
-    /** The resolved SEO origin, or none; a bad optional public_url is skipped (the domain setting answers) so it never breaks public HTML and crawler files. */
+    /** The normalized site-configured SEO origin, independent of requests; an invalid optional public_url falls back to domain. */
     public function seoBase(): ?string
     {
-        return $this->base(false);
+        return $this->siteAddress()?->origin();
     }
 
     /** Password and invitation links require a configured full origin: trusted_hosts validates only a hostname, not a scheme or port. */

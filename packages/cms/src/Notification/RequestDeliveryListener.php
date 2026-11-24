@@ -50,11 +50,14 @@ final class RequestDeliveryListener
                 key: $key,
             );
             if ($this->notifier instanceof Notifier) {
-                $this->notifier->notify($notification, $event->deliveryConnection());
+                $this->notifier->notify($notification, $event->deliveryConnection(), retryDatabaseFailure: $event->durable);
             } else {
                 $this->notifier->notify($notification);
             }
         } catch (\Throwable $e) {
+            if ($event->durable) {
+                throw $e;
+            }
             $this->logger->error('Could not update the notification about request #{id}: {error}', ['id' => $r->id, 'error' => $e->getMessage()]);
         }
     }

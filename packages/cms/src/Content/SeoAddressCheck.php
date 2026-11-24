@@ -87,7 +87,7 @@ final class SeoAddressCheck
             ], null);
         }
         $title = (string) ($snapshot['title'] ?? '');
-        $base = $this->locales->isMultilingual() ? $this->publicUrl?->seoBase() : null;
+        $base = $this->publicUrl?->seoBase();
         $canonical = null === $base ? '' : $base . Url::encodePath(Url::spelling($stored));
 
         return $this->result($path, $rules, [

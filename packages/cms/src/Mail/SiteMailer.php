@@ -7,6 +7,7 @@ namespace Itk\Cms\Mail;
 use Itk\Cms\Content\ContentException;
 use Itk\Cms\I18n\I18n;
 use Psr\Log\LoggerInterface;
+use Symfony\Component\Mailer\Exception\TransportExceptionInterface;
 use Symfony\Component\Messenger\MessageBusInterface;
 use Symfony\Component\Mime\Address;
 use Symfony\Component\Mime\Email;
@@ -64,8 +65,9 @@ final class SiteMailer
     {
         $route = $this->factory->route();
         if (null === $route) {
-            $this->failed($mail, $this->factory->problem() ?? I18n::t('http.mail_not_configured'));
+            $this->failed($mail, $this->factory->problem() ?? I18n::t('http.mail_not_configured'), safeToRetry: true);
         }
+        $guardRequestDelivery = SendMail::REQUEST === $mail->kind;
         try {
             $email = (new Email())
                 ->from($route->from)
@@ -73,9 +75,11 @@ final class SiteMailer
                 ->subject($mail->subject)
                 ->text($mail->text)
                 ->html($mail->html);
-            $this->factory->transport($route)->send($email);
+            $this->factory->transport($route, $guardRequestDelivery)->send($email);
         } catch (\Throwable $e) {
-            $this->failed($mail, $this->reason($e, $route->secrets, $route->usernames), $route->secrets, $route->usernames);
+            // Guarded leaves expose only confirmed refusals as transport exceptions. A compound transport may aggregate them under code 0.
+            $rejected = $e instanceof TransportExceptionInterface && ($guardRequestDelivery || ($e->getCode() >= 400 && $e->getCode() <= 599));
+            $this->failed($mail, $this->reason($e, $route->secrets, $route->usernames), $route->secrets, $route->usernames, $rejected);
         }
         $this->status->sent();
     }
@@ -84,13 +88,13 @@ final class SiteMailer
      * @param list<string> $secrets
      * @param list<string> $usernames
      */
-    private function failed(SendMail $mail, string $reason, #[\SensitiveParameter] array $secrets = [], #[\SensitiveParameter] array $usernames = []): never
+    private function failed(SendMail $mail, string $reason, #[\SensitiveParameter] array $secrets = [], #[\SensitiveParameter] array $usernames = [], bool $safeToRetry = false): never
     {
         $reason = DsnBuilder::clean($reason, $secrets, $usernames);
         $this->logger->error('Could not send a {kind} letter: {error}', ['kind' => $mail->kind, 'error' => $reason]);
         $this->status->failed($mail->kind, $reason);
 
-        throw new MailDeliveryException($reason);
+        throw new MailDeliveryException($reason, $safeToRetry);
     }
 
     /**

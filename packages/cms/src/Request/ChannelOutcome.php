@@ -15,6 +15,7 @@ final class ChannelOutcome
     private function __construct(
         public readonly string $state,
         public readonly ?string $error = null,
+        public readonly bool $uncertain = false,
     ) {
     }
 
@@ -31,6 +32,11 @@ final class ChannelOutcome
     public static function failed(string $error): self
     {
         return new self(Request::DELIVERY_FAILED, $error);
+    }
+
+    public static function uncertain(string $error): self
+    {
+        return new self(Request::DELIVERY_FAILED, $error, true);
     }
 
     public function isPending(): bool

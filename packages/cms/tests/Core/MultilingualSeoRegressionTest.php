@@ -17,6 +17,7 @@ use Itk\Cms\Rendering\PageCache;
 use Itk\Cms\Rendering\PageValidators;
 use Itk\Cms\Tests\App\TestKernel;
 use Itk\Cms\Tests\Core\Fixture\TemporarySettings;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use Psr\Clock\ClockInterface;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
@@ -38,7 +39,7 @@ final class MultilingualSeoRegressionTest extends WebTestCase
         return new TestKernel('test', false, itk: [
             'public_url' => '%env(ITK_REGRESSION_SEO_BASE)%',
             'main_locale' => 'ru',
-            'locales' => ['ru' => ['name' => 'Russian'], 'zh' => ['name' => 'Chinese', 'html_lang' => 'zh-CN']],
+            'locales' => ($options['multilingual'] ?? true) ? ['ru' => ['name' => 'Russian'], 'zh' => ['name' => 'Chinese', 'html_lang' => 'zh-CN']] : ['ru' => ['name' => 'Russian']],
         ]);
     }
 
@@ -84,18 +85,27 @@ final class MultilingualSeoRegressionTest extends WebTestCase
         }
     }
 
-    private function base(string $base): void
+    private function base(string $base, bool $multilingual = true): void
     {
         self::ensureKernelShutdown();
         $_SERVER['ITK_REGRESSION_SEO_BASE'] = $_ENV['ITK_REGRESSION_SEO_BASE'] = $base;
-        $this->client = static::createClient();
+        $this->client = static::createClient(['multilingual' => $multilingual]);
         $this->client->catchExceptions(false);
         $this->client->disableReboot();
     }
 
-    #[Test]
-    public function changingTheResolvedEnvironmentBaseWithoutRebuildingReplacesCachedHtmlAndValidators(): void
+    /** @return iterable<string, array{bool}> */
+    public static function localeModes(): iterable
     {
+        yield 'single language' => [false];
+        yield 'multiple languages' => [true];
+    }
+
+    #[Test]
+    #[DataProvider('localeModes')]
+    public function changingTheResolvedEnvironmentBaseWithoutRebuildingReplacesCachedHtmlAndValidators(bool $multilingual): void
+    {
+        $this->base('http://localhost', $multilingual);
         $this->setting('domain', 'localhost');
         $this->client->request('GET', $this->path);
         $before = $this->client->getResponse();
@@ -106,7 +116,7 @@ final class MultilingualSeoRegressionTest extends WebTestCase
         $this->client->request('GET', $this->path);
         self::assertSame('HIT', $this->client->getResponse()->headers->get('X-ITK-Cache'));
 
-        $this->base('https://new-regression.example');
+        $this->base('https://new-regression.example', $multilingual);
         self::assertSame($build, self::getContainer()->get(PageValidators::class)->build());
         $this->client->request('GET', $this->path, server: ['HTTP_IF_NONE_MATCH' => $oldTag]);
         $response = $this->client->getResponse();

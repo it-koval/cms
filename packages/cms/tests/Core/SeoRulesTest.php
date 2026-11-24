@@ -201,8 +201,7 @@ final class SeoRulesTest extends WebTestCase
         self::assertStringContainsString('<title>Свой заголовок</title>', $html);
         self::assertStringContainsString('<meta name="description" content="Своё описание"/>', $html);
         self::assertStringContainsString('<meta name="robots" content="index,follow"/>', $html);
-        self::assertSame(1, \substr_count($html, 'rel="canonical"'));
-        self::assertStringContainsString('/test-seo-plain"/>', $html);
+        self::assertStringNotContainsString('rel="canonical"', $html, 'no configured site origin: do not invent a canonical from the request');
         self::assertStringNotContainsString('og:image', $html);
     }
 
@@ -220,9 +219,9 @@ final class SeoRulesTest extends WebTestCase
         self::assertStringContainsString('<title>Заголовок правила</title>', $html);
         self::assertStringContainsString('content="Описание страницы"', $html, 'the description is not in the rule: the page keeps its own');
         self::assertStringContainsString('<meta name="robots" content="noindex,follow"/>', $html);
-        self::assertMatchesRegularExpression('~<link rel="canonical" href="https?://[^/"]+/test-seo-main"/>~', $html);
+        self::assertStringContainsString('<link rel="canonical" href="/test-seo-main"/>', $html);
         self::assertSame(1, \substr_count($html, 'rel="canonical"'));
-        self::assertMatchesRegularExpression('~<meta property="og:image" content="https?://[^/"]+/uploads/test-cover\.jpg"/>~', $html);
+        self::assertStringContainsString('<meta property="og:image" content="/uploads/test-cover.jpg"/>', $html);
         self::assertStringContainsString('<meta property="og:title" content="Заголовок правила"/>', $html);
     }
 
@@ -256,7 +255,7 @@ final class SeoRulesTest extends WebTestCase
     }
 
     #[Test]
-    public function relativeAddressesBecomeFullOnes(): void
+    public function relativeAddressesStayRelativeWithoutConfiguredSiteOrigin(): void
     {
         $this->rules()->create(['path' => '/test-seo-full', 'canonical' => '/test-target', 'ogImage' => 'https://cdn.example.com/a.jpg']);
         $twig = self::getContainer()->get(Environment::class);
@@ -266,7 +265,7 @@ final class SeoRulesTest extends WebTestCase
         $out = $twig->createTemplate('{{ itk_seo().canonical }}|{{ itk_seo().ogImage }}')->render([]);
         $stack->pop();
 
-        self::assertSame('https://site.example.com/test-target|https://cdn.example.com/a.jpg', $out);
+        self::assertSame('/test-target|https://cdn.example.com/a.jpg', $out);
     }
 
     #[Test]

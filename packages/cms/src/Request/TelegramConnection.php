@@ -9,6 +9,7 @@ use Itk\Cms\I18n\I18n;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\Exception\EnvNotFoundException;
 use Symfony\Component\HttpClient\HttpClient;
+use Symfony\Component\HttpClient\RetryableHttpClient;
 use Symfony\Component\Notifier\Bridge\Telegram\TelegramOptions;
 use Symfony\Component\Notifier\Bridge\Telegram\TelegramTransport;
 use Symfony\Component\Notifier\Message\ChatMessage;
@@ -97,7 +98,8 @@ final class TelegramConnection implements ResetInterface
         }
         if ($token !== $this->adminToken || null === $this->adminTransport) {
             $this->adminToken = $token;
-            $this->adminTransport = new TelegramTransport($token, client: $this->http);
+            $client = $this->http instanceof RetryableHttpClient ? $this->http->withOptions(['max_retries' => 0]) : $this->http;
+            $this->adminTransport = new TelegramTransport($token, client: $client);
         }
 
         return $this->adminTransport;

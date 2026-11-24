@@ -142,7 +142,7 @@ final class TelegramOptionalTest extends WebTestCase
             public function send(MessageInterface $message): SentMessage
             {
                 if ($this->refuse) {
-                    throw new \RuntimeException('Chat not found');
+                    throw new \Itk\Cms\Request\DeliveryRefusedException('Chat not found');
                 }
                 \assert($message instanceof ChatMessage);
                 $this->sent[] = $message;

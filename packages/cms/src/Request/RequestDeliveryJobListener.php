@@ -7,6 +7,8 @@ namespace Itk\Cms\Request;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
 use Symfony\Component\Messenger\Event\WorkerMessageFailedEvent;
+use Symfony\Component\Messenger\Event\WorkerMessageReceivedEvent;
+use Symfony\Component\Messenger\Stamp\SentToFailureTransportStamp;
 
 /** Retry decisions have been made at priority 100; final failure releases the operator's action. */
 #[AsEventListener(priority: -150)]
@@ -14,6 +16,17 @@ final class RequestDeliveryJobListener
 {
     public function __construct(private readonly RequestDeliverer $deliverer, private readonly ?LoggerInterface $logger = null)
     {
+    }
+
+    /** Run after the failed:retry command has decided whether to retry, skip or delete. */
+    #[AsEventListener(priority: -200)]
+    public function retryFailedJob(WorkerMessageReceivedEvent $event): void
+    {
+        $envelope = $event->getEnvelope();
+        $message = $envelope->getMessage();
+        if ($event->shouldHandle() && $message instanceof SendRequestNotification && null !== $envelope->last(SentToFailureTransportStamp::class)) {
+            $this->deliverer->resumeJob($message);
+        }
     }
 
     public function __invoke(WorkerMessageFailedEvent $event): void

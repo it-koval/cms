@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Itk\Cms\Tests\Core\Fixture;
 
+use Itk\Cms\Request\DeliveryRefusedException;
 use Mj4444\SimpleHttpClient\Contracts\HttpClientInterface;
 use Mj4444\SimpleHttpClient\Contracts\HttpRequestInterface;
 use Mj4444\SimpleHttpClient\Contracts\HttpResponseInterface;
@@ -127,7 +128,7 @@ final class MessengerApi implements TransportInterface, HttpClientInterface
         \assert($message instanceof ChatMessage);
         $error = $this->take('telegram', (string) ($message->getOptions()?->toArray()['chat_id'] ?? ''), $message->getSubject());
         if (null !== $error) {
-            throw new \RuntimeException($error);
+            throw new DeliveryRefusedException($error);
         }
 
         return new SentMessage($message, (string) $this);

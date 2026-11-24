@@ -298,8 +298,9 @@ final class NotificationsTest extends KernelTestCase
         (new TelegramChannel($this->em, $down, $events, new NullLogger(), $telegram))->send($rejectedNote);
         $this->em->refresh($rejected);
         self::assertSame(RequestEntity::DELIVERY_FAILED, $rejected->delivery);
-        self::assertSame([], $rejected->queuedChannels());
-        self::assertStringContainsString('очередь недоступна', (string) $rejected->deliveryError);
+        self::assertSame(['telegram'], $rejected->queuedChannels(), 'a dispatch exception can follow acceptance; the durable original job stays valid');
+        self::assertNotNull($rejected->deliveryError);
+        self::assertStringNotContainsString('очередь недоступна', (string) $rejected->deliveryError, 'broker diagnostics are not exposed in the admin');
         self::assertContains('Заявка №' . $rejected->id . ' не дошла в Telegram', $this->titles($admin), 'the failure reaches the bell');
     }
 

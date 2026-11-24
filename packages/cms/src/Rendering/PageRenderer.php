@@ -196,9 +196,9 @@ final class PageRenderer
             'sections' => $sections,
             'h1Id' => $this->h1->pageH1Id($sections, $tpl),
         ];
-        if (!$preview && ($this->contentLocales?->isMultilingual() ?? false)) {
+        if (!$preview) {
             $base = $this->publicUrl->seoBase();
-            $page['seo_alternates'] = $this->versions?->alternates($p, $base) ?? [];
+            $page['seo_alternates'] = ($this->contentLocales?->isMultilingual() ?? false) ? ($this->versions?->alternates($p, $base) ?? []) : [];
             $page['seo_canonical'] = null === $base ? '' : $base . Url::encodePath(Url::spelling($page['url']));
         }
         $site = $this->settings->all($t->locale) + ['locale' => $t->locale];

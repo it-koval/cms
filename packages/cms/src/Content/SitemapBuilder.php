@@ -14,8 +14,7 @@ use Symfony\Contracts\Cache\ItemInterface;
 /**
  * GET /sitemap.xml: the indexable live versions, one <url> each, the same rule for every site.
  *  - the pages are the ones of IndexablePages: the enabled languages, without `noindex`;
- *  - multilingual addresses use PublicUrl, the same trusted base as HTML. A single-language site uses a valid public_url, then the `domain` setting
- *    (written the way 0.2.2 wrote it); without a base there is no sitemap (the route answers 404);
+ *  - all addresses use the normalized site configuration, the same SEO base as HTML; without one there is no sitemap (the route answers 404);
  *  - <lastmod> is the day the page was published;
  *  - the XML is kept in the cache for an hour and dropped when a page is published, unpublished or deleted, or an SEO rule changes (SitemapInvalidator).
  */
@@ -38,7 +37,7 @@ final class SitemapBuilder
     /** The XML, or null when the site address is not set. */
     public function xml(): ?string
     {
-        $base = $this->xmlBase();
+        $base = $this->base();
         if (null === $base) {
             return null;
         }
@@ -65,28 +64,10 @@ final class SitemapBuilder
         return $this->generation ?? new CrawlerCacheGeneration($this->cache);
     }
 
-    /** Domain-only single-language XML retains the spelling shipped by 0.2.2; other consumers use canonical origins. */
-    private function xmlBase(): ?string
-    {
-        if ($this->isMultilingual() && null !== $this->publicUrl) {
-            return $this->publicUrl->seoBase(); // the same base as the hreflang links of the HTML
-        }
-        $base = $this->base();
-        if ($this->isMultilingual() || null !== $this->publicUrl?->configuredSiteAddress()) {
-            return $base;
-        }
-        $domain = \rtrim(\trim((string) $this->settings->get('domain', null, '')), '/');
-        if (1 !== \preg_match('~^(https?://)?[\p{L}\p{N}][\p{L}\p{N}.\-]*(:\d{1,5})?$~u', $domain)) {
-            return $base;
-        }
-
-        return \preg_match('~^https?://~i', $domain) ? $domain : 'https://' . $domain;
-    }
-
     /** The trusted SEO base. Null when no address is available. */
     public function base(): ?string
     {
-        return $this->address()?->origin();
+        return null !== $this->publicUrl ? $this->publicUrl->seoBase() : $this->address()?->origin();
     }
 
     /** The configured address for host vouching and search engines. */

@@ -8,6 +8,7 @@ All notable changes to ITK CMS are recorded in this file. The format follows [Ke
 
 ### Added
 
+- `itk:requests:recover` triggers recovery of request delivery jobs and events.
 - Added the code of conduct, issue and pull request templates, and a deployment and rollback guide with a production Compose file. See [DEPLOY.md](docs/DEPLOY.md).
 - Site Health and `itk:doctor` report unreadable two-step sign-in keys and use the same GD/WebP check.
 - `itk_cms.analytics.start` selects `auto` (default) or `manual` in site configuration. The browser API `window.itkAnalytics.start()` starts all configured counters, and `start(['ga'])` selects GA. Counter keys are `metrika` and `ga`. New starts dispatch the bubbling `itk-analytics:started` event on `document` with `detail.counters`. Repeated calls without new counters emit no event.
@@ -40,7 +41,7 @@ All notable changes to ITK CMS are recorded in this file. The format follows [Ke
 - Admin and preview URLs use the Symfony Asset base path and CDN without the site's version or manifest. Standard Twig bundle overrides take priority.
 - Admin integrations can manage delivery settings through `settings?scope=notifications`. Those settings are stored separately from site fields with the same name.
 - Console and worker translations use the application's locale. CMS screens and recipient-specific emails retain their own locale.
-- Domain settings are validated on save. The sitemap and search integrations share a normalized origin and accept `itk_cms.public_url` alone.
+- Domain settings are validated on save.
 - `GET /admin/api/collections/{col}` always returns the paginated object `{ items, total, page, perPage, facets, metrics }`. Search, filters, status and translation selection apply before counting and pagination. Published versions with unpublished changes are included in the `draft` filter. Clients must read `items` and request further pages. See [UPGRADE.md](UPGRADE.md#030).
 - IndexNow submits the affected paths for all configured languages. Critical CSS is generated for the published versions of those languages.
 - Publishing or removing a translation refreshes the cached HTML and ETag of the other versions of the same page.
@@ -63,11 +64,19 @@ All notable changes to ITK CMS are recorded in this file. The format follows [Ke
 
 - Language links, crawler files, IndexNow and critical CSS include only versions whose addresses route to their language. Moving a multilingual version preserves any live page at its old address.
 - An invalid public URL leaves public HTML and crawler routes usable. The doctor reports the invalid configuration.
+- Generated canonical and `hreflang` URLs, the SEO address check, sitemap, crawler files, JSON-LD and IndexNow use the normalized `itk_cms.public_url` when valid and fall back to the configured `domain`. This is independent of the request host, scheme and port. Without site configuration, generated absolute SEO URLs are omitted.
+- Single-language HTML cache validators also change when the configured SEO origin changes. Domain-only sitemaps normalize IDNs, host case and default ports in every language mode.
+- Notification settings migration retains numeric form routes, including a sole form key `"0"` stored as a JSON array.
 - Canonical slash redirects preserve the original query string, including repeated parameters. The SEO address check applies the same routing and shows the canonical and rules for the URL's language.
 - Site status lists form fields that lack an explicit limit. Long request retries retain per-channel outcomes across reloads and release failed channels for another retry.
 - Malformed or nested JSON in public forms returns a validation error. Oversized submissions return HTTP 413 before decoding.
 - An existing SMTP setting with a password and disabled encryption reports how to restore mail delivery.
 - Collection imports continue after invalid rows. Republish hooks receive the published snapshot. Page edits share title and URL validation, normalize SEO fields and detect cycles at any depth. Bulk deletion handles children first.
+- Telegram and MAX checkpoint accepted parts per recipient and preserve them during a safe queue retry. Interrupted or ambiguous provider calls stop automatic delivery until an operator checks the destination. SMTP request mail also keeps per-recipient acceptance checkpoints. The new `itk:requests:mail:resolve` command records a verified outcome before a failed-queue retry. External providers still have no exactly-once guarantee.
+- For request email, compound SMTP transports try another server only after a confirmed refusal. A lost acknowledgement stops the compound send and records an uncertain outcome.
+- Short retries and queue-failure updates for committed requests use one serialized connection for reservation and outcome, avoiding a lock against their own reservation in a caller transaction. Standard `messenger:failed:retry` reopens the current failed job while completed and superseded jobs stay closed. Live workers retain their delivery lock beyond lease expiry.
+- Request notifications commit their queue intents in PostgreSQL with the request. A running Messenger worker recovers unpublished intents with their original job IDs.
+- Delivery outcomes retain a pending event until its listeners succeed. Worker recovery and `itk:requests:recover` replay pending events without resending provider messages. Custom listeners must be idempotent.
 - Delivery status is committed before dispatching its event. Parallel attempts for the same request and channel are serialized. The database deduplicates notifications, and history retention runs in the same flush as the new revision.
 - Custom request dates and redirect lengths return validation errors. Redirects can match a query string. CSS strings and escapes survive critical stylesheet preparation.
 - MCP stdio and workers reset request state. MCP logs a failed tool constructor, while other tools remain available. Messenger handlers work with named buses.

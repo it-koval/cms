@@ -106,8 +106,8 @@ final class PageValidators
         $newest = \is_string($row['newest']) ? new \DateTimeImmutable($row['newest']) : $published;
 
         $parts = [$this->build(), $t->page->id, $locale, $published->format('Y-m-d H:i:s'), \sha1(Json::encode(Json::canonical($t->published))), $request->getQueryString() ?? '', $this->clock->now()->setTimezone(new \DateTimeZone('UTC'))->format('Y-m-d'), $this->stylesheets->stamp(), $this->analyticsStart, $this->analyticsAsset->version(), ...\array_values($row)];
+        $parts[] = $this->publicUrl?->seoBase() ?? '';
         if ($this->locales?->isMultilingual()) {
-            $parts[] = $this->publicUrl?->seoBase() ?? '';
             $parts[] = Json::encode(\array_map(fn (string $code): array => [
                 $code, $this->locales->name($code), $this->locales->htmlLang($code), $this->locales->ogLocale($code),
             ], $this->locales->codes()));

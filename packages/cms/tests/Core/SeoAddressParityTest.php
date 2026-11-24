@@ -100,7 +100,7 @@ final class SeoAddressParityTest extends WebTestCase
         $this->user = $user->id;
         $client->loginUser($user, 'itk_admin');
 
-        foreach ([self::PUBLIC_BASE . $path, 'http://localhost' . $path . '-preferred'] as $i => $canonical) {
+        foreach ([self::PUBLIC_BASE . $path, self::PUBLIC_BASE . $path . '-preferred'] as $i => $canonical) {
             if (1 === $i) {
                 $rules->update($kazakh->id, ['canonical' => $path . '-preferred']);
             }

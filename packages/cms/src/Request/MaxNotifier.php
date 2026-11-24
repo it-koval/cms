@@ -8,8 +8,10 @@ use Doctrine\DBAL\Connection;
 use Itk\Cms\Content\ContentException;
 use Itk\Cms\Content\SettingsService;
 use Itk\Cms\Entity\Request;
+use Itk\Cms\Event\RequestDelivery;
 use Itk\Cms\I18n\I18n;
 use Itk\Cms\Request\Max\MaxApiSender;
+use Itk\Cms\Request\Max\MaxDeliveryException;
 use Itk\Cms\Request\Max\MaxSender;
 use Itk\Cms\Schema\Schema;
 use Psr\Log\LoggerInterface;
@@ -83,7 +85,7 @@ final class MaxNotifier implements ChannelNotifier
         return $this->record($r, $this->attempt($r, $resend));
     }
 
-    public function attempt(Request $r, bool $resend = false): ChannelOutcome
+    public function attempt(Request $r, bool $resend = false, ?DeliveryProgress $progress = null): ChannelOutcome
     {
         $chats = $this->chatsFor($r->form);
         if ([] === $chats) { // off, not connected, or no chat to send to (the health screen says which): not a failure
@@ -92,21 +94,34 @@ final class MaxNotifier implements ChannelNotifier
 
         $parts = $this->parts($r, $resend);
         $errors = [];
-        foreach ($chats as $chat) {
+        $uncertain = false;
+        foreach (\array_unique($chats) as $chat) {
             foreach ($parts->texts as $i => $text) {
-                $parts->pauseBefore($i, $this->sleep);
                 try {
-                    $this->sender->send($chat, $text);
-                } catch (\Throwable $e) {
+                    DeliveryProgress::send($progress, $chat, $i, $text, fn () => $parts->pauseBefore($i, $this->sleep), function () use ($chat, $text): void {
+                        try {
+                            $this->sender->send($chat, $text);
+                        } catch (MaxDeliveryException $failure) {
+                            throw new DeliveryRefusedException($failure->getMessage());
+                        }
+                    });
+                } catch (DeliveryRefusedException|DeliveryUncertainException $e) {
+                    $uncertain = $uncertain || $e instanceof DeliveryUncertainException;
                     $error = $parts->failure($i, $e->getMessage());
                     $errors[] = $chat . ': ' . $error;
                     $this->logger->error('MAX delivery failed for request #{id}, chat {chat}: {error}', ['id' => $r->id, 'chat' => $chat, 'error' => $error]);
-                    break; // the rest would arrive out of order; a retry starts from the first
+                    break; // the rest of this chat's messages would arrive out of order
                 }
             }
         }
 
-        return [] !== $errors ? ChannelOutcome::failed(\implode("\n", $errors)) : ChannelOutcome::sent();
+        return $uncertain ? ChannelOutcome::uncertain(\implode("\n", $errors)) : ([] !== $errors ? ChannelOutcome::failed(\implode("\n", $errors)) : ChannelOutcome::sent());
+    }
+
+    /** @internal */
+    public function announce(RequestDelivery $event): void
+    {
+        $this->events->dispatch($event);
     }
 
     /** Writes the outcome of attempt() into the request and announces it. Returns true when it needs no retry. */
