@@ -6,8 +6,6 @@ namespace Itk\Cms\Support;
 
 /**
  * Latin slugs from Russian and Kazakh text.
- *
- * @internal
  */
 final class Slug
 {

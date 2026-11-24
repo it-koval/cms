@@ -15,11 +15,12 @@ final class RemovedSchemaFeatureTest extends TestCase
     /** @return iterable<string, array{string, list<mixed>, class-string<\Throwable>, string}> */
     public static function unavailableCalls(): iterable
     {
-        $legacyMessage = 'SchemaBuilder::feature() was removed in ITK CMS 0.3.0. Remove this call from config/itk/schema.php. See UPGRADE.md.';
-        yield 'enabled by default' => ['feature', ['ai'], InvalidConfigurationException::class, $legacyMessage];
-        yield 'explicitly disabled' => ['feature', ['ai', false], InvalidConfigurationException::class, $legacyMessage];
-        yield 'other former flag' => ['feature', ['custom', true], InvalidConfigurationException::class, $legacyMessage];
-        yield 'typo' => ['unknown', [], \BadMethodCallException::class, 'Unknown schema configuration method SchemaBuilder::unknown().'];
+        $legacyMessage = 'SchemaBuilder::feature() was removed in ITK CMS 0.3.0. Remove the call for "%s" from your schema (usually config/itk/schema.php). See https://github.com/it-koval/cms/blob/main/UPGRADE.md#030';
+        yield 'enabled by default' => ['feature', ['ai'], InvalidConfigurationException::class, \sprintf($legacyMessage, 'ai')];
+        yield 'explicitly disabled' => ['feature', ['ai', false], InvalidConfigurationException::class, \sprintf($legacyMessage, 'ai')];
+        yield 'case-insensitive legacy call' => ['Feature', ['ai'], InvalidConfigurationException::class, \sprintf($legacyMessage, 'ai')];
+        yield 'other former flag' => ['feature', ['custom', true], InvalidConfigurationException::class, \sprintf($legacyMessage, 'custom')];
+        yield 'typo' => ['unknown', [], \Error::class, 'Call to undefined method Itk\\Cms\\Schema\\SchemaBuilder::unknown()'];
     }
 
     /**
@@ -31,8 +32,6 @@ final class RemovedSchemaFeatureTest extends TestCase
     public function unavailableSchemaMethodsReportTheCause(string $method, array $arguments, string $exception, string $message): void
     {
         $builder = new SchemaBuilder();
-        self::assertFalse(\method_exists($builder, $method));
-
         $this->expectException($exception);
         $this->expectExceptionMessage($message);
 

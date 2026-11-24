@@ -58,27 +58,123 @@ ITK CMS следует [семантическому версионирован�
 | `page_url` | `itk_page_url` |
 | `render_sections` | `itk_render_sections` |
 
-Запустите команду из корня сайта. Она изменяет файлы в `templates/`. Проверьте diff и запустите `bin/console lint:twig templates`. Проверьте отдельно Twig внутри PHP и вызовы внутри интерполяций строк Twig. Если сайт объявляет свои функции или импортирует макросы с прежними именами, проверьте эти вызовы.
+Запустите команду из корня сайта. Она изменяет файлы в `templates/`. Проверьте diff, включая вызовы одноимённых функций и импортированных макросов сайта. Проверьте отдельно Twig внутри PHP.
 
 ```bash
 find templates -type f -name '*.twig' -exec perl -0777 -pi -e '
-  s{
-    \{\#.*?\#\}
-    | \{%[-~]?\s*verbatim\s*[-~]?%\}.*?\{%[-~]?\s*endverbatim\s*[-~]?%\}
-    | (\{\{|\{%)((?:"(?:\\.|[^"\\])*"|\x27(?:\\.|[^\x27\\])*\x27|\#[^\r\n]*|.)*?)(\}\}|%\})
-  }{
-    my ($open, $body, $close, $original) = ($1, $2, $3, $&);
-    if (defined $body) {
-      $body =~ s{
-        (?:"(?:\\.|[^"\\])*"|\x27(?:\\.|[^\x27\\])*\x27|\#[^\r\n]*|[.|]\s*\w+|\bmacro\s+\w+|\bis\s+(?:not\s+)?\w+)(*SKIP)(*F)
-        | (?<![\w\x80-\xff])(menu|settings|listing|media_url|media_srcset|media_width|media_ratio|page_url|render_sections)(?=\s*\()
-      }{itk_$1}gsx;
-      $open . $body . $close;
-    } else {
-      $original;
+  our ($source, $i);
+  sub quoted {
+    my ($quote) = @_;
+    my $out = $quote;
+    ++$i;
+    while ($i < length $source) {
+      my $char = substr($source, $i, 1);
+      if ($char eq "\\") {
+        $out .= substr($source, $i, 2);
+        $i += 2;
+      } elsif ($char eq $quote) {
+        ++$i;
+        return $out . $quote;
+      } elsif ($quote eq "\"" && substr($source, $i, 2) eq "#{") {
+        $i += 2;
+        $out .= "#{" . expression("}");
+      } else {
+        $out .= $char;
+        ++$i;
+      }
     }
-  }gsex;
+    return $out;
+  }
+  sub expression {
+    my ($end) = @_;
+    my $start = $i;
+    my ($out, $closed) = scan_expression($end, 0);
+    return $out if $closed;
+    $i = $start;
+    ($out) = scan_expression($end, 1);
+    return $out;
+  }
+  sub scan_expression {
+    my ($end, $inline_end) = @_;
+    my ($out, $previous, @closing) = ("", "");
+    while ($i < length $source) {
+      if (!@closing && substr($source, $i, length $end) eq $end) {
+        $i += length $end;
+        return ($out . $end, 1);
+      }
+      return ($out, 0) if !@closing && substr($source, $i, 2) =~ /^\{[#%{]/;
+      my $char = substr($source, $i, 1);
+      if ($char eq "\"" || ord($char) == 39) {
+        $out .= quoted($char);
+        $previous = "string";
+        next;
+      }
+      if ($char eq "#") {
+        my $start = $i++;
+        ++$i while $i < length($source)
+          && substr($source, $i, 1) !~ /[\r\n]/
+          && (!$inline_end || substr($source, $i, length $end) ne $end);
+        $out .= substr($source, $start, $i - $start);
+        next;
+      }
+      pos($source) = $i;
+      if ($source =~ /\G\s+/gc) {
+        $out .= $&;
+      } elsif ($source =~ /\G[A-Za-z_\x80-\xff][\w\x80-\xff]*/gc) {
+        my $name = $&;
+        my $after = pos($source);
+        my $direct = $previous !~ /^(?:\.|\||is|is not|macro|apply|filter)$/;
+        $out .= ($direct
+          && $name =~ /^(?:menu|settings|listing|media_url|media_srcset|media_width|media_ratio|page_url|render_sections)$/
+          && substr($source, $after) =~ /^(?:\s|\#[^\r\n]*[\r\n])*\(/
+          ? "itk_" : "") . $name;
+        $previous = $previous eq "is" && $name eq "not" ? "is not" : $name;
+      } elsif ($source =~ /\G(?:\.\.\.|\.\.)/gc) {
+        $out .= $&;
+        $previous = $&;
+      } else {
+        ++$i;
+        $out .= $char;
+        push @closing, $char eq "(" ? ")" : $char eq "[" ? "]" : "}" if $char =~ /[([{]/;
+        pop @closing if @closing && $char eq $closing[-1];
+        $previous = $char;
+        next;
+      }
+      $i = pos($source);
+    }
+    return ($out, 0);
+  }
+  $source = $_;
+  $i = 0;
+  my $out = "";
+  while ($i < length $source) {
+    pos($source) = $i;
+    last unless $source =~ /\{[#%{]/g;
+    my ($start, $open) = ($-[0], $&);
+    $out .= substr($source, $i, $start - $i);
+    $i = pos($source);
+    pos($source) = $start;
+    if ($open eq "{#") {
+      my $end = index($source, "#}", $i);
+      $i = $end < 0 ? length($source) : $end + 2;
+      $out .= substr($source, $start, $i - $start);
+    } elsif ($source =~ /\G\{%[-~]?\s*verbatim\s*[-~]?%\}.*?\{%[-~]?\s*endverbatim\s*[-~]?%\}/gcs) {
+      $out .= $&;
+      $i = pos($source);
+    } else {
+      $out .= $open . expression($open eq "{{" ? "}}" : "%}");
+    }
+  }
+  $_ = $out . substr($source, $i);
 ' {} +
+```
+
+Запустите `bin/console itk:doctor` или откройте **«Состояние сайта»** и найдите проверку **«Устаревшие Twig-функции»**. Она проверяет `templates/`, показывает до десяти мест в формате `файл:строка` и число остальных совпадений. Команда `bin/console lint:twig templates` проверяет синтаксис. Из-за шаблона имён `render_*` Symfony может распознать старый вызов `render_sections()` при проверке синтаксиса, поэтому запустите также проверку старых вызовов.
+
+Для быстрого поиска по тексту используйте команду ниже. В её выдачу могут попасть комментарии и строки.
+
+```bash
+grep -rnE --include='*.twig' '(^|[^[:alnum:]_])(menu|settings|listing|media_url|media_srcset|media_width|media_ratio|page_url|render_sections)[[:space:]]*\(' templates/
 ```
 
 #### Другие изменения

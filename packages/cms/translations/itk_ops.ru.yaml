@@ -376,5 +376,9 @@
 'ops.doctor_seo_base_missing': 'Нет доверенного адреса сайта: hreflang и sitemap не строятся. Задайте itk_cms.public_url или домен сайта.'
 
 'ops.doctor_name_schema_warnings': 'Предупреждения схемы'
+'ops.health_legacy_twig': 'Устаревшие Twig-функции'
+'ops.health_legacy_twig_ok': 'В templates/ нет вызовов устаревших Twig-функций'
+'ops.health_legacy_twig_found': 'Вызовов устаревших Twig-функций: {count}. Замените их на функции с префиксом itk_: {list}'
+'ops.health_legacy_twig_unreadable': 'Не удалось проверить шаблоны; проверьте доступ к файлам и синтаксис Twig: {list}'
 'ops.migration_page_created_description': 'Единое имя itk_page.created_at с сохранением дат создания'
 'ops.migration_page_created_missing': 'Исходная колонка даты создания itk_page не найдена.'

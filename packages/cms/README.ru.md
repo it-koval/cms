@@ -618,6 +618,8 @@ final class ToursCollection extends CollectionResource
 - Возврат снятой страницы на сайт вызывает `RecordPublished` и `afterPublished` без `before…`.
 
 ```php
+use Itk\Cms\Support\Slug;
+
 // CollectionResource: данные плоские
 public function beforeCreating(array $data, Context $ctx): array
 {

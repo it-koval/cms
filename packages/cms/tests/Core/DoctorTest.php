@@ -106,6 +106,28 @@ final class DoctorTest extends KernelTestCase
     }
 
     #[Test]
+    public function siteHealthAndDoctorReportTheSameLegacyTwigCall(): void
+    {
+        self::bootKernel();
+        $relative = 'templates/legacy-twig-' . \bin2hex(\random_bytes(6)) . '.twig';
+        $path = self::$kernel->getProjectDir() . '/' . $relative;
+        \file_put_contents($path, "heading\n{{ render_sections(page) }}");
+
+        try {
+            $name = 'Устаревшие Twig-функции';
+            $checks = \array_column(self::getContainer()->get(HealthService::class)->report()['checks'], null, 'name');
+            self::assertSame(HealthResult::WARN, $checks[$name]['status']);
+            self::assertStringContainsString($relative . ':2 (render_sections)', $checks[$name]['message']);
+
+            $tester = new CommandTester((new Application(self::$kernel))->find('itk:doctor'));
+            $tester->execute([]);
+            self::assertStringContainsString($name . ': ' . $checks[$name]['message'], $tester->getDisplay());
+        } finally {
+            \unlink($path);
+        }
+    }
+
+    #[Test]
     public function aSiteInOrderHasNoFailLines(): void
     {
         self::bootKernel();

@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Itk\Cms\Tests\Core;
 
 use Itk\Cms\Content\PageService;
+use Itk\Cms\CriticalCss\Model\GenerateCriticalCss;
+use Itk\Cms\CriticalCss\Model\When;
 use Itk\Cms\Rendering\PageCache;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
@@ -102,9 +104,45 @@ final class PublicApiContractTest extends TestCase
             if ('addTranslation' === $name) {
                 self::assertSame('?string', (string) $parameters[2]->getType());
             }
-            $guard = $parameters[\count($parameters) - 1];
-            self::assertSame('?callable', (string) $guard->getType());
-            self::assertNull($guard->getDefaultValue());
+        }
+    }
+
+    #[Test]
+    public function siteCallsCanOmitEveryInternalPageAuthorizationCallback(): void
+    {
+        $checked = 0;
+        foreach ((new \ReflectionClass(PageService::class))->getMethods(\ReflectionMethod::IS_PUBLIC) as $method) {
+            if ($this->isInternal($method->getDocComment() ?: '')) {
+                continue;
+            }
+            foreach ($method->getParameters() as $parameter) {
+                if ('guard' !== $parameter->getName()) {
+                    continue;
+                }
+                ++$checked;
+                self::assertSame('?callable', (string) $parameter->getType(), $method->getName());
+                self::assertTrue($parameter->isOptional(), $method->getName());
+                self::assertNull($parameter->getDefaultValue(), $method->getName());
+                $docblock = $method->getDocComment() ?: '';
+                self::assertMatchesRegularExpression('/@param [^\n]+\$guard internal bundle authorization callback/i', $docblock, $method->getName());
+                self::assertMatchesRegularExpression('/site code must omit it or pass null/i', $docblock, $method->getName());
+            }
+        }
+        self::assertGreaterThan(0, $checked);
+    }
+
+    #[Test]
+    public function criticalCssMessageExposesPoliciesWithoutPublishingEvaluationHelpers(): void
+    {
+        $message = new GenerateCriticalCss('translation-id');
+        self::assertSame('translation-id', $message->translationId);
+        self::assertSame(When::Outdated, $message->when);
+        self::assertSame(['Outdated', 'NotReady', 'Always'], \array_column(When::cases(), 'name'));
+        foreach (When::cases() as $when) {
+            self::assertSame($when, (new GenerateCriticalCss('translation-id', $when))->when);
+        }
+        foreach (['admits', 'reusesIdenticalInputs'] as $name) {
+            self::assertTrue($this->isInternal((new \ReflectionMethod(When::class, $name))->getDocComment() ?: ''), $name . ' is a worker implementation detail.');
         }
     }
 

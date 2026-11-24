@@ -257,7 +257,7 @@ final class PageService
     /**
      * A new language version belongs to the same page; only its draft is copied.
      *
-     * @param callable(Page): void|null $guard
+     * @param callable(Page): void|null $guard Internal bundle authorization callback. Site code must omit it or pass null.
      *
      * @return array<string, mixed>
      */
@@ -335,7 +335,7 @@ final class PageService
     /**
      * Removes one language, retaining the shared page and all its other versions.
      *
-     * @param callable(Page): void|null $guard
+     * @param callable(Page): void|null $guard Internal bundle authorization callback. Site code must omit it or pass null.
      */
     public function removeTranslation(string $id, string $locale, ?callable $guard = null): void
     {
@@ -453,7 +453,7 @@ final class PageService
      * The check and the write are one step under the lock of the page, on the copy read after the lock was taken. Without a version the save is not checked.
      *
      * @param array<string, mixed> $data
-     * @param (callable(Page, string): void)|null $guard authorizes the refreshed page and effective target template under the write lock
+     * @param (callable(Page, string): void)|null $guard Internal bundle authorization callback for the refreshed page and effective target template under the write lock. Site code must omit it or pass null.
      *
      * @return array<string, mixed> flat page + changed
      */
@@ -470,7 +470,7 @@ final class PageService
      * List-level edit: title, url, seo, fields of that language + parentId, template (shared). No sections.
      *
      * @param array<string, mixed> $patch
-     * @param (callable(Page, string): void)|null $guard
+     * @param (callable(Page, string): void)|null $guard Internal bundle authorization callback. Site code must omit it or pass null.
      *
      * @return array<string, mixed>
      */
@@ -573,7 +573,7 @@ final class PageService
 
     /**
      * @param list<string> $ids ALL sibling page ids in the new order
-     * @param callable(Page): void|null $guard called for every page whose place really changes (the controller checks the right to edit its template); nothing is written before all of them passed
+     * @param callable(Page): void|null $guard Internal bundle authorization callback for every page whose place changes, before any write. Site code must omit it or pass null.
      */
     public function reorder(array $ids, ?callable $guard = null): void
     {
@@ -601,7 +601,7 @@ final class PageService
      * `$guard` is called for every page that really moves (the controller checks the right to edit its template); nothing changes before all of them passed.
      *
      * @param list<array<string, mixed>> $nodes
-     * @param callable(Page): void|null $guard
+     * @param callable(Page): void|null $guard Internal bundle authorization callback. Site code must omit it or pass null.
      *
      * @return int how many pages changed their parent
      */

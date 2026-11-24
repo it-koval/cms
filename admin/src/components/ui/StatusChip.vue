@@ -1,5 +1,5 @@
 <script setup>
-// <StatusChip status="published" />   statuses: published | draft | changed | new | delivered | pending | failed | warn | ai
+// <StatusChip status="published" />   statuses: published | draft | changed | new | delivered | pending | failed | warn
 // draft / changed use the magenta «unpublished» colour; failed is the only red.
 import { computed } from 'vue'
 import Icon from './Icon.vue'
@@ -15,7 +15,6 @@ const MAP = {
   pending: ['', t('ui.status_pending'), ''],
   failed: ['fail', t('ui.status_failed'), 'warn'],
   warn: ['warn', '', ''],
-  ai: ['ai', '', 'sparkle'],
 }
 const m = computed(() => MAP[props.status] || ['', props.status, ''])
 </script>

@@ -1,6 +1,6 @@
 <script setup>
 // Top bar of the page editor: ← Страницы, page name with a dropdown of pages, status chip, undo / redo, save state,
-// Компьютер / Телефон, «Структура», «ИИ: N правки», Предпросмотр, «Опубликовать» with the change count.
+// Компьютер / Телефон, «Структура», Предпросмотр, «Опубликовать» with the change count.
 // Multilingual sites: a language select with status dots next to the page name (PageLangSelect), «Удалить <язык> версию» in the page menu (never for the main language),
 // and the publish button acts on the language on screen. A page without a version in that language shows only the left part (back, name, language select).
 // RIGHTS: without «Править» there is no undo / save state / publish (the page is only looked at); without «Публиковать» the main button says «Отправить на публикацию» (and «Ждёт публикации» once sent);

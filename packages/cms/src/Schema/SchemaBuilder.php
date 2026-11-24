@@ -109,17 +109,16 @@ final class SchemaBuilder
     }
 
     /**
-     * @param array<array-key, mixed> $arguments
-     *
      * @internal
+     *
+     * @deprecated since 0.3.0
      */
-    public function __call(string $name, array $arguments): never
+    public function feature(string $name): never
     {
-        if ('feature' === $name) {
-            throw new InvalidConfigurationException('SchemaBuilder::feature() was removed in ITK CMS 0.3.0. Remove this call from config/itk/schema.php. See UPGRADE.md.');
-        }
-
-        throw new \BadMethodCallException(\sprintf('Unknown schema configuration method SchemaBuilder::%s().', $name));
+        throw new InvalidConfigurationException(\sprintf(
+            'SchemaBuilder::feature() was removed in ITK CMS 0.3.0. Remove the call for "%s" from your schema (usually config/itk/schema.php). See https://github.com/it-koval/cms/blob/main/UPGRADE.md#030',
+            $name,
+        ));
     }
 
     public function menuArea(string $key, string $name, int $depth = 1): self

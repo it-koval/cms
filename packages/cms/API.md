@@ -108,11 +108,14 @@ Each bullet lists one fully qualified public type.
 - `Itk\Cms\Settings\Settings`
 - `Itk\Cms\I18n\I18n`
 - `Itk\Cms\I18n\ContentLocales`
+- `Itk\Cms\Support\Slug`
 - `Itk\Cms\Support\Url`
 - `Itk\Cms\Admin\AdminPath`
 - `Itk\Cms\Rendering\PageCache`
 
 Use `ContentReader` and Twig functions to read visitor-facing published content. `SiteAddress` parses and normalizes a site origin. `ItemTemplate::render()` and `first()` render repeater item labels. `PageCache` exposes `clear(): bool` for manual clearing.
+
+`Slug::slugify(string $text, int $max = 64): string` transliterates Russian and Kazakh text into a lowercase Latin slug, replaces separators with hyphens and limits its length to `$max`. Use it in resource hooks as shown in the README. `Slug::areaKey(string $name, array $taken = []): string` builds a menu area key using underscores and starting with a letter. Pass existing keys in `$taken` to add a numeric suffix on collision.
 
 ### Extensions, status and notifications
 
@@ -173,13 +176,16 @@ Use `ContentReader` and Twig functions to read visitor-facing published content.
 - `Itk\Cms\Security\RequestPasswordLink`
 - `Itk\Cms\IndexNow\Model\PingIndexNow`
 - `Itk\Cms\CriticalCss\Model\GenerateCriticalCss`
+- `Itk\Cms\CriticalCss\Model\When`
 - `Itk\Cms\KnowledgeBase\Model\SyncKnowledge`
 
-Sites may route these messages to their transports. Their handlers, mail implementation and other critical CSS models are internal.
+Sites may route these messages to their transports. `GenerateCriticalCss(string $translationId, When $when = When::Outdated)` targets a page translation. `When::Outdated` regenerates missing or stale CSS, `When::NotReady` also retries failed generation, and `When::Always` regenerates regardless of freshness. The policy evaluation helpers, message handlers, mail implementation and other critical CSS models are internal.
 
 ## PageService operations
 
-Inject `PageService` for trusted PHP code that edits content. These operations preserve validation, field permissions, hooks and history. At an HTTP or MCP entry point the caller must also authorize the operation and resource. The optional guard is used by the bundle entry points. `null` locale selects the main language. Methods returning a page return the flat draft array described in the README. `getDraft()` returns the editor wrapper, `getPublished()` returns the live snapshot or `null`, and `list()` returns list rows. Use `ContentReader` for public rendering.
+Inject `PageService` for trusted PHP code that edits content. These operations preserve validation, field permissions, hooks and history. At an HTTP or MCP entry point the caller must also authorize the operation and resource. A `null` locale selects the main language. Methods returning a page return the flat draft array described in the README. `getDraft()` returns the editor wrapper, `getPublished()` returns the live snapshot or `null`, and `list()` returns list rows. Use `ContentReader` for public rendering.
+
+The six `$guard` parameters in `addTranslation()`, `removeTranslation()`, `saveDraft()`, `update()`, `reorder()` and `tree()` are internal authorization callbacks. They receive the bundle's internal `Entity\Page` objects. Site code must omit `$guard` or pass `null`.
 
 ### Reading and record selection
 
@@ -226,7 +232,7 @@ Inject `PageService` for trusted PHP code that edits content. These operations p
 - `PageService::remove()`
 - `PageService::massRemove()`
 
-`remove()` deletes the whole page and returns `void`. `massRemove()` returns the number removed. Use `removeTranslation()` for one language. Domain failures raise `ContentException` with HTTP codes including `403`, `404`, `409` and `422`. Exceptions from the optional guard propagate to the caller.
+`remove()` deletes the whole page and returns `void`. `massRemove()` returns the number removed. Use `removeTranslation()` for one language. Domain failures raise `ContentException` with HTTP codes including `403`, `404`, `409` and `422`.
 
 ### Internal PageService members
 

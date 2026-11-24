@@ -618,6 +618,8 @@ Each object lifecycle operation on a collection record or a page goes like this:
 - Returning an unpublished page to the site calls `RecordPublished` and `afterPublished` without `before…`.
 
 ```php
+use Itk\Cms\Support\Slug;
+
 // CollectionResource: flat data
 public function beforeCreating(array $data, Context $ctx): array
 {
