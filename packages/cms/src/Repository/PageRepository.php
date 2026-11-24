@@ -38,6 +38,22 @@ class PageRepository extends ServiceEntityRepository
         return $map;
     }
 
+    /** Lightweight subtree metadata; draft-only ancestors remain traversable, unrelated branches are never loaded.
+     * @return list<array{id: string, parent_id: string, template: string}>
+     */
+    public function descendants(string $id): array
+    {
+        return $this->getEntityManager()->getConnection()->fetchAllAssociative(
+            'WITH RECURSIVE descendants AS (
+                SELECT id, parent_id, template, position, created_at FROM itk_page WHERE parent_id = :parent
+                UNION
+                SELECT p.id, p.parent_id, p.template, p.position, p.created_at
+                FROM itk_page p INNER JOIN descendants d ON p.parent_id = d.id
+            ) SELECT id, parent_id, template FROM descendants ORDER BY position ASC, created_at ASC',
+            ['parent' => $id],
+        );
+    }
+
     public function nextPosition(?Page $parent): int
     {
         $qb = $this->createQueryBuilder('p')->select('MAX(p.position)');

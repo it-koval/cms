@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Itk\Cms\Repository;
 
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
+use Doctrine\ORM\QueryBuilder;
 use Doctrine\Persistence\ManagerRegistry;
 use Itk\Cms\Entity\Request;
 
@@ -25,7 +26,27 @@ class RequestRepository extends ServiceEntityRepository
      *
      * @return list<Request> newest first
      */
-    public function search(array $filter = []): array
+    public function search(array $filter = [], ?int $limit = null): array
+    {
+        return $this->searchQuery($filter)->setMaxResults($limit)->getQuery()->getResult();
+    }
+
+    /**
+     * @param array{status?: string, form?: string, q?: string, period?: string, from?: string, to?: string, locale?: string} $filter
+     *
+     * @return array{items: list<Request>, total: int}
+     */
+    public function page(array $filter, int $offset, int $limit): array
+    {
+        $query = $this->searchQuery($filter);
+        $total = (int) (clone $query)->select('COUNT(r.id)')->resetDQLPart('orderBy')->getQuery()->getSingleScalarResult();
+        $items = $offset < $total ? $query->setFirstResult($offset)->setMaxResults($limit)->getQuery()->getResult() : [];
+
+        return ['items' => $items, 'total' => $total];
+    }
+
+    /** @param array{status?: string, form?: string, q?: string, period?: string, from?: string, to?: string, locale?: string} $filter */
+    private function searchQuery(array $filter): QueryBuilder
     {
         $qb = $this->createQueryBuilder('r')->orderBy('r.createdAt', 'DESC')->addOrderBy('r.id', 'DESC');
         $status = $filter['status'] ?? '';
@@ -71,16 +92,16 @@ class RequestRepository extends ServiceEntityRepository
             }
         }
 
-        return $qb->getQuery()->getResult();
+        return $qb;
     }
 
     /** @return array{total: int, new: int, failed: int} */
     public function counts(): array
     {
-        $total = (int) $this->createQueryBuilder('r')->select('COUNT(r.id)')->getQuery()->getSingleScalarResult();
-        $new = (int) $this->createQueryBuilder('r')->select('COUNT(r.id)')->where('r.work = :w')->setParameter('w', Request::WORK_NEW)->getQuery()->getSingleScalarResult();
-        $failed = (int) $this->createQueryBuilder('r')->select('COUNT(r.id)')->where('r.delivery = :d')->setParameter('d', Request::DELIVERY_FAILED)->getQuery()->getSingleScalarResult();
+        $counts = $this->createQueryBuilder('r')
+            ->select('COUNT(r.id) AS total', 'SUM(CASE WHEN r.work = :work THEN 1 ELSE 0 END) AS newCount', 'SUM(CASE WHEN r.delivery = :delivery THEN 1 ELSE 0 END) AS failed')
+            ->setParameter('work', Request::WORK_NEW)->setParameter('delivery', Request::DELIVERY_FAILED)->getQuery()->getSingleResult();
 
-        return ['total' => $total, 'new' => $new, 'failed' => $failed];
+        return ['total' => (int) $counts['total'], 'new' => (int) $counts['newCount'], 'failed' => (int) $counts['failed']];
     }
 }

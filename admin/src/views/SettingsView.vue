@@ -43,6 +43,7 @@ import { rebaseSettings } from '@/components/settings/rebaseSettings.js'
 import { useToast } from '@/components/ui/useToast.js'
 import { useConfirm } from '@/components/ui/useConfirm.js'
 import { t } from '@/i18n/index.js'
+import { previewField } from '@/components/editor/previewTarget.js'
 
 const route = useRoute()
 const router = useRouter()
@@ -75,6 +76,7 @@ const savedMenus = ref(null)
 const draftMenus = ref(null)
 const menuAreas = ref([])
 const forms = ref([])
+const settingsForms = ref([])
 
 const READ_ONLY = ['tgFallback', 'tgReady', 'maxFallback', 'mailReady', 'maxReady'] // yes / no answers of the server, never sent back
 
@@ -246,6 +248,16 @@ async function reveal(k) {
   if (control) control.focus({ preventScroll: true })
 }
 
+watch([loading, () => route.query.field], async ([busy, path]) => {
+  const field = previewField(getSettingsFields(), path)
+  if (busy || loadError.value || !field || !can('set:' + groupOfKey(field.k), 'view')) return
+  if (item.value !== 'general') await router.push({ name: 'settings', params: { tab: 'general' }, query: route.query })
+  await nextTick()
+  for (const form of settingsForms.value) {
+    if (await form.focusField(path)) break
+  }
+})
+
 /* ---- save ---- */
 let savePromise = null
 
@@ -361,7 +373,7 @@ useLocaleGuard(() => confirmUnsaved(true))
                 </button>
               </nav>
               <SettingsFormTab
-                v-for="c in cards" :key="c.key" :sections="c.sections" :data="draftSettings" :changed="c.changed" :errors="errors" :marks="isMulti()" :locale="LOC"
+                v-for="c in cards" :key="c.key" ref="settingsForms" :sections="c.sections" :data="draftSettings" :changed="c.changed" :errors="errors" :marks="isMulti()" :locale="LOC"
                 :readonly="!c.editable" @set="setField" @revert="revertField"
               />
               <div v-if="!cards.length" class="sheet set-load">{{ t('settings.none_available') }}</div>

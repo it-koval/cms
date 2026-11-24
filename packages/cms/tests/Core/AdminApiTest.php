@@ -144,7 +144,7 @@ final class AdminApiTest extends WebTestCase
             $em->persist($request);
         }
         $em->flush();
-        $search = fn (string $q): array => $this->api('GET', 'requests?' . \http_build_query(['form' => $form, 'q' => $q]));
+        $search = fn (string $q): array => $this->api('GET', 'requests?' . \http_build_query(['form' => $form, 'q' => $q]))['items'];
 
         try {
             foreach (['9001112233', '+7 (900) 111-22-33', '111-22'] as $query) {

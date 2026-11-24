@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Itk\Cms\Tests\Core;
 
 use Doctrine\ORM\EntityManagerInterface;
+use Itk\Cms\Content\CrawlerCacheGeneration;
 use Itk\Cms\Content\PageService;
 use Itk\Cms\Content\SeoRuleService;
 use Itk\Cms\Content\SettingsService;
@@ -113,6 +114,28 @@ final class SitemapTest extends WebTestCase
         \preg_match_all('~<loc>([^<]*)</loc>~', $xml, $m);
 
         return $m[1];
+    }
+
+    #[Test]
+    public function draftAutosavesKeepTheCrawlerCacheWhilePublicationRebuildsIt(): void
+    {
+        $page = $this->live('Cache live', '/test-cache-autosave-' . \bin2hex(\random_bytes(5)));
+        $generations = self::getContainer()->get(CrawlerCacheGeneration::class);
+        $xml = $this->sitemap->xml();
+        $before = [$generations->current('sitemap'), $generations->current('llms')];
+        $misses = 0;
+        for ($i = 0; $i < 20; ++$i) {
+            $this->pages->saveDraft($page['id'], null, ['title' => 'Draft ' . $i]);
+            if ($before !== [$generations->current('sitemap'), $generations->current('llms')]) {
+                ++$misses;
+            }
+            self::assertSame($xml, $this->sitemap->xml());
+        }
+        \fwrite(\STDERR, "\n20 draft autosaves: crawler generation changes = $misses\n");
+        self::assertSame(0, $misses, 'draft-only saves cannot change the published crawler files');
+        $this->pages->publish($page['id']);
+        self::assertNotSame($before[0], $generations->current('sitemap'));
+        self::assertNotSame($before[1], $generations->current('llms'));
     }
 
     #[Test]

@@ -522,6 +522,13 @@ export function createMock(db = makeDb()) {
     return { ...copy(r), delivery, deliveryError: failedOnes.map((c) => `${CHANNEL_TITLES[c.channel]}: ${c.error}`).join('\n') || null, st: delivery === 'failed' ? 'failed' : 'delivered' }
   }
   const requestCounts = () => ({ total: db.requests.length, new: db.requests.filter((r) => r.work === 'new').length, failed: db.requests.filter((r) => present(r).st === 'failed').length })
+  function listPage(rows, query) {
+    const page = Math.max(1, Math.trunc(Number(query.page ?? 1)) || 1)
+    const perPage = Math.max(1, Math.min(100, Math.trunc(Number(query.perPage ?? 50))))
+    const offset = (page - 1) * perPage
+    return { items: rows.slice(offset, offset + perPage), total: rows.length, page, perPage }
+  }
+
   function requestsCall(method, tail, query, data) {
     if (!tail.length) {
       if (method !== 'GET') return NOT_HERE()
@@ -533,8 +540,9 @@ export function createMock(db = makeDb()) {
         return [r.name, r.city, r.form].some((value) => String(value ?? '').toLowerCase().includes(q))
       }
       const rows = db.requests.map(present).filter((r) => (!query.status || (query.status === 'failed' ? r.st === 'failed' : r.work === query.status))
-        && (!query.form || r.form === query.form) && matches(r))
-      return ok(rows)
+        && (!query.form || r.form === query.form) && (!query.locale || r.locale === query.locale) && matches(r))
+      rows.sort((a, b) => Date.parse(b.dt) - Date.parse(a.dt) || b.id - a.id)
+      return ok(listPage(rows, query))
     }
     if (tail[0] === 'counts') return ok(requestCounts())
     const r = db.requests.find((x) => String(x.id) === tail[0])
@@ -656,7 +664,7 @@ export function createMock(db = makeDb()) {
       case 'notifications': return tail.length ? ok({ ok: true, unread: 0 }) : ok({ items: [], total: 0, unread: 0 })
       case 'seo-files': return seoFilesCall(m, data)
       case 'yandex-webmaster': return yandexWebmaster(m, tail, data)
-      case 'media': return ok([])
+      case 'media': return ok(listPage([], query))
       case 'media-folders': return ok({ folders: [], total: 0, unfiled: 0, ratios: [] })
       case 'prefs': {
         const k = tail.join('/')

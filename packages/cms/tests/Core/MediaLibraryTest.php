@@ -135,10 +135,10 @@ final class MediaLibraryTest extends WebTestCase
         self::assertSame(['16:9', '4:3', '1:1', '3:4'], \array_slice($tree['ratios'], 0, 4));
         self::assertContains('14:5', $tree['ratios']);
 
-        $inB = $this->api('GET', 'media?folder=' . $b['id']);
+        $inB = $this->api('GET', 'media?folder=' . $b['id'])['items'];
         self::assertSame([$m->id], \array_column($inB, 'id'));
         self::assertSame($b['id'], $inB[0]['folderId']);
-        self::assertNotContains($m->id, \array_column($this->api('GET', 'media?folder=none'), 'id'));
+        self::assertNotContains($m->id, \array_column($this->api('GET', 'media?folder=none')['items'], 'id'));
     }
 
     #[Test]
@@ -202,7 +202,7 @@ final class MediaLibraryTest extends WebTestCase
         $this->api('DELETE', 'media-folders/' . $a['id'] . '?moveTo=' . $child['id'], [], 422);
 
         $this->api('DELETE', 'media-folders/' . $a['id'] . '?moveTo=' . $target['id']);
-        $files = $this->api('GET', 'media?folder=' . $target['id']);
+        $files = $this->api('GET', 'media?folder=' . $target['id'])['items'];
         self::assertSame([$m->id], \array_column($files, 'id'));
         $folders = [];
         foreach ($this->api('GET', 'media-folders')['folders'] as $f) {
@@ -216,7 +216,7 @@ final class MediaLibraryTest extends WebTestCase
         $this->api('DELETE', 'media-folders/' . $empty['id'], [], 404);
         // to the top level
         $this->api('DELETE', 'media-folders/' . $target['id'] . '?moveTo=root');
-        self::assertContains($m->id, \array_column($this->api('GET', 'media?folder=none'), 'id'));
+        self::assertContains($m->id, \array_column($this->api('GET', 'media?folder=none')['items'], 'id'));
     }
 
     #[Test]

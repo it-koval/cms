@@ -334,5 +334,7 @@
   "collections.first_publication": "first publication",
   "collections.unsaved_first": "Not done: your edits were not saved ({reason})",
   "collections.leave_unsaved_text": "Your last edits were not saved ({reason}). If you leave now, they will be lost.",
-  "collections.wait_busy": "Wait: an update is in progress. The action was not done"
+  "collections.wait_busy": "Wait: an update is in progress. The action was not done",
+  "collections.cl_incomplete": "Showing {loaded} of {total} records. Refine the search to see the others.",
+  "collections.cl_tree_incomplete": "The structure is incomplete. Moving is disabled to preserve parent links. Reload the list or refine the search."
 }

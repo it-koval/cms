@@ -32,8 +32,7 @@ const open = computed(() => !!props.item)
 const isPdf = computed(() => props.item && props.item.type === 'pdf')
 const { alt, altDirty, saving, saveAlt } = useMediaAlt(toRef(props, 'item'), canEdit, async (id, value) => {
   try {
-    await api.media.update(id, { alt: value })
-    emit('changed')
+    emit('changed', await api.media.update(id, { alt: value }))
     toast.show(t('forms.drawer_alt_saved'))
     return true
   } catch (e) {
@@ -77,8 +76,7 @@ watch(() => props.item && props.item.folderId, (v) => { folderId.value = v || ''
 async function saveFolder() {
   if (!props.item || (props.item.folderId || '') === folderId.value) return
   try {
-    await api.media.update(props.item.id, { folderId: folderId.value || null })
-    emit('changed')
+    emit('changed', await api.media.update(props.item.id, { folderId: folderId.value || null }))
     toast.show(folderId.value ? t('forms.drawer_moved') : t('forms.drawer_unfiled'))
   } catch (e) {
     folderId.value = props.item.folderId || ''
@@ -176,14 +174,14 @@ async function remove() {
       <button type="button" class="btn" @click="close">{{ t('forms.close') }}</button>
     </template>
   </Drawer>
-  <ImageEditorDialog v-model:open="editor" :item="item" :ratios="ratios" @saved="emit('changed')" />
+  <ImageEditorDialog v-model:open="editor" :item="item" :ratios="ratios" @saved="emit('changed', $event)" />
 </template>
 
 <style scoped>
 .md-pre{border-radius:var(--r);overflow:hidden;background:var(--hair-2);aspect-ratio:4/3;display:grid;place-items:center;border:1px solid var(--hair);flex:none}
 .md-pre img{width:100%;height:100%;object-fit:contain;display:block}
 .md-pdf{display:flex;flex-direction:column;align-items:center;gap:6px;color:var(--red);font-weight:650}
-.md-name{font-weight:620;word-break:break-all}
+.md-name{font-weight:620;overflow-wrap:anywhere;word-break:normal}
 .md-meta{font-size:var(--t-sm)}
 .md-alt{margin:0 -12px}
 @media (max-width:767px){.md-alt{margin:0}.md-alt .row{flex-wrap:wrap}.md-alt .row input{flex:1 1 100%;min-width:0}.md-alt .row .btn{flex:1 1 auto}}

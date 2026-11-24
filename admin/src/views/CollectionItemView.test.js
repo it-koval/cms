@@ -135,3 +135,54 @@ it('redirects old matrix item links and preserves an explicit language', async (
   await mount()
   expect(mocks.replace).toHaveBeenCalledWith({ path: '/collections/team', query: { lang: 'kk' }, hash: '#details' })
 })
+
+it('opens the preview field in its tab without changing the current content language', async () => {
+  mocks.cfg.tabs.push({ key: 'details', fields: [{ k: 'description', t: 'text' }] })
+  await mount()
+  const focusField = vi.fn()
+  state.form = { focusField }
+  mocks.route.query.field = 'description'
+  await settle()
+  expect(state.activeTab.key).toBe('details')
+  expect(focusField).toHaveBeenCalledWith('description')
+  expect(mocks.get).toHaveBeenCalledWith('team', 'one', 'kk')
+})
+
+it('does not open an unknown preview field or one outside the view permission', async () => {
+  await mount()
+  const focusField = vi.fn()
+  state.form = { focusField }
+  mocks.route.query.field = 'unknown'
+  await settle()
+  expect(focusField).not.toHaveBeenCalled()
+  mocks.can.mockReturnValue(false)
+  mocks.route.query.field = 'title'
+  await settle()
+  expect(focusField).not.toHaveBeenCalled()
+})
+
+it('preserves whole-record edits throughout a refused deletion', async () => {
+  await mount()
+  state.draft.title = 'My unsaved title'
+  state.saver.schedule({ col: 'team', id: 'one', data: { title: 'My unsaved title' } })
+  mocks.remove.mockRejectedValueOnce(new Error('delete refused'))
+  await state.doDelete()
+  expect(state.draft.title).toBe('My unsaved title')
+  expect(state.saver.hasPending()).toBe(true)
+  expect(mocks.replace).not.toHaveBeenCalled()
+  state.saver.reset()
+})
+
+it('clears whole-record edits only after the deletion succeeds', async () => {
+  await mount()
+  state.saver.schedule({ col: 'team', id: 'one', data: { title: 'My unsaved title' } })
+  let finish
+  mocks.remove.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve }))
+  const deleting = state.doDelete()
+  await settle()
+  expect(state.saver.hasPending()).toBe(true)
+  finish({})
+  await deleting
+  expect(state.saver.hasPending()).toBe(false)
+  expect(mocks.replace).toHaveBeenCalledWith('/collections/team')
+})

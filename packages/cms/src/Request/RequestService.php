@@ -129,13 +129,33 @@ final class RequestService
      *
      * @return list<Request>
      */
-    public function search(array $filter = []): array
+    public function search(array $filter = [], ?int $limit = null): array
+    {
+        return $this->requests->search($this->searchFilter($filter), $limit);
+    }
+
+    /**
+     * @param array{status?: string, form?: string, q?: string, period?: string, from?: string, to?: string, locale?: string} $filter
+     *
+     * @return array{items: list<Request>, total: int}
+     */
+    public function page(array $filter, int $offset, int $limit): array
+    {
+        return $this->requests->page($this->searchFilter($filter), $offset, $limit);
+    }
+
+    /**
+     * @param array{status?: string, form?: string, q?: string, period?: string, from?: string, to?: string, locale?: string} $filter
+     *
+     * @return array{status?: string, form?: string, q?: string, period?: string, from?: string, to?: string, locale?: string}
+     */
+    private function searchFilter(array $filter): array
     {
         if (isset($filter['status'])) {
             $filter['status'] = $this->work((string) $filter['status']);
         }
 
-        return $this->requests->search($filter);
+        return $filter;
     }
 
     /** @return array{total: int, new: int, failed: int} */

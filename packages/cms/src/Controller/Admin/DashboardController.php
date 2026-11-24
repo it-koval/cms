@@ -4,14 +4,8 @@ declare(strict_types=1);
 
 namespace Itk\Cms\Controller\Admin;
 
-use Itk\Cms\Content\CollectionService;
-use Itk\Cms\Content\PageService;
-use Itk\Cms\Entity\PageTranslation;
+use Itk\Cms\Content\DashboardOverview;
 use Itk\Cms\I18n\I18n;
-use Itk\Cms\Repository\CollectionItemRepository;
-use Itk\Cms\Repository\PageRepository;
-use Itk\Cms\Request\RequestService;
-use Itk\Cms\Schema\Schema;
 use Itk\Cms\Security\Access;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpKernel\Attribute\AsController;
@@ -20,7 +14,7 @@ use Symfony\Component\Security\Core\Exception\AccessDeniedException;
 
 /**
  * «Сегодня». GET dashboard →
- *   newRequests   requests with work status «new» (newest first, as in GET requests)       failedCount   requests not delivered to Telegram or MAX
+ *   newRequests   latest 8 requests with work status «new»   newRequestCount   all new requests   failedCount   requests not delivered to Telegram or MAX
  *   unpublished   [{ kind: 'page'|'item', id, locale, title, pageKind, template?|collection?, draft, changes, updatedAt, migrated?, awaiting, to }]  newest first
  *   awaiting      the same rows that wait for a publisher, + by, at                           proposals   [] (no AI in this iteration)
  *   recent        [{ label, to, at }] last published, newest first (8)                        languages   { main, list }
@@ -33,16 +27,9 @@ use Symfony\Component\Security\Core\Exception\AccessDeniedException;
 #[Route('/api/dashboard', name: 'itk_api_dashboard', methods: ['GET'])]
 final class DashboardController extends AbstractApiController
 {
-    private const RECENT = 8;
-
     public function __construct(
         private readonly Access $access,
-        private readonly Schema $schema,
-        private readonly PageRepository $pages,
-        private readonly PageService $pageService,
-        private readonly CollectionItemRepository $items,
-        private readonly CollectionService $collections,
-        private readonly RequestService $requests,
+        private readonly DashboardOverview $overview,
     ) {
     }
 
@@ -51,95 +38,7 @@ final class DashboardController extends AbstractApiController
         if (null === $this->access->user()) {
             throw new AccessDeniedException(I18n::t('http.sign_in_required'));
         }
-        $unpublished = [];
-        $awaiting = [];
-        $recent = [];
-        $locales = \array_fill_keys($this->contentLocales->codes(), ['pages' => ['count' => 0, 'unpublished' => 0], 'collections' => ['count' => 0, 'unpublished' => 0]]);
-        $languageQuery = static fn (string $locale): string => \count($locales) > 1 ? '?lang=' . \rawurlencode($locale) : '';
 
-        foreach ($this->pages->findAllOrdered() as $p) {
-            if (!$this->access->can('pages', 'view', $p->template)) {
-                continue;
-            }
-            $kind = $this->schema->template($p->template)?->title() ?? $p->template;
-            foreach ($p->translations as $locale => $t) {
-                if ($this->contentLocales->isConfigured() && !$this->contentLocales->has((string) $locale)) {
-                    continue;
-                }
-                if (isset($locales[$locale])) {
-                    ++$locales[$locale]['pages']['count'];
-                }
-                $title = (string) ($t->draft['title'] ?? '');
-                $n = $this->pageService->changeCount($t);
-                $to = '/pages/' . $p->id . $languageQuery((string) $locale);
-                if (PageTranslation::DRAFT === $t->status || $n > 0) {
-                    if (isset($locales[$locale])) {
-                        ++$locales[$locale]['pages']['unpublished'];
-                    }
-                    $row = [
-                        'kind' => 'page', 'id' => $p->id, 'locale' => (string) $locale, 'title' => $title, 'pageKind' => $kind, 'template' => $p->template,
-                        'draft' => PageTranslation::DRAFT === $t->status, 'changes' => $n, 'updatedAt' => $this->pageService->iso($t->updatedAt),
-                        'migrated' => $t->migrated, 'awaiting' => $t->awaiting, 'to' => $to,
-                    ];
-                    $unpublished[] = $row;
-                    if (null !== $t->awaiting) {
-                        $awaiting[] = $row + ['by' => $t->awaiting['by'] ?? '', 'at' => $t->awaiting['at'] ?? null];
-                    }
-                }
-                if ($t->isLive() && null !== $t->publishedAt) {
-                    $recent[] = ['label' => $kind . ' «' . $title . '»', 'locale' => (string) $locale, 'to' => $to, 'at' => $this->pageService->iso($t->publishedAt)];
-                }
-            }
-        }
-
-        foreach ($this->schema->collections() as $c) {
-            if (!$this->access->can('col:' . $c->key(), 'view') || !$c->isVisibleTo($this->access->viewer())) {
-                continue;
-            }
-            foreach ($this->items->findByCollection($c->key()) as $i) {
-                foreach ($this->collections->summary($c, $i) as $locale => $s) {
-                    if (null === $s || ($this->contentLocales->isConfigured() && !$this->contentLocales->has((string) $locale))) {
-                        continue;
-                    }
-                    if (isset($locales[$locale])) {
-                        ++$locales[$locale]['collections']['count'];
-                    }
-                    $title = '' !== (string) $s['title'] ? (string) $s['title'] : $c->title();
-                    $to = '/collections/' . $c->key() . ('matrix' === $c->viewName() ? '' : '/' . $i->id) . $languageQuery((string) $locale);
-                    if ('draft' === $s['status'] || $s['changes'] > 0) {
-                        if (isset($locales[$locale])) {
-                            ++$locales[$locale]['collections']['unpublished'];
-                        }
-                        $row = [
-                            'kind' => 'item', 'collection' => $c->key(), 'id' => $i->id, 'locale' => (string) $locale, 'title' => $title, 'pageKind' => $c->title(),
-                            'draft' => 'draft' === $s['status'], 'changes' => $s['changes'], 'updatedAt' => $s['updatedAt'], 'awaiting' => $s['awaiting'], 'to' => $to,
-                        ];
-                        $unpublished[] = $row;
-                        if (null !== $s['awaiting']) {
-                            $awaiting[] = $row + ['by' => $s['awaiting']['by'] ?? '', 'at' => $s['awaiting']['at'] ?? null];
-                        }
-                    } elseif (null !== $s['updatedAt']) {
-                        $recent[] = ['label' => $c->title() . ' · ' . $title, 'locale' => (string) $locale, 'to' => $to, 'at' => $s['updatedAt']];
-                    }
-                }
-            }
-        }
-
-        \usort($unpublished, static fn (array $a, array $b): int => \strcmp((string) $b['updatedAt'], (string) $a['updatedAt']));
-        \usort($awaiting, static fn (array $a, array $b): int => \strcmp((string) $b['at'], (string) $a['at']));
-        \usort($recent, static fn (array $a, array $b): int => \strcmp((string) $b['at'], (string) $a['at']));
-
-        $canRequests = $this->access->can('requests', 'view');
-
-        return $this->json([
-            'newRequests' => $canRequests ? \array_map($this->requests->present(...), $this->requests->search(['status' => 'new'])) : [],
-            'failedCount' => $canRequests ? $this->requests->counts()['failed'] : 0,
-            'unpublished' => $unpublished,
-            'awaiting' => $awaiting,
-            'proposals' => [],
-            'recent' => \array_slice($recent, 0, self::RECENT),
-            'languages' => $this->contentLocales->catalog(),
-            'locales' => $locales,
-        ]);
+        return $this->json($this->overview->build());
     }
 }

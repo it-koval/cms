@@ -50,12 +50,12 @@ final class MediaSearchTool extends AbstractMcpTool
     public function call(array $args, McpContext $context): array
     {
         $context->require('media', 'view');
-        $rows = [];
-        foreach ($this->media->list((string) ($args['q'] ?? ''), (string) ($args['type'] ?? '')) as $m) {
-            $rows[] = self::row($this->media->present($m));
-        }
+        $offset = self::offset($args);
+        $limit = self::limit($args, 30, 100);
+        $page = $this->media->page((string) ($args['q'] ?? ''), (string) ($args['type'] ?? ''), '', $offset, $limit);
+        $rows = \array_map(fn ($m): array => self::row($this->media->present($m)), $page['items']);
 
-        return Format::page($rows, self::offset($args), self::limit($args, 30, 100));
+        return Format::pageResult($rows, $page['total'], $offset, $limit);
     }
 
     /**

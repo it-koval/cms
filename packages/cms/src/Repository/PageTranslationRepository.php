@@ -21,6 +21,36 @@ class PageTranslationRepository extends ServiceEntityRepository
         parent::__construct($registry, PageTranslation::class);
     }
 
+    /**
+     * @param list<string> $locales configured locales, or [] to include legacy versions
+     * @param list<string>|null $templates templates visible to the editor, or null for unrestricted access
+     *
+     * @return iterable<array{id: string, pageId: string, template: string, locale: string, status: string, draft: array<string, mixed>, published: ?array<string, mixed>, migrated: bool, awaiting: ?array<string, mixed>, updatedAt: \DateTimeImmutable, publishedAt: ?\DateTimeImmutable}>
+     */
+    public function forOverview(array $locales, ?array $templates): iterable
+    {
+        if ([] === $templates) {
+            return;
+        }
+        $query = $this->createQueryBuilder('t')->join('t.page', 'p')
+            ->select('t.id AS id', 'p.id AS pageId', 'p.template AS template', 't.locale AS locale', 't.status AS status', 't.draft AS draft', 't.published AS published', 't.migrated AS migrated', 't.awaiting AS awaiting', 't.updatedAt AS updatedAt', 't.publishedAt AS publishedAt')
+            ->where('t.id > :cursor')->orderBy('t.id', 'ASC')->setMaxResults(100);
+        if ([] !== $locales) {
+            $query->andWhere('t.locale IN (:locales)')->setParameter('locales', $locales);
+        }
+        if (null !== $templates) {
+            $query->andWhere('p.template IN (:templates)')->setParameter('templates', $templates);
+        }
+        $cursor = '';
+        do {
+            $batch = $query->setParameter('cursor', $cursor)->getQuery()->getArrayResult();
+            foreach ($batch as $row) {
+                $cursor = $row['id'];
+                yield $row;
+            }
+        } while (100 === \count($batch));
+    }
+
     /** The live page at an address, or null. */
     public function findLive(string $locale, string $url): ?PageTranslation
     {
@@ -77,6 +107,31 @@ class PageTranslationRepository extends ServiceEntityRepository
         return $this->createQueryBuilder('t')->addSelect('p')->join('t.page', 'p')
             ->where('t.locale = :locale AND t.status = :status')->setParameter('locale', $locale)->setParameter('status', PageTranslation::PUBLISHED)
             ->orderBy('p.position', 'ASC')->getQuery()->getResult();
+    }
+
+    /**
+     * Only snapshots needed by a public subtree listing, without entity hydration.
+     *
+     * @param list<string> $pageIds
+     *
+     * @return array<string, array<string, mixed>> page id => published snapshot
+     */
+    public function findLiveSnapshotsForPages(string $locale, array $pageIds): array
+    {
+        if ([] === $pageIds) {
+            return [];
+        }
+        $rows = $this->createQueryBuilder('t')
+            ->select('IDENTITY(t.page) AS pageId', 't.published AS published')
+            ->where('t.locale = :locale AND t.status = :status AND t.published IS NOT NULL AND t.page IN (:ids)')
+            ->setParameter('locale', $locale)->setParameter('status', PageTranslation::PUBLISHED)->setParameter('ids', $pageIds)
+            ->getQuery()->getArrayResult();
+        $out = [];
+        foreach ($rows as $row) {
+            $out[(string) $row['pageId']] = (array) $row['published'];
+        }
+
+        return $out;
     }
 
     /**

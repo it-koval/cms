@@ -34,6 +34,18 @@ final class ChangeDetector
      */
     public function pageChanges(array $page, string $template, ?array $published): array
     {
+        return $this->pageDifferences($page, $template, $published, true);
+    }
+
+    /** Count the same differences without describing rich text or repeater values. */
+    public function pageChangeCount(array $page, string $template, ?array $published): int
+    {
+        return \count($this->pageDifferences($page, $template, $published, false));
+    }
+
+    /** @return list<array<string, mixed>> */
+    private function pageDifferences(array $page, string $template, ?array $published, bool $describe): array
+    {
         if (null === $published) {
             return [];
         }
@@ -48,6 +60,10 @@ final class ChangeDetector
             $a = Json::get($page, $f->key());
             $b = Json::get($published, $f->key());
             if (!$this->values->equal($f, $a, $b)) {
+                if (!$describe) {
+                    $out[] = [];
+                    continue;
+                }
                 $d = $this->describer->describeChange($f, $a, $b);
                 $out[] = ['kind' => 'meta', 'sec' => null, 'key' => $f->key(), 'name' => I18n::t('content.change_name_page'), 'label' => $f->label(), 'val' => $d['val'], 'old' => $d['old']];
             }
@@ -59,6 +75,10 @@ final class ChangeDetector
                 $a = ($page['fields'] ?? [])[$f->key()] ?? null;
                 $b = ($published['fields'] ?? [])[$f->key()] ?? null;
                 if (!$this->values->equal($f, $a, $b)) {
+                    if (!$describe) {
+                        $out[] = [];
+                        continue;
+                    }
                     $d = $this->describer->describeChange($f, $a, $b);
                     $out[] = ['kind' => 'field', 'sec' => null, 'key' => $f->key(), 'name' => $tpl->title(), 'label' => isset($d['where']) ? $f->label() . ' · ' . $d['where'] : $f->label(), 'val' => $d['val'], 'old' => $d['old']];
                 }
@@ -66,34 +86,38 @@ final class ChangeDetector
         }
 
         foreach ($page['sections'] ?? [] as $s) {
-            $name = $this->sectionName((string) $s['type']);
+            $name = $describe ? $this->sectionName((string) $s['type']) : '';
             $pub = $pubById[$s['id']] ?? null;
             if (null === $pub) {
-                $out[] = ['kind' => 'add', 'sec' => $s['id'], 'name' => $name, 'label' => I18n::t('content.change_new_section'), 'val' => '', 'old' => ''];
+                $out[] = $describe ? ['kind' => 'add', 'sec' => $s['id'], 'name' => $name, 'label' => I18n::t('content.change_new_section'), 'val' => '', 'old' => ''] : [];
                 continue;
             }
             foreach ($this->schema->sectionFields((string) $s['type']) as $f) {
                 $a = ($s['data'] ?? [])[$f->key()] ?? null;
                 $b = ($pub['data'] ?? [])[$f->key()] ?? null;
                 if (!$this->values->equal($f, $a, $b)) {
+                    if (!$describe) {
+                        $out[] = [];
+                        continue;
+                    }
                     $d = $this->describer->describeChange($f, $a, $b);
                     $out[] = ['kind' => 'edit', 'sec' => $s['id'], 'key' => $f->key(), 'name' => $name, 'label' => isset($d['where']) ? $f->label() . ' · ' . $d['where'] : $f->label(), 'val' => $d['val'], 'old' => $d['old']];
                 }
             }
             if (!empty($pub['hidden']) !== !empty($s['hidden'])) {
-                $out[] = ['kind' => 'vis', 'sec' => $s['id'], 'name' => $name, 'label' => !empty($s['hidden']) ? I18n::t('content.change_section_hidden') : I18n::t('content.change_section_shown'), 'val' => '', 'old' => ''];
+                $out[] = $describe ? ['kind' => 'vis', 'sec' => $s['id'], 'name' => $name, 'label' => !empty($s['hidden']) ? I18n::t('content.change_section_hidden') : I18n::t('content.change_section_shown'), 'val' => '', 'old' => ''] : [];
             }
         }
         foreach ($published['sections'] ?? [] as $s) {
             if (!\in_array($s['id'], $curIds, true)) {
-                $out[] = ['kind' => 'del', 'sec' => null, 'name' => $this->sectionName((string) $s['type']), 'label' => I18n::t('content.change_section_deleted'), 'val' => '', 'old' => ''];
+                $out[] = $describe ? ['kind' => 'del', 'sec' => null, 'name' => $this->sectionName((string) $s['type']), 'label' => I18n::t('content.change_section_deleted'), 'val' => '', 'old' => ''] : [];
             }
         }
 
         $a = \array_values(\array_filter(\array_map(static fn (array $s): string => (string) $s['id'], $published['sections'] ?? []), static fn (string $id): bool => \in_array($id, $curIds, true)));
         $b = \array_values(\array_filter($curIds, static fn (string $id): bool => isset($pubById[$id])));
         if ($a !== $b) {
-            $out[] = ['kind' => 'move', 'sec' => null, 'name' => I18n::t('content.change_sections_order'), 'label' => I18n::t('content.change_sections_moved'), 'val' => '', 'old' => ''];
+            $out[] = $describe ? ['kind' => 'move', 'sec' => null, 'name' => I18n::t('content.change_sections_order'), 'label' => I18n::t('content.change_sections_moved'), 'val' => '', 'old' => ''] : [];
         }
 
         return $out;
@@ -146,6 +170,17 @@ final class ChangeDetector
      */
     public function recordChanges(Collection $collection, array $record, ?array $published): array
     {
+        return $this->recordDifferences($collection, $record, $published, true);
+    }
+
+    public function recordChangeCount(Collection $collection, array $record, ?array $published): int
+    {
+        return \count($this->recordDifferences($collection, $record, $published, false));
+    }
+
+    /** @return list<array<string, mixed>> */
+    private function recordDifferences(Collection $collection, array $record, ?array $published, bool $describe): array
+    {
         if (null === $published) {
             return [];
         }
@@ -154,12 +189,12 @@ final class ChangeDetector
             $cols = $record['cols'] ?? [];
             $pcols = $published['cols'] ?? [];
             if (!Json::same($cols, $pcols)) {
-                $out[] = ['field' => ['k' => 'cols', 'label' => I18n::t('content.matrix_cols_title')], 'label' => I18n::t('content.matrix_cols_title'), 'val' => I18n::t('content.matrix_cols_count', ['count' => \count($cols)]), 'old' => I18n::t('content.matrix_cols_count', ['count' => \count($pcols)])];
+                $out[] = $describe ? ['field' => ['k' => 'cols', 'label' => I18n::t('content.matrix_cols_title')], 'label' => I18n::t('content.matrix_cols_title'), 'val' => I18n::t('content.matrix_cols_count', ['count' => \count($cols)]), 'old' => I18n::t('content.matrix_cols_count', ['count' => \count($pcols)])] : [];
             }
             $rows = $record['rows'] ?? [];
             $prows = $published['rows'] ?? [];
             if (!Json::same(Json::stripIds($rows), Json::stripIds($prows))) {
-                $out[] = ['field' => ['k' => 'rows', 'label' => I18n::t('content.matrix_rows_title')], 'label' => I18n::t('content.matrix_rows_title'), 'val' => I18n::t('content.matrix_rows_count', ['count' => \count($rows)]), 'old' => I18n::t('content.matrix_rows_count', ['count' => \count($prows)])];
+                $out[] = $describe ? ['field' => ['k' => 'rows', 'label' => I18n::t('content.matrix_rows_title')], 'label' => I18n::t('content.matrix_rows_title'), 'val' => I18n::t('content.matrix_rows_count', ['count' => \count($rows)]), 'old' => I18n::t('content.matrix_rows_count', ['count' => \count($prows)])] : [];
             }
 
             return $out;
@@ -169,6 +204,10 @@ final class ChangeDetector
             $a = $record[$f->key()] ?? null;
             $b = $published[$f->key()] ?? null;
             if (!$this->values->equal($f, $a, $b)) {
+                if (!$describe) {
+                    $out[] = [];
+                    continue;
+                }
                 $d = $this->describer->describeChange($f, $a, $b);
                 $out[] = ['field' => $f->toArray(), 'label' => isset($d['where']) ? $f->label() . ' · ' . $d['where'] : $f->label(), 'val' => $d['val'], 'old' => $d['old']] + (isset($d['where']) ? ['where' => $d['where']] : []);
             }

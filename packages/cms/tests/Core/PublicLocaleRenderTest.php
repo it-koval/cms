@@ -279,6 +279,83 @@ TWIG]), $this->loader]));
     }
 
     #[Test]
+    public function previewMarksCollectionAndSettingsFieldsInTheContentLanguage(): void
+    {
+        $page = $this->fixture();
+        self::getContainer()->get(\Itk\Cms\Schema\Schema::class)->template('test_public_locale')->listing(collection: 'test_public_locale_items');
+        $twig = self::getContainer()->get(Environment::class);
+        $twig->setLoader(new ChainLoader([new ArrayLoader(['pages/test_public_locale.html.twig' => <<<'TWIG'
+<html><head></head><body>
+{{ itk_field(site, page.fields.probe ~ '_text') }}
+<div{{ itk_field_attrs(settings(), page.fields.probe ~ '_shared') }}>{{ settings(page.fields.probe ~ '_shared') }}</div>
+{% for item in itk_collection('test_public_locale_items') %}{{ itk_field(item, 'title') }}{% endfor %}
+{% for item in listing(page) %}<b{{ itk_field_attrs(item, 'title') }}>{{ item.title }}</b>{% endfor %}
+</body></html>
+TWIG]), $this->loader]));
+        foreach (['ru', 'kk'] as $locale) {
+            $html = (string) self::getContainer()->get(PageRenderer::class)->renderPreview($page->id, $locale)->getContent();
+            self::assertStringContainsString('data-f="' . $this->prefix . '_text" data-sec="@settings"', $html);
+            self::assertStringContainsString('data-f="' . $this->prefix . '_shared" data-sec="@settings"', $html);
+            self::assertStringContainsString('data-f="title" data-sec="@collection/test_public_locale_items/', $html);
+            self::assertSame('ru' === $locale ? 4 : 2, \substr_count($html, 'data-sec="@collection/test_public_locale_items/'));
+            self::assertStringContainsString('ru' === $locale ? 'RU record' : 'KK record', $html);
+            self::assertStringContainsString('ru' === $locale ? 'RU setting' : 'KK setting', $html);
+            $live = $this->live($page->translation($locale));
+            self::assertStringNotContainsString('data-f=', $live);
+            self::assertStringContainsString('ru' === $locale ? 'RU record' : 'KK record', $live);
+            self::assertStringContainsString('ru' === $locale ? 'RU setting' : 'KK setting', $live);
+        }
+    }
+
+    #[Test]
+    public function settingsOwnerKeysDoNotChangePreviewMarkersOrLiveFieldValues(): void
+    {
+        $registry = self::getContainer()->get(ResourceRegistry::class);
+        $registry->add(new class extends SettingsResource {
+            public function key(): string
+            {
+                return 'test_settings_owner_keys';
+            }
+
+            public function title(): string
+            {
+                return 'Settings owner keys';
+            }
+
+            public function fields(): iterable
+            {
+                foreach (['type', 'template', 'fields'] as $key) {
+                    yield Text::make($key, $key);
+                }
+                yield \Itk\Cms\Field\Repeater::make('id', 'id')->fields(Text::make('Title', 'title'));
+            }
+        });
+        $page = $this->fixture();
+        $twig = self::getContainer()->get(Environment::class);
+        $twig->setLoader(new ChainLoader([new ArrayLoader(['pages/test_public_locale.html.twig' => <<<'TWIG'
+<html><head></head><body>
+<p>{{ itk_field(site, page.fields.probe ~ '_text') }}</p>
+<p>{{ itk_field(settings(), page.fields.probe ~ '_text') }}</p>
+<div{{ itk_field_attrs(site, page.fields.probe ~ '_text') }}>Site</div>
+<div{{ itk_field_attrs(settings(), page.fields.probe ~ '_text') }}>Settings</div>
+</body></html>
+TWIG]), $this->loader]));
+        foreach (['type' => 'test-settings-owner', 'id' => [['_id' => 'owner', 'title' => 'Owner']], 'template' => 'test-settings-owner', 'fields' => 'test-settings-owner'] as $key => $value) {
+            $this->setting($key, $value);
+            foreach (['ru', 'kk'] as $locale) {
+                $text = 'ru' === $locale ? 'RU setting' : 'KK setting';
+                $preview = (string) self::getContainer()->get(PageRenderer::class)->renderPreview($page->id, $locale)->getContent();
+                self::assertSame(4, \substr_count($preview, 'data-sec="@settings"'), $key);
+                self::assertSame(2, \substr_count($preview, $text), $key);
+                $live = $this->live($page->translation($locale));
+                self::assertStringNotContainsString('data-sec=', $live);
+                self::assertSame(2, \substr_count($live, $text), $key);
+            }
+            self::getContainer()->get(SettingsService::class)->remove($key);
+        }
+    }
+
+    #[Test]
     public function existingTwigHelpersReadKazakhLiveContentWithoutRussianFallback(): void
     {
         $page = $this->fixture();

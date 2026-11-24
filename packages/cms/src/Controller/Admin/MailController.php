@@ -13,6 +13,7 @@ use Itk\Cms\Mail\MailSettings;
 use Itk\Cms\Mail\MailStatus;
 use Itk\Cms\Mail\SiteMailer;
 use Itk\Cms\Security\Access;
+use Itk\Cms\Security\SessionWork;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
@@ -48,6 +49,7 @@ final class MailController extends AbstractApiController
         private readonly Access $access,
         #[Autowire(service: 'limiter.itk_mail_test')]
         private readonly RateLimiterFactoryInterface $testLimit,
+        private readonly SessionWork $sessionWork,
     ) {
     }
 
@@ -86,7 +88,8 @@ final class MailController extends AbstractApiController
             throw ContentException::invalid($this->mailer->problem() ?? I18n::t('http.mail_not_configured'), ['code' => 'mail_not_configured']);
         }
         try {
-            $this->mailer->deliver($this->composer->test($to));
+            $mail = $this->composer->test($to);
+            $this->sessionWork->run($request, fn () => $this->mailer->deliver($mail));
         } catch (MailDeliveryException $e) {
             throw new ContentException(I18n::t('http.mail_not_sent', ['reason' => $e->getMessage()]), 502, ['code' => 'mail_failed']);
         }

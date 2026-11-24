@@ -60,7 +60,7 @@
   "pages.title_required": "Enter the page title",
   "pages.copy_source_required": "Choose the page to copy the sections from",
   "pages.template_label": "Template",
-  "pages.parent_label": "Parent page",
+  "pages.parent_label": "Place inside page",
   "pages.parent_none": "None: a top-level page",
   "pages.choose_page": "Choose a page…",
   "pages.on_site": "On the site:",

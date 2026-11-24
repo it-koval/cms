@@ -7,6 +7,7 @@
 // RIGHTS: a role that may not see the page's template gets «Нет доступа»; one that may not edit gets the same editor read-only (a calm line above the page, no editing controls, inert forms);
 // a version that waits for publication says so above the page (and who sent it); a draft that someone changed meanwhile stops the autosave and asks what to do with the edits on screen (EditConflict).
 import { computed, nextTick, onBeforeUnmount, onMounted, provide, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import Icon from '@/components/ui/Icon.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import Skeleton from '@/components/ui/Skeleton.vue'
@@ -27,9 +28,11 @@ import { EDITOR_KEY, EDITOR_UI_KEY, TPL_ID, rememberSb, useEditorState } from '.
 import { smooth } from './scroll.js'
 import { isMulti, langName } from '@/utils/locales.js'
 import { vp } from '@/utils/viewport.js'
+import { previewDestination } from './previewTarget.js'
 
 // `locale`: the language version this editor instance edits (fixed for its life; PageEditorView re-creates it when the content language changes)
 const props = defineProps({ pageId: { type: String, required: true }, locale: { type: String, default: '' } })
+const router = useRouter()
 const ed = useEditorState(props.pageId, props.locale || undefined)
 provide(EDITOR_KEY, ed)
 
@@ -210,6 +213,11 @@ watch(() => ed.restored, (id) => { // «вернуть» after a delete
 
 /* ---------- what the page tells us (postMessage from the frame) ---------- */
 function onFrameFocus({ sec, path }) {
+  if (sec === '@settings' || String(sec).startsWith('@collection/')) {
+    const destination = previewDestination({ sec, path }, props.locale || app.locale)
+    if (destination) router.push(destination)
+    return
+  }
   if (sec === PAGE_SEC) openTpl({ focus: 'head', field: path })
   else if (ed.secById(sec)) openForm(sec, { focus: 'head', field: path })
 }

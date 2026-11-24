@@ -14,6 +14,8 @@ import { useToast } from '@/components/ui/useToast.js'
 import { useConfirm } from '@/components/ui/useConfirm.js'
 import { applyTheme } from '@/utils/theme.js'
 import { t } from '@/i18n/index.js'
+import { fieldAria } from '@/components/form/fieldProps.js'
+import { useUnsavedChanges } from '@/composables/useUnsavedChanges.js'
 
 const toast = useToast()
 const confirm = useConfirm()
@@ -29,6 +31,7 @@ const errors = reactive({ brand: '', accent: '', radius: '' })
 
 const look = (o) => ({ brand: o.brand, accent: o.accent, radius: Number(o.radius) })
 const dirty = computed(() => !!saved.value && JSON.stringify(look(draft)) !== JSON.stringify(look(saved.value.theme)))
+useUnsavedChanges(dirty, { saving })
 const differsFromDefault = computed(() => !!saved.value && JSON.stringify(look(draft)) !== JSON.stringify(look(saved.value.defaults)))
 const readable = computed(() => !view.value || (view.value.checks.brand.ok && view.value.checks.accent.ok))
 const canSave = computed(() => canEdit.value && dirty.value && readable.value && !saving.value)
@@ -135,17 +138,17 @@ const previewText = t('settings.theme_prev_text').split('{link}')
         <div :class="{ 'ro-zone': !canEdit }" :inert="!canEdit || undefined">
           <ThemeColor
             id="th-brand" v-model="draft.brand" :label="t('settings.theme_brand')" :help="t('settings.theme_brand_help')"
-            :check="view && view.checks.brand" :ladder="view && view.ladder.brand" :error="errors.brand"
+            :check="view && view.checks.brand" :ladder="view && view.ladder.brand" :error="errors.brand" :disabled="saving || !canEdit"
           />
           <ThemeColor
             id="th-accent" v-model="draft.accent" :label="t('settings.theme_accent')" :help="t('settings.theme_accent_help')"
-            :check="view && view.checks.accent" :ladder="view && view.ladder.accent" :error="errors.accent"
+            :check="view && view.checks.accent" :ladder="view && view.ladder.accent" :error="errors.accent" :disabled="saving || !canEdit"
           />
           <div :class="['field', { 'is-error': errors.radius }]">
             <label for="th-radius">{{ radiusLabel[0] }}<b class="num">{{ draft.radius }} px</b>{{ radiusLabel[1] }}</label>
-            <div class="help">{{ t('settings.theme_radius_help') }}</div>
-            <input id="th-radius" v-model.number="draft.radius" class="th-range" type="range" min="0" max="16" step="1" :disabled="!canEdit">
-            <div v-if="errors.radius" class="err" role="alert"><Icon name="alert" size="s16" /><span>{{ errors.radius }}</span></div>
+            <div id="th-radius_h" class="help">{{ t('settings.theme_radius_help') }}</div>
+            <input id="th-radius" v-model.number="draft.radius" class="th-range" type="range" min="0" max="16" step="1" :disabled="saving || !canEdit" v-bind="fieldAria('th-radius', true, errors.radius)">
+            <div v-if="errors.radius" id="th-radius_e" class="err" role="alert"><Icon name="alert" size="s16" /><span>{{ errors.radius }}</span></div>
           </div>
         </div>
       </section>

@@ -1,5 +1,5 @@
 // Requests (заявки) API: a thin fetch client over /admin/api.
-//   list({ status, form, period, q, from, to, locale })   GET   requests      locale: only requests that came from that language version ('' = all)
+//   list({ status, form, period, q, from, to, locale, page, perPage })   GET requests → { items, total, page, perPage }
 //   get(id)                                       GET   requests/:id
 //   update(id, { work, comment })                 PATCH requests/:id          work: 'new' | 'progress' | 'closed' | 'spam'; comment: private note
 //   resend(id, { channel }?)                      POST  requests/:id/resend   sends again: to `channel` ('telegram' | 'max'), without it to every channel that failed (none failed: every active one). Answers the request with its new delivery state
@@ -13,7 +13,7 @@
 import { http } from './http.js'
 import { schema } from '@/schema/registry.js'
 
-export const list = ({ status = '', form = '', period = '', q = '', from = '', to = '', locale = '' } = {}) => http.get('requests', { status, form, period, q, from, to, locale })
+export const list = ({ status = '', form = '', period = '', q = '', from = '', to = '', locale = '', page, perPage } = {}) => http.get('requests', { status, form, period, q, from, to, locale, page, perPage })
 export const get = (id) => http.get(`requests/${encodeURIComponent(id)}`)
 export const update = (id, { work, comment } = {}) => http.patch(`requests/${encodeURIComponent(id)}`, { work, comment })
 export const resend = (id, body) => http.post(`requests/${encodeURIComponent(id)}/resend`, body)

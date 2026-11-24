@@ -88,4 +88,26 @@ final class McpPhotosTest extends KernelTestCase
         $gallery = $this->mcpCall($ctx, 'page_get', ['id' => $pageId, 'section_id' => 'testphotos1'])['data']['sections'][0]['data']['gallery'];
         self::assertSame(['/uploads/media/gone/b.jpg', ['src' => '/uploads/media/gone/a.jpg', 'alt' => 'А']], $gallery);
     }
+
+    #[Test]
+    public function independentAltsSurviveReorderingReloadAndImageRendering(): void
+    {
+        [$ctx, $pageId] = $this->pageWithGone();
+        $gallery = [
+            ['src' => '/uploads/media/gone/b.jpg', 'alt' => 'Второе фото'],
+            ['src' => '/uploads/media/gone/a.jpg', 'alt' => 'Первое фото <&>'],
+        ];
+        $saved = $this->mcpCall($ctx, 'page_section_update', ['page_id' => $pageId, 'section_id' => 'testphotos1', 'data' => ['gallery' => $gallery]]);
+        self::assertTrue($saved['ok'], $saved['text']);
+        self::getContainer()->get(\Doctrine\ORM\EntityManagerInterface::class)->clear();
+        $loaded = $this->mcpCall($ctx, 'page_get', ['id' => $pageId, 'section_id' => 'testphotos1'])['data']['sections'][0]['data']['gallery'];
+        self::assertSame($gallery, \array_map(static fn (array $photo): array => ['src' => $photo['src'], 'alt' => $photo['alt']], $loaded));
+        $html = self::getContainer()->get(\Twig\Environment::class)->createTemplate('{% for photo in photos %}{{ itk_img(photo) }}{% endfor %}')->render(['photos' => $loaded]);
+        $document = new \DOMDocument();
+        $document->loadHTML('<?xml encoding="utf-8" ?>' . $html);
+        $images = $document->getElementsByTagName('img');
+        self::assertCount(2, $images);
+        self::assertSame('Второе фото', $images->item(0)->getAttribute('alt'));
+        self::assertSame('Первое фото <&>', $images->item(1)->getAttribute('alt'));
+    }
 }

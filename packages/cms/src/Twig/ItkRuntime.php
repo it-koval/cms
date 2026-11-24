@@ -251,7 +251,12 @@ final class ItkRuntime implements RuntimeExtensionInterface
     public function setting(?string $key = null, mixed $default = null): mixed
     {
         if (null === $key) {
-            return $this->settings->all($this->locale());
+            $subject = $this->settings->all($this->locale());
+            if (!\in_array($subject, $this->state->settingsSubjects, true)) {
+                $this->state->settingsSubjects[] = $subject;
+            }
+
+            return $subject;
         }
 
         return $this->settings->get($key, $default, $this->locale());
@@ -434,7 +439,13 @@ final class ItkRuntime implements RuntimeExtensionInterface
      */
     public function listingOf(array $page): array
     {
-        return isset($page['id']) ? $this->listing->forPage((string) $page['id'], $this->locale()) : [];
+        $rows = isset($page['id']) ? $this->listing->forPage((string) $page['id'], $this->locale()) : [];
+        $collection = $this->schema->template((string) ($page['template'] ?? $this->state->template))?->listingRule()['collection'] ?? null;
+        if (null !== $collection) {
+            $this->rememberCollectionOwners($rows, (string) $collection);
+        }
+
+        return $rows;
     }
 
     /**
@@ -446,11 +457,22 @@ final class ItkRuntime implements RuntimeExtensionInterface
      */
     public function collection(string $key, ?array $options = null): array
     {
-        if (null === $options) {
-            return $this->collections->published($key, $this->locale());
-        }
+        $rows = null === $options
+            ? $this->collections->published($key, $this->locale())
+            : $this->read(fn (): array => $this->reader->collection($key, $options, $this->locale()), []);
+        $this->rememberCollectionOwners($rows, $key);
 
-        return $this->read(fn (): array => $this->reader->collection($key, $options, $this->locale()), []);
+        return $rows;
+    }
+
+    /** @param list<array<string, mixed>> $rows */
+    private function rememberCollectionOwners(array $rows, string $key): void
+    {
+        foreach ($rows as $row) {
+            if (isset($row['id'])) {
+                $this->state->collectionOwners[(string) $row['id']] = $key;
+            }
+        }
     }
 
     /**
@@ -491,8 +513,20 @@ final class ItkRuntime implements RuntimeExtensionInterface
      */
     private function resolve(array $subject, string $path): array
     {
-        $isSection = isset($subject['type']);
-        if ($isSection) {
+        $isSettings = \in_array($subject, $this->state->settingsSubjects, true);
+        $isSection = !$isSettings && isset($subject['type']);
+        $collection = !$isSettings && isset($subject['id']) ? ($this->state->collectionOwners[(string) $subject['id']] ?? null) : null;
+        if ($isSettings) {
+            $fields = $this->schema->settingsFields();
+            $data = $subject;
+            $secId = '@settings';
+            $base = null;
+        } elseif (null !== $collection) {
+            $fields = $this->schema->collection($collection)?->fieldList() ?? [];
+            $data = $subject;
+            $secId = '@collection/' . $collection . '/' . (string) $subject['id'];
+            $base = null;
+        } elseif ($isSection) {
             $fields = $this->schema->sectionFields((string) $subject['type']);
             $data = (array) ($subject['data'] ?? []);
             $secId = (string) ($subject['id'] ?? '');

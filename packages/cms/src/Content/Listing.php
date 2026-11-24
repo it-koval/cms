@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Itk\Cms\Content;
 
-use Itk\Cms\Entity\Page;
 use Itk\Cms\Repository\PageRepository;
 use Itk\Cms\Repository\PageTranslationRepository;
 use Itk\Cms\Schema\Schema;
@@ -45,25 +44,26 @@ final class Listing
         $of = (array) ($rule['of'] ?? []);
         $onlyIf = $rule['onlyIf'] ?? null;
 
-        $live = [];
-        foreach ($this->translations->findLiveForLocale($locale) as $t) {
-            $live[$t->page->id] = $t;
-        }
         $children = [];
-        foreach ($this->pages->findAllOrdered() as $p) {
-            $children[$p->parentId() ?? ''][] = $p;
+        $eligible = [];
+        foreach ($this->pages->descendants($pageId) as $p) {
+            $children[$p['parent_id']][] = $p;
+            if (\in_array($p['template'], $of, true)) {
+                $eligible[] = $p['id'];
+            }
         }
+        $live = $this->translations->findLiveSnapshotsForPages($locale, $eligible);
         $out = [];
-        $walk = static function (Page $parent) use (&$walk, &$out, $children, $live, $of, $onlyIf): void {
-            foreach ($children[$parent->id] ?? [] as $c) {
-                $t = $live[$c->id] ?? null;
-                if (null !== $t && \in_array($c->template, $of, true) && (null === $onlyIf || !empty(($t->published['fields'] ?? [])[$onlyIf]))) {
-                    $out[] = ['id' => $c->id, 'template' => $c->template, 'parentId' => $parent->id] + (array) $t->published;
+        $walk = static function (string $parentId) use (&$walk, &$out, $children, $live, $onlyIf): void {
+            foreach ($children[$parentId] ?? [] as $c) {
+                $snapshot = $live[$c['id']] ?? null;
+                if (null !== $snapshot && (null === $onlyIf || !empty(($snapshot['fields'] ?? [])[$onlyIf]))) {
+                    $out[] = ['id' => $c['id'], 'template' => $c['template'], 'parentId' => $parentId] + $snapshot;
                 }
-                $walk($c);
+                $walk($c['id']);
             }
         };
-        $walk($page);
+        $walk($pageId);
 
         return $out;
     }

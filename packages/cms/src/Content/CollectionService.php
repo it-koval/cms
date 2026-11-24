@@ -16,6 +16,7 @@ use Itk\Cms\Repository\CollectionItemRepository;
 use Itk\Cms\Resource\HookDispatcher;
 use Itk\Cms\Resource\Record;
 use Itk\Cms\Schema\Collection;
+use Itk\Cms\Schema\Key;
 use Itk\Cms\Schema\Schema;
 use Itk\Cms\Support\Json;
 use Symfony\Bundle\SecurityBundle\Security;
@@ -47,6 +48,7 @@ final class CollectionService
         #[Autowire(param: 'itk_cms.main_locale')]
         private readonly string $mainLocale,
         ?ContentLocales $locales = null,
+        private readonly ?ContentReader $reader = null,
     ) {
         $this->locales = $locales ?? new ContentLocales($mainLocale);
     }
@@ -702,6 +704,9 @@ final class CollectionService
     public function published(string $collection, ?string $locale = null): array
     {
         $locale ??= $this->mainLocale;
+        if (null !== $this->reader && Key::isValid($locale) && null !== $this->schema->collection($collection)) {
+            return $this->reader->collection($collection, [], $locale);
+        }
         $out = [];
         foreach ($this->items->findByCollection($collection) as $i) {
             $t = $i->translations[$locale] ?? null;
@@ -749,7 +754,8 @@ final class CollectionService
     {
         $t = $i->translations[$locale] ?? null;
         $src = $t ?? ($i->translations[$this->mainLocale] ?? \reset($i->translations) ?: ['draft' => []]);
-        $n = null !== $t ? $this->countChanges($c, $t) : 0;
+        $summary = $this->summary($c, $i);
+        $n = $summary[$locale]['changes'] ?? 0;
 
         return $this->present($c, (array) $src['draft']) + ($c->isTree() ? ['parentId' => $i->parentId] : []) + [
             'id' => $i->id,
@@ -763,18 +769,28 @@ final class CollectionService
             'returned' => $t['returned'] ?? null,
             'changed' => $n > 0,
             'changes' => $n,
-            'locales' => $this->summary($c, $i),
+            'locales' => $summary,
         ];
     }
 
     /** @return array<string, array<string, mixed>|null> */
     public function summary(Collection $c, CollectionItem $i): array
     {
+        return $this->summarizeTranslations($c, $i->translations);
+    }
+
+    /**
+     * @param array<string, array<string, mixed>> $translations
+     *
+     * @return array<string, array<string, mixed>|null>
+     */
+    public function summarizeTranslations(Collection $c, array $translations): array
+    {
         $out = [$this->mainLocale => null];
         $titleKey = $c->titleFieldKey();
         $field = $c->field($titleKey);
         $showTitle = null === $field || [] !== $this->access->visible([$field]);
-        foreach ($i->translations as $locale => $t) {
+        foreach ($translations as $locale => $t) {
             $n = $this->countChanges($c, $t);
             $out[$locale] = ['status' => $t['status'] ?? 'draft', 'changed' => $n > 0, 'changes' => $n, 'title' => $showTitle ? ($t['draft'][$titleKey] ?? '') : '', 'updatedAt' => $t['updatedAt'] ?? null, 'awaiting' => $t['awaiting'] ?? null];
         }
@@ -868,7 +884,7 @@ final class CollectionService
     {
         $live = $this->live($t);
 
-        return null === $live ? 0 : \count($this->changes->recordChanges($c, (array) $t['draft'], $live));
+        return null === $live ? 0 : $this->changes->recordChangeCount($c, (array) $t['draft'], $live);
     }
 
     /**

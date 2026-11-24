@@ -65,6 +65,7 @@ const proposalList = computed(() => (data.value ? data.value.proposals.filter((p
 const recentList = computed(() => (data.value ? data.value.recent : []))
 const showAside = computed(() => seeContent.value)
 const localeCounts = computed(() => Object.entries(data.value?.locales || {}))
+const newRequestCount = computed(() => data.value?.newRequestCount ?? data.value?.newRequests.length ?? 0)
 
 // blocks that plugins of the site put under the sections (window.ITK.registerPlugin({ widgets }))
 const widgets = computed(() => pluginWidgets())
@@ -84,6 +85,7 @@ async function markSeen(r) {
   busyReq.value = new Set(busyReq.value).add(r.id)
   try {
     await api.requests.update(r.id, { work: 'progress' })
+    data.value.newRequestCount = Math.max(0, newRequestCount.value - 1)
     data.value.newRequests = data.value.newRequests.filter((x) => x.id !== r.id)
     refreshCounters()
     toast.show(t('ui.today_seen_toast', { id: r.id, status: workLabel('progress') }), {
@@ -156,7 +158,7 @@ async function decide(p, accept) {
 
         <!-- new requests -->
         <section v-if="seeReq" aria-labelledby="t-req">
-          <h2 id="t-req">{{ t('ui.today_new_requests') }}<span v-if="data.newRequests.length" class="chip new">{{ data.newRequests.length }}</span></h2>
+          <h2 id="t-req">{{ t('ui.today_new_requests') }}<span v-if="newRequestCount" class="chip new">{{ newRequestCount }}</span></h2>
           <div class="sheet list">
             <template v-if="data.newRequests.length">
               <div v-for="r in data.newRequests" :key="r.id" class="row-i">
@@ -164,7 +166,7 @@ async function decide(p, accept) {
                   <span class="dot-new" aria-hidden="true" />
                   <span class="main-c">
                     <span class="ttl num">{{ r.phone }}</span><LangTag v-if="multi && r.locale" :code="r.locale" /><br>
-                    <span class="meta">{{ r.city }} · {{ r.place }}</span>
+                    <span class="meta">{{ [r.city, r.place].filter(Boolean).join(' · ') }}</span>
                     <span v-if="r.note" class="meta note">{{ t('ui.today_note_quote', { text: r.note }) }}</span>
                   </span>
                   <span class="when">{{ fmtDT(r.dt) }}</span>
@@ -172,7 +174,10 @@ async function decide(p, accept) {
                 <button v-if="editReq" type="button" class="btn sm seen" :disabled="busyReq.has(r.id)" :aria-label="t('ui.today_mark_seen_label', { id: r.id })" :title="t('ui.today_mark_seen_title')" @click="markSeen(r)"><Icon name="check" size="s14" />{{ t('ui.today_seen_btn') }}</button>
               </div>
             </template>
-            <div v-else class="empty" style="padding:26px"><p>{{ t('ui.today_requests_empty') }}</p></div>
+            <div v-else-if="!newRequestCount" class="empty" style="padding:26px"><p>{{ t('ui.today_requests_empty') }}</p></div>
+            <router-link v-if="newRequestCount > data.newRequests.length" class="row-i" :to="{ name: 'requests', query: { status: 'new' } }">
+              <span class="main-c"><span class="ttl">{{ t('ui.today_all_requests') }}</span></span><span class="go"><Icon name="chevR" /></span>
+            </router-link>
             <router-link v-if="data.failedCount" class="row-i fail" :to="{ path: '/requests', query: { status: 'failed' } }">
               <span class="fi"><Icon name="alert" /></span>
               <span class="main-c"><span class="ttl">{{ t('ui.today_failed', { count: data.failedCount }) }}</span><br><span class="meta">{{ t('ui.today_failed_hint') }}</span></span>

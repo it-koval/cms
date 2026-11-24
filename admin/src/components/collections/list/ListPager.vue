@@ -23,10 +23,9 @@ const allSizes = computed(() => [...new Set([...props.sizes, props.perPage])].so
 const numbers = computed(() => {
   const out = []
   const last = pages.value
-  const near = new Set([1, last, props.page - 1, props.page, props.page + 1])
+  const near = [...new Set([1, last, props.page - 1, props.page, props.page + 1])].filter((n) => n >= 1 && n <= last).sort((a, b) => a - b)
   let prev = 0
-  for (let n = 1; n <= last; n++) {
-    if (!near.has(n)) continue
+  for (const n of near) {
     if (n - prev > 1) out.push('…')
     out.push(n)
     prev = n
@@ -58,21 +57,20 @@ const go = (n) => { if (n >= 1 && n <= pages.value && n !== props.page) emit('up
 </template>
 
 <style scoped>
-.lp { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; padding: 10px 14px; border-top: 1px solid var(--hair); background: var(--sheet-2); border-radius: 0 0 var(--r-lg) var(--r-lg); }
-.lp-n { color: var(--ink-2); font-size: var(--t-sm); margin-right: auto; }
-.lp-nav { display: flex; align-items: center; gap: 2px; }
+.lp { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 10px 12px; border-top: 1px solid var(--hair); background: var(--sheet-2); border-radius: 0 0 var(--r-lg) var(--r-lg); }
+.lp-n { color: var(--ink-2); font-size: var(--t-sm); flex: 1 1 100%; }
+.lp-nav { display: flex; align-items: center; gap: 2px; flex: 1 1 100%; justify-content: space-between; }
+.lp-cur { font-size: var(--t-sm); color: var(--ink-2); }
 .lp-b { min-width: 28px; height: 28px; padding: 0 6px; border: 1px solid transparent; border-radius: var(--r); background: none; font-size: var(--t-sm); font-weight: 560; color: var(--ink-2); font-variant-numeric: tabular-nums; }
 .lp-b:hover { background: var(--cy-50); color: var(--brand-text); }
 .lp-b.on { background: var(--cy); border-color: var(--cy); color: var(--brand-ink); }
 .lp-gap { padding: 0 4px; color: var(--ink-3); }
-.lp-s { display: inline-flex; align-items: center; gap: 8px; font-size: var(--t-sm); color: var(--ink-2); }
-.lp-s select { width: auto; height: 28px; min-width: 70px; padding-right: 26px; font-size: var(--t-sm); }
-@media (max-width: 767px) {
-  .lp { gap: 10px; padding: 10px 12px; }
-  .lp-n { flex: 1 1 100%; margin-right: 0; }
-  .lp-nav { flex: 1 1 100%; justify-content: space-between; }
-  .lp-cur { font-size: var(--t-sm); color: var(--ink-2); }
-  .lp-s { flex: 1 1 100%; justify-content: space-between; }
-  .lp-s select { height: 44px; min-width: 96px; font-size: 16px; }
+.lp-s { display: inline-flex; align-items: center; gap: 8px; font-size: var(--t-sm); color: var(--ink-2); flex: 1 1 100%; justify-content: space-between; }
+.lp-s select { width: auto; height: 44px; min-width: 96px; padding-right: 26px; font-size: 16px; }
+@media (min-width: 768px) {
+  .lp { gap: 14px; padding: 10px 14px; }
+  .lp-n { flex: 0 1 auto; margin-right: auto; }
+  .lp-nav, .lp-s { flex: 0 1 auto; justify-content: flex-start; }
+  .lp-s select { height: 28px; min-width: 70px; font-size: var(--t-sm); }
 }
 </style>

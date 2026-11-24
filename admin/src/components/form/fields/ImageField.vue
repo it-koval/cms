@@ -5,7 +5,7 @@ import { PREVIEW, thumbUrl } from '@/utils/media.js'
 import FieldShell from '../FieldShell.vue'
 import MediaPickerDialog from '../MediaPickerDialog.vue'
 import Icon from '@/components/ui/Icon.vue'
-import { domId, fieldEmits, fieldProps } from '../fieldProps.js'
+import { domId, fieldAria, fieldEmits, fieldProps } from '../fieldProps.js'
 import { t } from '@/i18n/index.js'
 
 const props = defineProps(fieldProps)
@@ -28,7 +28,7 @@ function onPick(m) {
 </script>
 
 <template>
-  <FieldShell :label="field.label" :path="path" :label-id="id" :help-id="id + '_h'" :help="field.help" :error="error" :changed="changed" :top="top" @revert="emit('revert')">
+  <FieldShell :error-id="id + '_e'" :label="field.label" :path="path" :label-id="id" :help-id="id + '_h'" :help="field.help" :error="error" :changed="changed" :top="top" @revert="emit('revert')">
     <div class="imgf">
       <div class="ph">
         <img v-if="val.src" :src="thumbUrl(val.src, PREVIEW)" alt="" :style="val.crop ? { aspectRatio: val.crop.replace(':', '/') } : undefined">
@@ -36,11 +36,11 @@ function onPick(m) {
       </div>
       <div class="meta">
         <label class="s" :for="id + '_alt'">{{ t('forms.alt_label') }}</label>
-        <input :id="id + '_alt'" type="text" :value="val.alt" :placeholder="t('forms.alt_placeholder')" autocomplete="off" @input="set({ alt: $event.target.value })">
+        <input v-bind="fieldAria(id, field.help, error)" :id="id + '_alt'" type="text" :value="val.alt" :placeholder="t('forms.alt_placeholder')" autocomplete="off" @input="set({ alt: $event.target.value })">
         <div class="btns">
-          <button type="button" class="btn sm" data-focus-target @click="picking = true"><Icon name="swap" size="s14" />{{ t('forms.image_replace') }}</button>
+          <button type="button" class="btn sm" data-focus-target v-bind="fieldAria(id, field.help, error)" @click="picking = true"><Icon name="swap" size="s14" />{{ t('forms.image_replace') }}</button>
           <label class="sr" :for="id + '_crop'">{{ t('forms.image_frame') }}</label>
-          <select :id="id + '_crop'" class="if-crop" :value="val.crop || ''" :disabled="!val.src" @change="set({ crop: $event.target.value })">
+          <select v-bind="fieldAria(id, field.help, error)" :id="id + '_crop'" class="if-crop" :value="val.crop || ''" :disabled="!val.src" @change="set({ crop: $event.target.value })">
             <option v-for="c in CROPS" :key="c" :value="c">{{ c ? t('forms.image_crop', { ratio: c }) : t('forms.image_crop_none') }}</option>
           </select>
         </div>

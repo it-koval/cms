@@ -109,3 +109,16 @@ it('keeps a matrix translation behind the delete permission', async () => {
   await state.removeVersion()
   expect(mocks.removeTranslation).not.toHaveBeenCalled()
 })
+
+it('clears pending matrix edits only after successful translation deletion', async () => {
+  await mount()
+  state.saver.schedule({ data: { cols: [{ id: 'c1', name: 'Changed name' }], rows: [] } })
+  let finish
+  mocks.removeTranslation.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve }))
+  const deleting = state.removeVersion()
+  await settle()
+  expect(state.saver.hasPending()).toBe(true)
+  finish({})
+  await deleting
+  expect(state.saver.hasPending()).toBe(false)
+})

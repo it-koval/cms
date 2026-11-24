@@ -170,7 +170,7 @@
 
   /* ---------- clicks: the preview is not a live site ---------- */
   document.addEventListener('click', function (e) {
-    var t = e.target
+    var t = e.target instanceof Element ? e.target : e.target && e.target.parentElement
     if (!(t instanceof Element)) return
     var btn = t.closest('.itk-pv-btn')
     if (btn) {
@@ -187,6 +187,7 @@
     var f = t.closest('[data-f]')
     if (f) {
       e.preventDefault()
+      e.stopPropagation()
       post('itk:focus', { sec: f.getAttribute('data-sec') || '', path: f.getAttribute('data-f') || '' })
       return
     }

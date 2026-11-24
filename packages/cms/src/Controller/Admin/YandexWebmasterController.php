@@ -5,14 +5,13 @@ declare(strict_types=1);
 namespace Itk\Cms\Controller\Admin;
 
 use Itk\Cms\Security\Access;
+use Itk\Cms\Security\SessionWork;
 use Itk\Cms\YandexWebmaster\Model\WebmasterStatus;
 use Itk\Cms\YandexWebmaster\WebmasterService;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpKernel\Attribute\AsController;
 use Symfony\Component\Routing\Attribute\Route;
-use Symfony\Component\Security\Core\Authentication\Token\Storage\TokenStorageInterface;
-use Symfony\Component\Security\Core\Exception\AccessDeniedException;
 
 /**
  * «Сегодня» → how the site does in Yandex (Webmaster). Rights: area `set:analytics`, the same as the counters and verification codes. The token is never in an answer.
@@ -36,7 +35,7 @@ final class YandexWebmasterController extends AbstractApiController
     public function __construct(
         private readonly WebmasterService $webmaster,
         private readonly Access $access,
-        private readonly TokenStorageInterface $tokens,
+        private readonly SessionWork $sessionWork,
     ) {
     }
 
@@ -45,7 +44,7 @@ final class YandexWebmasterController extends AbstractApiController
     {
         $this->access->require(self::AREA, 'view');
 
-        return $this->answer($this->whileSessionIsClosed($request, fn (): WebmasterStatus => $this->webmaster->status()));
+        return $this->answer($this->sessionWork->run($request, fn (): WebmasterStatus => $this->webmaster->status()));
     }
 
     #[Route('/connect', name: 'connect', methods: ['POST'])]
@@ -54,7 +53,7 @@ final class YandexWebmasterController extends AbstractApiController
         $this->access->require(self::AREA, 'edit');
         $token = $this->body($request)['token'] ?? '';
 
-        return $this->answer($this->whileSessionIsClosed($request, fn (): WebmasterStatus => $this->webmaster->connect(\is_string($token) ? $token : '')));
+        return $this->answer($this->sessionWork->run($request, fn (): WebmasterStatus => $this->webmaster->connect(\is_string($token) ? $token : '')));
     }
 
     #[Route('/refresh', name: 'refresh', methods: ['POST'])]
@@ -62,7 +61,7 @@ final class YandexWebmasterController extends AbstractApiController
     {
         $this->access->require(self::AREA, 'view');
 
-        return $this->answer($this->whileSessionIsClosed($request, fn (): WebmasterStatus => $this->webmaster->refresh()));
+        return $this->answer($this->sessionWork->run($request, fn (): WebmasterStatus => $this->webmaster->refresh()));
     }
 
     #[Route('', name: 'disconnect', methods: ['DELETE'])]
@@ -71,30 +70,6 @@ final class YandexWebmasterController extends AbstractApiController
         $this->access->require(self::AREA, 'edit');
 
         return $this->answer($this->webmaster->disconnect());
-    }
-
-    /**
-     * @param callable(): WebmasterStatus $call
-     */
-    private function whileSessionIsClosed(Request $request, callable $call): WebmasterStatus
-    {
-        $session = $request->hasSession() ? $request->getSession() : null;
-        $key = $request->attributes->get('_security_firewall_run');
-        if (null === $session || !$session->isStarted() || !\is_string($key)) {
-            return $call();
-        }
-
-        $id = $session->getId();
-        $session->save();
-        try {
-            return $call();
-        } finally {
-            $session->start();
-            if ($session->getId() !== $id || !$session->has($key)) {
-                $this->tokens->setToken(null);
-                throw new AccessDeniedException();
-            }
-        }
     }
 
     private function answer(WebmasterStatus $status): JsonResponse

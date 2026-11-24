@@ -324,7 +324,7 @@ final class LongRequestTest extends WebTestCase
         $id = $this->last()->id;
         $this->signIn();
 
-        foreach ([$this->read('requests'), $this->read('dashboard')['newRequests']] as $rows) {
+        foreach ([$this->read('requests')['items'], $this->read('dashboard')['newRequests']] as $rows) {
             $row = \array_values(\array_filter($rows, static fn (array $r): bool => $r['id'] === $id))[0];
             self::assertSame(32, \mb_strlen($row['phone']));
             self::assertSame(120, \mb_strlen($row['name']));

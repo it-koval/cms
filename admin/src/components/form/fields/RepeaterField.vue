@@ -9,7 +9,7 @@ import FieldRenderer from './FieldRenderer.vue'
 import FieldLayout from '../FieldLayout.vue'
 import Icon from '@/components/ui/Icon.vue'
 import { useToast } from '@/components/ui/useToast.js'
-import { fieldEmits, fieldProps, domId } from '../fieldProps.js'
+import { fieldAria, fieldEmits, fieldProps, domId } from '../fieldProps.js'
 import { defaultItem, duplicateItem, isMissing, reqMessage, repeaterSummary, repeaterThumb, repeaterTitle } from '@/utils/fields.js'
 import { t } from '@/i18n/index.js'
 
@@ -73,8 +73,8 @@ const subError = (sub, it) => (isMissing(sub, it[sub.k]) ? reqMessage(sub) : '')
 </script>
 
 <template>
-  <FieldShell :label="field.label" :path="path" :label-id="id + '_l'" :help="field.help" :error="error" :changed="changed" :top="top" :count="list.length" @revert="emit('revert')">
-    <div :id="id" :class="['rep', { tpl: templated, dup: field.dup }]">
+  <FieldShell :error-id="id + '_e'" :label="field.label" :path="path" :label-id="id + '_l'" :help-id="id + '_h'" :help="field.help" :error="error" :changed="changed" :top="top" :count="list.length" @revert="emit('revert')">
+    <div :id="id" role="group" :aria-labelledby="id + '_l'" v-bind="fieldAria(id, field.help, error)" :class="['rep', { tpl: templated, dup: field.dup }]">
       <div v-for="(it, i) in list" :key="itemKey(it, i)" class="rep-i" :data-i="i">
         <div class="rep-h">
           <img v-if="repeaterThumb(field, it).has && repeaterThumb(field, it).src" class="t" :src="thumbUrl(repeaterThumb(field, it).src)" alt="">

@@ -41,6 +41,7 @@ import { t } from '@/i18n/index.js'
 import { carryTab, takeTab } from '@/components/collections/lang.js'
 import { recordChanges } from '@/utils/changes.js'
 import { isMissing, reqMessage, validate, valuesEqual } from '@/utils/fields.js'
+import { previewField } from '@/components/editor/previewTarget.js'
 
 const route = useRoute()
 const router = useRouter()
@@ -309,6 +310,13 @@ async function focusError(path) {
   }
   if (form.value) await form.value.focusField(path)
 }
+
+// A click in the real page preview arrives on this record in the same content language.
+watch([loading, () => route.query.field], async ([busy, path]) => {
+  if (busy || !draft.value || typeof path !== 'string' || !can(area.value, 'view') || !previewField(tabs.value.flatMap((tab) => tab.fields), path)) return
+  await nextTick()
+  await focusError(path)
+})
 
 /* ---------- publish / revert / delete ---------- */
 const pubBtn = ref(null)
