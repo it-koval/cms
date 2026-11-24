@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Itk\Cms\Mcp\Tool;
 
 use Itk\Cms\Content\FieldValues;
+use Itk\Cms\Content\PageInputRules;
 use Itk\Cms\Content\PageService;
 use Itk\Cms\Mcp\AbstractMcpTool;
 use Itk\Cms\Mcp\McpContext;
@@ -48,8 +49,8 @@ final class PageCreateTool extends AbstractMcpTool
     public function inputSchema(): array
     {
         return self::schema([
-            'title' => self::string('Page name (≤70 characters).', 70),
-            'url' => self::string('Address starting with /, e.g. /about-us (≤80). Must be free.', 80),
+            'title' => PageInputRules::TITLE_SCHEMA + ['description' => 'Nonempty page name.'],
+            'url' => PageInputRules::ADDRESS_SCHEMA + ['description' => 'Address starting with /, e.g. /about-us (≤255). Must be free.'],
             'template' => self::string('Template key from site_schema; default "default".', 64),
             'parent_id' => self::string('Id of the parent page; omit for the top level (the template decides where it may stand).', 64),
             'fields' => ['type' => 'object', 'description' => 'Template fields by key (see site_schema kind=template).'],

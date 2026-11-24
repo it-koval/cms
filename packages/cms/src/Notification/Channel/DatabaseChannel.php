@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Itk\Cms\Notification\Channel;
 
+use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\EntityManagerInterface;
 use Itk\Cms\Entity\StoredNotification;
@@ -27,7 +28,7 @@ final class DatabaseChannel implements NotificationChannelInterface
         return true;
     }
 
-    public function send(Notification $notification): void
+    public function send(Notification $notification, ?Connection $connection = null): void
     {
         $row = new StoredNotification($notification->type, \mb_substr($notification->title, 0, 255));
         $row->body = \mb_substr($notification->body, 0, 2000);
@@ -37,7 +38,7 @@ final class DatabaseChannel implements NotificationChannelInterface
         $row->dedupeKey = $notification->key;
         $row->payload = $notification->payload;
         $row->i18n = $notification->i18n;
-        $this->em->getConnection()->executeStatement(
+        ($connection ?? $this->em->getConnection())->executeStatement(
             'INSERT INTO itk_notification (type, title, body, link, level, audience, dedupe_key, payload, i18n, created_at)
              VALUES (:type, :title, :body, :link, :level, :audience, :key, :payload, :i18n, :created)
              ON CONFLICT (dedupe_key) DO NOTHING',

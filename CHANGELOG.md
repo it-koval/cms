@@ -21,7 +21,8 @@ All notable changes to ITK CMS are recorded in this file. The format follows [Ke
 ### Changed
 
 - Singleton reads return initial values until the first explicit save. Collection fields with reserved metadata keys fail schema lint.
-- Admin and preview URLs use Symfony Asset when available. Standard Twig bundle overrides take priority.
+- Admin and preview URLs use the Symfony Asset base path and CDN without the site's version or manifest. Standard Twig bundle overrides take priority.
+- Admin integrations can manage delivery settings through `settings?scope=notifications`. Those settings are stored separately from site fields with the same name.
 - Console and worker translations use the application's locale. CMS screens and recipient-specific emails retain their own locale.
 - Domain settings are validated on save. The sitemap and search integrations share a normalized origin and accept `itk_cms.public_url` alone.
 - `GET /admin/api/collections/{col}` always returns the paginated object `{ items, total, page, perPage, facets, metrics }`. Search, filters, status and translation selection apply before counting and pagination. Published versions with unpublished changes are included in the `draft` filter. Clients must read `items` and request further pages. See [UPGRADE.md](UPGRADE.md#030).
@@ -38,7 +39,7 @@ All notable changes to ITK CMS are recorded in this file. The format follows [Ke
 ### Fixed
 
 - Collection imports continue after invalid rows. Republish hooks receive the published snapshot. Page edits share title and URL validation, normalize SEO fields and detect cycles at any depth. Bulk deletion handles children first.
-- Delivery status is saved before dispatching its event. The database deduplicates notifications, and history retention runs in the same flush as the new revision.
+- Delivery status is committed before dispatching its event. Parallel attempts for the same request and channel are serialized. The database deduplicates notifications, and history retention runs in the same flush as the new revision.
 - Custom request dates and redirect lengths return validation errors. Redirects can match a query string. CSS strings and escapes survive critical stylesheet preparation.
 - MCP stdio and workers reset request state. MCP logs a failed tool constructor, while other tools remain available. Messenger handlers work with named buses.
 - The install, health and generator commands agree on upload checks, dotted transport names, field names and built-in types. Page creation dates have a stable database column.

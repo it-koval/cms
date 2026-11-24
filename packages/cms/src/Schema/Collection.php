@@ -18,7 +18,7 @@ use Itk\Cms\Security\Viewer;
  */
 final class Collection
 {
-    public const RESERVED_KEYS = ['id', 'locale', 'translated', 'status', 'updatedAt', 'version', 'awaiting', 'returned', 'changed', 'changes', 'parentId'];
+    public const RESERVED_KEYS = ['id', 'locale', 'locales', 'position', 'translated', 'status', 'updatedAt', 'version', 'awaiting', 'returned', 'changed', 'changes', 'parentId'];
     private string $singular;
     private ?string $newLabel = null;
     private string $icon = 'list';

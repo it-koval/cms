@@ -141,6 +141,7 @@
 'http.max_not_delivered': 'The message was not delivered: {reason}'
 'http.max_queue_failed': 'Could not queue the delivery: {reason}'
 'http.request_bad_channel': 'Unknown messenger'
+'http.request_delivery_requires_commit': 'Save the request before sending it.'
 'http.no_such_user': 'There is no user “{email}”.'
 'http.user_removed': 'The user was deleted.'
 'http.account_closed': 'Your access is blocked. Contact the site administrator.'

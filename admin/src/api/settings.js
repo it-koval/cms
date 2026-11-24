@@ -1,6 +1,8 @@
 // Site settings, menu areas + menus and redirects: a thin fetch client over /admin/api.
 //   get(locale)                 GET    settings?locale          shared settings + the TEXTS of that language (fields with `tr`), flat: { phone, email, ..., tgOn, tgRoutes, maxOn, maxRoutes; read-only yes / no: tgReady, tgFallback, maxFallback, mailReady, maxReady }
 //   update(patch, locale)       PATCH  settings?locale          saved at once (no publish step); returns the merged settings. 422 { details:[{ path, message }] } for a bad field
+//   getNotifications()          GET    settings?scope=notifications          shared delivery settings
+//   updateNotifications(patch)  PATCH  settings?scope=notifications          saved delivery settings
 //   sendTelegramTest({ form, chatId })   POST settings/telegram-test   a test message to the chat (`form` = form key or '*')
 //   sendMaxTest({ form, chatId })        POST   settings/max-test        → { ok, chat, sent }; 502 { error } when MAX is not connected or refused. chatId: one MAX id or several with commas
 //   MENU AREAS (declared in the site schema or added in the admin): { key, name, depth (1 flat | 2 one level of nested items), snippet, usedIn:[{key,name}], usedInAll, counts:{ ru:n } }
@@ -19,6 +21,8 @@ const enc = encodeURIComponent
 
 export const get = (locale) => http.get('settings', loc(locale))
 export const update = (patch = {}, locale) => http.patch('settings', patch, loc(locale))
+export const getNotifications = () => http.get('settings', { scope: 'notifications' })
+export const updateNotifications = (patch = {}) => http.patch('settings', patch, { scope: 'notifications' })
 export const sendTelegramTest = ({ form = '*', chatId = '' } = {}) => http.post('settings/telegram-test', { form, chatId })
 
 export const sendMaxTest = ({ form = '*', chatId = '' } = {}) => http.post('settings/max-test', { form, chatId })

@@ -98,15 +98,16 @@ export function needsFallbackChat(routes, forms, serverChat) {
 }
 
 /** Errors of the settings object: { key: message }. Keys match the field keys; tgRoutes is the Telegram table, maxRoutes the MAX table, mailRoutes the e-mail table. Required fields of the schema groups are checked here, the server checks them again. */
-export function settingsErrors(s, patch = null) {
+export function settingsErrors(s, patch = null, scope = 'all') {
   const e = {}
-  schema.settings.groups.forEach((g) => g.fields.forEach((f) => {
+  if (scope !== 'notifications') schema.settings.groups.forEach((g) => g.fields.forEach((f) => {
     if (f.t === 'readonly') return
     const v = s[f.k]
     if (f.req && (v === undefined || v === null || (typeof v === 'string' && !v.trim()) || (Array.isArray(v) && !v.length))) e[f.k] = t('settings.err_fill_field', { label: f.label })
     else if (f.t === 'text' && f.inputType === 'email' && v && !/^\S+@\S+\.\S+$/.test(String(v).trim())) e[f.k] = t('settings.err_email_typo')
     else if (f.t === 'repeater' && Array.isArray(v) && v.some((row) => (f.sub || []).some((sf) => sf.req && !String(row[sf.k] ?? '').trim()))) e[f.k] = t('settings.err_fill_all', { label: f.label })
   }))
+  if (scope === 'site') return e
   const channels = [
     { routes: 'tgRoutes', toggle: 'tgOn', validate: chatIdError, formatError: 'settings.err_chat_ids' },
     { routes: 'maxRoutes', toggle: 'maxOn', validate: maxChatIdsError, formatError: 'settings.err_max_chat_ids' },

@@ -20,7 +20,11 @@ final class Version20261124090100 extends AbstractMigration
     public function up(Schema $schema): void
     {
         $this->abortIf(!$this->connection->getDatabasePlatform() instanceof PostgreSQLPlatform, I18n::t('ops.health_database_not_postgres', ['server' => $this->connection->getDatabasePlatform()::class]));
-        $columns = $this->connection->createSchemaManager()->listTableColumns('itk_page');
+        $manager = $this->connection->createSchemaManager();
+        if (!$manager->tablesExist(['itk_page'])) {
+            return; // Earlier migrations are not executed during a fresh-install SQL export.
+        }
+        $columns = $manager->listTableColumns('itk_page');
         if (isset($columns['created_at'])) {
             return;
         }
@@ -36,6 +40,6 @@ final class Version20261124090100 extends AbstractMigration
 
     public function down(Schema $schema): void
     {
-        $this->throwIrreversibleMigrationException(I18n::t('ops.migration_page_created_irreversible'));
+        // The canonical column already existed in 0.2.2. Keep it on rollback, including after repairing a legacy name.
     }
 }

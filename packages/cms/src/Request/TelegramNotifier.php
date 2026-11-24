@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Itk\Cms\Request;
 
+use Doctrine\DBAL\Connection;
 use Itk\Cms\Content\ContentException;
 use Itk\Cms\Content\HtmlSanitizer;
 use Itk\Cms\Content\SettingsService;
@@ -118,9 +119,9 @@ final class TelegramNotifier implements ChannelNotifier
 
     /** Writes the outcome of attempt() into the request and announces it. Returns true when it needs no retry. */
     /** @param (\Closure(\Closure(): void): void)|null $defer */
-    public function record(Request $r, ChannelOutcome $outcome, ?\Closure $defer = null): bool
+    public function record(Request $r, ChannelOutcome $outcome, ?\Closure $defer = null, ?Connection $deliveryConnection = null): bool
     {
-        return $outcome->record($r, Request::CHANNEL_TELEGRAM, $this->events, $defer);
+        return $outcome->record($r, Request::CHANNEL_TELEGRAM, $this->events, $defer, $deliveryConnection);
     }
 
     /**

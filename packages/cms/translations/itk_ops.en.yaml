@@ -368,4 +368,3 @@
 'ops.doctor_seo_base_missing': 'No trusted site URL: hreflang and sitemap are not generated. Set itk_cms.public_url or the site domain.'
 'ops.migration_page_created_description': 'Normalize itk_page.created_at without changing creation dates'
 'ops.migration_page_created_missing': 'The original itk_page creation date column was not found.'
-'ops.migration_page_created_irreversible': 'The original naming strategy cannot be inferred; creation dates remain in created_at.'

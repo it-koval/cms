@@ -1092,7 +1092,7 @@ MAX (max.ru) работает рядом с Telegram и независимо о�
 
 Выключатель «MAX» (`maxOn`) и опция `itk_cms.max.enabled: false` работают так же, как у Telegram. Кнопка «Проверить» шлёт пробное сообщение. Отказ MAX не меняет статус Telegram, и наоборот.
 
-Получателей хранят настройки `tgOn`, `tgRoutes`, `maxOn`, `maxRoutes` и `mailRoutes` (область `set:notifications`). `GET settings` отдаёт их вместе с признаками `tgFallback`, `maxFallback` (чат задан в конфигурации), `tgReady`, `maxReady` и `mailReady`. Пробное сообщение отправляют `POST settings/telegram-test` и `POST settings/max-test {form?, chatId?}`.
+Область `set:notifications` использует настройки `tgOn`, `tgRoutes`, `maxOn`, `maxRoutes` и `mailRoutes`. Получайте и меняйте их через `GET settings?scope=notifications` и `PATCH settings?scope=notifications`. Ответ также содержит `tgFallback`, `maxFallback` (чат задан в конфигурации), `tgReady`, `maxReady` и `mailReady`. Пробное сообщение отправляют `POST settings/telegram-test` и `POST settings/max-test {form?, chatId?}`.
 
 ### Боты
 
@@ -1154,7 +1154,7 @@ $notifier->notify(new Notification(
 - **`DatabaseChannel`** хранит уведомление для колокольчика. Человек видит уведомления по своим правам и роли, отправленные после его регистрации. Старые удаляет `php bin/console itk:notifications:prune [--days=90] [--dry-run]`, ставьте её в cron.
 - **`TelegramChannel`, `MaxChannel`, `EmailChannel`** доставляют только `request.new`.
 - **События ядра:** `request.new` (новая заявка, для права `requests`), `telegram.failed` и `max.failed` (заявка не дошла), `mail.failed` (письмо не ушло). Уведомление о сбое убирается, когда доставка удалась.
-- **Исход доставки** приходит событием Symfony `Itk\Cms\Event\RequestDelivery { request, delivered, error, cancelled, channel }`. `channel` равен `telegram` или `max`.
+- **Исход доставки** приходит событием Symfony `Itk\Cms\Event\RequestDelivery { request, delivered, error, cancelled, channel }` после фиксации статуса. `channel` равен `telegram` или `max`. Чтобы изменить заявку, слушатель загружает её по ID и явно сохраняет.
 - **Язык.** `new Notification(title: …)` хранит готовый текст. `Notification::translated(type: …, titleKey: 'area.key', titleParams: [...])` хранит ключ, и каждый читатель видит заголовок на своём языке.
 - **API.** `GET notifications?unread=1&limit=&offset=`, `POST notifications/read { ids } | { all: true }`. Каждый читает только своё.
 

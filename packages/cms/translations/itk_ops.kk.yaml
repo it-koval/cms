@@ -368,4 +368,3 @@
 'ops.doctor_seo_base_missing': 'Сайттың сенімді мекенжайы жоқ: hreflang және sitemap жасалмайды. itk_cms.public_url немесе сайт доменін орнатыңыз.'
 'ops.migration_page_created_description': 'Жасалу күндерін сақтап, itk_page.created_at атауын біріздендіру'
 'ops.migration_page_created_missing': 'itk_page кестесіндегі бастапқы жасалу күні бағаны табылмады.'
-'ops.migration_page_created_irreversible': 'Бастапқы атау стратегиясын анықтау мүмкін емес; жасалу күндері created_at бағанында сақталады.'

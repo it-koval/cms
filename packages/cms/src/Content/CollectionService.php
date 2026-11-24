@@ -172,6 +172,17 @@ final class CollectionService
      */
     public function create(string $collection, array $data = [], ?string $locale = null, ?string $id = null): array
     {
+        return $this->createRecord($collection, $data, $locale, $id);
+    }
+
+    /**
+     * @param array<string, mixed> $data
+     * @param array<string, mixed>|null $firstUpdate a singleton's first PATCH, included in its single creation snapshot
+     *
+     * @return array<string, mixed>
+     */
+    private function createRecord(string $collection, array $data, ?string $locale, ?string $id, ?array $firstUpdate = null): array
+    {
         $c = $this->collection($collection);
         $locale ??= $this->mainLocale;
         if (null !== $c->singletonId() && $this->items->find($c->singletonId())) {
@@ -186,10 +197,19 @@ final class CollectionService
         $i->position = $this->items->nextPosition($collection);
         $i->parentId = $parentId;
         $i->translations = [$locale => ['draft' => $draft, 'published' => null, 'status' => 'draft', 'updatedAt' => Json::now()]];
+        if (null !== $firstUpdate) {
+            $patch = $this->hooks->updating($this->record($c, $i, $locale), $this->access->input($c->fieldList(), $firstUpdate));
+            $next = $this->normalized($c, $patch) + $draft;
+            $this->raw->assertFields($c->fieldList(), $draft, $next);
+            $this->put($i, $locale, ['draft' => $next, 'published' => null, 'status' => 'draft', 'updatedAt' => Json::now()]);
+        }
         $this->em->persist($i);
         $this->history->item($collection, $i, $locale, Revision::CREATE);
         $this->em->flush();
         $this->hooks->created($this->record($c, $i, $locale));
+        if (null !== $firstUpdate) {
+            $this->hooks->updated($this->record($c, $i, $locale));
+        }
 
         return $this->flat($c, $i, $locale);
     }
@@ -293,7 +313,7 @@ final class CollectionService
                 $this->requireDraftVersion($initial, $this->mainLocale, $baseVersion);
             }
             if ($locale === $this->mainLocale) {
-                return $this->create($collection, $data, $this->mainLocale, $id);
+                return $this->createRecord($collection, [], $this->mainLocale, $id, $data);
             }
             $this->create($collection, [], $this->mainLocale, $id);
             $this->addTranslation($collection, $id, $locale, null);

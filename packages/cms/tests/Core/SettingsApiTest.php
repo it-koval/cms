@@ -18,6 +18,22 @@ final class SettingsApiTest extends ResourceKernelTestCase
 
     protected function prepare(): void
     {
+        self::getContainer()->get(\Itk\Cms\Resource\ResourceRegistry::class)->add(new class extends \Itk\Cms\Resource\SettingsResource {
+            public function key(): string
+            {
+                return 'test_implicit_settings';
+            }
+
+            public function title(): string
+            {
+                return 'Implicit defaults';
+            }
+
+            public function fields(): iterable
+            {
+                yield \Itk\Cms\Field\Select::make('Mode', 'testImplicitMode')->options(['modal' => 'Modal', 'anchor' => 'Anchor']);
+            }
+        });
         parent::prepare();
         $this->settings = self::getContainer()->get(Settings::class);
         $this->store = self::getContainer()->get(SettingsService::class);
@@ -63,6 +79,8 @@ final class SettingsApiTest extends ResourceKernelTestCase
         self::assertFalse($this->settings->get('testOn'));
         self::assertFalse($this->settings->bool('testOn', true), 'a saved false beats the default');
         self::assertSame(0, $this->settings->int('testSeats', 7));
+        self::assertFalse($this->settings->all()['testOn']);
+        self::assertSame(0, $this->settings->all()['testSeats']);
     }
 
     #[Test]
@@ -113,6 +131,9 @@ final class SettingsApiTest extends ResourceKernelTestCase
         $this->store->set('testOn', 1);
         $all = $this->settings->all();
         self::assertTrue($all['testOn']);
+        self::assertSame('modal', $all['testImplicitMode']);
+        self::assertSame('modal', $this->settings->get('testImplicitMode'));
+        self::assertSame('modal', $this->settings->string('testImplicitMode'));
         self::assertArrayHasKey('siteName', $all);
         self::assertArrayHasKey('tgOn', $all, 'the core keys stay');
     }

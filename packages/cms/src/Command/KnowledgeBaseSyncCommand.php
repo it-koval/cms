@@ -4,15 +4,19 @@ declare(strict_types=1);
 
 namespace Itk\Cms\Command;
 
+use Doctrine\DBAL\Exception\ConnectionException;
+use Doctrine\DBAL\Exception\RetryableException;
 use Doctrine\ORM\EntityManagerInterface;
 use Itk\Cms\I18n\I18n;
 use Itk\Cms\KnowledgeBase\Embedding\EmbeddingFailed;
 use Itk\Cms\KnowledgeBase\Indexer;
 use Itk\Cms\KnowledgeBase\KnowledgeBaseOptions;
 use Itk\Cms\KnowledgeBase\Model\Freshness;
+use Itk\Cms\KnowledgeBase\Model\Outcome;
 use Itk\Cms\KnowledgeBase\Model\Planned;
 use Itk\Cms\KnowledgeBase\Model\SourceRef;
 use Itk\Cms\KnowledgeBase\Model\SyncKnowledge;
+use Itk\Cms\KnowledgeBase\Model\SyncReport;
 use Itk\Cms\KnowledgeBase\SourceReader;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
@@ -123,7 +127,16 @@ final class KnowledgeBaseSyncCommand extends Command
         $bar->start();
         foreach (\array_chunk($refs, self::SYNC_PER_RUN) as $chunk) {
             try {
-                $report = $this->indexer->sync($chunk);
+                $report = $this->indexer->sync($chunk, retryTransient: false);
+            } catch (ConnectionException|RetryableException $e) {
+                // Shared batch reads can fail before a per-source outcome exists. Report the affected sources and keep the run's summary.
+                $this->em->getConnection()->close();
+                $outcomes = $errors = [];
+                foreach ($chunk as $ref) {
+                    $outcomes[$ref->key()] = Outcome::Failed;
+                    $errors[$ref->key()] = $e->getMessage();
+                }
+                $report = new SyncReport($outcomes, $errors, 0, 0, null);
             } catch (EmbeddingFailed $e) {
                 $bar->clear();
                 $io->error(I18n::t('ops.knowledge_base_embedder_failed', ['reason' => $e->getMessage()]));

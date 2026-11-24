@@ -390,6 +390,7 @@ final class PageService
         $nameKey = $this->nameKey($tpl);
         if (null !== $nameKey && '' === \trim((string) ($fields[$nameKey] ?? ''))) {
             $fields[$nameKey] = $this->titleAsField($tpl->field($nameKey), $title);
+            $fields = $this->values->normalize([$tpl->field($nameKey)], [$nameKey => $fields[$nameKey]]) + $fields;
         }
         $sections = $input['sections'] ?? null;
         $sections = !$tpl->hasSections() || (null !== $tpl->h1Field() && !$sections) ? [] : $this->normalizeSections($sections ?: $this->defaultSections($title));
@@ -1063,7 +1064,7 @@ final class PageService
 
     private function assertTranslationAddress(string $locale, string $url): void
     {
-        if (!self::hasPageAddressShape($url)) {
+        if (null !== PageInputRules::addressProblem($url)) {
             throw ContentException::invalid(I18n::t('content.translation_address_invalid'));
         }
         self::assertNotReserved($url);
@@ -1271,21 +1272,16 @@ final class PageService
         }
     }
 
-    private static function hasPageAddressShape(string $url): bool
-    {
-        return Url::isLocalPath($url) && \mb_strlen($url) <= 255 && false === \strpbrk($url, '?#\\');
-    }
-
     /** @internal Shared address-shape error for transports that aggregate input problems before writing. */
     public static function addressShapeProblem(string $url): ?string
     {
-        return self::hasPageAddressShape($url) ? null : I18n::t('content.page_url_invalid');
+        return PageInputRules::addressProblem($url);
     }
 
     private function assertPageTitle(string $title): void
     {
-        if ('' === \trim($title)) {
-            throw ContentException::invalid(I18n::t('content.page_title_required'));
+        if (null !== ($problem = PageInputRules::titleProblem($title))) {
+            throw ContentException::invalid($problem);
         }
     }
 
@@ -1413,7 +1409,6 @@ final class PageService
                 throw ContentException::invalid(I18n::t('content.page_home_top_level'));
             }
         }
-        $this->assertPageTitle(\array_key_exists('title', $data) ? \trim((string) $data['title']) : (string) ($cur['title'] ?? ''));
         // Existing secondary drafts may have a legacy prefix or no address yet; publishing still checks the full invariant.
         if (!('' === $nextAddress && $t->locale !== $this->mainLocale) && null !== ($problem = self::addressShapeProblem($nextAddress))) {
             throw ContentException::invalid($problem);
@@ -1450,12 +1445,11 @@ final class PageService
             $next['fields'] = $this->values->normalize($tpl->fieldList(), $data['fields']) + (array) ($next['fields'] ?? []);
         }
         if (null !== $tpl) {
+            $next = $this->syncH1($tpl, $cur, $next);
             $this->raw->assertFields($tpl->fieldList(), (array) ($cur['fields'] ?? []), (array) ($next['fields'] ?? []));
         }
+        $this->assertPageTitle((string) ($next['title'] ?? ''));
         $this->raw->assertSections((array) ($cur['sections'] ?? []), (array) ($next['sections'] ?? []));
-        if (null !== $tpl) {
-            $next = $this->syncH1($tpl, $cur, $next);
-        }
         $t->draft = $next;
         $t->migrated = false;
         $t->updatedAt = new \DateTimeImmutable();
@@ -1567,6 +1561,9 @@ final class PageService
                 $f[$k] = HtmlSanitizer::escape(\trim($title)) . $rest;
             }
             $next['fields'] = $f;
+        }
+        if (($f[$k] ?? null) !== (($cur['fields'] ?? [])[$k] ?? null)) {
+            $next['fields'] = $this->values->normalize([$field], [$k => $f[$k] ?? '']) + $f;
         }
 
         return $next;

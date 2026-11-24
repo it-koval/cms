@@ -22,6 +22,8 @@ use Symfony\Contracts\Service\ResetInterface;
  */
 final class SettingsService implements ResetInterface
 {
+    private const NOTIFICATION_KEYS = ['tgOn', 'maxOn', 'tgRoutes', 'maxRoutes', 'mailRoutes'];
+
     /** The longest text of robots.txt / llms.txt, in bytes. */
     public const CRAWLER_TEXT_MAX = 65536;
 
@@ -68,11 +70,11 @@ final class SettingsService implements ResetInterface
             $out[$f->key()] = \array_key_exists($f->key(), $stored[$scope] ?? []) ? $stored[$scope][$f->key()] : $this->values->emptyFor($f);
         }
         $shared = $stored[Setting::ALL] ?? [];
-        $out['tgOn'] = $shared['tgOn'] ?? true;
-        $out['tgRoutes'] = $shared['tgRoutes'] ?? [];
-        $out['maxOn'] = $shared['maxOn'] ?? true;
-        $out['maxRoutes'] = $shared['maxRoutes'] ?? [];
-        $out['mailRoutes'] = $shared['mailRoutes'] ?? [];
+        foreach ($this->notificationSettings() as $key => $value) {
+            if (!\array_key_exists($key, $out)) {
+                $out[$key] = $value;
+            }
+        }
         if (!isset($out['forms'])) {
             $out['forms'] = $shared['forms'] ?? true;
         }
@@ -96,7 +98,7 @@ final class SettingsService implements ResetInterface
         $f = $this->schema->settingsField($key);
         $scope = null !== $f && $f->isTranslatable() ? ($locale ?? $this->mainLocale) : Setting::ALL;
 
-        return \array_key_exists($key, $this->load()[$scope] ?? []);
+        return \array_key_exists($this->storageKey($key), $this->load()[$scope] ?? []);
     }
 
     /**
@@ -109,6 +111,32 @@ final class SettingsService implements ResetInterface
      */
     public function update(array $patch, ?string $locale = null, string $action = Revision::EDIT): array
     {
+        return $this->write($patch, $locale, $action);
+    }
+
+    /** Explicit notification scope: API names stay stable even when a site declares a field with the same key. */
+    public function updateNotifications(array $patch, ?string $locale = null, string $action = Revision::EDIT): array
+    {
+        $this->write(\array_intersect_key($patch, \array_flip(Schema::CORE_SETTING_KEYS)), $locale, $action, true);
+
+        return $this->notificationSettings();
+    }
+
+    /** @return array<string, mixed> */
+    public function notificationSettings(): array
+    {
+        $shared = $this->load()[Setting::ALL] ?? [];
+        $out = ['forms' => $shared['forms'] ?? true];
+        foreach (self::NOTIFICATION_KEYS as $key) {
+            $out[$key] = $shared['itk:' . $key] ?? (\str_ends_with($key, 'On') ? true : []);
+        }
+
+        return $out;
+    }
+
+    /** @param array<string, mixed> $patch @return array<string, mixed> */
+    private function write(array $patch, ?string $locale, string $action, bool $notifications = false): array
+    {
         $locale ??= $this->mainLocale;
         $fields = [];
         foreach ($this->schema->settingsFields() as $f) {
@@ -120,7 +148,7 @@ final class SettingsService implements ResetInterface
         $write = [];
         foreach ($patch as $key => $value) {
             $key = (string) $key;
-            if (isset($fields[$key])) {
+            if (isset($fields[$key]) && !($notifications && \in_array($key, self::NOTIFICATION_KEYS, true))) {
                 $f = $fields[$key];
                 if ($f->isNote() || !isset($open[$key])) {
                     continue;
@@ -156,16 +184,17 @@ final class SettingsService implements ResetInterface
         if ([] !== $errors) {
             throw ContentException::invalid(I18n::t('content.settings_required'), $errors);
         }
-        $before = $this->all($locale);
+        $before = $notifications ? $this->notificationSettings() : $this->all($locale);
         $after = $before;
         $touched = [];
         foreach ($write as $items) {
             $after = $items + $after;
             \array_push($touched, ...\array_keys($items));
         }
-        $this->history->settings($locale, $before, $after, $touched, $action);
+        $this->history->settings($locale, $before, $after, $touched, $action, $notifications);
         foreach ($write as $scope => $items) {
             foreach ($items as $key => $value) {
+                $key = $this->storageKey($key, $notifications);
                 $row = $this->settings->find(['key' => $key, 'locale' => $scope]);
                 if (null === $row) {
                     $row = new Setting($key, (string) $scope, $value);
@@ -187,6 +216,7 @@ final class SettingsService implements ResetInterface
         if ('domain' === $key) {
             self::checkDomain($value);
         }
+        $key = $this->storageKey($key);
         $row = $this->settings->find(['key' => $key, 'locale' => $locale]);
         if (null === $row) {
             $this->em->persist(new Setting($key, $locale, $value));
@@ -223,6 +253,7 @@ final class SettingsService implements ResetInterface
     /** Deletes a shared value (the row), not only its content. */
     public function remove(string $key): void
     {
+        $key = $this->storageKey($key);
         $row = $this->settings->find(['key' => $key, 'locale' => Setting::ALL]);
         if (null !== $row) {
             $this->em->remove($row);
@@ -254,7 +285,7 @@ final class SettingsService implements ResetInterface
     /** @return list<string> */
     private function routedChats(string $key, string $form): array
     {
-        $routes = (array) ($this->load()[Setting::ALL][$key] ?? []);
+        $routes = (array) ($this->load()[Setting::ALL]['itk:' . $key] ?? []);
 
         return self::splitIds((string) ($routes[$form] ?? '')) ?: self::splitIds((string) ($routes['*'] ?? ''));
     }
@@ -272,7 +303,7 @@ final class SettingsService implements ResetInterface
      */
     public function mailRecipientsFor(string $form): array
     {
-        $routes = (array) ($this->load()[Setting::ALL]['mailRoutes'] ?? []);
+        $routes = (array) ($this->load()[Setting::ALL]['itk:mailRoutes'] ?? []);
 
         return self::splitEmails((string) ($routes[$form] ?? $routes['*'] ?? ''));
     }
@@ -280,7 +311,7 @@ final class SettingsService implements ResetInterface
     /** Is there any address for letters about requests? (The health screen warns when there is, but mail is not configured.) */
     public function hasMailRecipients(): bool
     {
-        foreach ((array) ($this->load()[Setting::ALL]['mailRoutes'] ?? []) as $list) {
+        foreach ((array) ($this->load()[Setting::ALL]['itk:mailRoutes'] ?? []) as $list) {
             if ([] !== self::splitEmails((string) $list)) {
                 return true;
             }
@@ -329,12 +360,12 @@ final class SettingsService implements ResetInterface
 
     public function isTelegramOn(): bool
     {
-        return (bool) ($this->load()[Setting::ALL]['tgOn'] ?? true);
+        return (bool) ($this->load()[Setting::ALL]['itk:tgOn'] ?? true);
     }
 
     public function isMaxOn(): bool
     {
-        return (bool) ($this->load()[Setting::ALL]['maxOn'] ?? true);
+        return (bool) ($this->load()[Setting::ALL]['itk:maxOn'] ?? true);
     }
 
     public function acceptsRequests(): bool
@@ -437,6 +468,11 @@ final class SettingsService implements ResetInterface
         }
 
         return $out;
+    }
+
+    private function storageKey(string $key, bool $notifications = false): string
+    {
+        return \in_array($key, self::NOTIFICATION_KEYS, true) && ($notifications || null === $this->schema->settingsField($key)) ? 'itk:' . $key : $key;
     }
 
     /** @return array<string, array<string, mixed>> */

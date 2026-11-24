@@ -39,6 +39,9 @@ final class PageCreatedAtMappingTest extends KernelTestCase
         $db->executeStatement('CREATE SCHEMA ' . $schema);
         try {
             $db->executeStatement('SET search_path TO ' . $schema);
+            $empty = new Version20261124090100($db, new NullLogger());
+            $empty->up(new Schema());
+            self::assertSame([], $empty->getSql(), 'an empty schema remains reviewable during dry runs');
             foreach (['createdAt', 'createdat', 'created_at'] as $column) {
                 $db->executeStatement('CREATE TABLE itk_page (id TEXT PRIMARY KEY, "' . $column . '" TIMESTAMP(0) WITHOUT TIME ZONE NOT NULL)');
                 $db->executeStatement('INSERT INTO itk_page VALUES (?, ?)', ['original', '2024-02-03 04:05:06']);
@@ -48,6 +51,9 @@ final class PageCreatedAtMappingTest extends KernelTestCase
                     $db->executeStatement($query->getStatement(), $query->getParameters(), $query->getTypes());
                 }
                 self::assertSame('2024-02-03 04:05:06', $db->fetchOne('SELECT created_at FROM itk_page WHERE id = ?', ['original']));
+                $rollback = new Version20261124090100($db, new NullLogger());
+                $rollback->down(new Schema());
+                self::assertSame([], $rollback->getSql(), 'created_at already existed before 0.3.0');
                 $db->executeStatement('DROP TABLE itk_page');
             }
         } finally {

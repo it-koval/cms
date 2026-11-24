@@ -162,8 +162,13 @@ final class HistoryService
      * @param array<string, mixed> $after and after it
      * @param list<string> $keys the keys the save touched
      */
-    public function settings(string $locale, array $before, array $after, array $keys, string $action = Revision::EDIT): void
+    public function settings(string $locale, array $before, array $after, array $keys, string $action = Revision::EDIT, bool $notifications = false): void
     {
+        if ($notifications) {
+            $this->write(Revision::SETTINGS, 'notifications', 'notifications', $locale, $action, $this->settingsOf('notifications', $after), $this->settingsOf('notifications', $before));
+
+            return;
+        }
         $groups = $this->settingsGroupOf();
         $touched = [];
         foreach ($keys as $k) {
@@ -179,6 +184,9 @@ final class HistoryService
     /** The values of one group out of all the settings of a language. @param array<string, mixed> $all @return array<string, mixed> */
     public function settingsOf(string $group, array $all): array
     {
+        if ('notifications' === $group) {
+            return \array_intersect_key($all, \array_flip(Schema::CORE_SETTING_KEYS));
+        }
         $own = \array_keys(\array_filter($this->settingsGroupOf(), static fn (string $g): bool => $g === $group));
 
         return \array_intersect_key($all, \array_flip($own));

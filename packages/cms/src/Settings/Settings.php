@@ -109,7 +109,7 @@ final class Settings
             return $this->settings->get($key, $locale);
         }
 
-        return $field->hasDefault() ? $field->defaultValue() : null;
+        return $field->hasDefault() ? $field->defaultValue() : ('select' === $field->type() ? $this->settings->get($key, $locale) : null);
     }
 
     private function cast(string $key, mixed $value): mixed

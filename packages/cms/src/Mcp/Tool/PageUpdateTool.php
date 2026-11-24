@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Itk\Cms\Mcp\Tool;
 
+use Itk\Cms\Content\PageInputRules;
 use Itk\Cms\Content\PageService;
 use Itk\Cms\Mcp\AbstractMcpTool;
 use Itk\Cms\Mcp\McpContext;
@@ -46,8 +47,8 @@ final class PageUpdateTool extends AbstractMcpTool
     {
         return self::schema([
             'id' => self::string('Page id.', 64),
-            'title' => self::string('New page name (≤70).', 70),
-            'url' => self::string('New address starting with / (≤80). A live page keeps its old address until published, then a redirect is made.', 80),
+            'title' => PageInputRules::TITLE_SCHEMA + ['description' => 'New nonempty page name.'],
+            'url' => PageInputRules::ADDRESS_SCHEMA + ['description' => 'New address starting with / (≤255). A live page keeps its old address until published, then a redirect is made.'],
             'seo' => ['type' => 'object', 'description' => 'SEO: {"title": "≤70", "description": "≤160"}; keys you omit stay as they are.'],
             'fields' => ['type' => 'object', 'description' => 'Template fields to change, by key; fields you omit stay as they are.'],
             'locale' => self::localeProperty(),

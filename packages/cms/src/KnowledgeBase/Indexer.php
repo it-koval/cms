@@ -97,10 +97,13 @@ final class Indexer
      * A failure of one source (extraction, its write) is that source's Outcome::Failed; the rest go on.
      *
      * @param list<SourceRef> $refs
+     * @param bool $retryTransient workers retry the whole message; CLI reports individual source failures and continues
      *
      * @throws EmbeddingFailed the embedder failed: nothing of this batch that needed it was written; the caller retries the whole batch
+     * @throws ConnectionException a shared batch read failed, or workers must retry a source
+     * @throws RetryableException a shared batch read failed, or workers must retry a source
      */
-    public function sync(array $refs): SyncReport
+    public function sync(array $refs, bool $retryTransient = true): SyncReport
     {
         $outcomes = [];
         $failures = [];
@@ -119,8 +122,11 @@ final class Indexer
                     $plans[$key] = $plan;
                 }
             } catch (\Throwable $e) {
-                if ($e instanceof RetryableException || $e instanceof ConnectionException) {
+                if ($retryTransient && ($e instanceof RetryableException || $e instanceof ConnectionException)) {
                     throw $e;
+                }
+                if ($e instanceof ConnectionException) {
+                    $this->db->close(); // the next CLI source reconnects; workers retry the message instead
                 }
                 $outcomes[$key] = Outcome::Failed;
                 $failures[$key] = $e->getMessage();
@@ -145,8 +151,11 @@ final class Indexer
             try {
                 $outcomes[$key] = $this->rewrite($plan, $vectors);
             } catch (\Throwable $e) {
-                if ($e instanceof RetryableException || $e instanceof ConnectionException) {
+                if ($retryTransient && ($e instanceof RetryableException || $e instanceof ConnectionException)) {
                     throw $e;
+                }
+                if ($e instanceof ConnectionException) {
+                    $this->db->close(); // the next CLI source reconnects; workers retry the message instead
                 }
                 $outcomes[$key] = Outcome::Failed;
                 $failures[$key] = $e->getMessage();

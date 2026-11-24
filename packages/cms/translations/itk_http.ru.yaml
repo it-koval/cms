@@ -141,6 +141,7 @@
 'http.max_not_delivered': 'Сообщение не доставлено: {reason}'
 'http.max_queue_failed': 'Не удалось поставить отправку в очередь: {reason}'
 'http.request_bad_channel': 'Неизвестный мессенджер'
+'http.request_delivery_requires_commit': 'Сохраните заявку перед отправкой.'
 'http.no_such_user': 'Пользователя «{email}» нет.'
 'http.user_removed': 'Пользователь удалён.'
 'http.account_closed': 'Доступ закрыт. Обратитесь к администратору сайта.'

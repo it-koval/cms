@@ -62,16 +62,17 @@ final class RequestService
                 $errors[$f->key()] = I18n::t('http.request_field_required', ['label' => $f->label()]);
                 continue;
             }
-            $problems = \Itk\Cms\Content\FieldValueRules::problems($f, $value);
+            if ($empty) {
+                continue;
+            }
+            $problems = \Itk\Cms\Content\FieldValueRules::problems($f, $value, plainText: true);
             if ([] !== $problems) {
                 $errors[$f->key()] = 'max' === $problems[0]['code']
                     ? I18n::t('http.request_field_too_long', ['label' => $f->label(), 'count' => $f->maxLength()])
                     : $problems[0]['message'];
                 continue;
             }
-            if (!$empty) {
-                $data[$f->key()] = $value;
-            }
+            $data[$f->key()] = $value;
         }
         if ([] !== $errors) {
             throw ContentException::invalid((string) \reset($errors), $errors);
@@ -185,6 +186,9 @@ final class RequestService
         foreach (null !== $channel ? [$channel] : $this->channelsToResend($r) as $one) {
             $again = null === $channel || Request::DELIVERY_FAILED === $r->channelState($one);
             $this->deliverer->deliver((int) $r->id, $one, $again);
+        }
+        if ($this->em->getConnection()->isTransactionActive()) {
+            $this->em->refresh($r); // delivery committed on its own connection
         }
 
         return $r;
@@ -352,9 +356,7 @@ final class RequestService
             return null;
         }
 
-        $limit = $f->maxLength() ?? self::MAX_LENGTH;
-
-        // one character over max() is enough for submit() to refuse the value; min(): max(PHP_INT_MAX) must not overflow
-        return PlainText::from((string) $raw, \min($limit, \PHP_INT_MAX - 1) + 1);
+        // Explicit max() is checked on the whole cleaned text; an accepted value is never silently shortened.
+        return PlainText::from((string) $raw, null === $f->maxLength() ? self::MAX_LENGTH + 1 : \PHP_INT_MAX);
     }
 }

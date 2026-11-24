@@ -350,6 +350,20 @@ final class GeneratorsTest extends TestCase
     }
 
     #[Test]
+    public function reservedCollectionKeysAreRejectedBeforeWritingAClass(): void
+    {
+        foreach (['status', 'locales', 'position'] as $key) {
+            \file_put_contents($this->project . '/reserved.json', \json_encode([
+                'key' => 'test_gen_reserved', 'fields' => [['key' => $key, 'type' => 'text']],
+            ], \JSON_THROW_ON_ERROR));
+            $result = $this->exec($this->collectionCommand(), ['--from' => 'reserved.json']);
+            self::assertSame(Command::INVALID, $result->getStatusCode(), $key);
+            self::assertStringContainsString($key, $result->getDisplay());
+            self::assertDirectoryDoesNotExist($this->project . '/src');
+        }
+    }
+
+    #[Test]
     public function aBadJsonDescriptionIsExplained(): void
     {
         $cmd = $this->collectionCommand();

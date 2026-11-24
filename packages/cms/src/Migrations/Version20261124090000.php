@@ -11,7 +11,7 @@ use Doctrine\Migrations\AbstractMigration;
 /** Dedicated internal keys cannot collide with schema keys (which do not allow a colon). */
 final class Version20261124090000 extends AbstractMigration
 {
-    private const KEYS = ['mail', 'mailStatus', 'adminTheme', 'mcpEnabled', 'telegramBot', 'maxBot', 'yandexWebmaster'];
+    private const KEYS = ['mail', 'mailStatus', 'adminTheme', 'mcpEnabled', 'telegramBot', 'maxBot', 'yandexWebmaster', 'tgOn', 'maxOn', 'tgRoutes', 'maxRoutes', 'mailRoutes'];
 
     public function getDescription(): string
     {
@@ -23,7 +23,8 @@ final class Version20261124090000 extends AbstractMigration
         $this->abortIf(!$this->connection->getDatabasePlatform() instanceof PostgreSQLPlatform, 'ITK CMS supports only PostgreSQL 16 and newer.');
         foreach (self::KEYS as $key) {
             // If the destination exists, the legacy key may already be a site field. Preserve both.
-            $this->addSql('UPDATE itk_setting SET setting_key = ? WHERE setting_key = ? AND locale = ? AND NOT EXISTS (SELECT 1 FROM itk_setting WHERE setting_key = ? AND locale = ?)', ['itk:' . $key, $key, '*', 'itk:' . $key, '*']);
+            $shape = \in_array($key, ['mcpEnabled', 'tgOn', 'maxOn'], true) ? 'boolean' : 'object';
+            $this->addSql('UPDATE itk_setting SET setting_key = ? WHERE setting_key = ? AND locale = ? AND jsonb_typeof(setting_value::jsonb) = ? AND NOT EXISTS (SELECT 1 FROM itk_setting WHERE setting_key = ? AND locale = ?)', ['itk:' . $key, $key, '*', $shape, 'itk:' . $key, '*']);
         }
     }
 

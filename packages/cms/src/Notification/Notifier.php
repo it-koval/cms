@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace Itk\Cms\Notification;
 
+use Doctrine\DBAL\Connection;
 use Itk\Cms\Extension\Registry;
+use Itk\Cms\Notification\Channel\DatabaseChannel;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\Attribute\AutowireIterator;
 
@@ -23,12 +25,16 @@ final class Notifier implements NotifierInterface
     ) {
     }
 
-    public function notify(Notification $notification): void
+    public function notify(Notification $notification, ?Connection $connection = null): void
     {
         foreach ($this->channels() as $channel) {
             try {
                 if ($channel->supports($notification)) {
-                    $channel->send($notification);
+                    if ($channel instanceof DatabaseChannel) {
+                        $channel->send($notification, $connection);
+                    } else {
+                        $channel->send($notification);
+                    }
                 }
             } catch (\Throwable $e) {
                 $this->logger->error('Notification channel {channel} failed for {type}: {error}', ['channel' => $channel->name(), 'type' => $notification->type, 'error' => $e->getMessage()]);

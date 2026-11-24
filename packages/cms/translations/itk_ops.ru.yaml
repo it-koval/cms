@@ -368,4 +368,3 @@
 'ops.doctor_seo_base_missing': 'Нет доверенного адреса сайта: hreflang и sitemap не строятся. Задайте itk_cms.public_url или домен сайта.'
 'ops.migration_page_created_description': 'Единое имя itk_page.created_at с сохранением дат создания'
 'ops.migration_page_created_missing': 'Исходная колонка даты создания itk_page не найдена.'
-'ops.migration_page_created_irreversible': 'Исходную стратегию именования определить нельзя; даты создания остаются в created_at.'

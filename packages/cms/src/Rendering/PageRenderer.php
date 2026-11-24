@@ -83,7 +83,7 @@ final class PageRenderer
             throw new \LogicException('Critical CSS requires a live version in an enabled content language.');
         }
         $path = (string) ($t->published['url'] ?? '/');
-        $request = Request::create(($this->publicUrl->base() ?? 'http://localhost') . Url::encodePath('' === $path ? '/' : $path));
+        $request = Request::create(($this->publicUrl->base(strict: false) ?? 'http://localhost') . Url::encodePath('' === $path ? '/' : $path));
         $request->setSession(new Session(new MockArraySessionStorage()));
         $request->setLocale($t->locale);
         $this->requests->push($request);
@@ -191,7 +191,7 @@ final class PageRenderer
             'h1Id' => $this->h1->pageH1Id($sections, $tpl),
         ];
         if (!$preview && ($this->contentLocales?->isMultilingual() ?? false)) {
-            $base = $this->publicUrl->base();
+            $base = $this->publicUrl->base(strict: false);
             $base = null !== $base && PublicUrl::isValid($base) ? $base : null;
             $page['seo_alternates'] = $this->versions?->alternates($p, $base) ?? [];
             $page['seo_canonical'] = null === $base ? '' : $base . Url::encodePath(Url::spelling($page['url']));

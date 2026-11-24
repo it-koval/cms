@@ -20,7 +20,7 @@ final class ContentSchemaRegressionTest extends TestCase
     #[Test]
     public function collectionMetadataKeysAreReservedOnlyAtTheRecordLevel(): void
     {
-        foreach (['id', 'status', 'locale', 'version', 'translated', 'updatedAt', 'awaiting', 'returned', 'changed', 'changes', 'parentId'] as $key) {
+        foreach (['id', 'status', 'locale', 'locales', 'position', 'version', 'translated', 'updatedAt', 'awaiting', 'returned', 'changed', 'changes', 'parentId'] as $key) {
             $b = new SchemaBuilder('ru');
             $b->collection('test_reserved', 'Reserved')->fields(Text::make('Field', $key));
             self::assertNotSame([], $b->build()->validate(), $key);
@@ -54,8 +54,12 @@ final class ContentSchemaRegressionTest extends TestCase
             $s = (new SectionType('test_hero', 'Hero'))->group($group)->firstScreen()->fields(Headline::make('Title', 'title'));
             self::assertSame('title', $s->h1Field());
             self::assertTrue($s->isFirstScreen());
+            self::assertTrue($s->toArray()['firstScreen']);
         }
-        self::assertNull((new SectionType('test_other', 'Other'))->group(SectionType::FIRST_SCREEN)->firstScreen(false)->h1Field());
+        $other = (new SectionType('test_other', 'Other'))->group(SectionType::FIRST_SCREEN)->firstScreen(false);
+        self::assertNull($other->h1Field());
+        self::assertFalse($other->toArray()['firstScreen']);
+        self::assertTrue((new SectionType('test_legacy', 'Legacy'))->group(SectionType::FIRST_SCREEN)->toArray()['firstScreen']);
     }
 
     #[Test]

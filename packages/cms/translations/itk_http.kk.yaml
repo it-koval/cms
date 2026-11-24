@@ -141,6 +141,7 @@
 'http.max_not_delivered': 'Хабарлама жеткізілмеді: {reason}'
 'http.max_queue_failed': 'Жіберуді кезекке қою мүмкін болмады: {reason}'
 'http.request_bad_channel': 'Белгісіз мессенджер'
+'http.request_delivery_requires_commit': 'Жібермес бұрын өтінімді сақтаңыз.'
 'http.no_such_user': '«{email}» пайдаланушысы жоқ.'
 'http.user_removed': 'Пайдаланушы жойылған.'
 'http.account_closed': 'Қолжетімділік жабық. Сайт әкімшісіне хабарласыңыз.'

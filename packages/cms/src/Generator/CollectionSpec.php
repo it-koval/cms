@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Itk\Cms\Generator;
 
 use Itk\Cms\I18n\I18n;
+use Itk\Cms\Schema\Collection;
 
 /**
  * What a collection class is generated from: a JSON file or a table.
@@ -30,6 +31,9 @@ final class CollectionSpec
     ) {
         $seen = [];
         foreach ($fields as $field) {
+            if (\in_array($field->key, Collection::RESERVED_KEYS, true)) {
+                throw new \InvalidArgumentException(I18n::t('model.problem_record_key_taken', ['at' => $title, 'key' => $field->key]));
+            }
             if (isset($seen[$field->key])) {
                 throw new \InvalidArgumentException(I18n::t('model.problem_field_key_repeated', ['at' => $title, 'key' => $field->key]));
             }

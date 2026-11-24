@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Itk\Cms\Request;
 
+use Doctrine\DBAL\Connection;
 use Itk\Cms\Entity\Request;
 use Itk\Cms\Event\RequestDelivery;
 use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
@@ -46,12 +47,12 @@ final class ChannelOutcome
      * @param Request::CHANNEL_* $channel
      * @param (\Closure(\Closure(): void): void)|null $defer
      */
-    public function record(Request $request, string $channel, EventDispatcherInterface $events, ?\Closure $defer): bool
+    public function record(Request $request, string $channel, EventDispatcherInterface $events, ?\Closure $defer, ?Connection $deliveryConnection = null): bool
     {
         $wasFailed = Request::DELIVERY_FAILED === $request->channelState($channel);
         $request->markChannel($channel, $this->state, $this->error);
         if (!$this->isPending() || $wasFailed) {
-            $event = new RequestDelivery($request, Request::DELIVERY_SENT === $this->state, $this->error, $this->isPending(), $channel);
+            $event = new RequestDelivery($request, Request::DELIVERY_SENT === $this->state, $this->error, $this->isPending(), $channel, $deliveryConnection);
             $announce = static function () use ($events, $event): void {
                 $events->dispatch($event);
             };

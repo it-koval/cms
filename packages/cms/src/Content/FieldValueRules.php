@@ -12,16 +12,20 @@ use Itk\Cms\I18n\I18n;
 final class FieldValueRules
 {
     /** @return list<array{code: string, message: string}> */
-    public static function problems(FieldInterface $field, mixed $value): array
+    public static function problems(FieldInterface $field, mixed $value, bool $plainText = false): array
     {
+        // Empty optional fields stay unset, including custom fields. Requiredness belongs to the writer.
+        if (!$field->isRequired() && \in_array($value, [null, '', false, []], true)) {
+            return [];
+        }
         $problems = [];
         $canonical = \is_scalar($value) && \in_array($field->type(), ['text', 'textarea', 'headline', 'select'], true) ? (string) $value : $value;
         if (\is_string($canonical)) {
             $max = $field->maxLength();
-            if (!$field->isRich() && null !== $max && \mb_strlen($canonical) > $max) {
+            if (($plainText || !$field->isRich()) && null !== $max && \mb_strlen($canonical) > $max) {
                 $problems[] = ['code' => 'max', 'message' => I18n::t('content.field_max_length', ['count' => $max])];
             }
-            if ('select' === $field->type() && !\in_array($canonical, \array_column($field->choices(), 0), true)) {
+            if ('' !== $canonical && 'select' === $field->type() && !\in_array($canonical, \array_column($field->choices(), 0), true)) {
                 $problems[] = ['code' => 'choice', 'message' => I18n::t('content.field_choice_invalid')];
             }
             $input = $field->toArray()['inputType'] ?? '';

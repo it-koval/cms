@@ -43,9 +43,9 @@ final class PublicUrl
      *
      * @throws \UnexpectedValueException when itk_cms.public_url (an %env()% placeholder is only known now) holds something that is not an address
      */
-    public function base(): ?string
+    public function base(bool $strict = true): ?string
     {
-        $configured = $this->configuredAddress();
+        $configured = $this->configuredAddress($strict);
         if (null !== $configured) {
             return $configured->origin();
         }
@@ -62,14 +62,24 @@ final class PublicUrl
     /** The address configured by the site, independent of the current request. */
     public function siteAddress(): ?SiteAddress
     {
-        return $this->configuredAddress() ?? $this->domainAddress();
+        return $this->configuredAddress(false) ?? $this->domainAddress();
     }
 
-    private function configuredAddress(): ?SiteAddress
+    /** Optional configured origin, without falling back to a request or the domain setting. */
+    public function configuredSiteAddress(): ?SiteAddress
+    {
+        return $this->configuredAddress(false);
+    }
+
+    private function configuredAddress(bool $strict = true): ?SiteAddress
     {
         $base = \trim((string) $this->configured);
+        $address = '' === $base ? null : SiteAddress::fromUrl($base);
+        if ($strict && '' !== $base && null === $address) {
+            throw new \UnexpectedValueException(I18n::t('http.mail_public_url_invalid', ['value' => $base]));
+        }
 
-        return '' === $base ? null : (SiteAddress::fromUrl($base) ?? throw new \UnexpectedValueException(I18n::t('http.mail_public_url_invalid', ['value' => $base])));
+        return $address;
     }
 
     private function domainAddress(): ?SiteAddress

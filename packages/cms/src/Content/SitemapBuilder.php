@@ -34,7 +34,7 @@ final class SitemapBuilder
     /** The XML, or null when the site address is not set. */
     public function xml(): ?string
     {
-        $base = $this->base();
+        $base = $this->xmlBase();
         if (null === $base) {
             return null;
         }
@@ -67,19 +67,30 @@ final class SitemapBuilder
     public function forget(): void
     {
         $this->cache->delete(self::KEY . 'locales');
-        $base = $this->address()?->origin();
+        $base = $this->xmlBase();
         if (null !== $base) {
             $this->cache->delete(self::KEY . \md5($base));
         }
     }
 
+    /** Domain-only single-language XML retains the spelling shipped by 0.2.2; other consumers use canonical origins. */
+    private function xmlBase(): ?string
+    {
+        $base = $this->base();
+        if ($this->isMultilingual() || null !== $this->publicUrl?->configuredSiteAddress()) {
+            return $base;
+        }
+        $domain = \rtrim(\trim((string) $this->settings->get('domain', null, '')), '/');
+        if (1 !== \preg_match('~^(https?://)?[\p{L}\p{N}][\p{L}\p{N}.\-]*(:\d{1,5})?$~u', $domain)) {
+            return $base;
+        }
+
+        return \preg_match('~^https?://~i', $domain) ? $domain : 'https://' . $domain;
+    }
+
     /** The trusted SEO base. Null when no address is available. */
     public function base(): ?string
     {
-        if ($this->isMultilingual() && null !== $this->publicUrl) {
-            return $this->publicUrl->base();
-        }
-
         return $this->address()?->origin();
     }
 

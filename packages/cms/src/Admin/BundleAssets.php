@@ -15,7 +15,7 @@ final class BundleAssets implements RuntimeExtensionInterface
 
     public function __construct(
         private readonly RequestStack $requests,
-        #[Autowire(service: 'assets.packages')]
+        #[Autowire(service: 'assets._default_package_without_version')]
         private readonly ?object $packages = null,
     ) {
     }

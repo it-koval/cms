@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Itk\Cms\Content;
 
+use Doctrine\DBAL\Connection;
 use Doctrine\ORM\EntityManagerInterface;
 use Itk\Cms\I18n\I18n;
 use Itk\Cms\Resource\HookDispatcher;
@@ -35,7 +36,18 @@ final class EditLock
      */
     public function around(string $kind, string $id, \Closure $work): mixed
     {
-        $connection = $this->em->getConnection();
+        return self::onConnection($this->em->getConnection(), $kind, $id, $work);
+    }
+
+    /**
+     * @template T
+     *
+     * @param \Closure(): T $work
+     *
+     * @return T
+     */
+    public static function onConnection(Connection $connection, string $kind, string $id, \Closure $work): mixed
+    {
         $key = self::key($kind, $id);
         $deadline = \microtime(true) + self::WAIT_SECONDS;
         while (!$connection->fetchOne('SELECT pg_try_advisory_lock(?)', [$key])) {

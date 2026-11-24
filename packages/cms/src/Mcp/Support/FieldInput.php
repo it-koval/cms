@@ -269,7 +269,7 @@ final class FieldInput
             case 'select':
                 $values = \array_map(static fn (array $c): string => (string) $c[0], $f->choices());
 
-                return \is_string($v) && \in_array($v, $values, true) ? [] : [\sprintf('%s: must be one of: %s', $p, \implode(', ', $values))];
+                return \is_string($v) && ('' === $v || \in_array($v, $values, true)) ? [] : [\sprintf('%s: must be one of: %s', $p, \implode(', ', $values))];
             case 'image':
                 return $this->image($v, $p, $knownSrc);
             case 'photos':

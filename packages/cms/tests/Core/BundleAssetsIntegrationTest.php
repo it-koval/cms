@@ -54,7 +54,7 @@ final class BundleAssetsIntegrationTest extends WebTestCase
         $client->request('GET', '/sub/admin');
         self::assertResponseIsSuccessful();
         $html = (string) $client->getResponse()->getContent();
-        self::assertStringContainsString('"assetsBase":"' . $expectedBase . 'admin/', $html);
+        self::assertStringContainsString('"assetsBase":"' . $expectedBase . 'admin/"', $html);
         self::assertMatchesRegularExpression('~<script type="module" src="' . \preg_quote($expectedBase, '~') . 'admin/[^" ]+">~', $html);
         self::assertMatchesRegularExpression('~<link rel="stylesheet" href="' . \preg_quote($expectedBase, '~') . 'admin/[^" ]+">~', $html);
         $page = self::getContainer()->get(PageService::class)->create(['title' => 'Asset preview', 'url' => '/f2-assets-' . \bin2hex(\random_bytes(5))]);
@@ -80,6 +80,21 @@ final class BundleAssetsIntegrationTest extends WebTestCase
     public function loginShellAndPreviewWorkInASubdirectoryWithoutTheAssetComponent(): void
     {
         $this->assertAssets([], '/sub/bundles/itkcms/');
+    }
+
+    #[Test]
+    public function strictSiteManifestDoesNotOwnTheAlreadyHashedCmsFiles(): void
+    {
+        if (!\class_exists(Packages::class)) {
+            self::markTestSkipped('Symfony Asset is an optional site component.');
+        }
+        $manifest = \tempnam(__DIR__ . '/../App', 'itk-site-assets-');
+        \file_put_contents($manifest, '{"build/app.js":"build/app.123.js"}');
+        try {
+            $this->assertAssets(['framework' => ['assets' => ['base_urls' => ['https://cdn.example.test/static'], 'json_manifest_path' => $manifest, 'strict_mode' => true]]], 'https://cdn.example.test/static/bundles/itkcms/');
+        } finally {
+            \unlink($manifest);
+        }
     }
 
     #[Test]

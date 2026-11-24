@@ -83,7 +83,7 @@ final class CollectionQuery
             }
             $rows = $matches ? [$row] : [];
 
-            return ['items' => 1 === $page ? $rows : [], 'total' => \count($rows), 'page' => $page, 'perPage' => $perPage, 'facets' => [], 'metrics' => []];
+            return ['items' => 1 === $page ? $rows : [], 'total' => \count($rows), 'page' => $page, 'perPage' => $perPage, 'facets' => [], 'metrics' => $this->initialMetrics($c, $initial, $locale)];
         }
         $total = $filterByRowStatus ? null : (int) (clone $qb)->resetDQLPart('orderBy')->select('COUNT(i.id)')->getQuery()->getSingleScalarResult();
         $toRow = fn (CollectionItem $i): array => $this->collections->row($c, $i, $locale);
@@ -368,6 +368,33 @@ final class CollectionQuery
         $out = [];
         foreach ($c->metricList() as $m) {
             $out[] = ['label' => $m->label, 'kind' => $m->kind, 'value' => $this->metric($c, $locale, $m)];
+        }
+
+        return $out;
+    }
+
+    /** The virtual row belongs to the same metric corpus as a stored singleton, independently of list filters. */
+    private function initialMetrics(Collection $c, CollectionItem $initial, string $locale): array
+    {
+        $translation = $initial->translations[$locale] ?? [];
+        $row = ['status' => $translation['status'] ?? null, 'updatedAt' => $translation['updatedAt'] ?? null] + ($translation['draft'] ?? []);
+        $out = [];
+        foreach ($c->metricList() as $m) {
+            $matches = true;
+            foreach ($m->filter as $key => $value) {
+                $actual = $row[$key] ?? null;
+                if (\is_bool($value)) {
+                    $matches = $matches && ($value ? true === $actual : null === $actual || false === $actual);
+                } elseif (\is_array($value) && !\array_is_list($value) && [] !== \array_intersect(['from', 'to'], \array_keys($value))) {
+                    $matches = $matches && $this->initialMatches($c->field($key) instanceof Number ? FilterKind::NumberRange : FilterKind::DateRange, $actual, $value);
+                } elseif (\is_array($value)) {
+                    $matches = $matches && \in_array(\is_scalar($actual) ? $this->scalar($actual) : '', \array_map($this->scalar(...), \array_values($value)), true);
+                } else {
+                    $matches = $matches && null !== $actual && \is_scalar($actual) && $this->scalar($actual) === $this->scalar($value);
+                }
+            }
+            $value = $matches ? ('sum' === $m->kind ? (\is_numeric($row[$m->field ?? ''] ?? null) ? $row[$m->field] + 0 : 0) : 1) : 0;
+            $out[] = ['label' => $m->label, 'kind' => $m->kind, 'value' => $value];
         }
 
         return $out;

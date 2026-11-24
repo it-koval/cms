@@ -204,6 +204,7 @@ final class SectionType
             'name' => $this->name,
             'short' => $this->short,
             'group' => $this->groupName(),
+            'firstScreen' => $this->isFirstScreen(),
             'tone' => $this->tone,
             'h' => $this->height,
             'sil' => $this->silhouette,
