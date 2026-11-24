@@ -39,7 +39,7 @@
 'ops.make_file_replaced': 'ауыстырылды'
 'ops.make_file_kept': 'бұрыннан бар, қозғалмады'
 'ops.make_file_exists': 'бұрыннан бар'
-'ops.make_collection_from_option': 'Өрістерді қайдан алу: файл.json немесе table:кесте_атауы (кесте басқа дерекқорда болса, table:дерекқор.кесте)'
+'ops.make_collection_from_option': 'Өрістерді файл.json немесе table:кесте_атауы көзінен алу. Басқа схема үшін table:схема.кесте, басқа қосылым үшін --connection қолданыңыз.'
 'ops.make_collection_rows_ignored': '"rows" өрісі еленбейді. Команда енді жазбаларды импорттамайды. Деректерді өз скриптіңізбен көшіріңіз.'
 'ops.make_collection_map_option': 'баған:өріс[:түрі], үтір арқылы; "баған:-" бағанды өткізіп жібереді. Мысалы city:town,dateStart:start:date'
 'ops.make_collection_id_option': 'Жасалатын өрістерге қосылмайтын кесте бағаны (әдепкіде бір бағанды бастапқы кілт)'

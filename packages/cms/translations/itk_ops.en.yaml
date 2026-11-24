@@ -39,7 +39,7 @@
 'ops.make_file_replaced': 'replaced'
 'ops.make_file_kept': 'already exists, left as is'
 'ops.make_file_exists': 'already exists'
-'ops.make_collection_from_option': 'Source of fields: file.json or table:table_name (table:database.table for another database)'
+'ops.make_collection_from_option': 'Read fields from file.json or table:table_name. Use table:schema.table for another schema and --connection for another connection.'
 'ops.make_collection_rows_ignored': 'The "rows" field is ignored: the command no longer imports records. Move the data with your own script.'
 'ops.make_collection_map_option': 'column:field[:type], comma-separated; "column:-" skips the column. For example city:town,dateStart:start:date'
 'ops.make_collection_id_option': 'Table column to omit from the generated fields (the primary key if it has one column)'

@@ -33,7 +33,8 @@ compose up -d --wait --wait-timeout 120 database
 compose run --rm --no-deps php php bin/console doctrine:migrations:migrate --no-interaction
 compose run --rm --no-deps php php bin/console itk:install --no-interaction
 compose run --rm --no-deps php php bin/console lint:container
-compose run --rm --no-deps php php bin/console app:verify-install
+worker_marker="worker-probe-$$-$(date +%s)"
+compose run --rm --no-deps php php bin/console app:verify-install "$worker_marker"
 compose run --rm --no-deps php php bin/console itk:doctor --ci
 compose up -d --no-build --wait --wait-timeout 120 php nginx worker
 compose exec -T nginx nginx -t
@@ -55,7 +56,7 @@ nested_status=$(head -c 262145 /dev/zero | curl --silent --show-error --max-time
 [[ "$nested_status" == 4?? && "$nested_status" != 413 ]]
 
 for attempt in {1..20}; do
-    if [[ "$(curl --fail --silent --max-time 3 "$url/uploads/worker-probe.txt")" == 'worker received the queued message' ]]; then
+    if [[ "$(curl --fail --silent --max-time 3 "$url/uploads/worker-probe.txt")" == "$worker_marker" ]]; then
         exit 0
     fi
     sleep 1

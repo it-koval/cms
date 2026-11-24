@@ -8,6 +8,7 @@ use Doctrine\DBAL\Connection;
 use Doctrine\ORM\EntityManagerInterface;
 use Itk\Cms\Content\SettingsService;
 use Itk\Cms\Entity\Request;
+use Itk\Cms\Health\MessengerMonitor;
 use Itk\Cms\Request\RequestDeliverer;
 use Itk\Cms\Request\SendRequestNotification;
 use Itk\Cms\Request\TelegramNotifier;
@@ -23,6 +24,7 @@ use Symfony\Component\HttpKernel\KernelInterface;
 use Symfony\Component\Messenger\Envelope;
 use Symfony\Component\Messenger\Stamp\SentToFailureTransportStamp;
 use Symfony\Component\Messenger\Stamp\TransportMessageIdStamp;
+use Symfony\Component\Messenger\Transport\InMemory\InMemoryTransport;
 
 final class FailedTransportRetryTest extends KernelTestCase
 {
@@ -30,6 +32,51 @@ final class FailedTransportRetryTest extends KernelTestCase
     protected static function createKernel(array $options = []): KernelInterface
     {
         return new TestKernel('test', true, itk: ['schema_file' => __DIR__ . '/Fixture/schema_long_requests.php']);
+    }
+
+    #[Test]
+    public function theMonitorRequeuesTheCurrentFailedJobAndAcknowledgesAStaleOne(): void
+    {
+        self::bootKernel();
+        $c = self::getContainer();
+        $em = $c->get(EntityManagerInterface::class);
+        $db = $c->get(Connection::class);
+        $failed = $c->get('messenger.transport.failed');
+        $async = $c->get('messenger.transport.async');
+        self::assertInstanceOf(InMemoryTransport::class, $async);
+        $monitor = $c->get(MessengerMonitor::class);
+        $request = new Request('long_text');
+        $em->persist($request);
+        $em->flush();
+        $requestId = (int) $request->id;
+
+        $ids = [];
+        try {
+            $job = RequestDeliverer::reserve($em, $requestId, Request::CHANNEL_TELEGRAM, true);
+            self::assertNotNull($job);
+            $c->get(RequestDeliverer::class)->queueFailed($requestId, Request::CHANNEL_TELEGRAM, $job, 'terminal provider refusal');
+            $current = new SendRequestNotification($requestId, true, Request::CHANNEL_TELEGRAM, $job);
+            $stale = new SendRequestNotification($requestId, true, Request::CHANNEL_TELEGRAM, 'superseded');
+            foreach ([$current, $stale] as $message) {
+                $envelope = $failed->send(new Envelope($message, [new SentToFailureTransportStamp('async')]));
+                $id = (string) $envelope->last(TransportMessageIdStamp::class)->getId();
+                $ids[] = $id;
+                $monitor->retry($id);
+                self::assertNull($failed->find($id));
+            }
+
+            $em->refresh($request);
+            self::assertSame('queued', $request->channelJobPhase(Request::CHANNEL_TELEGRAM));
+            self::assertSame($job, $request->channelJob(Request::CHANNEL_TELEGRAM));
+            $sent = $async->getSent();
+            self::assertCount(1, $sent);
+            self::assertEquals($current, $sent[0]->getMessage());
+        } finally {
+            foreach ($ids as $id) {
+                $db->executeStatement('DELETE FROM messenger_messages WHERE id = ?', [$id]);
+            }
+            $db->executeStatement('DELETE FROM itk_request WHERE id = ?', [$requestId]);
+        }
     }
 
     #[Test]

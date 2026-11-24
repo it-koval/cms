@@ -19,6 +19,7 @@ use Itk\Cms\Logging\SecretScrubProcessor;
 use Itk\Cms\Rendering\PageCache;
 use Itk\Cms\Request\Max\MaxApiSender;
 use Itk\Cms\Request\Max\MaxSender;
+use Itk\Cms\Request\RequestDeliverer;
 use Itk\Cms\Request\TelegramConnection;
 use Itk\Cms\Request\TelegramNotifier;
 use Itk\Cms\Schema\Schema;
@@ -115,7 +116,8 @@ return static function (ContainerConfigurator $container): void {
     // «Состояние сайта»: every transport of the site and its failure transport (none when the site has no failure_transport; built on first use, so one that cannot be built does not break the screen)
     $services->get(MessengerMonitor::class)
         ->arg('$receivers', service('messenger.receiver_locator'))
-        ->arg('$failed', service_closure('messenger.failure_transports.default')->nullOnInvalid());
+        ->arg('$failed', service_closure('messenger.failure_transports.default')->nullOnInvalid())
+        ->arg('$requestDeliverer', service_closure(RequestDeliverer::class));
 
     // the logout link carries the firewall's CSRF token (logout.enable_csrf); the generator is not autowirable
     $services->get(AdminAppController::class)->arg('$logoutUrls', service('security.logout_url_generator')->nullOnInvalid());

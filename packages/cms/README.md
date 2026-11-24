@@ -609,7 +609,7 @@ Each object lifecycle operation on a collection record or a page goes like this:
 - An event has `resourceKey`, `kind`, `record` (`null` in `RecordCreating`), `data` and `viewer`. You can change `data` in `RecordCreating` and `RecordUpdating`, and the changed data is saved.
 - `RecordTranslationAdded` and `RecordTranslationRemoved` extend `RecordEvent` and carry the operation language in `locale` (also in `record->locale`). They are dispatched only after the transaction commits. Adding or removing a translation does not call the object create/delete events or the resource lifecycle hooks. Removing a live translation still calls `RecordUnpublishing` / `RecordUnpublished` and the corresponding unpublish hooks.
 - `Record` is `{id, kind, resourceKey, locale, fields, status, meta}` with a `get($key)` method. For a page, `fields` holds the template fields, and `meta` holds `title`, `url`, `parentId`, `template`.
-- `Context` holds `viewer`, `locale`, `kind`, `resourceKey`. `Viewer` is either a person with permissions (`can('col:tours', 'publish')`, `allows('set:users')`, `user()`, `role()`) or the system (console, import, queue: `isSystem()`, everything is allowed).
+- `Context` holds `viewer`, `locale`, `kind`, `resourceKey`. `Viewer` is either a person with permissions (`can('col:tours', 'publish')`, `allows('set:users')`, `user()`, `role()`) or the system (console, queue). For the system, `isSystem()` returns true and everything is allowed.
 - Any `before…` can throw `Itk\Cms\Content\ContentException`. The change is cancelled, and the editor sees the exception text. `after…` runs after the save, and an exception in it rolls nothing back.
 - A mass operation first calls the shared `before` once. Then each record goes through its own `before…` and the database write, all in one transaction. The `after…` of each record and the shared `afterMass…` run after the transaction, and only if it did not roll back.
 - The core removes `readonly()` fields and fields hidden by `canSee()` from the person's data before the events. Values added by a hook are saved.
@@ -872,7 +872,7 @@ The second step is a one-time code from an app (TOTP per RFC 6238: SHA-1, 6 digi
 
 ### History and trash
 
-Every saved edit of a page, a record, a settings group and a menu is written to `itk_revision`: who, when, what changed, and the whole version. The core services write it in the same transaction as the edit. Edits from the console, imports and the queue are signed **System**. Edits through MCP are signed with the key name.
+Every saved edit of a page, a record, a settings group and a menu is written to `itk_revision`. It stores who made the edit, when, what changed, and the whole version. The core services write it in the same transaction as the edit. Edits from the console and the queue are signed **System**. Edits through MCP are signed with the key name.
 
 - Autosaves by one person with a gap of less than 10 minutes merge into one entry. An edit without changes leaves no entry.
 - Actions: `create`, `edit`, `publish`, `unpublish`, `revert`, `delete`, `restore`.

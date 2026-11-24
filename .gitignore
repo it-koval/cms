@@ -19,6 +19,8 @@ coverage/
 # Local settings and secrets
 .env.local
 *.local
+/.ci-site/
+/admin/npm-audit.json
 
 # Other
 .impeccable

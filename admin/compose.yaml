@@ -1,4 +1,4 @@
-# Run from admin/: docker compose run --rm node npm ci
+# From the repository root: make admin-install for dependencies, make admin-dev for Vite.
 # Linux dependencies live in a volume, separate from any macOS node_modules.
 name: itk-cms-admin
 services:

@@ -8,8 +8,8 @@ use Itk\Cms\Entity\User;
 use Itk\Cms\Schema\Schema;
 
 /**
- * Who is looking: the signed-in person with his rights, or the system itself (console commands, imports, queue workers — nobody signed in,
- * everything allowed). The viewer is what field `canSee()`, resource `canSee()`, actions and hooks ask.
+ * The viewer is the signed-in person with his rights or the system itself (console commands, queue workers).
+ * For the system nobody is signed in and everything is allowed. Field `canSee()`, resource `canSee()`, actions and hooks ask the viewer.
  *
  *   $v->can('col:tours', 'publish')        $v->allows('set:users')        $v->allows('col:tours:edit')
  */

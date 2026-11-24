@@ -10,7 +10,7 @@ use Itk\Cms\Repository\RedirectRepository;
 use Symfony\Component\Uid\Uuid;
 
 /**
- * A redirect from an old address. Created by hand, by import, or automatically when a published address changes.
+ * A redirect from an old address. Created by hand or automatically when a published address changes.
  *
  * @internal
  */

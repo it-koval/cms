@@ -21,7 +21,16 @@ make install
 make up
 ```
 
-`make up` запускает PostgreSQL с pgvector и Mailpit. `make help` показывает все цели. По умолчанию стенд использует порты 18020–18023 на `127.0.0.1`. Их можно переопределить переменными `HTTP_PORT`, `DB_PORT`, `MAILPIT_PORT` и `ADMIN_PORT`.
+`make help` показывает все цели. Порты по умолчанию привязаны к `127.0.0.1`.
+
+| Цель | Порты по умолчанию |
+|---|---|
+| `make up` | PostgreSQL с pgvector на 18021 и Mailpit на 18022. |
+| `make admin-dev`, `make admin-mock` | Vite на 18023. |
+| HTTP сайта | 18020 зарезервирован. `make up` не запускает HTTP-сервер сайта. |
+| `make smoke-prod` | Проверка production-комплекта на 18028. |
+
+Порты можно переопределить переменными `DB_PORT`, `MAILPIT_PORT`, `ADMIN_PORT`, `HTTP_PORT` и `DEPLOY_PORT` соответственно.
 
 ## Запуск проверок
 
@@ -59,7 +68,7 @@ make admin-build
 Чтобы запустить админку на выдуманных данных без PHP, выполните эту команду из корня репозитория:
 
 ```bash
-docker compose -f admin/compose.yaml run --rm --service-ports node npm run dev:mock -- --host 0.0.0.0
+make admin-mock
 ```
 
 Откройте `http://127.0.0.1:18023/bundles/itkcms/admin/`.
@@ -68,7 +77,7 @@ docker compose -f admin/compose.yaml run --rm --service-ports node npm run dev:m
 
 ### Комплект Docker
 
-`CRITICAL_CSS=1 make smoke-dev` собирает и проверяет образ для разработки. Запустите `make site-clean`, чтобы подготовить чистый сайт Symfony. Затем запустите `make smoke-prod`, чтобы собрать и проверить production-комплект на этом сайте. Для этих проверок нужна сеть.
+`CRITICAL_CSS=1 make smoke-dev` собирает и проверяет образ для разработки. Запустите `make site-clean`, чтобы подготовить чистый сайт Symfony. Каталог назначения `.ci-site` не должен существовать. Если задаёте `SITE`, также укажите новый каталог. Затем запустите `make smoke-prod`, чтобы собрать и проверить production-комплект на этом сайте. Для этих проверок нужна сеть.
 
 ## Коммитьте собранную админку
 

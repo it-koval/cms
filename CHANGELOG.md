@@ -25,7 +25,7 @@ All notable changes to ITK CMS are recorded in this file. The format follows [Ke
 
 ### Added
 
-- Use `make` to start the development stack and run CI checks locally (`make help`). The stack uses ports 18020–18023 on `127.0.0.1` by default. See [CONTRIBUTING](CONTRIBUTING.md).
+- Use `make` to start the development stack and run CI checks locally (`make help`). On `127.0.0.1`, `make up` uses 18021 for PostgreSQL and 18022 for Mailpit. `make admin-dev` and `make admin-mock` use 18023. Port 18020 is reserved for site HTTP. `make smoke-prod` uses 18028. See [CONTRIBUTING](CONTRIBUTING.md).
 - `itk:requests:recover` triggers recovery of request delivery jobs and events. After checking a Telegram/MAX chat, `itk:requests:resolve <request> <telegram|max> <recipient> <sent|rejected>` records the result. `itk:requests:resend <request> --channel=<telegram|max>` continues delivery. For SMTP, use `itk:requests:mail:resolve <request> <recipient> <sent|rejected>` and, after a confirmed refusal, `itk:requests:resend <request> --channel=mail --recipient=<address>`. These mail recovery commands work without a failure transport. Mail resolution also prints the retry command when it finds a matching failed envelope.
 - Added the code of conduct, issue and pull request templates, and a deployment and rollback guide with a production Compose file. See [DEPLOY.md](docs/DEPLOY.md).
 - Site Health and `itk:doctor` report unreadable two-step sign-in keys and use the same GD/WebP check.

@@ -68,7 +68,7 @@ class Revision
     #[ORM\Column(type: Types::STRING, length: 16)]
     public string $action;
 
-    /** Who did it; null for the system (console, import, queue). There is no foreign key: the history outlives the person. */
+    /** Who did it; null for the system (console, queue). There is no foreign key because the history outlives the person. */
     #[ORM\Column(name: 'user_id', type: Types::STRING, length: 36, nullable: true)]
     public ?string $userId = null;
 

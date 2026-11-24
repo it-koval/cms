@@ -21,7 +21,16 @@ make install
 make up
 ```
 
-`make up` starts PostgreSQL with pgvector and Mailpit. `make help` lists all targets. The stack uses ports 18020–18023 on `127.0.0.1` by default. Override them with `HTTP_PORT`, `DB_PORT`, `MAILPIT_PORT`, and `ADMIN_PORT`.
+`make help` lists all targets. Default ports are bound to `127.0.0.1`.
+
+| Target | Default ports |
+|---|---|
+| `make up` | PostgreSQL with pgvector on 18021 and Mailpit on 18022. |
+| `make admin-dev`, `make admin-mock` | Vite on 18023. |
+| Site HTTP | 18020 is reserved. `make up` does not start a site HTTP server. |
+| `make smoke-prod` | Production smoke check on 18028. |
+
+Override these ports with `DB_PORT`, `MAILPIT_PORT`, `ADMIN_PORT`, `HTTP_PORT` and `DEPLOY_PORT`, respectively.
 
 ## Run the checks
 
@@ -59,7 +68,7 @@ If you supply your own `DATABASE_URL` in the PHP shell, keep `serverVersion` in 
 To run the admin panel on made-up data without PHP, run this command from the repository root:
 
 ```bash
-docker compose -f admin/compose.yaml run --rm --service-ports node npm run dev:mock -- --host 0.0.0.0
+make admin-mock
 ```
 
 Open `http://127.0.0.1:18023/bundles/itkcms/admin/`.
@@ -68,7 +77,7 @@ Open `http://127.0.0.1:18023/bundles/itkcms/admin/`.
 
 ### Docker kit
 
-`CRITICAL_CSS=1 make smoke-dev` builds and checks the development image. Run `make site-clean` to prepare a clean Symfony site. Then run `make smoke-prod` to build and check the production kit on that site. These checks need network access.
+`CRITICAL_CSS=1 make smoke-dev` builds and checks the development image. Run `make site-clean` to prepare a clean Symfony site. The default destination `.ci-site` must not exist. If you set `SITE`, use a new destination too. Then run `make smoke-prod` to build and check the production kit on that site. These checks need network access.
 
 ## Commit the built admin panel
 
