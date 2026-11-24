@@ -37,8 +37,8 @@ Version 0.3.0, MIT license. Source code: [github.com/it-koval/cms](https://githu
 | What | Version |
 |---|---|
 | PHP | 8.3 or newer. Extensions `ctype`, `dom`, `gd` with WebP, `json`, `mbstring`, `pdo_pgsql`, `sodium`. Optional: `exif` (rotates JPEG by EXIF) and `intl` (Cyrillic domains in the page cache) |
-| Symfony | 7.4 or 8 (Symfony 8 requires PHP 8.4) |
-| Doctrine | ORM 3, DBAL 4 |
+| Symfony | 7.4.23 or newer 7.4, or 8.1 and newer (Symfony 8 requires PHP 8.4; 8.0 is not supported) |
+| Doctrine | ORM 3.8 or newer, DBAL 4.6 or newer |
 | PostgreSQL | 16 or newer with the pgvector extension 0.8 or newer |
 | Node | 22 or newer, only for the optional critical CSS. The admin panel ships prebuilt. Building it from source uses Node 24 (see [CONTRIBUTING.md](https://github.com/it-koval/cms/blob/main/CONTRIBUTING.md)) |
 
@@ -1971,7 +1971,7 @@ Pass production secrets at runtime through the environment or the [Symfony vault
 The kit belongs to the site, and `composer update` does not change it. After a package update, compare the files and carry over the changes you need:
 
 ```bash
-docker compose exec php composer update itk/cms
+docker compose exec php composer update itk/cms --with-all-dependencies
 diff -r -x compose.yaml vendor/itk/cms/docker docker && diff vendor/itk/cms/docker/compose.yaml compose.yaml
 docker compose up -d --build
 ```

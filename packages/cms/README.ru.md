@@ -37,8 +37,8 @@
 | Что | Версия |
 |---|---|
 | PHP | 8.3 или новее. Расширения `ctype`, `dom`, `gd` с WebP, `json`, `mbstring`, `pdo_pgsql`, `sodium`. Необязательные: `exif` (поворот JPEG по EXIF) и `intl` (кириллические домены в кэше страниц) |
-| Symfony | 7.4 или 8 (Symfony 8 требует PHP 8.4) |
-| Doctrine | ORM 3, DBAL 4 |
+| Symfony | 7.4.23 или новее в ветке 7.4, либо 8.1 и новее (Symfony 8 требует PHP 8.4; 8.0 не поддерживается) |
+| Doctrine | ORM 3.8 или новее, DBAL 4.6 или новее |
 | PostgreSQL | 16 или новее с расширением pgvector 0.8 или новее |
 | Node | 22 или новее, только для необязательного критического CSS. Админка поставляется собранной. Для сборки из исходников нужен Node 24 (см. [CONTRIBUTING.ru.md](https://github.com/it-koval/cms/blob/main/CONTRIBUTING.ru.md)) |
 
@@ -1971,7 +1971,7 @@ Node, crittr и Chrome должны быть в одном образе с PHP. 
 Комплект принадлежит сайту, `composer update` его не меняет. После обновления пакета сравните файлы и перенесите нужные изменения:
 
 ```bash
-docker compose exec php composer update itk/cms
+docker compose exec php composer update itk/cms --with-all-dependencies
 diff -r -x compose.yaml vendor/itk/cms/docker docker && diff vendor/itk/cms/docker/compose.yaml compose.yaml
 docker compose up -d --build
 ```

@@ -58,12 +58,12 @@ logs: ## Показать последние 200 строк логов и сле
 test: test-php test-admin ## Запустить тесты PHP и админки
 
 test-php: up ## Запустить тесты PHP
-	$(PHP) run --rm --no-deps php composer test
+	$(PHP) run --rm --no-deps -e COMPOSER_PROCESS_TIMEOUT=0 php composer test
 
 test-random: up ## Запустить тесты PHP в случайном порядке с заданными SEEDS
 	set -e; for seed in $(SEEDS); do \
 		$(PHP) run --rm --no-deps php composer test:prepare; \
-		$(PHP) run --rm --no-deps php composer test:run -- --order-by=random --random-order-seed="$$seed"; \
+		$(PHP) run --rm --no-deps -e COMPOSER_PROCESS_TIMEOUT=0 php composer test:run -- --order-by=random --random-order-seed="$$seed"; \
 	done
 
 test-admin: ## Запустить тесты админки

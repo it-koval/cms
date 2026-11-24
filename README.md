@@ -25,7 +25,7 @@ The current version is 0.3.0. Until 1.0.0 a minor release may change the public 
 ## Requirements
 
 - PHP 8.3 or newer with the `ctype`, `dom`, `gd`, `json`, `mbstring`, `pdo_pgsql`, and `sodium` extensions. `exif` and `intl` are optional. Use a current patch release: the site status screen warns when the PHP patch level has known security fixes missing.
-- Symfony 7.4 or 8. Symfony 8 needs PHP 8.4 or newer.
+- Symfony 7.4 (7.4.23 or newer) or 8.1 and newer. Symfony 8 needs PHP 8.4 or newer. Symfony 8.0 is not supported: it reached its end of life.
 - PostgreSQL 16 or newer with the [pgvector](https://github.com/pgvector/pgvector) extension 0.8 or newer. A core migration runs `CREATE EXTENSION vector`, so the extension is required even if you do not use the knowledge base. The `pgvector/pgvector:pg17` Docker image has it.
 - Composer.
 - Node only to build the admin panel from source or to generate critical CSS.
