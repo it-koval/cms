@@ -46,6 +46,16 @@ final class Url
         return '/' !== $path && self::hasTrailingSlash($url) ? $path . '/' : $path;
     }
 
+    /** Whether the path has other slashes than the page's own spelling. Letter case stays as served. */
+    public static function hasNonCanonicalSlashes(string $path, string $stored): bool
+    {
+        $own = self::encodePath(self::spelling($stored)); // a saved `//` or `%2F` must not redirect to itself
+
+        return (\str_contains($path, '//') && !\str_contains($own, '//'))
+            || (false !== \stripos($path, '%2F') && false === \stripos($own, '%2F'))
+            || self::hasTrailingSlash($stored) !== \str_ends_with($path, '/');
+    }
+
     /**
      * A path that can go into a `Location` header or an `href` and stays on this site, whatever came in (a request path, a query value, an old link):
      * one leading slash, `\` read as `/` (a browser does the same, so `/\host` would be `//host`), tab / line breaks / other control characters dropped (a browser drops them too).

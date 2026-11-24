@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace Itk\Cms\Content;
 
 use Itk\Cms\Entity\SeoRule;
+use Itk\Cms\I18n\ContentLocales;
 use Itk\Cms\I18n\I18n;
 use Itk\Cms\Repository\PageTranslationRepository;
-use Symfony\Component\DependencyInjection\Attribute\Autowire;
+use Itk\Cms\Support\Url;
+use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\Routing\Exception\ExceptionInterface as RoutingException;
 use Symfony\Component\Routing\RouterInterface;
 
@@ -30,8 +32,7 @@ final class SeoAddressCheck
         private readonly RedirectService $redirects,
         private readonly PageTranslationRepository $translations,
         private readonly RouterInterface $router,
-        #[Autowire(param: 'itk_cms.main_locale')]
-        private readonly string $mainLocale,
+        private readonly ContentLocales $locales,
     ) {
     }
 
@@ -45,17 +46,21 @@ final class SeoAddressCheck
      */
     public function check(string $address, ?string $locale = null): array
     {
-        $locale ??= $this->mainLocale;
         $path = SeoRuleService::normalizePath($address);
         [$pathOnly, $queryString] = \array_pad(\explode('?', $path, 2), 2, '');
         \parse_str($queryString, $query);
+        [$requestedPath, $requestedQuery] = \array_pad(\explode('?', \trim($address), 2), 2, '');
+        $configured = $this->locales->isConfigured();
+        $decodedPath = \rawurldecode($requestedPath);
+        $pathOnly = $configured ? Url::fromPath($decodedPath) : $pathOnly;
+        $pageLocale = $this->locales->fromPath($pathOnly);
 
-        $matches = $this->resolver->matches($pathOnly, $query, $locale);
+        $matches = $this->resolver->matches($pathOnly, $query, $locale ?? $pageLocale);
         $rules = [];
         foreach ($matches as $i => $rule) {
             $rules[] = ['id' => $rule->id, 'path' => $rule->path, 'match' => $rule->matchType, 'locale' => $rule->locale, 'winner' => 0 === $i];
         }
-        $route = $this->routeOf($pathOnly);
+        $route = $this->routeOf($configured ? $requestedPath : $pathOnly);
         if (null !== $route && self::CATCH_ALL !== $route) {
             return $this->result($path, $rules, ['kind' => 'route', 'status' => 200, 'label' => I18n::t('content.seo_check_route')], $this->sources($matches[0] ?? null, [], ''));
         }
@@ -66,16 +71,26 @@ final class SeoAddressCheck
                 'label' => I18n::t('content.seo_check_redirect', ['to' => $redirect->toPath, 'code' => $redirect->code]),
             ], null);
         }
-        $t = $this->translations->findLive($locale, $pathOnly);
+        $t = $this->translations->findLiveAtPath($pageLocale, $pathOnly, $pageLocale !== $this->locales->main());
         if (null === $t) {
             return $this->result($path, $rules, ['kind' => 'missing', 'status' => 404, 'label' => I18n::t('content.seo_check_missing')], null);
         }
         $snapshot = $t->published ?? [];
+        $stored = (string) ($snapshot['url'] ?? $pathOnly);
+        if ($configured && '/' !== $decodedPath && Url::hasNonCanonicalSlashes($requestedPath, $stored)) {
+            $normalizedQuery = Request::normalizeQueryString($requestedQuery);
+            $to = Url::encodePath(Url::spelling($stored)) . ('' !== $normalizedQuery ? '?' . $normalizedQuery : '');
+
+            return $this->result($path, $rules, [
+                'kind' => 'redirect', 'status' => 301, 'to' => $to,
+                'label' => I18n::t('content.seo_check_redirect', ['to' => $to, 'code' => 301]),
+            ], null);
+        }
         $title = (string) ($snapshot['title'] ?? '');
 
         return $this->result($path, $rules, [
             'kind' => 'page', 'status' => 200, 'label' => I18n::t('content.seo_check_page', ['title' => $title]),
-            'page' => ['id' => $t->page->id, 'title' => $title, 'template' => $t->page->template, 'url' => (string) ($snapshot['url'] ?? $pathOnly)],
+            'page' => ['id' => $t->page->id, 'title' => $title, 'template' => $t->page->template, 'url' => $stored],
         ], $this->sources($matches[0] ?? null, (array) ($snapshot['seo'] ?? []), $title));
     }
 

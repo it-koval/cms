@@ -8,11 +8,13 @@ use Itk\Cms\Admin\Theme\AdminTheme;
 use Itk\Cms\Content\ContentException;
 use Itk\Cms\Content\H1Rule;
 use Itk\Cms\Content\PageService;
+use Itk\Cms\Content\PageVersions;
 use Itk\Cms\Content\SeoResolver;
 use Itk\Cms\Content\SettingsService;
 use Itk\Cms\CriticalCss\CriticalCssService;
 use Itk\Cms\CriticalCss\Model\CriticalStyles;
 use Itk\Cms\Entity\PageTranslation;
+use Itk\Cms\I18n\ContentLocales;
 use Itk\Cms\I18n\I18n;
 use Itk\Cms\Mail\PublicUrl;
 use Itk\Cms\Schema\Schema;
@@ -33,7 +35,7 @@ use Twig\Environment;
  *   preview  the DRAFT with data-f / data-sec markers and the preview script (the admin's /admin/preview/{id}, PreviewController)
  *
  * Template lookup: templates/pages/<template>.html.twig of the site, then @ItkCms/pages/<template>.html.twig, then @ItkCms/pages/default.html.twig.
- * Variables: page { id, parentId, template, locale, title, url, seo, fields, sections, h1Id }, site (settings + name, domain, locale).
+ * Variables: page { id, parentId, template, locale, html_lang, og_locale, translations, title, url, seo, fields, sections, h1Id }, site (settings + name, domain, locale).
  * page.seo is { title, description } of the page with the SEO rule of its address laid over it (SeoResolver) + robots, canonical, ogImage, rule; itk_seo() turns it into the meta tags.
  *
  * @internal
@@ -62,6 +64,8 @@ final class PageRenderer
         #[Autowire(param: 'itk_cms.main_locale')]
         private readonly string $mainLocale,
         private readonly ?LocaleSwitcher $locales = null,
+        private readonly ?ContentLocales $contentLocales = null,
+        private readonly ?PageVersions $versions = null,
     ) {
     }
 
@@ -89,10 +93,14 @@ final class PageRenderer
     /** The live page: the only render that may inline critical CSS. */
     public function renderLive(PageTranslation $t): Response
     {
-        $snapshot = $t->published ?? [];
-        $html = $this->render($t, $snapshot, false, $this->critical->forLiveRender($t));
+        $render = function () use ($t): Response {
+            $snapshot = $t->published ?? [];
+            $html = $this->render($t, $snapshot, false, $this->critical->forLiveRender($t));
 
-        return new Response($this->schemaOrg->inject($html, $t)); // the JSON-LD graph is part of the page the cache keeps
+            return new Response($this->schemaOrg->inject($html, $t)); // the JSON-LD graph is part of the page the cache keeps
+        };
+
+        return $this->withLocale($t->locale, $render);
     }
 
     /** The directive of itk_cache() in the last renderLive(): a number of seconds, false = do not keep, null = nothing asked. */
@@ -107,7 +115,8 @@ final class PageRenderer
         $locale ??= $this->mainLocale;
         $page = $this->pages->find($pageId);
         $t = $page->translation($locale) ?? throw new ContentException(I18n::t(PageService::NO_VERSION), 404);
-        $html = $this->render($t, $t->draft, true, null);
+        $render = fn (): string => $this->render($t, $t->draft, true, null);
+        $html = $this->withLocale($t->locale, $render);
 
         $head = '<style>' . $this->theme->previewCss() . '</style><link rel="stylesheet" href="' . self::PREVIEW_CSS . '">'; // the colours of the overlay follow the admin theme
         $tail = '<script src="' . self::PREVIEW_JS . '" defer></script>';
@@ -124,6 +133,31 @@ final class PageRenderer
     }
 
     /**
+     * @template T
+     *
+     * @param callable(): T $render
+     *
+     * @return T
+     */
+    private function withLocale(string $locale, callable $render): mixed
+    {
+        // Legacy public templates keep the site's routing and translator locale.
+        if (!($this->contentLocales?->isConfigured() ?? false)) {
+            return $render();
+        }
+        $request = $this->requests->getCurrentRequest();
+        $previous = $request?->getLocale() ?? $this->mainLocale;
+        $request?->setLocale($locale);
+        try {
+            return null === $this->locales ? $render() : $this->locales->runWithLocale($locale, $render);
+        } finally {
+            if (null !== $request) {
+                $request->setLocale($previous);
+            }
+        }
+    }
+
+    /**
      * @param array<string, mixed> $version draft or snapshot
      */
     private function render(PageTranslation $t, array $version, bool $preview, ?CriticalStyles $critical, bool $source = false): string
@@ -136,6 +170,11 @@ final class PageRenderer
             'parentId' => $p->parentId(),
             'template' => $p->template,
             'locale' => $t->locale,
+            'html_lang' => $this->contentLocales?->htmlLang($t->locale) ?? $t->locale,
+            'og_locale' => $this->contentLocales?->ogLocale($t->locale),
+            'translations' => \array_map(static fn (array $version): array => [
+                'code' => $version['code'], 'name' => $version['name'], 'url' => $version['url'],
+            ], $this->versions?->live($p) ?? []),
             'title' => (string) ($version['title'] ?? ''),
             'url' => (string) ($version['url'] ?? ''),
             'seo' => $this->seo->apply((array) ($version['seo'] ?? []), $this->seo->best((string) ($version['url'] ?? ''), $preview ? [] : ($this->requests->getCurrentRequest()?->query->all() ?? []), $t->locale)),

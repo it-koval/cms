@@ -71,13 +71,14 @@ final class HookDispatcher
         return $result;
     }
 
-    /** The core reads a section for the first time in this request. */
+    /** The core reads a resource in this language for the first time in this request. */
     public function loaded(string $kind, string $key, string $locale): void
     {
-        if (isset($this->loaded[$kind . ':' . $key])) {
+        $loadedKey = $kind . ':' . $key . ':' . $locale;
+        if (isset($this->loaded[$loadedKey])) {
             return;
         }
-        $this->loaded[$kind . ':' . $key] = true;
+        $this->loaded[$loadedKey] = true;
         $this->resource($kind, $key)?->onLoad($this->context($kind, $key, $locale));
     }
 

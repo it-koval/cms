@@ -395,7 +395,7 @@ The site puts its templates in `templates/`:
 - `pages/<template>.html.twig` renders a page of its template. Without it, `pages/default.html.twig` is used.
 - `sections/<section>.html.twig` renders a section. Variables: `section`, `page`, `is_h1`.
 
-A page template has access to `page` (`id`, `parentId`, `template`, `locale`, `title`, `url`, `seo`, `fields`, `sections`, `h1Id`) and `site` (the settings, plus `name`, `domain`, `locale`).
+A page template has access to `page` (`id`, `parentId`, `template`, `locale`, `html_lang`, `og_locale`, `translations`, `title`, `url`, `seo`, `fields`, `sections`, `h1Id`) and `site` (the settings, plus `name`, `domain`, `locale`).
 
 ### Twig functions
 
@@ -1525,7 +1525,39 @@ itk_cms:
 - The admin lists the main language first and then follows the configuration order. When `locales` is omitted, the admin lists only the main language and the API still accepts legacy language codes. An explicit list restricts API inputs to the listed languages. An explicit empty list is rejected; omit `locales` for legacy behavior.
 - On a site with multiple configured languages, addresses for the main language have no language prefix. Other versions use `/{code}`. For example, the Kazakh home page uses `/kk`, and other Kazakh pages use paths such as `/kk/about`. The server checks the language prefix when creating a translation, changing its address (including a restore that changes the address), and publishing. Saving other fields without changing the address remains possible for legacy pages with an incompatible prefix.
 
-Inject `Itk\Cms\I18n\ContentLocales` to read the site's language codes, display names, path prefixes and metadata. Public routing for language-prefixed addresses is planned for 0.3.0.
+Inject `Itk\Cms\I18n\ContentLocales` to read the site's language codes, display names, path prefixes and metadata.
+
+#### Public pages and forms
+
+The public route serves each published version at its language's address. Only a whole first segment selects a language, so `/kk/about` selects Kazakh and `/kk-news` stays in the main language. Draft versions return `404` at their public addresses.
+
+In Twig, `page.locale` is the version's language code, `page.html_lang` is the tag for `<html lang>`, and `page.og_locale` is the Open Graph locale or `null`. With `itk_cms.locales` configured, Twig's `|trans` uses the version's language. `page.translations` lists the published versions of the same page as `{code, name, url}`, including the current version if published. The main language comes first, followed by the configuration order. A language switcher can use those URLs directly.
+
+```twig
+{% if page.translations|length > 1 %}
+    <ul>
+        {% for version in page.translations %}
+            <li><a href="{{ version.url }}"{% if version.code == page.locale %} aria-current="page"{% endif %}>{{ version.name }}</a></li>
+        {% endfor %}
+    </ul>
+{% endif %}
+```
+
+Menus, `site`, `settings()`, `listing()`, `itk_pages()`, `itk_collection()` and `page_url()` use the page's language. A menu link to a page requires a published version in that language. Literal URL links keep their address. Translatable settings read the current language without fallback to the main language. Shared settings have one value across languages, and unsaved settings use their schema defaults.
+
+On a site with `itk_cms.locales`, `POST /request/{form}` records the language from `?locale=` if supplied. An unlisted code returns `422`. Without the query parameter, the form uses the page address from a same-origin `Referer`. With no same-origin referrer it uses the main language. To pass it explicitly, use `action="/request/callback?locale={{ page.locale }}"` on the form. For AJAX, pass the same address and send the form data.
+
+```twig
+<form id="callback" action="/request/callback?locale={{ page.locale }}" method="post">
+    {# Form fields #}
+</form>
+```
+
+```js
+const form = document.getElementById('callback');
+const response = await fetch(form.action, { method: 'POST', body: new FormData(form) });
+const result = await response.json();
+```
 
 ### Rate limits
 

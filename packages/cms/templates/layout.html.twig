@@ -1,6 +1,6 @@
 {# Fallback layout of ITK CMS. A site normally has its own templates/layout.html.twig with the same blocks. #}
 <!doctype html>
-<html lang="{{ page.locale|default('ru') }}">
+<html lang="{{ page.html_lang|default(page.locale|default('ru')) }}">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">

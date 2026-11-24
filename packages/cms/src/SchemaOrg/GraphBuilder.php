@@ -9,6 +9,7 @@ use Itk\Cms\Content\SettingsService;
 use Itk\Cms\Content\SitemapBuilder;
 use Itk\Cms\Entity\PageTranslation;
 use Itk\Cms\Event\SchemaOrgGraph;
+use Itk\Cms\I18n\ContentLocales;
 use Itk\Cms\Repository\PageRepository;
 use Itk\Cms\Support\Url;
 use Itk\Cms\Twig\ItkRuntime;
@@ -29,6 +30,7 @@ final class GraphBuilder
         private readonly PageRepository $pageRepository,
         private readonly ItkRuntime $media,
         private readonly EventDispatcherInterface $events,
+        private readonly ?ContentLocales $contentLocales = null,
     ) {
     }
 
@@ -82,7 +84,7 @@ final class GraphBuilder
             '@type' => 'WebSite',
             'url' => $base . '/',
             'name' => $name,
-            'inLanguage' => $locale,
+            'inLanguage' => $this->contentLocales?->htmlLang($locale) ?? $locale,
         ] + ($hasPublisher ? ['publisher' => ['@id' => $base . '/#organization']] : []);
     }
 
@@ -164,7 +166,7 @@ final class GraphBuilder
             'dateModified' => $t->publishedAt?->format(\DATE_ATOM), // the live text changed when it was last published; updatedAt also moves on draft saves
             'image' => $this->image($f['cover'] ?? null, $base),
             'description' => \is_string($f['excerpt'] ?? null) ? self::plain($f['excerpt']) : '',
-            'inLanguage' => $locale,
+            'inLanguage' => $this->contentLocales?->htmlLang($locale) ?? $locale,
             'mainEntityOfPage' => $pageUrl,
             'author' => $org,
             'publisher' => $org,

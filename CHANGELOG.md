@@ -8,6 +8,8 @@ All notable changes to ITK CMS are recorded in this file. The format follows [Ke
 
 ### Added
 
+- Public routes serve published language versions at addresses such as `/kk/about`.
+- Twig pages expose `html_lang`, `og_locale` and `translations`. The last field lists published versions for a language switcher.
 - `RecordTranslationAdded` and `RecordTranslationRemoved` extend `RecordEvent`, carry the operation locale and are dispatched after commit. Translation operations do not call object create/delete events or lifecycle hooks; removing a live translation still emits the unpublish events and hooks.
 - Page and collection record translations can be created and deleted through the admin JSON API and the public `PageService` and `CollectionService` methods. A new translation is a draft copied from another language or filled with schema defaults. Deleting it preserves the other languages. The main and last versions cannot be deleted.
 - `itk_cms.locales` configures content languages and their display names and metadata.
@@ -15,6 +17,9 @@ All notable changes to ITK CMS are recorded in this file. The format follows [Ke
 
 ### Changed
 
+- On configured sites, live and preview templates translate text in the page's language. JSON-LD uses its HTML language tag.
+- Public forms record the locale from `?locale=`, the same-origin referrer or the main language on configured sites.
+- MCP load hooks run once per resource and language.
 - `Mcp\AbstractMcpTool::locale()` is now non-static. Both `self::locale($args)` and `$this->locale($args)` work inside instance methods. Calls from a static context are no longer supported. See [UPGRADE.md](UPGRADE.md#030).
 - The admin API uses a shared language check and returns `422` for a code outside an explicitly configured list.
 - On sites with several configured languages, page versions use their language's address prefix. The main language's addresses cannot start with another configured language's path segment.

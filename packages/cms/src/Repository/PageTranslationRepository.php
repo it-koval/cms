@@ -7,6 +7,7 @@ namespace Itk\Cms\Repository;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
 use Doctrine\Persistence\ManagerRegistry;
 use Itk\Cms\Entity\PageTranslation;
+use Itk\Cms\Support\Url;
 
 /**
  * @extends ServiceEntityRepository<PageTranslation>
@@ -28,6 +29,18 @@ class PageTranslationRepository extends ServiceEntityRepository
             ->where('t.locale = :locale AND t.publishedUrl = :url AND t.status = :status')
             ->setParameter('locale', $locale)->setParameter('url', $url)->setParameter('status', PageTranslation::PUBLISHED)
             ->getQuery()->getOneOrNullResult();
+    }
+
+    public function findLiveAtPath(string $locale, string $path, bool $prefixed): ?PageTranslation
+    {
+        $key = Url::key($path);
+        $page = $this->findLive($locale, $key);
+        if (null !== $page || !$prefixed || !\str_contains($key, '//')) {
+            return $page;
+        }
+
+        // Keep a published address with doubled slashes as stored. Only try the other spelling after a miss.
+        return $this->findLive($locale, \preg_replace('~/+~', '/', $key) ?? $key);
     }
 
     /** @return list<PageTranslation> all versions of a language with their pages */

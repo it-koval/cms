@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Itk\Cms\Controller\Site;
 
 use Itk\Cms\Content\ContentException;
+use Itk\Cms\I18n\AdminLocale;
+use Itk\Cms\I18n\ContentLocales;
 use Itk\Cms\I18n\I18n;
 use Itk\Cms\Request\RequestService;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
@@ -33,6 +35,8 @@ final class RequestSubmitController
         private readonly RateLimiterFactoryInterface $limiter,
         #[Autowire(param: 'itk_cms.main_locale')]
         private readonly string $mainLocale,
+        private readonly ContentLocales $contentLocales,
+        private readonly AdminLocale $adminLocale,
     ) {
     }
 
@@ -50,16 +54,44 @@ final class RequestSubmitController
         }
 
         try {
-            $this->requests->submit($form, $input, [
+            $locale = $this->contentLocales->isConfigured() ? $this->locale($request) : $request->attributes->get('_locale', $this->mainLocale);
+            $submit = fn () => $this->requests->submit($form, $input, [
                 'ip' => $request->getClientIp(),
                 'url' => $request->headers->get('referer'),
-                'locale' => $request->attributes->get('_locale', $this->mainLocale),
+                'locale' => $locale,
             ]);
+            if ($this->contentLocales->isConfigured() && $this->adminLocale->isAvailable($locale)) {
+                $this->adminLocale->run($locale, $submit);
+            } else {
+                $submit();
+            }
         } catch (ContentException $e) {
             return $this->failure($e->getMessage(), $e->status(), \is_array($e->details()) ? $e->details() : null);
         }
 
         return new JsonResponse(['success' => true]);
+    }
+
+    private function locale(Request $request): string
+    {
+        if ($request->query->has('locale')) {
+            $locale = $request->query->all()['locale'];
+            if (!\is_string($locale) || !$this->contentLocales->has($locale)) {
+                throw ContentException::invalid(I18n::t('http.no_such_language'));
+            }
+
+            return $locale;
+        }
+
+        $referer = \parse_url($request->headers->get('referer') ?? '');
+        if (\is_array($referer) && isset($referer['scheme'], $referer['host'])) {
+            $origin = $referer['scheme'] . '://' . $referer['host'] . (isset($referer['port']) ? ':' . $referer['port'] : '');
+            if ($origin === $request->getSchemeAndHttpHost()) {
+                return $this->contentLocales->fromPath($referer['path'] ?? '/');
+            }
+        }
+
+        return $this->contentLocales->main();
     }
 
     /** @param array<string, mixed>|null $errors */
