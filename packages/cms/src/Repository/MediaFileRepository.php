@@ -31,14 +31,10 @@ class MediaFileRepository extends ServiceEntityRepository
         return $this->searchQuery($q, $type, $folder)->getQuery()->getResult();
     }
 
-    /** @return array{items: list<MediaFile>, total: int} */
-    public function page(string $q, string $type, string $folder, int $offset, int $limit): array
+    /** @return array{items: list<MediaFile>, total: int, nextCursor: ?string, previousCursor: ?string} */
+    public function page(string $q, string $type, string $folder, int $offset, int $limit, string $cursor = ''): array
     {
-        $query = $this->searchQuery($q, $type, $folder);
-        $total = (int) (clone $query)->select('COUNT(m.id)')->resetDQLPart('orderBy')->getQuery()->getSingleScalarResult();
-        $items = $offset < $total ? $query->setFirstResult($offset)->setMaxResults($limit)->getQuery()->getResult() : [];
-
-        return ['items' => $items, 'total' => $total];
+        return CreatedPage::read($this->searchQuery($q, $type, $folder), MediaFile::class, $offset, $limit, $cursor);
     }
 
     /** @return iterable<array{path: string, width: int}> */

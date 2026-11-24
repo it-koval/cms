@@ -58,6 +58,53 @@ final class ListPaginationTest extends WebTestCase
     }
 
     #[Test]
+    public function adjacentRequestPagesKeepTheirBoundaryAcrossArrivalsAndStatusChanges(): void
+    {
+        $ids = $this->requests();
+        $path = 'requests?form=' . $this->key . '&locale=kk&status=new&perPage=25';
+        $first = $this->get($path);
+        $next = $first['nextCursor'] ?? '';
+        $em = self::getContainer()->get(EntityManagerInterface::class);
+        $new = new Request($this->key);
+        $new->locale = 'kk';
+        $em->persist($new);
+        $em->flush();
+
+        $second = $this->get($path . '&page=2&cursor=' . \rawurlencode($next));
+        self::assertSame(\array_slice($ids, 25, 25), \array_column($second['items'], 'id'), 'An arrival must not repeat the last row.');
+
+        $em->find(Request::class, $new->id)->work = Request::WORK_IN_WORK;
+        $removed = $em->find(Request::class, $ids[0]);
+        $removed->work = Request::WORK_IN_WORK;
+        $em->flush();
+        $second = $this->get($path . '&page=2&cursor=' . \rawurlencode($next));
+        self::assertSame(\array_slice($ids, 25, 25), \array_column($second['items'], 'id'), 'A change before the boundary must not skip a row.');
+        $back = $this->get($path . '&cursor=' . \rawurlencode($second['previousCursor']));
+        self::assertSame(\array_slice($ids, 1, 24), \array_column($back['items'], 'id'));
+    }
+
+    #[Test]
+    public function adjacentMediaPagesKeepTheirBoundaryAcrossUploadsAndDeletes(): void
+    {
+        $ids = $this->media();
+        $path = 'media?type=img&q=' . $this->key . '&perPage=25';
+        $first = $this->get($path);
+        $next = $first['nextCursor'] ?? '';
+        $em = self::getContainer()->get(EntityManagerInterface::class);
+        $new = new MediaFile('/uploads/media/' . $this->key . '-new.png', 'New', 'image/png');
+        $new->alt = $this->key;
+        $em->persist($new);
+        $em->flush();
+        $second = $this->get($path . '&page=2&cursor=' . \rawurlencode($next));
+        self::assertSame(\array_slice($ids, 25, 25), \array_column($second['items'], 'id'));
+        $em->remove($em->find(MediaFile::class, $new->id));
+        $em->remove($em->find(MediaFile::class, $ids[24]));
+        $em->flush();
+        $second = $this->get($path . '&page=2&cursor=' . \rawurlencode($next));
+        self::assertSame(\array_slice($ids, 25, 25), \array_column($second['items'], 'id'), 'Removing the anchor itself must not advance the boundary.');
+    }
+
+    #[Test]
     public function dashboardLimitsThePreviewAndKeepsTheTotal(): void
     {
         $before = $this->get('dashboard')['newRequestCount'];
@@ -126,6 +173,13 @@ final class ListPaginationTest extends WebTestCase
         $hydrated = $em->getUnitOfWork()->getIdentityMap();
         self::assertCount(15, $hydrated[Request::class]);
         self::assertCount(15, $hydrated[MediaFile::class]);
+
+        $nextRequest = $this->mcpCall($ctx, 'requests_list', ['limit' => 15, 'cursor' => $req['data']['nextCursor'], 'form' => $this->key, 'q' => 'Astana']);
+        $nextMedia = $this->mcpCall($ctx, 'media_search', ['limit' => 15, 'cursor' => $img['data']['nextCursor'], 'type' => 'img', 'q' => $this->key]);
+        self::assertTrue($nextRequest['ok'], $nextRequest['text']);
+        self::assertTrue($nextMedia['ok'], $nextMedia['text']);
+        self::assertSame(\array_slice($requests, 32, 15), \array_column($nextRequest['data']['items'], 'id'));
+        self::assertSame(\array_slice($media, 32, 15), \array_column($nextMedia['data']['items'], 'id'));
     }
 
     /** @return list<int> */

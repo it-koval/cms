@@ -137,11 +137,11 @@ final class RequestService
     /**
      * @param array{status?: string, form?: string, q?: string, period?: string, from?: string, to?: string, locale?: string} $filter
      *
-     * @return array{items: list<Request>, total: int}
+     * @return array{items: list<Request>, total: int, nextCursor: ?string, previousCursor: ?string}
      */
-    public function page(array $filter, int $offset, int $limit): array
+    public function page(array $filter, int $offset, int $limit, string $cursor = ''): array
     {
-        return $this->requests->page($this->searchFilter($filter), $offset, $limit);
+        return $this->requests->page($this->searchFilter($filter), $offset, $limit, $cursor);
     }
 
     /**

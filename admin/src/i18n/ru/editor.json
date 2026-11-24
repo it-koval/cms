@@ -1,6 +1,7 @@
 {
   "editor.settings_leave_message": "В настройках страницы есть несохранённые изменения.",
   "editor.preview_dialog": "Предпросмотр страницы",
+  "editor.preview_item_unavailable": "Элемент из предпросмотра больше недоступен. Обновите предпросмотр.",
   "editor.preview_heading": "Предпросмотр · {title}",
   "editor.preview_draft_sections": {
     "one": "черновик, {count} секция",

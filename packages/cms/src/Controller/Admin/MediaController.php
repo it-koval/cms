@@ -40,9 +40,9 @@ final class MediaController extends AbstractApiController
         $this->access->require('media', 'view');
         [$page, $perPage, $offset] = $this->listPage($request);
         $q = $request->query;
-        $files = $this->media->page((string) $q->get('q', ''), (string) $q->get('type', ''), (string) $q->get('folder', ''), $offset, $perPage);
+        $files = $this->media->page((string) $q->get('q', ''), (string) $q->get('type', ''), (string) $q->get('folder', ''), $offset, $perPage, (string) $q->get('cursor', ''));
 
-        return $this->json(['items' => \array_map($this->media->present(...), $files['items']), 'total' => $files['total'], 'page' => $page, 'perPage' => $perPage]);
+        return $this->json(['items' => \array_map($this->media->present(...), $files['items']), 'page' => $page, 'perPage' => $perPage] + $files);
     }
 
     #[Route('', name: 'upload', methods: ['POST'])]

@@ -121,14 +121,17 @@ class PageTranslationRepository extends ServiceEntityRepository
         if ([] === $pageIds) {
             return [];
         }
-        $rows = $this->createQueryBuilder('t')
-            ->select('IDENTITY(t.page) AS pageId', 't.published AS published')
-            ->where('t.locale = :locale AND t.status = :status AND t.published IS NOT NULL AND t.page IN (:ids)')
-            ->setParameter('locale', $locale)->setParameter('status', PageTranslation::PUBLISHED)->setParameter('ids', $pageIds)
-            ->getQuery()->getArrayResult();
         $out = [];
-        foreach ($rows as $row) {
-            $out[(string) $row['pageId']] = (array) $row['published'];
+        // PostgreSQL accepts at most 65535 bound parameters. The ids may include a large draft subtree.
+        foreach (\array_chunk($pageIds, 1000) as $ids) {
+            $rows = $this->createQueryBuilder('t')
+                ->select('IDENTITY(t.page) AS pageId', 't.published AS published')
+                ->where('t.locale = :locale AND t.status = :status AND t.published IS NOT NULL AND t.page IN (:ids)')
+                ->setParameter('locale', $locale)->setParameter('status', PageTranslation::PUBLISHED)->setParameter('ids', $ids)
+                ->getQuery()->getArrayResult();
+            foreach ($rows as $row) {
+                $out[(string) $row['pageId']] = (array) $row['published'];
+            }
         }
 
         return $out;

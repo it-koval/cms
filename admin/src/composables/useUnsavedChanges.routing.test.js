@@ -46,3 +46,20 @@ it('does not carry a locale approval into another navigation cancelled by a late
   expect(mocks.confirm).toHaveBeenCalledTimes(1)
   expect(router.currentRoute.value.fullPath).toBe('/settings/mail')
 })
+
+it('uses language-switch copy with no invented change count', async () => {
+  const router = await mount()
+  await router.push('/settings/mail?lang=kk')
+  const dialog = mocks.confirm.mock.calls[0][0]
+  expect(dialog.title).toBe('Переключить язык?')
+  expect(dialog.confirmLabel).toBe('Переключить без сохранения')
+  expect(dialog.message).not.toContain('(1)')
+  expect(dialog.message).toContain('язык')
+})
+it('uses count-free leave copy for a settings section change', async () => {
+  const router = await mount()
+  await router.push('/settings/theme')
+  const dialog = mocks.confirm.mock.calls[0][0]
+  expect(dialog.title).toBe('Выйти без сохранения?')
+  expect(dialog.message).not.toContain('(1)')
+})

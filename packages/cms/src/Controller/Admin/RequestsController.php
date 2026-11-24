@@ -46,9 +46,9 @@ final class RequestsController extends AbstractApiController
         $rows = $this->requests->page([
             'status' => (string) $q->get('status', ''), 'form' => $form, 'q' => (string) $q->get('q', ''), 'period' => (string) $q->get('period', ''),
             'from' => (string) $q->get('from', ''), 'to' => (string) $q->get('to', ''), 'locale' => (string) $q->get('locale', ''),
-        ], $offset, $perPage);
+        ], $offset, $perPage, (string) $q->get('cursor', ''));
 
-        return $this->json(['items' => \array_map($this->requests->present(...), $rows['items']), 'total' => $rows['total'], 'page' => $page, 'perPage' => $perPage]);
+        return $this->json(['items' => \array_map($this->requests->present(...), $rows['items']), 'page' => $page, 'perPage' => $perPage] + $rows);
     }
 
     #[Route('/counts', name: 'counts', methods: ['GET'])]

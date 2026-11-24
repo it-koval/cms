@@ -12,11 +12,15 @@ const props = defineProps({
   perPage: { type: Number, required: true },
   total: { type: Number, required: true },
   sizes: { type: Array, default: () => [25, 50, 100, 200] },
+  cursors: { type: Object, default: null },
+  busy: { type: Boolean, default: false },
 })
 const emit = defineEmits(['update:page', 'update:perPage'])
 
-const pages = computed(() => Math.max(1, Math.ceil(props.total / props.perPage)))
-const from = computed(() => (props.total ? (props.page - 1) * props.perPage + 1 : 0))
+const pages = computed(() => Math.max(props.cursors ? props.page + Number(!!props.cursors.nextCursor) : 1, Math.ceil(props.total / props.perPage)))
+const previous = computed(() => props.page > 1 && (!props.cursors || !!props.cursors.previousCursor))
+const next = computed(() => props.cursors ? !!props.cursors.nextCursor : props.page < pages.value)
+const from = computed(() => Math.min(props.total, (props.page - 1) * props.perPage + 1))
 const to = computed(() => Math.min(props.total, props.page * props.perPage))
 const allSizes = computed(() => [...new Set([...props.sizes, props.perPage])].sort((a, b) => a - b))
 // 1 … 4 5 [6] 7 8 … 20
@@ -32,24 +36,24 @@ const numbers = computed(() => {
   }
   return out
 })
-const go = (n) => { if (n >= 1 && n <= pages.value && n !== props.page) emit('update:page', n) }
+const go = (n) => { if (!props.busy && n >= 1 && n <= pages.value && n !== props.page) emit('update:page', n) }
 </script>
 
 <template>
-  <div v-if="total > Math.min(...allSizes)" class="lp">
+  <div v-if="total > Math.min(...allSizes) || previous || next" class="lp">
     <span class="lp-n num" role="status" aria-live="polite">{{ t('collections.lp_range', { from: nf(from), to: nf(to), total: nf(total) }) }}</span>
     <nav v-if="pages > 1" class="lp-nav" :aria-label="t('collections.lp_nav')">
-      <button type="button" class="btn ghost icon sm" :aria-label="t('collections.lp_prev')" :disabled="page <= 1" @click="go(page - 1)"><Icon name="chevL" size="s16" /></button>
+      <button type="button" class="btn ghost icon sm" :aria-label="t('collections.lp_prev')" :disabled="busy || !previous" @click="go(page - 1)"><Icon name="chevL" size="s16" /></button>
       <span v-if="vp.phone" class="lp-cur num">{{ t('collections.lp_page_of', { page, pages }) }}</span>
       <template v-for="(n, i) in (vp.phone ? [] : numbers)" :key="i">
         <span v-if="n === '…'" class="lp-gap" aria-hidden="true">…</span>
-        <button v-else type="button" :class="['lp-b', { on: n === page }]" :aria-current="n === page ? 'page' : undefined" :aria-label="t('collections.lp_page', { page: n })" @click="go(n)">{{ n }}</button>
+        <button v-else type="button" :class="['lp-b', { on: n === page }]" :disabled="busy || (n === page + 1 && !next) || (n === page - 1 && !previous)" :aria-current="n === page ? 'page' : undefined" :aria-label="t('collections.lp_page', { page: n })" @click="go(n)">{{ n }}</button>
       </template>
-      <button type="button" class="btn ghost icon sm" :aria-label="t('collections.lp_next')" :disabled="page >= pages" @click="go(page + 1)"><Icon name="chevR" size="s16" /></button>
+      <button type="button" class="btn ghost icon sm" :aria-label="t('collections.lp_next')" :disabled="busy || !next" @click="go(page + 1)"><Icon name="chevR" size="s16" /></button>
     </nav>
     <label class="lp-s">
       <span>{{ t('collections.lp_per_page') }}</span>
-      <select :value="perPage" @change="emit('update:perPage', Number($event.target.value))">
+      <select :value="perPage" :disabled="busy" @change="emit('update:perPage', Number($event.target.value))">
         <option v-for="s in allSizes" :key="s" :value="s">{{ s }}</option>
       </select>
     </label>

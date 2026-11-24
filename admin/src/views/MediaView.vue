@@ -11,6 +11,7 @@ import Icon from '@/components/ui/Icon.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import Skeleton from '@/components/ui/Skeleton.vue'
 import ListPager from '@/components/collections/list/ListPager.vue'
+import { useListCursor } from '@/composables/useListCursor.js'
 import MediaDrawer from '@/components/media/MediaDrawer.vue'
 import { useMediaUsage } from '@/components/media/useMediaUsage.js'
 import FolderTree from '@/components/media/FolderTree.vue'
@@ -39,6 +40,8 @@ const folder = computed({
 })
 const folderTitle = computed(() => (folder.value === 'none' ? t('forms.no_folder') : folder.value ? (tree.value.folders.find((f) => f.id === folder.value) || {}).name || t('forms.folder') : t('forms.tree_all')))
 const loading = ref(true)
+const replacing = ref(true)
+const { cursors, position, accept, parameters } = useListCursor()
 const loadError = ref('')
 const q = ref('')
 const type = ref('')
@@ -76,44 +79,58 @@ async function loadTree() {
 }
 let seq = 0
 let timer = null
-async function load() {
+async function load(replace = false) {
   const my = ++seq
   loading.value = true
+  if (replace) replacing.value = true
+  loadError.value = ''
   try {
-    const result = await api.media.list({ q: q.value, type: type.value, folder: folder.value, page: page.value, perPage: perPage.value })
+    const paging = parameters()
+    const result = await api.media.list({ q: q.value, type: type.value, folder: folder.value, page: page.value, perPage: perPage.value, ...paging })
     if (my !== seq) return
     const last = Math.max(1, Math.ceil(result.total / result.perPage))
-    if (result.page > last) return go(last)
+    if (!result.items.length && (result.page > last || paging.cursor)) return go(Math.min(result.page, last), true)
+    accept(result)
     items.value = result.items
     total.value = result.total
     const fresh = items.value.find((m) => m.id === selectedId.value)
     if (fresh) selected.value = fresh
-    loadError.value = ''
+    replacing.value = false
   } catch (e) {
     if (my === seq) loadError.value = e.message || t('forms.media_load_failed')
   } finally {
     if (my === seq) loading.value = false
   }
 }
-function go(next) {
+function go(next, reset = false) {
   clearTimeout(timer)
+  position(next, reset)
   page.value = next
-  return load()
+  return load(true)
 }
 function setPerPage(size) {
   perPage.value = size
-  go(1)
+  go(1, true)
 }
-watch(folder, () => { selected.value = null; picked.value = []; go(1) })
-watch(type, () => go(1))
-watch(q, () => { ++seq; clearTimeout(timer); timer = setTimeout(() => go(1), 180) })
+watch(folder, () => { selected.value = null; picked.value = []; go(1, true) })
+watch(type, () => go(1, true))
+watch(q, () => {
+  ++seq
+  position(1, true)
+  page.value = 1
+  replacing.value = loading.value = true
+  clearTimeout(timer)
+  timer = setTimeout(() => go(1, true), 180)
+})
 onBeforeUnmount(() => { ++seq; clearTimeout(timer) })
 onMounted(() => { loadTree(); load() })
 const refresh = () => Promise.all([loadTree(), load()])
 
 function onChanged(item) {
+  const belongs = !folder.value || (item.folderId || 'none') === folder.value
+  if (!belongs) picked.value = picked.value.filter((id) => id !== item.id)
   if (item.id === selectedId.value) {
-    selected.value = !folder.value || (item.folderId || 'none') === folder.value ? item : null
+    selected.value = belongs ? item : null
   }
   refresh()
 }
@@ -132,7 +149,7 @@ async function uploadFiles(list) {
     progress.value = { ...progress.value, done: progress.value.done + 1 }
   }
   progress.value = null
-  await Promise.all([loadTree(), go(1)])
+  await Promise.all([loadTree(), page.value === 1 ? load() : go(1, true)])
   if (ok) toast.show(ok === 1 ? t('forms.media_uploaded_one', { name: last.name }) : t('forms.media_uploaded_many', { count: ok }))
   if (fails.length === 1) toast.error(t('forms.media_fail_one', { name: fails[0].name, message: fails[0].message }))
   else if (fails.length) toast.error(t('forms.media_fail_many', { count: fails.length, message: fails[0].message }))
@@ -203,7 +220,7 @@ function moveChosen() {
       <FolderTree :model-value="folder" :folders="tree.folders" :total="tree.total" :unfiled="tree.unfiled" :can-edit="canEdit" @update:model-value="(v) => (folder = v)" @changed="refresh" @drop-files="moveFiles" />
     </div>
 
-    <div class="sheet ml-main">
+    <div class="sheet ml-main" :aria-busy="loading">
       <div class="toolbar">
         <h2 v-if="!vp.phone" class="ml-title">{{ folderTitle }}</h2>
         <button v-else type="button" class="btn ml-fold" aria-haspopup="dialog" @click="foldersOpen = true"><Icon name="folder" size="s16" /><span class="nm">{{ folderTitle }}</span><Icon name="chevD" size="s14" /></button>
@@ -217,7 +234,7 @@ function moveChosen() {
           <option value="img">{{ t('forms.media_type_img') }}</option>
           <option value="pdf">{{ t('forms.media_type_pdf') }}</option>
         </select>
-        <span class="grow num" aria-live="polite">{{ loading ? '' : countText }}</span>
+        <span class="grow num" aria-live="polite">{{ replacing ? '' : countText }}</span>
       </div>
 
       <label
@@ -241,9 +258,9 @@ function moveChosen() {
         <button type="button" class="btn sm" @click="picked = []">{{ t('forms.media_unselect') }}</button>
       </div>
 
-      <div v-if="loading" class="md-pad"><Skeleton :rows="5" /></div>
-      <div v-else-if="loadError" class="md-pad"><div class="alert err-a"><Icon name="alert" size="s16" /><span>{{ loadError }}</span><button type="button" class="btn sm" @click="load">{{ t('forms.retry') }}</button></div></div>
-      <div v-else-if="items.length" class="mgrid">
+      <div v-if="loadError" class="md-pad"><div class="alert err-a" role="alert"><Icon name="alert" size="s16" /><span>{{ loadError }}</span><button type="button" class="btn sm" @click="load()">{{ t('forms.retry') }}</button></div></div>
+      <div v-if="replacing && loading" class="md-pad"><Skeleton :rows="5" /></div>
+      <div v-else-if="!replacing && items.length" class="mgrid">
         <div v-for="m in items" :key="m.id" class="mcell">
           <button
             type="button" class="mdi" aria-haspopup="dialog" :aria-pressed="picked.includes(m.id)" :draggable="canEdit"
@@ -258,12 +275,12 @@ function moveChosen() {
           <input v-if="canEdit" type="checkbox" class="mpick" :checked="picked.includes(m.id)" :aria-label="t('forms.media_pick_file', { name: m.name })" @change="togglePick(m.id)">
         </div>
       </div>
-      <EmptyState v-else-if="q.trim() || type" icon="search" :title="t('forms.media_none_title')" :text="t('forms.media_none_text')">
+      <EmptyState v-else-if="!loadError && (q.trim() || type)" icon="search" :title="t('forms.media_none_title')" :text="t('forms.media_none_text')">
         <button type="button" class="btn" @click="reset">{{ t('forms.media_reset') }}</button>
       </EmptyState>
-      <EmptyState v-else-if="folder" icon="folder" :title="t('forms.media_folder_empty_title')" :text="canEdit ? t('forms.media_folder_empty_edit') : t('forms.media_folder_empty_read')" />
-      <EmptyState v-else icon="image" :title="t('forms.media_empty_title')" :text="canEdit ? t('forms.media_empty_edit') : t('forms.media_empty_read')" />
-      <ListPager v-if="total && !loadError" :page="page" :per-page="perPage" :sizes="[25, 50, 100]" :total="total" @update:page="go" @update:per-page="setPerPage" />
+      <EmptyState v-else-if="!loadError && folder" icon="folder" :title="t('forms.media_folder_empty_title')" :text="canEdit ? t('forms.media_folder_empty_edit') : t('forms.media_folder_empty_read')" />
+      <EmptyState v-else-if="!loadError" icon="image" :title="t('forms.media_empty_title')" :text="canEdit ? t('forms.media_empty_edit') : t('forms.media_empty_read')" />
+      <ListPager v-if="total" :page="page" :per-page="perPage" :sizes="[25, 50, 100]" :total="total" :cursors="cursors" :busy="replacing && loading" @update:page="go" @update:per-page="setPerPage" />
     </div>
     </div>
 

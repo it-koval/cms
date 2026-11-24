@@ -3,7 +3,7 @@ import { createApp, h, nextTick, reactive, ssrContextKey } from 'vue'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import View from './CollectionItemView.vue'
 
-const mocks = vi.hoisted(() => ({ get: vi.fn(), createTranslation: vi.fn(), removeTranslation: vi.fn(), remove: vi.fn(), update: vi.fn(), confirm: vi.fn(), can: vi.fn(), replace: vi.fn(), actionBusy: { value: false }, guard: null, leave: null, routeUpdate: null, route: null, app: null, cfg: null }))
+const mocks = vi.hoisted(() => ({ get: vi.fn(), createTranslation: vi.fn(), removeTranslation: vi.fn(), remove: vi.fn(), update: vi.fn(), confirm: vi.fn(), can: vi.fn(), replace: vi.fn(), toastShow: vi.fn(), actionBusy: { value: false }, guard: null, leave: null, routeUpdate: null, route: null, app: null, cfg: null }))
 vi.mock('vue-router', () => ({ useRoute: () => mocks.route, useRouter: () => ({ replace: mocks.replace }), onBeforeRouteLeave: (fn) => { mocks.leave = fn }, onBeforeRouteUpdate: (fn) => { mocks.routeUpdate = fn } }))
 vi.mock('@/api/index.js', () => ({ api: { collections: mocks, proposals: { list: async () => [] } }, isConflict: () => false, whileClosing: (fn) => fn() }))
 vi.mock('@/stores/app.js', async () => {
@@ -14,7 +14,7 @@ vi.mock('@/stores/app.js', async () => {
 vi.mock('@/schema/collections.js', () => ({ getCollectionConfig: () => mocks.cfg }))
 vi.mock('@/components/collections/actions/useActions.js', () => ({ useActions: () => ({ at: () => [], busy: mocks.actionBusy, dialog: { busy: false } }) }))
 vi.mock('@/components/ui/useConfirm.js', () => ({ useConfirm: () => mocks.confirm }))
-vi.mock('@/components/ui/useToast.js', () => ({ useToast: () => ({ show: vi.fn(), error: vi.fn() }) }))
+vi.mock('@/components/ui/useToast.js', () => ({ useToast: () => ({ show: mocks.toastShow, error: vi.fn() }) }))
 
 let host, mounted, state
 const settle = async () => { for (let i = 0; i < 5; i++) { await Promise.resolve(); await nextTick() } }
@@ -159,6 +159,23 @@ it('does not open an unknown preview field or one outside the view permission', 
   mocks.route.query.field = 'title'
   await settle()
   expect(focusField).not.toHaveBeenCalled()
+})
+
+it('opens the published row by identity after draft reorder and explains a deleted row', async () => {
+  mocks.cfg.tabs.push({ key: 'faq', fields: [{ k: 'faq', t: 'repeater', sub: [{ k: 'title', t: 'text' }] }] })
+  mocks.get.mockResolvedValue(response({ ...item(), faq: [{ _id: 'B', title: 'B' }, { _id: 'A', title: 'A' }] }))
+  await mount()
+  const focusField = vi.fn()
+  state.form = { focusField }
+  mocks.route.query.field = 'faq.0.title'
+  mocks.route.query.rows = JSON.stringify(['A'])
+  await settle()
+  expect(state.activeTab.key).toBe('faq')
+  expect(focusField).toHaveBeenLastCalledWith('faq.1.title')
+  mocks.route.query.rows = JSON.stringify(['deleted'])
+  await settle()
+  expect(focusField).toHaveBeenCalledTimes(1)
+  expect(mocks.toastShow).toHaveBeenLastCalledWith('Элемент из предпросмотра больше недоступен. Обновите предпросмотр.')
 })
 
 it('preserves whole-record edits throughout a refused deletion', async () => {

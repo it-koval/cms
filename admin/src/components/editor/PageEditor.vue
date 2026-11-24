@@ -212,9 +212,9 @@ watch(() => ed.restored, (id) => { // «вернуть» after a delete
 })
 
 /* ---------- what the page tells us (postMessage from the frame) ---------- */
-function onFrameFocus({ sec, path }) {
+function onFrameFocus({ sec, path, rows }) {
   if (sec === '@settings' || String(sec).startsWith('@collection/')) {
-    const destination = previewDestination({ sec, path }, props.locale || app.locale)
+    const destination = previewDestination({ sec, path, rows }, props.locale || app.locale)
     if (destination) router.push(destination)
     return
   }

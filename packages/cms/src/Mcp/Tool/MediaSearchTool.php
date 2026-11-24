@@ -39,6 +39,7 @@ final class MediaSearchTool extends AbstractMcpTool
             'type' => ['type' => 'string', 'enum' => ['img', 'pdf'], 'description' => 'Only photos or only PDFs.'],
             'limit' => self::limitProperty(30, 100),
             'offset' => self::offsetProperty(),
+            'cursor' => self::string('Use nextCursor or previousCursor from the previous result with the same filters. Takes precedence over offset.', 64),
         ]);
     }
 
@@ -52,10 +53,11 @@ final class MediaSearchTool extends AbstractMcpTool
         $context->require('media', 'view');
         $offset = self::offset($args);
         $limit = self::limit($args, 30, 100);
-        $page = $this->media->page((string) ($args['q'] ?? ''), (string) ($args['type'] ?? ''), '', $offset, $limit);
+        $page = $this->media->page((string) ($args['q'] ?? ''), (string) ($args['type'] ?? ''), '', $offset, $limit, (string) ($args['cursor'] ?? ''));
         $rows = \array_map(fn ($m): array => self::row($this->media->present($m)), $page['items']);
 
-        return Format::pageResult($rows, $page['total'], $offset, $limit);
+        return ['hasMore' => null !== $page['nextCursor'], 'nextCursor' => $page['nextCursor'], 'previousCursor' => $page['previousCursor']]
+            + Format::pageResult($rows, $page['total'], $offset, $limit);
     }
 
     /**

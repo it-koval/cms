@@ -744,7 +744,7 @@ The `Itk\Cms\Admin\AdminPath` service tells where the admin panel is (`base()`, 
 
 #### Requests and media lists
 
-`GET /admin/api/requests` and `GET /admin/api/media` return `{ items, total, page, perPage }`. Use `page` (starting at 1) and `perPage` (default 50, range 1–100). `total` counts all matches and `items` is empty past the last page. Both lists sort by creation time and ID, descending.
+`GET /admin/api/requests` and `GET /admin/api/media` return `{ items, total, page, perPage, nextCursor, previousCursor }`. Use `page` (starting at 1) and `perPage` (default 50, range 1–100). `total` counts all matches. Both lists sort by creation time and ID, descending. For adjacent pages, pass `nextCursor` or `previousCursor` as `cursor` with the same filters and page size. The cursor takes precedence over the offset implied by `page`, and is `null` in a direction with no more results. Requests using only a page number select by current position in the matching list.
 
 - Requests support `status`, `form`, `q`, `period`, `from`, `to` and `locale`. `GET /admin/api/requests/counts` gives site-wide totals.
 - Media supports `q` for a literal substring in the title, original filename or alt text, `type=img|pdf`, and `folder` (a folder ID, `none` for unfiled files, or omitted for all files).
@@ -1466,7 +1466,7 @@ The server supports protocol versions `2025-11-25`, `2025-06-18`, `2025-03-26` a
 
 - `site_schema` without arguments gives an overview, and with `kind` and `key` the full description of one section. The `itk://schema` resource returns the same.
 - `settings_get` does not return passwords, tokens, the mail server, chats or notification addresses.
-- `requests_list` and `media_search` accept `offset` (default 0) and `limit` (default 20 for requests and 30 for media, maximum 100). Both return `{ items, total, offset, limit, hasMore }`. When `hasMore` is true, request `offset + limit` with the same filters. Rows are sorted by creation time and ID, descending.
+- `requests_list` and `media_search` accept `offset` (default 0), `limit` (default 20 for requests and 30 for media, maximum 100), and an optional `cursor` that takes precedence over `offset`. Both return `{ items, total, offset, limit, hasMore, nextCursor, previousCursor }`. Pass `nextCursor` as `cursor` with the same filters to continue through rows ordered by creation time and ID, descending.
 - `media_upload` accepts a base64 file of up to 5 MB. The server does not download files by URL.
 - `page_unpublish` leaves the page as a draft. The home page cannot be unpublished.
 - Through MCP you cannot delete pages, records, files or rules, change users, roles, keys, settings or redirects, or restore versions.

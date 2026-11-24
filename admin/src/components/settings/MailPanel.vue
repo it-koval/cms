@@ -70,9 +70,11 @@ async function load() {
 onMounted(() => { testTo.value = (app.user && app.user.email) || ''; load() })
 
 // another kind of protection: the port that was the usual one of the old kind follows to the usual one of the new kind (a port typed by hand stays)
-watch(() => draft.encryption, (now, was) => {
-  if (was && (draft.port === '' || String(draft.port) === String(PORTS[was]))) draft.port = String(PORTS[now])
-})
+function changeEncryption(next) {
+  const previous = draft.encryption
+  draft.encryption = next
+  if (draft.port === '' || String(draft.port) === String(PORTS[previous])) draft.port = String(PORTS[next])
+}
 
 watch([password, () => draft.host, () => draft.username], () => { delete errors.password })
 
@@ -185,7 +187,7 @@ const lastBad = computed(() => last.value.bad)
           <div class="ml-two">
             <div :class="['field', { 'is-error': errors.encryption, 'is-changed': !same(draft.encryption, state.encryption) }]">
               <div class="lbl"><label for="ml-enc">{{ t('integrations.ml_enc_label') }}</label><span class="mark"><span class="pmark" aria-hidden="true"><i /></span>{{ t('integrations.changed') }}</span></div>
-              <select id="ml-enc" v-model="draft.encryption" :disabled="saving" v-bind="fieldAria('ml-enc', true, errors.encryption)">
+              <select id="ml-enc" :value="draft.encryption" @change="changeEncryption($event.target.value)" :disabled="saving" v-bind="fieldAria('ml-enc', true, errors.encryption)">
                 <option v-for="o in ENCRYPTIONS" :key="o.value" :value="o.value">{{ o.label }}</option>
               </select>
               <div id="ml-enc_h" class="help">{{ t('integrations.ml_enc_help') }}</div>

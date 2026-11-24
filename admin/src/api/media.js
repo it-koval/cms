@@ -14,7 +14,7 @@
 import { ApiError, http } from './http.js'
 import { t } from '@/i18n/index.js'
 
-export const list = ({ q = '', type = '', folder = '', page, perPage } = {}) => http.get('media', { q: q.trim(), type, folder, page, perPage })
+export const list = ({ q = '', type = '', folder = '', page, perPage, cursor } = {}) => http.get('media', { q: q.trim(), type, folder, page, perPage, cursor })
 export const usage = (id) => http.get(`media/${encodeURIComponent(id)}/usage`)
 
 export async function upload(file, folderId = null) {

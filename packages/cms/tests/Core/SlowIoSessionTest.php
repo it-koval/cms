@@ -50,6 +50,29 @@ final class SlowIoSessionTest extends KernelTestCase
     }
 
     #[Test]
+    public function aSlowSettingsReplyCannotReplaceAPasswordRotationOrTheCookieOfANewLogin(): void
+    {
+        $dir = __DIR__ . '/../App/var/session-response-' . \bin2hex(\random_bytes(6));
+        \mkdir($dir, 0700, true);
+        try {
+            foreach (['password', 'login'] as $action) {
+                $process = new Process([\PHP_BINARY, __DIR__ . '/../App/bin/session-response-race.php', 'controller', $dir, \bin2hex(\random_bytes(12)), $action], timeout: 15);
+                $process->mustRun();
+                $result = \json_decode($process->getOutput(), true, flags: \JSON_THROW_ON_ERROR);
+                self::assertSame(\hash('crc32c', 'rotated-password-hash'), $result['hash'], $action);
+                self::assertSame(0, $result['cookies'], 'late response must not expire the newer login cookie');
+                self::assertSame(200, $result['response']);
+                self::assertFalse($result['duringIo'], 'credential changes wait until the slow response stored its token');
+            }
+        } finally {
+            foreach (\glob($dir . '/*') ?: [] as $file) {
+                \unlink($file);
+            }
+            \rmdir($dir);
+        }
+    }
+
+    #[Test]
     public function aSecondProcessWithTheSameNativeSessionFinishesDuringSlowIo(): void
     {
         $dir = __DIR__ . '/../App/var/session-profile-' . \bin2hex(\random_bytes(6));
@@ -75,7 +98,7 @@ final class SlowIoSessionTest extends KernelTestCase
     }
 
     #[Test]
-    public function maxDeliveryClosesTheSessionAndKeepsTheSignIn(): void
+    public function maxDeliveryKeepsTheSessionLockedUntilTheResponse(): void
     {
         self::bootKernel();
         $c = self::getContainer();
@@ -84,17 +107,17 @@ final class SlowIoSessionTest extends KernelTestCase
         $sender = $this->createMock(MaxSender::class);
         $sender->method('isConnected')->willReturn(true);
         $sender->expects(self::once())->method('send')->willReturnCallback(static function () use ($request): void {
-            self::assertFalse($request->getSession()->isStarted(), 'session lock must be released at the transport boundary');
+            self::assertTrue($request->getSession()->isStarted(), 'retain the lock until Symfony stores the response token');
         });
         $max = new MaxNotifier($c->get(Schema::class), $c->get(SettingsService::class), $c->get('logger'), $sender, new EventDispatcher(), true);
-        $controller = new SettingsController($c->get(SettingsService::class), $c->get(Schema::class), $c->get(TelegramNotifier::class), $max, $c->get(Access::class), $c->get(FieldAccess::class), $c->get(SiteMailer::class), $c->get(AdminLocale::class), $c->get(SessionWork::class));
+        $controller = new SettingsController($c->get(SettingsService::class), $c->get(Schema::class), $c->get(TelegramNotifier::class), $max, $c->get(Access::class), $c->get(FieldAccess::class), $c->get(SiteMailer::class), $c->get(AdminLocale::class));
         self::assertSame(200, $controller->maxTest($request)->getStatusCode());
         self::assertTrue($request->getSession()->isStarted());
         self::assertTrue($request->getSession()->has('_security_itk_admin'));
     }
 
     #[Test]
-    public function telegramDeliveryAlsoClosesTheSession(): void
+    public function telegramDeliveryAlsoKeepsTheSessionLocked(): void
     {
         self::bootKernel();
         $c = self::getContainer();
@@ -104,18 +127,18 @@ final class SlowIoSessionTest extends KernelTestCase
         $transport->method('supports')->willReturnCallback(static fn ($message): bool => $message instanceof \Symfony\Component\Notifier\Message\ChatMessage);
         $transport->method('__toString')->willReturn('telegram://test');
         $transport->expects(self::once())->method('send')->willReturnCallback(static function () use ($request): ?\Symfony\Component\Notifier\Message\SentMessage {
-            self::assertFalse($request->getSession()->isStarted());
+            self::assertTrue($request->getSession()->isStarted());
 
             return null;
         });
         $telegram = new TelegramNotifier($c->get(Schema::class), $c->get(SettingsService::class), $c->get('logger'), static fn () => $transport, new EventDispatcher(), true);
-        $controller = new SettingsController($c->get(SettingsService::class), $c->get(Schema::class), $telegram, $c->get(MaxNotifier::class), $c->get(Access::class), $c->get(FieldAccess::class), $c->get(SiteMailer::class), $c->get(AdminLocale::class), $c->get(SessionWork::class));
+        $controller = new SettingsController($c->get(SettingsService::class), $c->get(Schema::class), $telegram, $c->get(MaxNotifier::class), $c->get(Access::class), $c->get(FieldAccess::class), $c->get(SiteMailer::class), $c->get(AdminLocale::class));
         self::assertSame(200, $controller->telegramTest($request)->getStatusCode());
         self::assertTrue($request->getSession()->isStarted());
     }
 
     #[Test]
-    public function mailDeliveryClosesTheSessionAtTheTransportBoundary(): void
+    public function mailDeliveryKeepsTheSessionLockedAtTheTransportBoundary(): void
     {
         self::bootKernel();
         $c = self::getContainer();
@@ -125,7 +148,7 @@ final class SlowIoSessionTest extends KernelTestCase
         $called = false;
         $dispatcher->addListener(MessageEvent::class, static function (MessageEvent $event) use ($request, &$called): void {
             $called = true;
-            self::assertFalse($request->getSession()->isStarted());
+            self::assertTrue($request->getSession()->isStarted());
             $event->reject(); // No SMTP connection: this test stops at the real transport boundary.
         });
         $factory = new MailerFactory($c->get(MailSettings::class), $c->get(SettingsService::class), $dispatcher, 'smtp://127.0.0.1:1');
@@ -141,7 +164,7 @@ final class SlowIoSessionTest extends KernelTestCase
             $limiter->method('consume')->willReturn(new RateLimit(1, new \DateTimeImmutable(), true, 1));
             $limit = $this->createStub(RateLimiterFactoryInterface::class);
             $limit->method('create')->willReturn($limiter);
-            $controller = new MailController($c->get(MailSettings::class), $factory, $c->get(MailStatus::class), $mailer, $c->get(MailComposer::class), $c->get(Access::class), $limit, $c->get(SessionWork::class));
+            $controller = new MailController($c->get(MailSettings::class), $factory, $c->get(MailStatus::class), $mailer, $c->get(MailComposer::class), $c->get(Access::class), $limit);
             self::assertSame(200, $controller->test($request)->getStatusCode());
             self::assertTrue($called);
             self::assertTrue($request->getSession()->isStarted());

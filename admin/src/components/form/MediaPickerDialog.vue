@@ -6,6 +6,7 @@ import Modal from '@/components/ui/Modal.vue'
 import Icon from '@/components/ui/Icon.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import ListPager from '@/components/collections/list/ListPager.vue'
+import { useListCursor } from '@/composables/useListCursor.js'
 import { useToast } from '@/components/ui/useToast.js'
 import { api } from '@/api/index.js'
 import { thumbUrl } from '@/utils/media.js'
@@ -18,6 +19,7 @@ const items = ref([])
 const total = ref(0)
 const page = ref(1)
 const perPage = ref(25)
+const { cursors, position, accept, parameters } = useListCursor()
 const q = ref('')
 const loading = ref(false)
 const loadError = ref('')
@@ -30,10 +32,12 @@ async function load() {
   const my = ++seq
   loading.value = true
   try {
-    const result = await api.media.list({ q: q.value, type: 'img', page: page.value, perPage: perPage.value })
+    const paging = parameters()
+    const result = await api.media.list({ q: q.value, type: 'img', page: page.value, perPage: perPage.value, ...paging })
     if (my !== seq) return
     const last = Math.max(1, Math.ceil(result.total / result.perPage))
-    if (result.page > last) return go(last)
+    if (!result.items.length && (result.page > last || paging.cursor)) return go(Math.min(result.page, last), true)
+    accept(result)
     items.value = result.items
     total.value = result.total
     loadError.value = ''
@@ -43,20 +47,24 @@ async function load() {
     if (my === seq) loading.value = false
   }
 }
-function go(next) {
+function go(next, reset = false) {
   clearTimeout(timer)
+  position(next, reset)
   page.value = next
   return load()
 }
 function setPerPage(size) {
   perPage.value = size
-  go(1)
+  go(1, true)
 }
 watch(q, () => {
   if (!props.open) return
   ++seq
+  position(1, true)
+  page.value = 1
+  loading.value = true
   clearTimeout(timer)
-  timer = setTimeout(() => go(1), 150)
+  timer = setTimeout(() => go(1, true), 150)
 }, { flush: 'sync' })
 function cancelLoad() { ++seq; clearTimeout(timer) }
 watch(() => props.open, (open) => {
@@ -65,7 +73,7 @@ watch(() => props.open, (open) => {
   items.value = []
   total.value = 0
   loadError.value = ''
-  go(1)
+  go(1, true)
 }, { immediate: true })
 onBeforeUnmount(cancelLoad)
 
@@ -111,7 +119,7 @@ async function onFile(e) {
       </button>
     </div>
     <EmptyState v-else icon="image" :title="t('forms.picker_empty_title')" :text="t('forms.picker_empty_text')" />
-    <ListPager v-if="total && !loadError" :page="page" :per-page="perPage" :sizes="[25, 50, 100]" :total="total" @update:page="go" @update:per-page="setPerPage" />
+    <ListPager v-if="total && !loadError" :page="page" :per-page="perPage" :sizes="[25, 50, 100]" :total="total" :cursors="cursors" :busy="loading" @update:page="go" @update:per-page="setPerPage" />
     <template #footer>
       <button type="button" class="btn" @click="emit('update:open', false)">{{ t('forms.cancel') }}</button>
     </template>

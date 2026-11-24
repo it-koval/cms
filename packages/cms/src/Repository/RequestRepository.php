@@ -34,15 +34,11 @@ class RequestRepository extends ServiceEntityRepository
     /**
      * @param array{status?: string, form?: string, q?: string, period?: string, from?: string, to?: string, locale?: string} $filter
      *
-     * @return array{items: list<Request>, total: int}
+     * @return array{items: list<Request>, total: int, nextCursor: ?string, previousCursor: ?string}
      */
-    public function page(array $filter, int $offset, int $limit): array
+    public function page(array $filter, int $offset, int $limit, string $cursor = ''): array
     {
-        $query = $this->searchQuery($filter);
-        $total = (int) (clone $query)->select('COUNT(r.id)')->resetDQLPart('orderBy')->getQuery()->getSingleScalarResult();
-        $items = $offset < $total ? $query->setFirstResult($offset)->setMaxResults($limit)->getQuery()->getResult() : [];
-
-        return ['items' => $items, 'total' => $total];
+        return CreatedPage::read($this->searchQuery($filter), Request::class, $offset, $limit, $cursor);
     }
 
     /** @param array{status?: string, form?: string, q?: string, period?: string, from?: string, to?: string, locale?: string} $filter */

@@ -30,6 +30,7 @@ final class RequestsListTool extends RequestsTool
             'period' => ['type' => 'string', 'enum' => ['today', '7', '30'], 'description' => 'Only the last day / 7 days / 30 days.'],
             'limit' => self::limitProperty(20, 100),
             'offset' => self::offsetProperty(),
+            'cursor' => self::string('Use nextCursor or previousCursor from the previous result with the same filters. Takes precedence over offset.', 64),
         ]);
     }
 
@@ -45,9 +46,10 @@ final class RequestsListTool extends RequestsTool
         $limit = self::limit($args, 20, 100);
         $page = $this->requests->page([
             'status' => (string) ($args['status'] ?? ''), 'form' => (string) ($args['form'] ?? ''), 'q' => (string) ($args['q'] ?? ''), 'period' => (string) ($args['period'] ?? ''),
-        ], $offset, $limit);
+        ], $offset, $limit, (string) ($args['cursor'] ?? ''));
         $rows = \array_map(fn ($r): array => self::row($this->requests->present($r)), $page['items']);
 
-        return Format::pageResult($rows, $page['total'], $offset, $limit);
+        return ['hasMore' => null !== $page['nextCursor'], 'nextCursor' => $page['nextCursor'], 'previousCursor' => $page['previousCursor']]
+            + Format::pageResult($rows, $page['total'], $offset, $limit);
     }
 }

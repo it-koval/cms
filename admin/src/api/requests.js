@@ -13,7 +13,7 @@
 import { http } from './http.js'
 import { schema } from '@/schema/registry.js'
 
-export const list = ({ status = '', form = '', period = '', q = '', from = '', to = '', locale = '', page, perPage } = {}) => http.get('requests', { status, form, period, q, from, to, locale, page, perPage })
+export const list = ({ status = '', form = '', period = '', q = '', from = '', to = '', locale = '', page, perPage, cursor } = {}) => http.get('requests', { status, form, period, q, from, to, locale, page, perPage, cursor })
 export const get = (id) => http.get(`requests/${encodeURIComponent(id)}`)
 export const update = (id, { work, comment } = {}) => http.patch(`requests/${encodeURIComponent(id)}`, { work, comment })
 export const resend = (id, body) => http.post(`requests/${encodeURIComponent(id)}/resend`, body)

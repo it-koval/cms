@@ -363,5 +363,7 @@
   "settings.bots_token_server": "Token configured on the server",
   "settings.bots_token_none": "No token configured",
   "settings.bots_telegram_hint": "Create a bot and get its token from",
-  "settings.bots_max_hint": "Create a bot and get its token in the MAX business tools"
+  "settings.bots_max_hint": "Create a bot and get its token in the MAX business tools",
+  "settings.unsaved_leave_message": "There are unsaved changes in the settings. Leaving will discard them.",
+  "settings.unsaved_switch_message": "There are unsaved changes in the settings. Switching the language now will discard them. Press “Save” first to keep them."
 }

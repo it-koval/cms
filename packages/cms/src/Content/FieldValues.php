@@ -136,15 +136,23 @@ final class FieldValues
     public function equal(FieldInterface $f, mixed $a, mixed $b): bool
     {
         if ($f->isRich()) {
-            $mode = (string) $f->richMode();
-
-            return $this->html->sanitize($a, $mode) === $this->html->sanitize($b, $mode);
+            return $this->richValue($f, $a) === $this->richValue($f, $b);
         }
         if ('repeater' === $f->type()) {
             return Json::same(Json::stripIds($a ?? []), Json::stripIds($b ?? []));
         }
 
         return Json::same($a, $b);
+    }
+
+    /** The same field rules apply to writes and to legacy values rendered from a saved snapshot. */
+    public function richValue(FieldInterface $field, mixed $value): string
+    {
+        $html = $this->html->sanitize($value, (string) $field->richMode());
+
+        return 'headline' === $field->type() && false === ($field->toArray()['brk'] ?? true)
+            ? \str_replace('<br>', ' ', $html)
+            : $html;
     }
 
     /**
@@ -188,7 +196,7 @@ final class FieldValues
             }
             $v = $data[$f->key()];
             if ($f->isRich()) {
-                $v = $this->html->sanitize($v, (string) $f->richMode());
+                $v = $this->richValue($f, $v);
             } elseif ('repeater' === $f->type()) {
                 $items = [];
                 foreach (\is_array($v) ? \array_values($v) : [] as $item) {

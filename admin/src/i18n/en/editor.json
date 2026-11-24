@@ -1,6 +1,7 @@
 {
   "editor.settings_leave_message": "The page settings have unsaved changes.",
   "editor.preview_dialog": "Page preview",
+  "editor.preview_item_unavailable": "This preview item is no longer available. Refresh the preview.",
   "editor.preview_heading": "Preview · {title}",
   "editor.preview_draft_sections": {
     "one": "draft, {count} section",

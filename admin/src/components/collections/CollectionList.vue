@@ -156,7 +156,6 @@ async function load() {
     loaded.value = true
   } catch (e) {
     if (!alive || my !== seq) return
-    loaded.value = true
     // a saved filter or sort the server no longer accepts (the schema changed): start clean instead of failing every visit
     if (e.status === 422 && (nFilters.value || sort.value)) {
       toast.error(t('collections.cl_filters_stale'))
@@ -164,6 +163,7 @@ async function load() {
       ls.state.sort = ''
       return
     }
+    loaded.value = true
     loadError.value = e.message || t('collections.cl_load_failed')
   } finally {
     if (alive && my === seq) refreshing.value = false
@@ -610,10 +610,8 @@ const runRow = (a) => { const r = menu.value.row; menu.value.open = false; if (r
     <div class="sheet cl-sheet">
       <div v-if="!loaded" class="cl-pad"><Skeleton :rows="6" /></div>
 
-      <div v-else-if="loadError" class="cl-pad alert err-a" role="alert"><Icon name="alert" size="s16" /><span>{{ loadError }}</span><button type="button" class="btn" :disabled="refreshing" @click="load">{{ t('settings.retry') }}</button></div>
-
       <!-- nothing in the collection yet -->
-      <EmptyState v-else-if="!total && !filtered" :icon="cfg.icon" :title="cfg.empty.title" :text="canEdit ? cfg.empty.text : t('collections.cl_no_records')">
+      <EmptyState v-else-if="!loadError && !total && !filtered" :icon="cfg.icon" :title="cfg.empty.title" :text="canEdit ? cfg.empty.text : t('collections.cl_no_records')">
         <button v-if="canEdit" type="button" :class="['btn primary', { loading: adding }]" @click="add()"><Icon name="plus" size="s16" />{{ cfg.newLabel }}</button>
         <p v-if="MULTI && canEdit" class="cl-addnote c">{{ addNote }}</p>
       </EmptyState>
@@ -645,6 +643,8 @@ const runRow = (a) => { const r = menu.value.row; menu.value.open = false; if (r
           <span v-else-if="orderable && L.orderHint" class="grow">{{ L.orderHint }}</span>
         </div>
 
+        <div v-if="loadError" class="cl-pad alert err-a" role="alert"><Icon name="alert" size="s16" /><span>{{ loadError }}</span><button type="button" class="btn" :disabled="refreshing" @click="load">{{ t('settings.retry') }}</button></div>
+        <template v-else>
         <div v-if="incomplete || (view === 'tree' && treeIncomplete)" class="alert warn-a" role="status"><Icon name="alert" size="s16" /><span>{{ t(view === 'tree' ? 'collections.cl_tree_incomplete' : 'collections.cl_incomplete', { loaded: rows.length, total }) }}</span><button type="button" class="btn sm" :disabled="refreshing" @click="load">{{ t('ui.retry') }}</button></div>
 
         <!-- the key to the short chips of the cards (the table spells the words out) -->
@@ -787,6 +787,8 @@ const runRow = (a) => { const r = menu.value.row; menu.value.open = false; if (r
             </div>
           </div>
         </div>
+
+        </template>
 
         <ListPager v-if="!reorder.on && rows.length && !wide" v-model:page="page" v-model:per-page="perPage" :total="total" />
       </template>

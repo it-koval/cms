@@ -83,3 +83,20 @@ it.each([['mail', true], ['mail', false], ['theme', true], ['theme', false]])('p
   expect(kind === 'mail' ? state.draft.fromName : state.draft.radius).toBe(kind === 'mail' ? 'Submitted sender' : 8)
   for (const id of ids) expect(document.getElementById(id).disabled, id).toBe(false)
 })
+
+it.each([['ssl', '587'], ['ssl', ''], ['none', '587']])('keeps the saved %s port %s unchanged and clean on load', async (encryption, port) => {
+  mocks.mail.get.mockResolvedValueOnce({ enabled: false, host: 'mail.example.test', port, encryption, username: '', fromAddress: '', fromName: '' })
+  const state = await mount(Mail)
+  expect(state.draft.port).toBe(port)
+  expect(state.dirty).toBe(false)
+})
+it('adjusts the usual port only on an explicit encryption selection and keeps a custom port', async () => {
+  mocks.mail.get.mockResolvedValueOnce({ enabled: false, host: '', port: 587, encryption: 'starttls', username: '', fromAddress: '', fromName: '' })
+  const state = await mount(Mail)
+  const select = document.getElementById('ml-enc')
+  select.value = 'ssl'; select.dispatchEvent(new Event('change', { bubbles: true })); await tick()
+  expect(state.draft.port).toBe('465')
+  state.draft.port = '2525'
+  select.value = 'starttls'; select.dispatchEvent(new Event('change', { bubbles: true })); await tick()
+  expect(state.draft.port).toBe('2525')
+})

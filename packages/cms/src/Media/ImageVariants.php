@@ -583,6 +583,7 @@ final class ImageVariants
     /**
      * Makes every copy an original of this width needs (the widths of srcset(), WebP and, when GD can, AVIF); the ones that exist are kept.
      *
+     * @param int|null $originalWidth legacy hint; current file dimensions determine the default widths
      * @param list<int> $widths explicit variant widths, or [] for the original's srcset widths
      *
      * @return array{made: int, existing: int, skipped: int}
@@ -594,7 +595,8 @@ final class ImageVariants
         if (null === $path) {
             return $out;
         }
-        if ([] === $widths && !$originalWidth) {
+        if ([] === $widths) {
+            // Stored widths may predate EXIF support or come from an import. Warm the file as it looks now.
             $known = \array_key_exists($path, $this->sizes);
             $originalWidth = $this->dimensions($path)[0] ?? 0;
             if (!$known) {

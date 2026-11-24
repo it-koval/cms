@@ -18,6 +18,7 @@ import WorkChip from '@/components/requests/WorkChip.vue'
 import KanbanBoard from '@/components/ui/KanbanBoard.vue'
 import FilterSheet from '@/components/ui/FilterSheet.vue'
 import ListPager from '@/components/collections/list/ListPager.vue'
+import { useListCursor } from '@/composables/useListCursor.js'
 import { useToast } from '@/components/ui/useToast.js'
 import { WORK_STATUSES, deliveryFailed, isNewRequest, workLabel, workOf } from '@/composables/requestMeta.js'
 import { dayOf, fmtDT } from '@/utils/format.js'
@@ -38,6 +39,8 @@ const page = ref(1)
 const perPage = ref(50)
 const forms = ref([])
 const loading = ref(true)
+const replacing = ref(true)
+const { cursors, position, accept, parameters } = useListCursor()
 const loadError = ref('')
 const today = dayOf(new Date())
 
@@ -49,17 +52,21 @@ const badRange = computed(() => f.period === 'custom' && f.from && f.to && f.fro
 const openId = computed(() => (route.params.id ? Number(route.params.id) : null))
 
 let seq = 0
-async function load() {
+async function load(replace = false) {
   const my = ++seq
   loading.value = true
+  if (replace) replacing.value = true
+  loadError.value = ''
   try {
-    const list = await api.requests.list({ ...f, page: page.value, perPage: perPage.value })
+    const paging = parameters()
+    const list = await api.requests.list({ ...f, page: page.value, perPage: perPage.value, ...paging })
     if (my !== seq) return // a newer request is on its way
     const last = Math.max(1, Math.ceil(list.total / list.perPage))
-    if (list.page > last) return go(last)
+    if (!list.items.length && (list.page > last || paging.cursor)) return go(Math.min(list.page, last), true)
+    accept(list)
     rows.value = list.items
     total.value = list.total
-    loadError.value = ''
+    replacing.value = false
   } catch (e) {
     if (my === seq) loadError.value = e.message || t('ui.rq_load_failed')
   } finally {
@@ -67,14 +74,15 @@ async function load() {
   }
 }
 
-function go(next) {
+function go(next, reset = false) {
   clearTimeout(timer)
+  position(next, reset)
   page.value = next
-  return load()
+  return load(true)
 }
 function setPerPage(size) {
   perPage.value = size
-  go(1)
+  go(1, true)
 }
 
 // the view (table / board) is kept for the person; until it is read the table shows
@@ -115,8 +123,15 @@ async function moveCard({ item, to }) {
 }
 
 let timer = null
-watch(() => f.q, () => { ++seq; clearTimeout(timer); timer = setTimeout(() => go(1), 220) })
-watch(() => [f.status, f.form, f.locale, f.period, f.from, f.to], () => go(1))
+watch(() => f.q, () => {
+  ++seq
+  position(1, true)
+  page.value = 1
+  replacing.value = loading.value = true
+  clearTimeout(timer)
+  timer = setTimeout(() => go(1, true), 220)
+})
+watch(() => [f.status, f.form, f.locale, f.period, f.from, f.to], () => go(1, true))
 onBeforeUnmount(() => { ++seq; clearTimeout(timer) })
 
 function reset() { Object.assign(f, { q: '', status: '', form: '', locale: '', period: '', from: '', to: '' }) }
@@ -140,7 +155,7 @@ const rowLabel = (r) => t('ui.rq_card_label', { id: r.id, phone: r.phone }) + (i
       </div>
     </div>
 
-    <div class="sheet">
+    <div class="sheet" :aria-busy="loading">
       <div :class="['toolbar', { 'rq-multi': MULTI }]">
         <div class="search">
           <label class="sr" for="rq-q">{{ t('ui.rq_search_label') }}</label>
@@ -174,7 +189,7 @@ const rowLabel = (r) => t('ui.rq_card_label', { id: r.id, phone: r.phone }) + (i
           <label for="rq-to">{{ t('ui.rq_to') }}</label><input id="rq-to" v-model="f.to" type="date" :max="today">
         </span>
         </FilterSheet>
-        <span class="grow num" aria-live="polite">{{ loading ? '' : countText }}</span>
+        <span class="grow num" aria-live="polite">{{ replacing ? '' : countText }}</span>
         <div class="seg rq-views" role="group" :aria-label="t('ui.rq_view')">
           <button type="button" :aria-pressed="view === 'table'" @click="setView('table')">{{ t('ui.rq_table') }}</button>
           <button type="button" :aria-pressed="view === 'board'" @click="setView('board')">{{ t('ui.rq_board') }}</button>
@@ -182,9 +197,9 @@ const rowLabel = (r) => t('ui.rq_card_label', { id: r.id, phone: r.phone }) + (i
       </div>
       <div v-if="badRange" class="rq-warn" role="alert"><Icon name="alert" size="s16" />{{ t('ui.rq_bad_range') }}</div>
 
-      <div v-if="loading" class="rq-pad"><Skeleton :rows="6" /></div>
-      <div v-else-if="loadError" class="rq-pad"><div class="alert err-a"><Icon name="alert" size="s16" /><span>{{ loadError }}</span><button type="button" class="btn sm" @click="load">{{ t('ui.retry') }}</button></div></div>
-      <template v-else-if="visible.length && view === 'board'">
+      <div v-if="loadError" class="rq-pad"><div class="alert err-a" role="alert"><Icon name="alert" size="s16" /><span>{{ loadError }}</span><button type="button" class="btn sm" @click="load()">{{ t('ui.retry') }}</button></div></div>
+      <div v-if="replacing && loading" class="rq-pad"><Skeleton :rows="6" /></div>
+      <template v-else-if="!replacing && visible.length && view === 'board'">
         <KanbanBoard :columns="BOARD" :items="board" :column-of="workOf" :label="(r) => t('ui.rq_card_label', { id: r.id, phone: r.phone })" :disabled="boardBusy || !canEdit" :aria-label="t('ui.rq_board_label')" :empty-text="t('ui.rq_board_empty')" @move="moveCard">
           <template #card="{ item }">
             <button type="button" :class="['rq-card', { unread: isNewRequest(item) }]" @click="open(item)">
@@ -197,7 +212,7 @@ const rowLabel = (r) => t('ui.rq_card_label', { id: r.id, phone: r.phone }) + (i
         </KanbanBoard>
         <p v-if="spamHidden" class="rq-spam muted">{{ t('ui.rq_spam_hidden', { count: spamHidden }) }}</p>
       </template>
-      <table v-else-if="visible.length" class="t t-stack rq-t" :aria-label="t('ui.rq_title')">
+      <table v-else-if="!replacing && visible.length" class="t t-stack rq-t" :aria-label="t('ui.rq_title')">
         <thead><tr><th>{{ t('ui.rq_col_number') }}</th><th>{{ t('ui.rq_col_received') }}</th><th>{{ t('ui.rq_phone') }}</th><th>{{ t('ui.rd_city') }}</th><th class="rq-form">{{ t('ui.rq_form') }}</th><th v-if="MULTI">{{ t('ui.language') }}</th><th>{{ t('ui.rq_status') }}</th></tr></thead>
         <tbody>
           <tr
@@ -220,11 +235,11 @@ const rowLabel = (r) => t('ui.rq_card_label', { id: r.id, phone: r.phone }) + (i
           </tr>
         </tbody>
       </table>
-      <EmptyState v-else-if="filtersOn" icon="search" :title="t('ui.rq_empty_filtered_title')" :text="t('ui.rq_empty_filtered_text')">
+      <EmptyState v-else-if="!loadError && filtersOn" icon="search" :title="t('ui.rq_empty_filtered_title')" :text="t('ui.rq_empty_filtered_text')">
         <button type="button" class="btn primary" @click="reset">{{ t('ui.rq_reset_filters') }}</button>
       </EmptyState>
-      <EmptyState v-else icon="inbox" :title="t('ui.rq_empty_title')" :text="t('ui.rq_empty_text')" />
-      <ListPager v-if="total && !loadError" :page="page" :per-page="perPage" :sizes="[25, 50, 100]" :total="total" @update:page="go" @update:per-page="setPerPage" />
+      <EmptyState v-else-if="!loadError" icon="inbox" :title="t('ui.rq_empty_title')" :text="t('ui.rq_empty_text')" />
+      <ListPager v-if="total" :page="page" :per-page="perPage" :sizes="[25, 50, 100]" :total="total" :cursors="cursors" :busy="replacing && loading" @update:page="go" @update:per-page="setPerPage" />
     </div>
 
     <RequestDrawer :request-id="openId" @close="closeDrawer" @changed="onChanged" />

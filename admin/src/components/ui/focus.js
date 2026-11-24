@@ -14,7 +14,7 @@ const lockPage = (on) => {
   document.body.classList.toggle('ov-lock', locks > 0)
 }
 
-export function useOverlay(elRef, isOpen, { onEsc, initial, top = false } = {}) {
+export function useOverlay(elRef, isOpen, { onEsc, initial, top = false, lock = true, restore = true } = {}) {
   let prev = null
   let locked = false
   const overlay = { top }
@@ -41,7 +41,7 @@ export function useOverlay(elRef, isOpen, { onEsc, initial, top = false } = {}) 
       prev = document.activeElement
       overlays.push(overlay)
       document.addEventListener('keydown', keydown, true)
-      if ((vp.phone || (vp.compact && vp.touch)) && !locked) { locked = true; lockPage(true) }
+      if (lock && (vp.phone || (vp.compact && vp.touch)) && !locked) { locked = true; lockPage(true) }
       await nextTick()
       if (!isTop()) return
       const root = elRef.value
@@ -55,7 +55,7 @@ export function useOverlay(elRef, isOpen, { onEsc, initial, top = false } = {}) 
     } else {
       const restoreFocus = isTop()
       remove()
-      if (restoreFocus && prev && document.contains(prev)) prev.focus({ preventScroll: true })
+      if (restore && restoreFocus && prev && document.contains(prev)) prev.focus({ preventScroll: true })
       prev = null
     }
   }, { immediate: true })

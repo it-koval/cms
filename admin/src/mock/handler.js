@@ -522,11 +522,29 @@ export function createMock(db = makeDb()) {
     return { ...copy(r), delivery, deliveryError: failedOnes.map((c) => `${CHANNEL_TITLES[c.channel]}: ${c.error}`).join('\n') || null, st: delivery === 'failed' ? 'failed' : 'delivered' }
   }
   const requestCounts = () => ({ total: db.requests.length, new: db.requests.filter((r) => r.work === 'new').length, failed: db.requests.filter((r) => present(r).st === 'failed').length })
+  const newestFirst = (a, b) => Date.parse(b.dt) - Date.parse(a.dt) || b.id - a.id
   function listPage(rows, query) {
     const page = Math.max(1, Math.trunc(Number(query.page ?? 1)) || 1)
     const perPage = Math.max(1, Math.min(100, Math.trunc(Number(query.perPage ?? 50))))
     const offset = (page - 1) * perPage
-    return { items: rows.slice(offset, offset + perPage), total: rows.length, page, perPage }
+    let start = offset
+    let end = offset + perPage
+    if (query.cursor) {
+      const [direction, dt, id] = String(query.cursor).split('/')
+      const boundary = rows.findIndex((row) => {
+        const comparison = newestFirst(row, { dt, id })
+        return direction === 'older' ? comparison > 0 : comparison >= 0
+      })
+      const index = boundary === -1 ? rows.length : boundary
+      if (direction === 'older') {
+        start = index; end = start + perPage
+      } else {
+        end = index; start = Math.max(0, end - perPage)
+      }
+    }
+    const items = rows.slice(start, end)
+    const cursorOf = (direction, row) => row ? `${direction}/${row.dt}/${row.id}` : null
+    return { items, total: rows.length, page, perPage, nextCursor: end < rows.length ? cursorOf('older', items.at(-1)) : null, previousCursor: start > 0 ? cursorOf('newer', items[0]) : null }
   }
 
   function requestsCall(method, tail, query, data) {
@@ -541,7 +559,7 @@ export function createMock(db = makeDb()) {
       }
       const rows = db.requests.map(present).filter((r) => (!query.status || (query.status === 'failed' ? r.st === 'failed' : r.work === query.status))
         && (!query.form || r.form === query.form) && (!query.locale || r.locale === query.locale) && matches(r))
-      rows.sort((a, b) => Date.parse(b.dt) - Date.parse(a.dt) || b.id - a.id)
+      rows.sort(newestFirst)
       return ok(listPage(rows, query))
     }
     if (tail[0] === 'counts') return ok(requestCounts())

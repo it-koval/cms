@@ -512,7 +512,9 @@ describe('requests and their delivery to the messengers', () => {
     expect(first).toMatchObject({ total: 4, page: 1, perPage: 2 })
     expect(first.items.map((item) => item.id)).toEqual([5, 4])
     expect(second.items.map((item) => item.id)).toEqual([3, 2])
-    expect(get('media', { page: '2' }).body).toEqual({ items: [], total: 0, page: 2, perPage: 50 })
+    expect(get('media', { page: '2' }).body).toEqual({ items: [], total: 0, page: 2, perPage: 50, nextCursor: null, previousCursor: null })
+    db.requests.push({ ...row, id: 6, locale: 'kk' })
+    expect(get('requests', { locale: 'kk', perPage: '2', page: '2', cursor: first.nextCursor }).body.items.map((item) => item.id)).toEqual([3, 2])
   })
 
   const failedOne = () => get('requests').body.items.find((r) => r.st === 'failed')

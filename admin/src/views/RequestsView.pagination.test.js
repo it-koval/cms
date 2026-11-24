@@ -20,7 +20,7 @@ vi.mock('@/utils/viewport.js', async () => {
 vi.mock('@/stores/app.js', () => ({ app: { languages: { main: 'ru', list: [{ code: 'ru' }] } }, can: () => true, refreshCounters: vi.fn() }))
 vi.mock('vue-router', () => ({ useRoute: () => ({ params: {}, query: {} }), useRouter: () => ({ push: mocks.push }) }))
 vi.mock('@/api/index.js', () => ({ api: { requests: { list: mocks.list, forms: async () => [{ key: 'short', title: 'Contact' }, { key: 'long', title: 'A very long form title for customers requesting a detailed individual consultation with the project team' }] }, prefs: { get: async () => 'table', put: async () => ({}) } } }))
-vi.mock('@/components/requests/RequestDrawer.vue', () => ({ default: { render: () => null } }))
+vi.mock('@/components/requests/RequestDrawer.vue', () => ({ default: { emits: ['changed'], render() { return h('button', { 'data-request-changed': '', onClick: () => this.$emit('changed') }) } } }))
 clientComponent(Requests, source); clientComponent(Pager, pagerSource); clientComponent(Filters, filterSource); clientComponent(Modal, modalSource)
 const longTitle = 'A very long form title for customers requesting a detailed individual consultation with the project team'
 const records = Array.from({ length: 120 }, (_, index) => ({ id: index + 1, phone: '+7 900 123 45 67', dt: '2026-11-24T10:00:00Z', city: 'City', form: index % 2 ? 'long' : 'short', place: index % 2 ? longTitle : 'Contact', work: 'new' }))
@@ -70,4 +70,32 @@ it.each([375, 320, 1280])('loads the next server page and resets to page one whe
   const size = host.querySelector('.lp-s select'); size.value = '25'; size.dispatchEvent(new Event('change', { bubbles: true })); await tick()
   expect(mocks.list).toHaveBeenLastCalledWith(expect.objectContaining({ page: 1, perPage: 25, form: 'long' }))
   expect(host.querySelectorAll('tbody tr')).toHaveLength(25)
+})
+
+it('keeps the existing row connected and focused while the drawer refreshes its page', async () => {
+  await mount(375)
+  const row = host.querySelector('tbody tr')
+  row.focus()
+  let finish
+  mocks.list.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve }))
+  host.querySelector('[data-request-changed]').click(); await tick()
+  expect(host.querySelector('tbody tr')).toBe(row)
+  expect(document.activeElement).toBe(row)
+  expect(row.closest('[aria-busy]').getAttribute('aria-busy')).toBe('true')
+  finish({ items: records.slice(0, 50), total: 120, page: 1, perPage: 50 }); await tick()
+  expect(row.closest('[aria-busy]').getAttribute('aria-busy')).toBe('false')
+})
+
+it('uses the returned cursors for adjacent pages and clears them for filter changes', async () => {
+  mocks.list.mockResolvedValueOnce({ items: records.slice(0, 50), total: 120, page: 1, perPage: 50, nextCursor: 'older-than-50', previousCursor: null })
+  await mount(375)
+  mocks.list.mockResolvedValueOnce({ items: records.slice(50, 100), total: 120, page: 2, perPage: 50, nextCursor: 'older-than-100', previousCursor: 'newer-than-51' })
+  button(t('collections.lp_next')).click(); await tick()
+  expect(mocks.list).toHaveBeenLastCalledWith(expect.objectContaining({ page: 2, cursor: 'older-than-50' }))
+  button(t('collections.lp_prev')).click(); await tick()
+  expect(mocks.list).toHaveBeenLastCalledWith(expect.objectContaining({ page: 1, cursor: 'newer-than-51' }))
+  button(t('ui.filters')).click(); await tick()
+  const filter = document.querySelector('select[aria-label="' + t('ui.rq_form') + '"]')
+  filter.value = 'long'; filter.dispatchEvent(new Event('change', { bubbles: true })); await tick()
+  expect(mocks.list.mock.lastCall[0]).not.toHaveProperty('cursor')
 })

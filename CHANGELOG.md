@@ -22,7 +22,7 @@ All notable changes to ITK CMS are recorded in this file. The format follows [Ke
 
 ### Changed
 
-- Admin requests and media lists take `page` and `perPage` and return a paginated object. MCP request and media lists apply their existing `offset` and `limit` in the database. See [UPGRADE.md](UPGRADE.md#030).
+- Admin requests and media lists take `page` and `perPage` and return a paginated object. Admin and MCP lists use creation-time and ID cursors for adjacent pages. See [UPGRADE.md](UPGRADE.md#030).
 - Today reads snapshots in batches and displays the latest eight new requests with a link to the whole list. Public listings read the relevant subtree and live collection records. The media warm command reads bounded batches and reuses variant generation.
 
 - Analytics initialization uses one versioned external `defer` loader with `data-*` attributes. In `manual`, the bundle makes no provider requests or preliminary connections before `start()` and omits Metrika's `<noscript>` pixel. `auto` keeps that pixel. Verification meta tags remain available in both modes. Sites manage consent, persistence and reload after revocation, and must remove their direct analytics inserts before switching to `manual`. See [UPGRADE.md](UPGRADE.md#030).
@@ -44,7 +44,7 @@ All notable changes to ITK CMS are recorded in this file. The format follows [Ke
 - The preview opens the field clicked inside a disclosure, including marked collection records and settings in the preview language. Each photo has its own editable alt text.
 - Draft input survives a failed delete or a cancelled navigation. Escape closes the top dialog, destructive confirmations focus Cancel, and profile edits prompt before closing.
 - Collection lists show load errors with Retry and disable tree moves when a parent is missing. Field errors are associated with their inputs. Media names and request form names wrap on narrow screens.
-- Saving a page draft preserves the sitemap cache. Mail and messenger tests release the session while waiting for delivery.
+- Saving a page draft preserves the sitemap cache.
 
 - Language links, crawler files, IndexNow and critical CSS include only versions whose addresses route to their language. Moving a multilingual version preserves any live page at its old address.
 - An invalid public URL leaves public HTML and crawler routes usable. The doctor reports the invalid configuration.

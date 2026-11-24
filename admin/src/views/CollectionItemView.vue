@@ -41,7 +41,7 @@ import { t } from '@/i18n/index.js'
 import { carryTab, takeTab } from '@/components/collections/lang.js'
 import { recordChanges } from '@/utils/changes.js'
 import { isMissing, reqMessage, validate, valuesEqual } from '@/utils/fields.js'
-import { previewField } from '@/components/editor/previewTarget.js'
+import { previewField, resolvePreviewPath } from '@/components/editor/previewTarget.js'
 
 const route = useRoute()
 const router = useRouter()
@@ -312,10 +312,12 @@ async function focusError(path) {
 }
 
 // A click in the real page preview arrives on this record in the same content language.
-watch([loading, () => route.query.field], async ([busy, path]) => {
+watch([loading, () => route.query.field, () => route.query.rows], async ([busy, path, rows]) => {
   if (busy || !draft.value || typeof path !== 'string' || !can(area.value, 'view') || !previewField(tabs.value.flatMap((tab) => tab.fields), path)) return
+  const currentPath = resolvePreviewPath(tabs.value.flatMap((tab) => tab.fields), draft.value, path, rows)
+  if (!currentPath) { toast.show(t('editor.preview_item_unavailable')); return }
   await nextTick()
-  await focusError(path)
+  await focusError(currentPath)
 })
 
 /* ---------- publish / revert / delete ---------- */

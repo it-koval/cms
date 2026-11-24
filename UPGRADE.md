@@ -61,7 +61,15 @@ This section lists the manual steps a release needs, newest first.
 
 ### 0.3.0
 
-- `GET /admin/api/requests` and `GET /admin/api/media` replace their flat arrays with `{ items, total, page, perPage }`. Read `response.items` and request pages up to `ceil(total / perPage)`. The default is page 1 with 50 rows, up to 100 rows per page. MCP tools `requests_list` and `media_search` keep their `offset` and `limit` response format.
+- The **Photos** field now adds `{src, alt}` objects in the admin panel, including when `alt` is empty. Existing URL strings stay unchanged, so one field can contain both strings and objects. Update site templates before editors add new photos; render each value with a fallback for the old format:
+
+  ```twig
+  {% for p in photos %}
+      <img src="{{ p.src ?? p }}" alt="{{ p.alt ?? '' }}">
+  {% endfor %}
+  ```
+
+- `GET /admin/api/requests` and `GET /admin/api/media` replace their flat arrays with `{ items, total, page, perPage, nextCursor, previousCursor }`. The default is page 1 with 50 rows, up to 100 rows per page. Pass the returned cursor in `cursor` with the same filters to visit an adjacent page when rows may have changed. MCP tools `requests_list` and `media_search` also accept cursors and still accept `offset` and `limit`.
 - In `GET /admin/api/dashboard`, `newRequests` contains the latest eight new requests. Use `newRequestCount` for the total and the paginated requests endpoint with `status=new` for the complete list.
 
 The analytics inline initialization is replaced by one versioned external `defer` loader with `data-*` attributes. Publish the new bundle assets with `bin/console assets:install` and allow the actual asset origin and enabled provider sources in the site's CSP. The [analytics guide](packages/cms/README.md#analytics-and-verification-codes) lists `script-src`, `connect-src`, `img-src` and conditional Webvisor `frame-src` requirements.

@@ -4,7 +4,7 @@
 // hover outline with the section toolbar.
 //
 // postMessage protocol (same origin, only messages from this frame are accepted):
-//   page -> admin   itk:focus   { sec, path }   a text / photo / section was clicked: open the form of section `sec` on field `path` ('' = the section; sec '@page' = the template's own fields)
+//   page -> admin   itk:focus   { sec, path, rows? }   a text / photo / section was clicked; rows holds stable repeater identities ('' path = the section; sec '@page' = template fields)
 //   page -> admin   itk:action  { sec, act }    a toolbar button: act = edit | mv-up | mv-down | dup | toggle-hide | del (short names like up, hide are understood, too)
 //   admin -> page   itk:select  { sec, path? }  the section whose form is open (sec '' = none): the page outlines it, scrolls to it when it is off screen and flashes field `path`
 //   admin -> page   itk:reload                  reload the page keeping the scroll position (sent after the draft was saved: `reloadKey` changes)
@@ -47,7 +47,7 @@ function onMessage(e) {
   if (e.source !== win() || e.origin !== window.location.origin) return
   const d = e.data
   if (!d || typeof d !== 'object' || typeof d.type !== 'string') return
-  if (d.type === 'itk:focus') emit('focus', { sec: d.sec || '', path: d.path || '' })
+  if (d.type === 'itk:focus') emit('focus', { sec: d.sec || '', path: d.path || '', ...(Array.isArray(d.rows) ? { rows: d.rows } : {}) })
   else if (d.type === 'itk:action') {
     const act = ACT[String(d.act || '').toLowerCase()]
     if (act) emit('action', { sec: d.sec || '', act })

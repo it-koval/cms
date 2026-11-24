@@ -5,7 +5,7 @@
 // a missing translation is a choice, not an error. A site with one language shows no tags.
 // RIGHTS: every block is drawn only when the role may use it («Новые заявки» — Заявки; «Не опубликовано», «Недавно опубликовано» — pages or collections; «ИИ-агент» — a right to edit; «Просмотрено» — a right to edit requests)
 // and lists only what the role may see (the template scope of pages included). Plugins of the site may add blocks under the sections (widgets, plugins/state.js). «Ждут публикации» is for people who may publish: what an author sent «на публикацию», with «Посмотреть» into the editor.
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { api } from '@/api/index.js'
 import { app, can, canAnyCol, refreshCounters } from '@/stores/app.js'
 import Icon from '@/components/ui/Icon.vue'
@@ -40,12 +40,43 @@ const dateLabel = (() => {
   return s[0].toUpperCase() + s.slice(1)
 })()
 
+let alive = true
+let dashboardSequence = 0
+let requestSequence = 0
+let requestRevision = 0
+onBeforeUnmount(() => { alive = false; dashboardSequence++; requestSequence++ })
+
 async function load() {
+  const sequence = ++dashboardSequence
+  const revision = requestRevision
+  const requests = requestSequence
   try {
-    data.value = await api.site.getDashboard()
+    const next = await api.site.getDashboard()
+    if (!alive || sequence !== dashboardSequence) return
+    // A whole-dashboard snapshot must not undo a status change or a newer request refill.
+    if (data.value && (revision !== requestRevision || requests !== requestSequence)) {
+      next.newRequests = data.value.newRequests
+      next.newRequestCount = newRequestCount.value
+    }
+    data.value = next
     loadError.value = ''
   } catch (e) {
-    loadError.value = e.message || t('ui.today_load_failed')
+    if (alive && sequence === dashboardSequence) loadError.value = e.message || t('ui.today_load_failed')
+  }
+}
+
+async function refreshNewRequests() {
+  if (!alive) return
+  const sequence = ++requestSequence
+  const revision = requestRevision
+  try {
+    const next = await api.requests.list({ status: 'new', perPage: 8 })
+    if (!alive || sequence !== requestSequence || revision !== requestRevision || !data.value) return
+    data.value.newRequests = next.items
+    data.value.newRequestCount = next.total
+    requestRevision++
+  } catch (e) {
+    if (alive && sequence === requestSequence && revision === requestRevision) toast.error(e.message || t('ui.rq_load_failed'))
   }
 }
 onMounted(load)
@@ -85,13 +116,16 @@ async function markSeen(r) {
   busyReq.value = new Set(busyReq.value).add(r.id)
   try {
     await api.requests.update(r.id, { work: 'progress' })
-    data.value.newRequestCount = Math.max(0, newRequestCount.value - 1)
-    data.value.newRequests = data.value.newRequests.filter((x) => x.id !== r.id)
     refreshCounters()
+    if (!alive || !data.value) return
+    requestRevision++
+    if (data.value.newRequests.some((x) => x.id === r.id)) data.value.newRequestCount = Math.max(0, newRequestCount.value - 1)
+    data.value.newRequests = data.value.newRequests.filter((x) => x.id !== r.id)
     toast.show(t('ui.today_seen_toast', { id: r.id, status: workLabel('progress') }), {
       undoLabel: t('ui.toast_return'),
-      undo: async () => { await api.requests.update(r.id, { work: 'new' }); await Promise.all([load(), refreshCounters()]) },
+      undo: async () => { await api.requests.update(r.id, { work: 'new' }); requestRevision++; await Promise.all([refreshNewRequests(), refreshCounters()]) },
     })
+    await refreshNewRequests()
   } catch (e) {
     toast.error(e.message)
   } finally {

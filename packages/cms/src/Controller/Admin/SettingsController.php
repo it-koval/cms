@@ -15,7 +15,6 @@ use Itk\Cms\Request\MaxNotifier;
 use Itk\Cms\Request\TelegramNotifier;
 use Itk\Cms\Schema\Schema;
 use Itk\Cms\Security\Access;
-use Itk\Cms\Security\SessionWork;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpKernel\Attribute\AsController;
@@ -47,7 +46,6 @@ final class SettingsController extends AbstractApiController
         private readonly FieldAccess $fields,
         private readonly SiteMailer $mailer,
         private readonly AdminLocale $adminLocale,
-        private readonly SessionWork $sessionWork,
     ) {
     }
 
@@ -179,11 +177,9 @@ final class SettingsController extends AbstractApiController
                 throw ContentException::invalid($error);
             }
         }
-        $this->sessionWork->run($request, static function () use ($chats, $send, $text): void {
-            foreach ($chats as $chat) {
-                $send($chat, $text);
-            }
-        });
+        foreach ($chats as $chat) {
+            $send($chat, $text);
+        }
 
         return $this->json(['ok' => true, 'chat' => $label, 'sent' => \count($chats)]);
     }
