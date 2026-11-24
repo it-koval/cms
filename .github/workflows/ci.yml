@@ -28,6 +28,7 @@ jobs:
           - { php: '8.3', symfony: '7.4.*', postgres: '16', dependencies: lowest }
           - { php: '8.3', symfony: '7.4.*', postgres: '17', dependencies: stable }
           - { php: '8.4', symfony: '7.4.*', postgres: '17', dependencies: stable, max_bundle: true }
+          - { php: '8.4', symfony: '8.1.*', postgres: '17', dependencies: lowest }
           - { php: '8.4', symfony: '8.1.*', postgres: '17', dependencies: stable }
           - { php: '8.5', symfony: '8.1.*', postgres: '17', dependencies: stable }
 
