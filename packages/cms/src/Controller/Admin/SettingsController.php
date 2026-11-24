@@ -56,7 +56,7 @@ final class SettingsController extends AbstractApiController
         if ('notifications' === $request->query->get('scope')) {
             $this->access->require(self::NOTIFICATIONS, 'view');
             $all = $this->settings->notificationSettings();
-            $this->telegramKeys($all);
+            $this->telegramKeys($all, true);
 
             return $this->json($all);
         }
@@ -75,7 +75,7 @@ final class SettingsController extends AbstractApiController
         if ('notifications' === $request->query->get('scope')) {
             $this->access->require(self::NOTIFICATIONS, 'edit');
             $merged = $this->settings->updateNotifications($patch, $locale);
-            $this->telegramKeys($merged);
+            $this->telegramKeys($merged, true);
 
             return $this->json($merged);
         }
@@ -126,8 +126,14 @@ final class SettingsController extends AbstractApiController
     }
 
     /** @param array<string, mixed> $settings */
-    private function telegramKeys(array &$settings): void
+    private function telegramKeys(array &$settings, bool $notifications = false): void
     {
+        foreach (['tgRoutes', 'maxRoutes', 'mailRoutes'] as $key) {
+            if (\array_key_exists($key, $settings) && ($notifications || null === $this->schema->settingsField($key))) {
+                // PHP encodes [] and a route for the form key "0" as arrays; the API always exposes maps.
+                $settings[$key] = (object) $settings[$key];
+            }
+        }
         if ($this->access->can(self::NOTIFICATIONS, 'view')) {
             $settings['tgFallback'] = $this->settings->hasFallbackChat();
             $settings['tgReady'] = $this->telegram->isConnected();
@@ -135,7 +141,7 @@ final class SettingsController extends AbstractApiController
             $settings['maxReady'] = $this->max->isConnected();
             $settings['mailReady'] = $this->mailer->isConfigured();
         } else {
-            foreach (['tgOn', 'tgRoutes', 'maxOn', 'maxRoutes', 'mailRoutes'] as $key) {
+            foreach (Schema::CORE_SETTING_KEYS as $key) {
                 if (null === $this->schema->settingsField($key)) {
                     unset($settings[$key]);
                 }

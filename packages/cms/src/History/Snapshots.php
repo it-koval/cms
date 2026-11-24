@@ -129,7 +129,7 @@ final class Snapshots
             $title = (string) ($snapshot['name'] ?? $key);
         } else {
             $title = match ($key) {
-                'notifications' => I18n::t('content.history_notifications'),
+                'notifications', Revision::NOTIFICATION_SETTINGS_KEY => I18n::t('content.history_notifications'),
                 'seo-files' => I18n::t('content.history_seo'),
                 default => '',
             };

@@ -9,8 +9,10 @@ use Itk\Cms\Health\HealthService;
 use Itk\Cms\Health\LivenessProbe;
 use Itk\Cms\Health\MessengerMonitor;
 use Itk\Cms\Health\UploadsHealthCheck;
+use Itk\Cms\I18n\I18n;
 use Itk\Cms\Repository\UserRepository;
 use Itk\Cms\Tests\App\TestKernel;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use Symfony\Bundle\FrameworkBundle\Console\Application;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
@@ -56,6 +58,36 @@ final class OpsF2Test extends KernelTestCase
             self::assertSame(10 === $length, null !== self::getContainer()->get(UserRepository::class)->findOneByEmail($email));
         }
         self::assertStringContainsString('10', $command->getDefinition()->getOption('password')->getDescription());
+    }
+
+    #[Test]
+    #[DataProvider('consoleLocales')]
+    public function requestRecoveryCommandsUseTheConsoleLocale(string $locale): void
+    {
+        self::bootKernel(['framework' => ['default_locale' => $locale]]);
+        $console = new Application(self::$kernel);
+        $recover = $console->find('itk:requests:recover');
+        $resolve = $console->find('itk:requests:mail:resolve');
+        self::assertSame(I18n::t('ops.cmd_requests_recover_description'), $recover->getDescription());
+        self::assertSame(I18n::t('ops.cmd_requests_mail_resolve_description'), $resolve->getDescription());
+        self::assertSame(I18n::t('ops.requests_mail_resolve_recipient'), $resolve->getDefinition()->getArgument('recipient')->getDescription());
+        self::assertSame(I18n::t('ops.requests_mail_resolve_legacy_checked'), $resolve->getDefinition()->getOption('legacy-checked')->getDescription());
+        self::assertSame(I18n::t('ops.requests_mail_resolve_help'), $resolve->getHelp());
+        $tester = new CommandTester($resolve);
+        self::assertSame(2, $tester->execute(['request' => '0', 'recipient' => 'recipient@example.test', 'outcome' => 'sent']));
+        self::assertSame(I18n::t('ops.requests_mail_resolve_invalid'), \trim($tester->getDisplay()));
+        self::assertSame(2, $tester->execute(['request' => '0', '--legacy-checked' => true]));
+        self::assertSame(I18n::t('ops.requests_mail_resolve_legacy_invalid'), \trim($tester->getDisplay()));
+        self::assertSame(1, $tester->execute(['request' => '2147483647', '--legacy-checked' => true]));
+        self::assertSame(I18n::t('ops.requests_mail_resolve_legacy_missing'), \trim($tester->getDisplay()));
+    }
+
+    /** @return iterable<string, array{string}> */
+    public static function consoleLocales(): iterable
+    {
+        foreach (['en', 'ru', 'kk'] as $locale) {
+            yield $locale => [$locale];
+        }
     }
 
     #[Test]

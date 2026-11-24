@@ -7,11 +7,15 @@ namespace Itk\Cms\Request\Max;
 use Itk\Cms\Bots\BotSettings;
 use Itk\Cms\I18n\I18n;
 use Itk\Cms\Request\DeliveryUncertainException;
+use Itk\Cms\Request\HttpDeliveryFailure;
 use MaxMessenger\Bot\Exception\Validation\ValidationException;
 use MaxMessenger\Bot\MaxApiClient;
 use MaxMessenger\Bot\MaxApiConfig;
 use MaxMessenger\Bot\Model\Enum\TextFormat;
 use MaxMessenger\Bot\Model\Request\NewMessageBody;
+use Mj4444\SimpleHttpClient\CurlHttpClient;
+use Mj4444\SimpleHttpClient\Exceptions\GeneralException;
+use Mj4444\SimpleHttpClient\Exceptions\HttpClientErrorException;
 use Mj4444\SimpleHttpClient\Exceptions\HttpResponse\Http\HttpException;
 use Psr\Log\LoggerInterface;
 use Symfony\Contracts\Service\ResetInterface;
@@ -110,11 +114,25 @@ final class MaxApiSender implements MaxSender, ResetInterface
         if (false === $id) {
             throw new MaxDeliveryException('MAX chat id must be a whole number');
         }
+        $wire = null;
         try {
+            $wire = $this->api->getHttpClient()->getHttpClient();
+            if ($wire instanceof CurlHttpClient) {
+                // The optional SDK otherwise discards progress on failure, making connect and response timeouts indistinguishable.
+                $wire->curlInfoRequired = true;
+                $wire->lastCurlInfo = null;
+            }
             $this->api->sendMessageToChat($id, new NewMessageBody(self::cut($html), format: TextFormat::Html), true);
         } catch (\Throwable $e) {
             $status = $e instanceof HttpException ? $e->getResponse()->getHttpCode() : 0;
-            if (!$e instanceof ValidationException && ($status < 400 || $status >= 500 || 408 === $status)) {
+            $info = $wire instanceof CurlHttpClient ? ($wire->lastCurlInfo ?? []) : [];
+            $connectionFailure = \in_array($e->getCode(), [GeneralException::COULDNT_RESOLVE_HOST, GeneralException::COULDNT_CONNECT, GeneralException::SSL_CONNECT_ERROR, GeneralException::SSL_CERTPROBLEM, GeneralException::SSL_CIPHER, GeneralException::SSL_PEER_CERTIFICATE], true)
+                && 0 === (int) ($info['redirect_count'] ?? 0) && 0 === (int) ($info['http_code'] ?? 0)
+                && 0.0 === (float) ($info['size_upload'] ?? 0) && 0 === (int) ($info['request_size'] ?? 0);
+            $beforeSend = $e instanceof HttpClientErrorException && (
+                $connectionFailure || HttpDeliveryFailure::beforeSend($info)
+            );
+            if (!$beforeSend && !$e instanceof ValidationException && ($status < 400 || $status >= 500 || 408 === $status)) {
                 throw new DeliveryUncertainException(I18n::t('http.request_delivery_uncertain'));
             }
             $reason = '' !== \trim($e->getMessage()) ? $e->getMessage() : $e::class;

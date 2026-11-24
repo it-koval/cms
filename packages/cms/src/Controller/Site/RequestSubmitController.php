@@ -47,7 +47,7 @@ final class RequestSubmitController
     #[Route('/request/{form}', name: 'itk_request_submit', requirements: ['form' => '[A-Za-z0-9][A-Za-z0-9_\-]*'], methods: ['POST'])]
     public function __invoke(Request $request, string $form): JsonResponse
     {
-        // An invalid explicit choice is remembered until after rate limiting and the honeypot.
+        // Stale forms keep working: an invalid explicit choice uses the primary language.
         $locale = $this->contentLocales->isConfigured() ? $this->locale($request) : ($request->attributes->get('_locale') ?? $this->mainLocale);
         $invalidLocale = null === $locale;
         $locale ??= $this->contentLocales->main();
@@ -71,7 +71,7 @@ final class RequestSubmitController
                 return new JsonResponse(['success' => true]); // a robot: pretend it worked, save nothing
             }
             if ($invalidLocale) {
-                throw ContentException::invalid(I18n::t('http.no_such_language'));
+                $this->adminLocale->logger()->warning('ITK CMS: invalid request form locale; using the primary locale.', ['form' => $form, 'locale' => $locale]);
             }
             $this->requests->submit($form, $input, [
                 'ip' => $request->getClientIp(),

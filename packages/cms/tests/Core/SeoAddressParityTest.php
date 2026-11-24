@@ -121,6 +121,74 @@ final class SeoAddressParityTest extends WebTestCase
     }
 
     #[Test]
+    #[DataProvider('siteRouteLocales')]
+    public function aSiteRouteUsesItsExplicitLanguageOrPathPrefixForSeo(string $path, string $title): void
+    {
+        $client = static::createClient();
+        $client->disableReboot();
+        $rules = self::getContainer()->get(SeoRuleService::class);
+        $this->rules[] = $rules->create(['path' => $path, 'locale' => 'ru', 'title' => 'Russian rule'])->id;
+        $this->rules[] = $rules->create(['path' => $path, 'locale' => 'kk', 'title' => 'Kazakh rule'])->id;
+
+        $client->request('GET', $path);
+        self::assertResponseIsSuccessful();
+        self::assertStringContainsString('<title>' . $title . '</title>', (string) $client->getResponse()->getContent());
+
+        $check = self::getContainer()->get(SeoAddressCheck::class)->check($path);
+        self::assertSame('route', $check['answer']['kind']);
+        self::assertSame(['value' => $title, 'source' => 'rule'], $check['meta']['title']);
+    }
+
+    /** @return iterable<string, array{string, string}> */
+    public static function siteRouteLocales(): iterable
+    {
+        yield 'path prefix' => ['/kk/test-analytics/controller', 'Kazakh rule'];
+        yield 'explicit route locale' => ['/kk/test-analytics/explicit-locale', 'Russian rule'];
+    }
+
+    #[Test]
+    public function encodedRuleAndRequestPathsMatchTheSameCyrillicRoute(): void
+    {
+        $client = static::createClient();
+        $client->disableReboot();
+        $path = '/kk/кафе';
+        $encoded = '/kk/' . \rawurlencode('кафе');
+        $c = self::getContainer();
+        $rule = $c->get(SeoRuleService::class)->create(['path' => $encoded, 'locale' => 'kk', 'title' => 'Cafe rule']);
+        $this->rules[] = $rule->id;
+        self::assertSame($path, $rule->path);
+
+        $client->request('GET', $encoded);
+        self::assertResponseIsSuccessful();
+        self::assertStringContainsString('<title>Cafe rule</title>', (string) $client->getResponse()->getContent());
+        $check = $c->get(SeoAddressCheck::class)->check($encoded);
+        self::assertSame($path, $check['path']);
+        self::assertSame(['value' => 'Cafe rule', 'source' => 'rule'], $check['meta']['title']);
+    }
+
+    #[Test]
+    public function anEncodedSlashNeverSharesTheNestedPathSeoRule(): void
+    {
+        static::createClient();
+        $c = self::getContainer();
+        $nested = '/guides/summer';
+        $encoded = '/guides%2Fsummer';
+        $this->rules[] = $c->get(SeoRuleService::class)->create(['path' => $nested, 'robots' => 'noindex,follow'])->id;
+        $pages = $c->get(PageService::class);
+        $page = $pages->create(['template' => 'default', 'locale' => 'ru', 'url' => $encoded, 'title' => 'Summer']);
+        $this->pages[] = $page['id'];
+        $pages->publish($page['id'], 'ru');
+
+        $seo = $c->get(\Itk\Cms\Content\SeoResolver::class);
+        self::assertSame('noindex,follow', $seo->forRequest(\Symfony\Component\HttpFoundation\Request::create($nested))?->robots);
+        self::assertNull($seo->forRequest(\Symfony\Component\HttpFoundation\Request::create($encoded)));
+        $sitemap = $c->get(\Itk\Cms\Content\IndexablePages::class)->rows();
+        self::assertContains($page['id'], \array_column($sitemap, 'pageId'));
+        self::assertSame([], $c->get(SeoAddressCheck::class)->check($encoded)['rules']);
+        self::assertSame('/guides%2fsummer', SeoRuleService::normalizePath($encoded));
+    }
+
+    #[Test]
     public function anEncodedRootMatchesThePublicHome(): void
     {
         $client = static::createClient();

@@ -101,9 +101,11 @@ final class TelegramNotifier implements ChannelNotifier
             return ChannelOutcome::pending();
         }
 
-        $parts = $this->parts($r, $resend);
+        $texts = $r->channelTexts(Request::CHANNEL_TELEGRAM);
+        $parts = null === $texts ? $this->parts($r, $resend) : MessageParts::restore($texts, Request::CHANNEL_TELEGRAM);
         $errors = [];
         $uncertain = false;
+        $refused = false;
         foreach (\array_unique($chats) as $chat) {
             foreach ($parts->texts as $i => $text) {
                 try {
@@ -113,11 +115,8 @@ final class TelegramNotifier implements ChannelNotifier
                                 (new TelegramOptions())->chatId($chat)->parseMode(TelegramOptions::PARSE_MODE_HTML)->disableWebPagePreview(true),
                             ));
                         } catch (TransportException $failure) {
-                            if (null === $failure->getPrevious()) {
-                                $status = $failure->getResponse()->getInfo('http_code');
-                                if ($status >= 400 && $status < 500 && 408 !== $status) {
-                                    throw new DeliveryRefusedException($failure->getMessage());
-                                }
+                            if (TelegramTransportGuard::refused($failure)) {
+                                throw new DeliveryRefusedException($failure->getMessage());
                             }
                             throw new DeliveryUncertainException(I18n::t('http.request_delivery_uncertain'));
                         } catch (TransportExceptionInterface|\Symfony\Contracts\HttpClient\Exception\ExceptionInterface) {
@@ -126,6 +125,7 @@ final class TelegramNotifier implements ChannelNotifier
                     });
                 } catch (DeliveryRefusedException|DeliveryUncertainException $e) {
                     $uncertain = $uncertain || $e instanceof DeliveryUncertainException;
+                    $refused = $refused || $e instanceof DeliveryRefusedException;
                     $error = $parts->failure($i, $this->connection->scrubError($e->getMessage()));
                     $errors[] = $chat . ': ' . $error;
                     $this->logger->error('Telegram delivery failed for request #{id}, chat {chat}: {error}', ['id' => $r->id, 'chat' => $chat, 'error' => $error]);
@@ -134,7 +134,8 @@ final class TelegramNotifier implements ChannelNotifier
             }
         }
 
-        return $uncertain ? ChannelOutcome::uncertain(\implode("\n", $errors)) : ([] !== $errors ? ChannelOutcome::failed(\implode("\n", $errors)) : ChannelOutcome::sent());
+        // An uncertain chat keeps its checkpoint and waits for an operator; other chats' definite refusals still need the queue retry.
+        return $uncertain && !$refused ? ChannelOutcome::uncertain(\implode("\n", $errors)) : ([] !== $errors ? ChannelOutcome::failed(\implode("\n", $errors)) : ChannelOutcome::sent());
     }
 
     /** @internal */

@@ -171,6 +171,7 @@
 'content.history_page_restored': 'Page restored from the trash'
 'content.history_item_restored': 'Record restored from the trash'
 'content.history_baseline': 'Version before the history began'
+'content.history_details_restricted': 'Details of this version are hidden because access to old fields cannot be verified.'
 'content.setting_tg_on': 'Telegram notifications'
 'content.setting_tg_routes': 'Chats for requests'
 'content.setting_max_on': 'MAX notifications'

@@ -66,7 +66,7 @@ class Request
     #[ORM\Column(name: 'delivery_error', type: Types::TEXT, nullable: true)]
     public ?string $deliveryError = null;
 
-    /** @var array<string, array{state: string, error: ?string, job?: string, phase?: string, lease?: int, resend?: bool, parts?: array<string, array{hash: string, state: string}>, announcements?: list<array{delivered: bool, cancelled: bool, error: ?string}>, announcementRetryAt?: int}> */
+    /** @var array<string, array{state: string, error: ?string, job?: string, phase?: string, lease?: int, resend?: bool, parts?: array<string, array{hash: string, state: string}>, texts?: non-empty-list<string>, announcements?: list<array{delivered: bool, cancelled: bool, error: ?string}>, announcementRetryAt?: int}> */
     #[ORM\Column(type: Types::JSON, options: ['jsonb' => true, 'default' => '{}'])]
     private array $channels = [];
 
@@ -175,15 +175,15 @@ class Request
         return $this->channels[$channel]['lease'] ?? 0;
     }
 
-    public function markChannelJob(string $channel, string $job, string $phase, int $lease = 0): void
+    public function markChannelJob(string $channel, string $job, string $phase, int $lease = 0, bool $preserveProgress = false): void
     {
         // Materialize the legacy aggregate before adding job metadata for another channel.
         $states = $this->channelStates();
         foreach ($states as $key => $state) {
             $this->channels[$key] = ($this->channels[$key] ?? []) + $state;
         }
-        if ($job !== $this->channelJob($channel)) {
-            unset($this->channels[$channel]['parts'], $this->channels[$channel]['resend']);
+        if (!$preserveProgress && $job !== $this->channelJob($channel) && !$this->hasUnresolvedChannelParts($channel)) {
+            unset($this->channels[$channel]['parts'], $this->channels[$channel]['resend'], $this->channels[$channel]['texts']);
         }
         $this->channels[$channel] = \array_replace($this->channels[$channel] ?? ['state' => self::DELIVERY_PENDING, 'error' => null], ['job' => $job, 'phase' => $phase, 'lease' => $lease]);
     }
@@ -192,6 +192,29 @@ class Request
     public function channelParts(string $channel): array
     {
         return $this->channels[$channel]['parts'] ?? [];
+    }
+
+    public function hasUnresolvedChannelParts(string $channel): bool
+    {
+        foreach ($this->channelParts($channel) as $part) {
+            if ('sending' === $part['state']) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /** @return non-empty-list<string>|null */
+    public function channelTexts(string $channel): ?array
+    {
+        return $this->channels[$channel]['texts'] ?? null;
+    }
+
+    /** @param non-empty-list<string> $texts */
+    public function markChannelTexts(string $channel, array $texts): void
+    {
+        $this->channels[$channel]['texts'] = $texts;
     }
 
     public function channelResend(string $channel): ?bool

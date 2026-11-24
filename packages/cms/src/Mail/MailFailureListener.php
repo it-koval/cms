@@ -66,10 +66,19 @@ final class MailFailureListener
         }
     }
 
-    /** One notification for a matter: the request, else the kind of the letter and its subject. */
+    /** One request warning per mail recipient; other channels and recipients resolve independently. */
     public static function key(SendMail $mail): string
     {
+        if (SendMail::REQUEST === $mail->kind && null !== $mail->ref && '' !== $mail->ref) {
+            return self::requestKey($mail->ref, $mail->to);
+        }
+
         return Notification::MAIL_FAILED . ':' . ($mail->ref ?? $mail->kind . ':' . \substr(\hash('sha256', $mail->subject), 0, 12));
+    }
+
+    public static function requestKey(string $requestId, string $recipient): string
+    {
+        return Notification::MAIL_FAILED . ':' . $requestId . ':' . RequestMailCheckpoint::recipientKey($requestId, $recipient);
     }
 
     private static function subject(SendMail $mail): string

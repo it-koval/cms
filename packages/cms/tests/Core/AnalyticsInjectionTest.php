@@ -251,6 +251,8 @@ final class AnalyticsInjectionTest extends WebTestCase
         $client = $this->client();
         $id = $this->publish('/test-an-untouched');
         $this->configure(['yandexMetrikaId' => '12345678', 'googleAnalyticsId' => 'G-ABCD1234', 'yandexVerification' => self::YANDEX_CODE, 'googleVerification' => self::GOOGLE_CODE]);
+        // An unrelated notification address can contain the same digits as the counter.
+        $this->setting('tgRoutes', ['*' => '-1001234567890']);
         $this->signIn($client, 'untouched');
 
         $client->request('GET', '/admin/preview/' . $id);
@@ -268,7 +270,9 @@ final class AnalyticsInjectionTest extends WebTestCase
         self::assertResponseIsSuccessful();
         self::assertStringContainsString('application/json', (string) $client->getResponse()->headers->get('Content-Type'));
         $api = (string) $client->getResponse()->getContent();
-        self::assertSame('12345678', \json_decode($api, true)['yandexMetrikaId'], 'the API shows the value as a value and nothing else');
+        $values = \json_decode($api, true, flags: \JSON_THROW_ON_ERROR);
+        self::assertSame('12345678', $values['yandexMetrikaId'], 'the API shows the configured counter value');
+        self::assertSame('-1001234567890', $values['tgRoutes']['*'], 'unrelated notification routes remain visible as JSON values');
 
         $client->request('GET', '/sitemap.xml');
         self::assertResponseIsSuccessful();
@@ -281,7 +285,8 @@ final class AnalyticsInjectionTest extends WebTestCase
             self::assertStringNotContainsString($mark, $sitemap, 'sitemap ' . $mark);
         }
         self::assertStringNotContainsString('mc.yandex.ru', $api);
-        self::assertSame(\substr_count($api, '12345678'), 1, 'one copy of the value, the one in the JSON');
+        self::assertStringNotContainsString('data-itk-analytics', $api);
+        self::assertStringNotContainsString('<script', $api);
 
         $client->request('GET', '/test-an-untouched');
         self::assertLoader((string) $client->getResponse()->getContent(), '12345678', 'G-ABCD1234');

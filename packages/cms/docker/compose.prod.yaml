@@ -19,6 +19,7 @@ x-build: &build
 
 x-app: &app
   <<: *runtime
+  security_opt: ["no-new-privileges:true", "seccomp=./docker/chrome-seccomp.json"]
   image: ${COMPOSE_PROJECT_NAME:?set COMPOSE_PROJECT_NAME}-app:${DEPLOY_IMAGE_TAG:?set DEPLOY_IMAGE_TAG}
   environment:
     APP_ENV: prod

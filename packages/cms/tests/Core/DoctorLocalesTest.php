@@ -44,6 +44,7 @@ use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Bundle\SecurityBundle\Security;
 use Symfony\Component\Cache\Adapter\ArrayAdapter;
 use Symfony\Component\DependencyInjection\ServiceLocator;
+use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\RequestStack;
 use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
 
@@ -71,7 +72,7 @@ final class DoctorLocalesTest extends KernelTestCase
      * @param list<array{pageId: string, draftUrl: ?string, publishedUrl: ?string}> $addresses
      * @param array<array-key, mixed> $shared
      */
-    private function doctor(?ContentLocales $locales = null, array $addresses = [], bool $home = true, ?string $base = 'https://example.test', string $dir = '', array $shared = []): Doctor
+    private function doctor(?ContentLocales $locales = null, array $addresses = [], bool $home = true, ?string $base = 'https://example.test', string $dir = '', array $shared = [], ?Request $request = null): Doctor
     {
         $builder = new SchemaBuilder();
         $builder->settings('localized')->fields(Text::make('Greeting', 'greeting')->translatable());
@@ -100,7 +101,11 @@ final class DoctorLocalesTest extends KernelTestCase
         $translations = $this->createStub(PageTranslationRepository::class);
         $translations->method('findAddresses')->willReturnCallback(static fn (string $locale): array => \array_values(\array_filter($addresses, static fn (array $row): bool => ($row['locale'] ?? 'ru') === $locale)));
         $translations->method('findLive')->willReturnCallback(static fn (string $locale, string $path): ?PageTranslation => $home && 'ru' === $locale && '/' === $path ? new PageTranslation(new Page(), 'ru') : null);
-        $url = new PublicUrl(new RequestStack(), $settings, $base);
+        $requests = new RequestStack();
+        if (null !== $request) {
+            $requests->push($request);
+        }
+        $url = new PublicUrl($requests, $settings, $base, debug: true);
         $services = new ServiceLocator([
             SettingsService::class => static fn () => $settings,
             Schema::class => static fn () => $schema,
@@ -203,6 +208,26 @@ final class DoctorLocalesTest extends KernelTestCase
                 self::assertStringContainsString('greeting', $settings->message);
                 self::assertStringContainsString('header', $menus->message);
             }
+        }
+    }
+
+    #[Test]
+    public function theSeoBaseUsesTheSiteConfigurationEvenInATrustedRequest(): void
+    {
+        $trusted = Request::getTrustedHosts();
+        Request::setTrustedHosts(['^trusted\.example$']);
+        try {
+            $request = Request::create('http://trusted.example:8080/kk');
+            $name = I18n::t('ops.doctor_name_seo_base');
+            $missing = $this->checks($this->doctor(base: null, request: $request))[$name];
+            self::assertSame(HealthResult::WARN, $missing->status);
+            self::assertSame(I18n::t('ops.doctor_seo_base_missing'), $missing->message);
+
+            $fallback = $this->checks($this->doctor(base: null, shared: ['domain' => 'Configured.Example'], request: $request))[$name];
+            self::assertSame(HealthResult::OK, $fallback->status);
+            self::assertSame('https://configured.example', $fallback->message);
+        } finally {
+            Request::setTrustedHosts($trusted);
         }
     }
 

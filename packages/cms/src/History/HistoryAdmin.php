@@ -11,6 +11,8 @@ use Itk\Cms\Content\MenuService;
 use Itk\Cms\Content\PageService;
 use Itk\Cms\Content\SettingsService;
 use Itk\Cms\Entity\Revision;
+use Itk\Cms\Entity\Role;
+use Itk\Cms\Field\FieldInterface;
 use Itk\Cms\I18n\ContentLocales;
 use Itk\Cms\I18n\I18n;
 use Itk\Cms\Repository\CollectionItemRepository;
@@ -65,8 +67,10 @@ final class HistoryAdmin
         $key = $this->keyOf($kind, $id);
         $this->need($kind, $key, 'view');
 
-        $rows = $this->revisions->history($kind, $id, $locale, $limit, $offset);
-        $latest = $this->revisions->latestIds($kind, $id);
+        $currentKey = Revision::SETTINGS === $kind && 'notifications' === $id ? Revision::NOTIFICATION_SETTINGS_KEY : null;
+        $visibleKey = $this->mayReadArchivedSettings('view') ? null : $currentKey;
+        $rows = $this->revisions->history($kind, $id, $locale, $limit, $offset, $visibleKey);
+        $latest = $this->revisions->latestIds($kind, $id, $currentKey);
         $existing = match ($kind) {
             Revision::PAGE => $this->pageRepo->find($id)?->translations->getKeys() ?? [],
             Revision::ITEM => \array_keys($this->items->find($id)->translations ?? []),
@@ -75,7 +79,7 @@ final class HistoryAdmin
 
         return [
             'items' => \array_map(fn (Revision $r): array => $this->present($r, $key) + ['current' => !\in_array($r->action, [Revision::DELETE, Revision::DELETE_TRANSLATION], true) && (null === $existing || \in_array($r->locale, $existing, true)) && ($latest[$r->locale] ?? null) === $r->id], $rows),
-            'total' => $this->revisions->countOf($kind, $id, $locale),
+            'total' => $this->revisions->countOf($kind, $id, $locale, $visibleKey),
             'limit' => $limit,
             'offset' => $offset,
             'keep' => $this->history->keep(),
@@ -109,12 +113,19 @@ final class HistoryAdmin
             return $out;
         }
         $now = $this->now($r);
-        $latest = $this->revisions->latest($r->kind, $r->resourceId, $r->locale);
+        $latest = $this->revisions->latest($r->kind, $r->resourceId, $r->locale, Revision::SETTINGS === $r->kind && 'notifications' === $r->settingsGroup() ? Revision::NOTIFICATION_SETTINGS_KEY : null);
         $out['current'] = null !== $now && null !== $latest && $latest->id === $r->id;
         $out['canRestore'] = null !== $now && (!$this->locales->isConfigured() || $this->locales->has($r->locale)) && $this->mayRevision($r, 'edit', $key);
         if (null !== $now) {
-            $rows = $this->snapshots->diff($r->kind, $r->resourceKey, $r->snapshot, $now);
-            $out['against'] = $this->visibleRows($r, $this->snapshots->cut($rows), $key);
+            if (Revision::SETTINGS === $r->kind) {
+                $group = $r->settingsGroup();
+                $rows = $this->snapshots->diff($r->kind, $group, $this->visibleSettingsSnapshot($group, $r->snapshot), $this->visibleSettingsSnapshot($group, $now));
+                $rows = $this->visibleSettingsRows($group, $rows);
+                $out['against'] = $this->snapshots->cut($rows);
+            } else {
+                $rows = $this->snapshots->diff($r->kind, $r->resourceKey, $r->snapshot, $now);
+                $out['against'] = $this->visibleRows($r, $this->snapshots->cut($rows), $key);
+            }
             $out['same'] = [] === $rows;
         }
 
@@ -134,7 +145,7 @@ final class HistoryAdmin
         if (Revision::DELETE_TRANSLATION === $r->action) {
             throw ContentException::invalid(I18n::t('content.history_cannot_restore'));
         }
-        $base = ['ok' => true, 'kind' => $r->kind, 'id' => $r->resourceId, 'key' => $r->resourceKey, 'locale' => $r->locale];
+        $base = ['ok' => true, 'kind' => $r->kind, 'id' => $r->resourceId, 'key' => $r->settingsGroup(), 'locale' => $r->locale];
 
         if (Revision::DELETE === $r->action) {
             if (!$this->inTrash($r)) {
@@ -157,7 +168,7 @@ final class HistoryAdmin
         match ($r->kind) {
             Revision::PAGE => $this->pages->restoreVersion($r->resourceId, $r->locale, (array) ($r->snapshot['draft'] ?? [])),
             Revision::ITEM => $this->collections->restoreVersion($r->resourceKey, $r->resourceId, (array) ($r->snapshot['draft'] ?? []), $r->locale),
-            Revision::SETTINGS => 'notifications' === $r->resourceKey ? $this->settings->updateNotifications($r->snapshot, $r->locale, Revision::RESTORE) : $this->settings->update($r->snapshot, $r->locale, Revision::RESTORE),
+            Revision::SETTINGS => $this->restoreSettings($r),
             Revision::MENU => $this->menus->saveMenus([$r->resourceId => (array) ($r->snapshot['items'] ?? [])], $r->locale, Revision::RESTORE),
             default => throw ContentException::invalid(I18n::t('content.history_cannot_restore')),
         };
@@ -246,6 +257,13 @@ final class HistoryAdmin
 
     private function need(string $kind, string $key, string $action): void
     {
+        if (Revision::SETTINGS === $kind && $this->isRemovedSettingsGroup($key)) {
+            if (!$this->mayReadArchivedSettings($action)) {
+                throw new AccessDeniedException(I18n::t('http.no_permission'));
+            }
+
+            return;
+        }
         [$area, $template] = $this->area($kind, $key);
         $this->access->require($area, $action, $template);
         if (Revision::ITEM === $kind && !($this->schema->collection($key)?->isVisibleTo($this->access->viewer()) ?? false)) {
@@ -262,7 +280,7 @@ final class HistoryAdmin
     private function keysOf(Revision $r, ?string $currentPageKey = null): array
     {
         if (Revision::PAGE !== $r->kind) {
-            return [$r->resourceKey];
+            return [$r->settingsGroup()];
         }
         $now = $currentPageKey ?? $this->pageRepo->find($r->resourceId)->template ?? $this->revisions->lastOf(Revision::PAGE, $r->resourceId)->resourceKey ?? null; // a deleted page: the template it had last
         $held = $r->snapshot['template'] ?? null; // what the entry holds (an entry merged across a template change before it was split kept the older key)
@@ -272,6 +290,13 @@ final class HistoryAdmin
 
     private function needRevision(Revision $r, string $action, ?string $currentPageKey = null): void
     {
+        if ($r->isLegacyNotificationSettings()) {
+            if (!$this->mayReadArchivedSettings($action)) {
+                throw new AccessDeniedException(I18n::t('http.no_permission'));
+            }
+
+            return;
+        }
         foreach ($this->keysOf($r, $currentPageKey) as $key) {
             $this->need($r->kind, $key, $action);
         }
@@ -279,6 +304,9 @@ final class HistoryAdmin
 
     private function mayRevision(Revision $r, string $action, ?string $currentPageKey = null): bool
     {
+        if ($r->isLegacyNotificationSettings()) {
+            return $this->mayReadArchivedSettings($action);
+        }
         foreach ($this->keysOf($r, $currentPageKey) as $key) {
             if (!$this->may($r->kind, $key, $action)) {
                 return false;
@@ -290,12 +318,25 @@ final class HistoryAdmin
 
     private function may(string $kind, string $key, string $action): bool
     {
+        if (Revision::SETTINGS === $kind && $this->isRemovedSettingsGroup($key)) {
+            return $this->mayReadArchivedSettings($action);
+        }
         [$area, $template] = $this->area($kind, $key);
         if (Revision::ITEM === $kind && !($this->schema->collection($key)?->isVisibleTo($this->access->viewer()) ?? false)) {
             return false;
         }
 
         return $this->access->can($area, $action, $template);
+    }
+
+    private function isRemovedSettingsGroup(string $key): bool
+    {
+        return !\in_array($key, ['notifications', 'seo-files'], true) && !isset($this->schema->settingsGroups()[$key]);
+    }
+
+    private function mayReadArchivedSettings(string $action): bool
+    {
+        return 'view' === $action && Role::ADMIN === $this->access->user()?->role && $this->access->can('set:users', 'edit');
     }
 
     /** @return array{0: string, 1: string|null} the area of rights and the template for it */
@@ -329,7 +370,12 @@ final class HistoryAdmin
                 return null !== $i ? $this->history->itemState($i, $r->locale) : null;
 
             case Revision::SETTINGS:
-                return $this->history->settingsOf($r->resourceId, 'notifications' === $r->resourceKey ? $this->settings->notificationSettings() : $this->settings->all($r->locale));
+                $group = $r->settingsGroup();
+                if ($r->isLegacyNotificationSettings() || $this->isRemovedSettingsGroup($group)) {
+                    return null;
+                }
+
+                return $this->history->settingsOf($group, 'notifications' === $group ? $this->settings->notificationSettings() : $this->settings->all($r->locale));
 
             default:
                 $a = $this->areas->find($r->resourceId);
@@ -347,7 +393,7 @@ final class HistoryAdmin
             'id' => $r->id,
             'kind' => $r->kind,
             'resourceId' => $r->resourceId,
-            'key' => $r->resourceKey,
+            'key' => $r->settingsGroup(),
             'locale' => $r->locale,
             'action' => $r->action,
             'userId' => $r->userId,
@@ -355,7 +401,7 @@ final class HistoryAdmin
             'via' => $r->via,
             'viaName' => $r->viaName,
             'title' => $canView ? $this->visibleTitle($r) : '',
-            'summary' => $canView ? $this->visibleRows($r, $r->summary, $currentPageKey) : [],
+            'summary' => $canView ? (Revision::SETTINGS === $r->kind ? $this->settingsSummary($r) : $this->visibleRows($r, $r->summary, $currentPageKey)) : [],
             'baseline' => $r->isBaseline(),
             'createdAt' => $r->createdAt->format(\DATE_ATOM),
             'updatedAt' => $r->updatedAt->format(\DATE_ATOM),
@@ -386,10 +432,12 @@ final class HistoryAdmin
      */
     private function visibleRows(Revision $r, array $rows, ?string $currentPageKey = null): array
     {
+        if (Revision::SETTINGS === $r->kind) {
+            return $this->visibleSettingsRows($r->resourceKey, $rows);
+        }
         $lists = match ($r->kind) {
             Revision::PAGE => \array_map(fn (string $k): array => $this->schema->template($k)?->fieldList() ?? [], $this->keysOf($r, $currentPageKey)),
             Revision::ITEM => [$this->schema->collection($r->resourceKey)?->fieldList() ?? []],
-            Revision::SETTINGS => [($this->schema->settingsGroups()[$r->resourceKey] ?? null)?->fieldList() ?? []],
             default => [[]],
         };
         $hidden = \array_flip(\array_merge(...\array_map($this->fields->hiddenKeys(...), $lists))); // hidden in any of the templates of a page
@@ -406,6 +454,190 @@ final class HistoryAdmin
 
             return !('edit' === ($row['kind'] ?? '') && isset($sections[(string) ($row['sec'] ?? '')][$key]));
         }));
+    }
+
+    /**
+     * @param list<array<string, mixed>> $rows
+     *
+     * @return list<array<string, mixed>>
+     */
+    private function visibleSettingsRows(string $group, array $rows): array
+    {
+        $keys = match ($group) {
+            'notifications' => Schema::CORE_SETTING_KEYS,
+            'seo-files' => Schema::CRAWLER_SETTING_KEYS,
+            default => \array_map(static fn (FieldInterface $field): string => $field->key(), $this->fields->visible(($this->schema->settingsGroups()[$group] ?? null)?->fieldList() ?? [])),
+        };
+        $allowed = \array_fill_keys($keys, true);
+
+        return \array_values(\array_filter($rows, static fn (array $row): bool => match ($row['kind'] ?? '') {
+            'field' => isset($allowed[(string) ($row['key'] ?? '')]),
+            'baseline' => true,
+            default => false,
+        }));
+    }
+
+    /** @param array<string, mixed> $snapshot
+     * @return array<string, mixed>
+     */
+    private function visibleSettingsSnapshot(string $group, array $snapshot): array
+    {
+        $snapshot = $this->history->settingsOf($group, $snapshot);
+        if (\in_array($group, ['notifications', 'seo-files'], true)) {
+            return $snapshot;
+        }
+
+        return $this->visibleSettingsFields(($this->schema->settingsGroups()[$group] ?? null)?->fieldList() ?? [], $snapshot);
+    }
+
+    /** @param list<FieldInterface> $fields
+     * @param array<string, mixed> $snapshot
+     *
+     * @return array<string, mixed>
+     */
+    private function visibleSettingsFields(array $fields, array $snapshot, bool $nested = false): array
+    {
+        $out = $nested && \array_key_exists('_id', $snapshot) ? ['_id' => $snapshot['_id']] : [];
+        $fullAdmin = $this->access->viewer()->isSystem() || (Role::ADMIN === $this->access->user()?->role && $this->access->can('set:users', 'edit'));
+        foreach ($this->fields->visible($fields) as $field) {
+            $key = $field->key();
+            if ($field->isNote() || !\array_key_exists($key, $snapshot) || ($nested && $field->isLocked() && !$fullAdmin)) {
+                continue;
+            }
+            if (!\in_array($field->type(), ['repeater', 'image', 'photos', 'link', 'relation'], true) && null !== $snapshot[$key] && !\is_scalar($snapshot[$key])) {
+                continue; // An old compound value must not be described under today's scalar field.
+            }
+            $out[$key] = $snapshot[$key];
+            if ('repeater' === $field->type()) {
+                $out[$key] = [];
+                foreach ((array) $snapshot[$key] as $row) {
+                    if (\is_array($row)) {
+                        $out[$key][] = $this->visibleSettingsFields($field->subFields(), $row, true);
+                    }
+                }
+            }
+        }
+
+        return $out;
+    }
+
+    /** @return list<array<string, mixed>> */
+    private function settingsSummary(Revision $r): array
+    {
+        $group = $r->settingsGroup();
+        if (\in_array($group, ['notifications', 'seo-files'], true)) {
+            return $this->visibleSettingsRows($group, $r->summary);
+        }
+        $previous = $r->isBaseline() ? null : $this->revisions->before($r);
+        if (null !== $previous && $previous->resourceKey === $r->resourceKey) {
+            return $this->visibleSettingsRows($group, $this->snapshots->summary(
+                $r->kind,
+                $group,
+                $r->action,
+                $this->visibleSettingsSnapshot($group, $r->snapshot),
+                $this->visibleSettingsSnapshot($group, $previous->snapshot),
+            ));
+        }
+
+        // Without the previous snapshot, even a scalar field may once have been a repeater.
+        // Stored descriptions cannot prove access to their old values or row titles.
+        $rows = [];
+        $restricted = false;
+        foreach ($this->visibleSettingsRows($group, $r->summary) as $row) {
+            if ('field' === ($row['kind'] ?? '')) {
+                $restricted = true;
+            } else {
+                $rows[] = $row;
+            }
+        }
+        if ($restricted) {
+            $rows[] = ['kind' => 'meta', 'name' => '', 'label' => I18n::t('content.history_details_restricted'), 'val' => '', 'old' => ''];
+        }
+
+        return $rows;
+    }
+
+    /** @return array<string, mixed> */
+    private function restoreSettings(Revision $r): array
+    {
+        $group = $r->settingsGroup();
+        if ('notifications' === $group) {
+            return $this->settings->updateNotifications($r->snapshot, $r->locale, Revision::RESTORE);
+        }
+        $snapshot = $this->history->settingsOf($group, $r->snapshot);
+        $fields = \array_values(\array_filter(($this->schema->settingsGroups()[$group] ?? null)?->fieldList() ?? [], static fn (FieldInterface $field): bool => \array_key_exists($field->key(), $snapshot)));
+        $patch = $this->mergeSettingsFields($fields, $snapshot, $this->settings->all($r->locale));
+
+        return $this->settings->update($patch, $r->locale, Revision::RESTORE);
+    }
+
+    /** Restore writable leaves; protected repeater values belong to the current row identity.
+     * @param list<FieldInterface> $fields
+     * @param array<string, mixed> $snapshot
+     * @param array<string, mixed> $current
+     *
+     * @return array<string, mixed>
+     */
+    private function mergeSettingsFields(array $fields, array $snapshot, array $current): array
+    {
+        $writable = \array_fill_keys(\array_map(static fn (FieldInterface $field): string => $field->key(), $this->fields->writable($fields)), true);
+        foreach ($fields as $field) {
+            $key = $field->key();
+            if (!isset($writable[$key])) {
+                if (\array_key_exists($key, $current)) {
+                    $snapshot[$key] = $current[$key];
+                } else {
+                    unset($snapshot[$key]);
+                }
+                continue;
+            }
+            if ('repeater' !== $field->type()) {
+                continue;
+            }
+            $snapshot[$key] = \is_array($snapshot[$key] ?? null) ? $snapshot[$key] : [];
+            $byId = [];
+            foreach ((array) ($current[$key] ?? []) as $row) {
+                if (\is_array($row) && \is_string($row['_id'] ?? null) && '' !== $row['_id']) {
+                    $byId[$row['_id']] = $row;
+                }
+            }
+            foreach ($snapshot[$key] as $index => $row) {
+                if (\is_array($row)) {
+                    $snapshot[$key][$index] = $this->mergeSettingsFields($field->subFields(), $row, $byId[(string) ($row['_id'] ?? '')] ?? []);
+                }
+            }
+            $restoredIds = \array_fill_keys(\array_map(static fn ($row): string => \is_array($row) ? (string) ($row['_id'] ?? '') : '', $snapshot[$key]), true);
+            foreach ((array) ($current[$key] ?? []) as $row) {
+                if (\is_array($row) && (!\is_string($row['_id'] ?? null) || '' === $row['_id'] || !isset($restoredIds[$row['_id']])) && $this->hasProtectedSettingsValues($field->subFields(), $row)) {
+                    $snapshot[$key][] = $row;
+                }
+            }
+        }
+
+        return $snapshot;
+    }
+
+    /** @param list<FieldInterface> $fields
+     * @param array<string, mixed> $row
+     */
+    private function hasProtectedSettingsValues(array $fields, array $row): bool
+    {
+        $writable = \array_fill_keys(\array_map(static fn (FieldInterface $field): string => $field->key(), $this->fields->writable($fields)), true);
+        foreach ($fields as $field) {
+            $value = $row[$field->key()] ?? null;
+            if (!isset($writable[$field->key()]) && null !== $value && '' !== $value && [] !== $value) {
+                return true;
+            }
+            if ('repeater' === $field->type()) {
+                foreach ((array) $value as $child) {
+                    if (\is_array($child) && $this->hasProtectedSettingsValues($field->subFields(), $child)) {
+                        return true;
+                    }
+                }
+            }
+        }
+
+        return false;
     }
 
     /**

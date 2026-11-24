@@ -5,11 +5,13 @@ declare(strict_types=1);
 namespace Itk\Cms\Tests\Core;
 
 use Doctrine\ORM\EntityManagerInterface;
+use Itk\Cms\Entity\Revision;
 use Itk\Cms\Entity\Role;
 use Itk\Cms\Entity\User;
 use Itk\Cms\Resource\ResourceRegistry;
 use Itk\Cms\Schema\Schema;
 use Itk\Cms\Security\UserManager;
+use Itk\Cms\Tests\Core\Fixture\GuardSettings;
 use Itk\Cms\Tests\Core\Fixture\TripsCollection;
 use PHPUnit\Framework\Attributes\Test;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
@@ -28,6 +30,7 @@ final class HistoryApiTest extends WebTestCase
         $this->client = static::createClient();
         $this->client->disableReboot();
         self::getContainer()->get(ResourceRegistry::class)->add(new TripsCollection());
+        self::getContainer()->get(ResourceRegistry::class)->add(new GuardSettings());
         $this->signIn(self::getContainer()->get(UserManager::class)->create('test-hist@example.com', 'Тест истории', 'admin', 'password-for-test'));
     }
 
@@ -167,6 +170,71 @@ final class HistoryApiTest extends WebTestCase
         $this->api('GET', 'history/settings/test_settings', [], 403);
         $this->api('GET', 'history/menu/header', [], 403);
         self::assertSame([], $this->api('GET', 'history/trash')['items']);
+    }
+
+    #[Test]
+    public function notificationHistoryOnlyShowsSystemFieldsFromAStoredSnapshot(): void
+    {
+        $revision = $this->settingsRevision('notifications', ['testSecret' => 'Private fixture', 'forms' => false], Revision::NOTIFICATION_SETTINGS_KEY);
+        $this->signInSettingsEditor('notifications');
+
+        $list = $this->api('GET', 'history/settings/notifications');
+        self::assertSame(['forms'], \array_column($list['items'][0]['summary'], 'key'));
+        $entry = $this->api('GET', 'history/revision/' . $revision->id);
+        self::assertSame(['forms'], \array_column($entry['summary'], 'key'));
+        self::assertNotContains('testSecret', \array_column($entry['against'], 'key'));
+    }
+
+    #[Test]
+    public function siteSettingsHistoryOnlyShowsCurrentFieldsTheEditorMaySee(): void
+    {
+        $this->settingsRevision('test_guard', ['testSecret' => '', 'testRemoved' => '', 'testShown' => '']);
+        $revision = $this->settingsRevision('test_guard', ['testSecret' => 'Private fixture', 'testRemoved' => 'Old fixture', 'testShown' => 'Public fixture']);
+        $this->signInSettingsEditor('test_guard');
+
+        $entry = $this->api('GET', 'history/revision/' . $revision->id);
+        self::assertSame(['testShown'], \array_column($entry['summary'], 'key'));
+        self::assertEqualsCanonicalizing(['testShown', 'testLocked'], \array_column($entry['against'], 'key'));
+    }
+
+    #[Test]
+    public function onlyTheFullAdministratorCanOpenTheHistoryOfARemovedSettingsGroup(): void
+    {
+        $revision = $this->settingsRevision('test_removed', ['testRemoved' => 'Old fixture']);
+        $archive = $this->api('GET', 'history/settings/test_removed');
+        self::assertSame(1, $archive['total']);
+        self::assertSame([], $archive['items'][0]['summary']);
+        self::assertFalse($this->api('GET', 'history/revision/' . $revision->id)['canRestore']);
+
+        $this->signInSettingsEditor('test_removed');
+        $this->api('GET', 'history/settings/test_removed', [], 403);
+        $this->api('GET', 'history/revision/' . $revision->id, [], 403);
+    }
+
+    /** @param array<string, mixed> $snapshot */
+    private function settingsRevision(string $group, array $snapshot, ?string $resourceKey = null): Revision
+    {
+        $revision = new Revision(Revision::SETTINGS, $group, $resourceKey ?? $group, self::getContainer()->get(Schema::class)->mainLocale(), Revision::EDIT);
+        $revision->userName = 'Тест истории';
+        $revision->snapshot = $snapshot;
+        foreach ($snapshot as $key => $value) {
+            $revision->summary[] = ['kind' => 'field', 'key' => $key, 'val' => (string) $value, 'old' => ''];
+        }
+        $em = self::getContainer()->get(EntityManagerInterface::class);
+        $em->persist($revision);
+        $em->flush();
+
+        return $revision;
+    }
+
+    private function signInSettingsEditor(string $group): void
+    {
+        $role = new Role('test-hist-settings', 'Settings editor');
+        $role->perms = ['set:' . $group => ['edit']];
+        $em = self::getContainer()->get(EntityManagerInterface::class);
+        $em->persist($role);
+        $em->flush();
+        $this->signIn(self::getContainer()->get(UserManager::class)->create('test-hist-settings@example.com', 'Settings editor', $role->key, 'password-for-test'));
     }
 
     /** @param list<string> $templates */

@@ -7,6 +7,7 @@ namespace Itk\Cms\Health;
 use Itk\Cms\Content\ContentException;
 use Itk\Cms\Entity\Request;
 use Itk\Cms\I18n\I18n;
+use Itk\Cms\Mail\RequestMailCheckpoint;
 use Itk\Cms\Mail\SendMail;
 use Itk\Cms\Media\GenerateImageVariants;
 use Itk\Cms\Request\RequestDeliverer;
@@ -102,6 +103,36 @@ final class MessengerMonitor
         }
 
         return ['available' => true, 'total' => \max($total, \count($items)), 'items' => $items];
+    }
+
+    /** Find a specific envelope before suggesting a failure-transport retry. */
+    public function failedMailRetry(string $requestId, string $recipient): ?string
+    {
+        $failed = $this->failedTransport();
+        if (!$failed instanceof ListableReceiverInterface) {
+            return null;
+        }
+        $key = RequestMailCheckpoint::recipientKey($requestId, $recipient);
+        try {
+            foreach ($failed->all(self::LIMIT) as $envelope) {
+                $mail = $envelope->getMessage();
+                $id = $envelope->last(TransportMessageIdStamp::class)?->getId();
+                if (!$mail instanceof SendMail || $key !== RequestMailCheckpoint::key($mail) || (!\is_string($id) && !\is_int($id))) {
+                    continue;
+                }
+                foreach ($this->transportNames() as $name) {
+                    try {
+                        if ($failed === $this->receivers->get($name)) {
+                            return \sprintf('messenger:failed:retry --transport=%s %s', \escapeshellarg($name), \escapeshellarg((string) $id));
+                        }
+                    } catch (\Throwable) {
+                    }
+                }
+            }
+        } catch (\Throwable) {
+        }
+
+        return null;
     }
 
     /** Puts a failed message back into the queue it came from; a worker takes it from there as a new one (the retry count starts over). */

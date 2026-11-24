@@ -127,6 +127,9 @@ Use `ContentReader` and Twig functions to read visitor-facing published content.
 - `Itk\Cms\Notification\NotifierInterface`
 - `Itk\Cms\Notification\Notification`
 - `Itk\Cms\Notification\NotificationChannelInterface`
+- `Itk\Cms\Request\RequestQueue`
+
+To explicitly queue a new request delivery from trusted PHP code, inject `RequestQueue` and call `enqueue($requestId, $channel, resend: true)` with `Entity\Request::CHANNEL_TELEGRAM` or `Entity\Request::CHANNEL_MAX`. The operation and its queue entry are recorded together. Publication begins after commit, or via recovery if the caller owns the transaction. Repeated calls while the delivery is queued use the existing operation. After it settles, another call may create a new send. When the provider outcome was uncertain, verify the destination before requesting a new send. Other `RequestQueue` methods are internal.
 
 ### Security and custom MCP tools
 
@@ -180,6 +183,8 @@ Use `ContentReader` and Twig functions to read visitor-facing published content.
 - `Itk\Cms\KnowledgeBase\Model\SyncKnowledge`
 
 Sites may route these messages to their transports. `GenerateCriticalCss(string $translationId, When $when = When::Outdated)` targets a page translation. `When::Outdated` regenerates missing or stale CSS, `When::NotReady` also retries failed generation, and `When::Always` regenerates regardless of freshness. The policy evaluation helpers, message handlers, mail implementation and other critical CSS models are internal.
+
+For `SendRequestNotification`, use `RequestQueue::enqueue()` to start a new delivery. A legacy envelope without a job ID can only resume its legacy operation.
 
 ## PageService operations
 

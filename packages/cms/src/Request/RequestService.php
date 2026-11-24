@@ -278,13 +278,25 @@ final class RequestService
         return Request::CHANNEL_MAX === $channel ? $this->max->isActive() : $this->telegram->isActive();
     }
 
-    /** Queues every request whose delivery failed, to the messengers it failed for. @return int number of requests queued */
+    /** Queues every request whose delivery failed, to the messengers it failed for. @return int number of requests still waiting */
     public function requeueFailed(): int
     {
-        $n = 0;
+        return $this->requeueFailedResult()['queued'];
+    }
+
+    /**
+     * Queue counts requests; outcomes and skipped uncertain channels count channel deliveries. A synchronous bus can finish before publication returns.
+     *
+     * @return array{queued: int, sent: int, failed: int, pending: int, uncertain: int}
+     */
+    public function requeueFailedResult(): array
+    {
+        $result = ['queued' => 0, 'sent' => 0, 'failed' => 0, 'pending' => 0, 'uncertain' => 0];
         foreach ($this->requests->findBy(['delivery' => Request::DELIVERY_FAILED]) as $r) {
+            $waiting = false;
             foreach ($this->failedChannels($r) as $channel) {
                 if ('uncertain' === $r->channelJobPhase($channel)) {
+                    ++$result['uncertain'];
                     continue;
                 }
                 $entry = null;
@@ -293,12 +305,24 @@ final class RequestService
                 }, onlyIfFailed: true);
                 if (null !== $entry) {
                     ($this->queue ?? new RequestQueue($this->em, $this->bus, new \Psr\Log\NullLogger()))->publish($entry);
+                    $this->em->refresh($r);
+                    if (\in_array($channel, $r->queuedChannels(), true)) {
+                        $waiting = true;
+                    } else {
+                        $state = 'uncertain' === $r->channelJobPhase($channel) ? 'uncertain' : $r->channelState($channel);
+                        ++$result[$state];
+                    }
+                } else {
+                    $this->em->refresh($r);
+                    if ('uncertain' === $r->channelJobPhase($channel)) {
+                        ++$result['uncertain'];
+                    }
                 }
             }
-            ++$n;
+            $result['queued'] += (int) $waiting;
         }
 
-        return $n;
+        return $result;
     }
 
     /**

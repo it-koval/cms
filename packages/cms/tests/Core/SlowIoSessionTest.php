@@ -53,7 +53,7 @@ final class SlowIoSessionTest extends KernelTestCase
     #[Test]
     public function aSlowSettingsReplyCannotReplaceAPasswordRotationOrTheCookieOfANewLogin(): void
     {
-        $dir = __DIR__ . '/../App/var/session-response-' . \bin2hex(\random_bytes(6));
+        $dir = \sys_get_temp_dir() . '/itk-session-response-' . \bin2hex(\random_bytes(6));
         \mkdir($dir, 0700, true);
         try {
             foreach (['password', 'login'] as $action) {
@@ -76,7 +76,7 @@ final class SlowIoSessionTest extends KernelTestCase
     #[Test]
     public function aSecondProcessWithTheSameNativeSessionFinishesDuringSlowIo(): void
     {
-        $dir = __DIR__ . '/../App/var/session-profile-' . \bin2hex(\random_bytes(6));
+        $dir = \sys_get_temp_dir() . '/itk-session-profile-' . \bin2hex(\random_bytes(6));
         \mkdir($dir, 0700, true);
         try {
             $profiles = [];

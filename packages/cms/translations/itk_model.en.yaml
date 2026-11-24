@@ -174,3 +174,4 @@
 'model.area_bots_hint': 'View shows the connection status. Edit changes and removes bot tokens.'
 
 'model.lint_request_field_limit': 'Form «{form}», field «{field}»: max() is not set; values longer than {count} characters will be refused. Set an explicit max().'
+'model.lint_nested_access': '{at}, field «{path}»: {flags} applies only to top-level fields. Apply the restriction to the whole field «{parent}» or move the protected value to a separate top-level field.'

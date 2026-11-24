@@ -37,11 +37,22 @@ compose run --rm --no-deps php php bin/console app:verify-install
 compose run --rm --no-deps php php bin/console itk:doctor --ci
 compose up -d --no-build --wait --wait-timeout 120 php nginx worker
 compose exec -T nginx nginx -t
+compose exec -T nginx sh -eu -c '
+    config=$(nginx -T 2>&1)
+    case "$config" in *"PHP_VALUE"*"post_max_size"*) exit 1 ;; esac
+'
 
 url="http://127.0.0.1:$DEPLOY_PORT"
 [[ "$(curl --fail --silent --show-error --max-time 10 "$url/healthz")" == '{"status":"ok"}' ]]
 [[ "$(curl --fail --silent --show-error --max-time 10 "$url/")" == *'ITK CMS install smoke'* ]]
 curl --fail --silent --show-error --max-time 10 "$url/bundles/itkcms/admin/index.html" > /dev/null
+
+# A chunked form body must hit the route limit before PHP parses it.
+[[ "$(head -c 262145 /dev/zero | curl --silent --show-error --max-time 10 --output /dev/null --write-out '%{http_code}' \
+    -H 'Transfer-Encoding: chunked' --data-binary @- "$url/request/smoke")" == 413 ]]
+nested_status=$(head -c 262145 /dev/zero | curl --silent --show-error --max-time 10 --output /dev/null --write-out '%{http_code}' \
+    -H 'Transfer-Encoding: chunked' --data-binary @- "$url/request/panel/upload")
+[[ "$nested_status" == 4?? && "$nested_status" != 413 ]]
 
 for attempt in {1..20}; do
     if [[ "$(curl --fail --silent --max-time 3 "$url/uploads/worker-probe.txt")" == 'worker received the queued message' ]]; then

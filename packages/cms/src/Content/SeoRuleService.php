@@ -115,12 +115,40 @@ final class SeoRuleService
             throw ContentException::invalid(I18n::t('content.seo_path_long'), ['path' => I18n::t('content.seo_path_long')]);
         }
         [$path, $query] = \array_pad(\explode('?', $raw, 2), 2, '');
-        $path = Url::key($path);
+        $path = self::requestPathKey($path);
         \parse_str($query, $params);
         self::sortParams($params);
         $query = \http_build_query($params, '', '&', \PHP_QUERY_RFC3986);
 
         return '' === $query ? $path : $path . '?' . $query;
+    }
+
+    /** A stored path is already in its canonical spelling. */
+    public static function pathKey(string $path): string
+    {
+        return Url::key(Url::fromPath($path));
+    }
+
+    /** Decode HTTP input once without turning an escaped delimiter into path structure. */
+    public static function requestPathKey(string $path): string
+    {
+        $decoded = \preg_replace_callback('/(?:%[a-f0-9]{2})+/i', static function (array $run): string {
+            // A legacy rule may contain malformed UTF-8 escapes. Keep those bytes escaped instead of
+            // letting case folding replace them and silently change the address (or fail a PostgreSQL write).
+            $validUtf8 = \mb_check_encoding(\rawurldecode($run[0]), 'UTF-8');
+
+            return \preg_replace_callback('/%([a-f0-9]{2})/i', static function (array $match) use ($validUtf8): string {
+                $byte = (int) \hexdec($match[1]);
+                $char = \chr($byte);
+                if ($byte >= 128) {
+                    return $validUtf8 ? $char : $match[0];
+                }
+
+                return \ctype_alnum($char) || \str_contains('-._~', $char) ? $char : $match[0];
+            }, $run[0]) ?? $run[0];
+        }, $path);
+
+        return self::pathKey($decoded ?? $path);
     }
 
     /** @param array<array-key, mixed> $params */

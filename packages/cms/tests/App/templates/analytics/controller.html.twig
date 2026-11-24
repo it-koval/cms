@@ -1,7 +1,7 @@
 <!doctype html>
 <html>
 <head>
-    <title>Site controller fixture</title>
+    <title>{{ itk_seo({title: 'Site controller fixture'}).title }}</title>
     {% if embed in ['metrika', 'both', 'metrika-single-quoted', 'metrika-double-quoted'] %}
     <script>(function(m,e,t,r,i,k,a){})(window,document,"script","https://mc.yandex.ru/metrika/tag.js","ym");{% if embed == 'metrika-single-quoted' %}ym('12345678', 'init', {clickmap:true});{% elseif embed == 'metrika-double-quoted' %}ym("12345678", "init", {clickmap:true});{% else %}ym(12345678, "init", {clickmap:true});{% endif %}</script>
     {% endif %}

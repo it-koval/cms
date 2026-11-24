@@ -7,6 +7,7 @@ namespace Itk\Cms\Tests\Core;
 use Doctrine\DBAL\Schema\Schema as DatabaseSchema;
 use Doctrine\ORM\EntityManagerInterface;
 use Itk\Cms\Content\SettingsService;
+use Itk\Cms\Entity\Revision;
 use Itk\Cms\Field\Text;
 use Itk\Cms\Mail\MailSettings;
 use Itk\Cms\Mail\SiteMailer;
@@ -43,6 +44,7 @@ final class SettingsNamespaceRegressionTest extends ResourceKernelTestCase
                 yield Text::make('Site Telegram route', 'tgRoutes');
                 yield Text::make('Site MAX route', 'maxRoutes');
                 yield Text::make('Site mail route', 'mailRoutes');
+                yield \Itk\Cms\Field\Toggle::make('Site form setting', 'forms')->canSee('set:test_mail_namespace');
             }
         });
         $this->prepare();
@@ -61,7 +63,7 @@ final class SettingsNamespaceRegressionTest extends ResourceKernelTestCase
     public function siteNotificationNamesCannotChangeDeliveryConfiguration(): void
     {
         $settings = self::getContainer()->get(SettingsService::class);
-        self::getContainer()->get(EntityManagerInterface::class)->getConnection()->executeStatement("DELETE FROM itk_revision WHERE resource_kind = 'settings' AND resource_key = 'notifications'");
+        self::getContainer()->get(EntityManagerInterface::class)->getConnection()->executeStatement("DELETE FROM itk_revision WHERE resource_kind = 'settings' AND resource_id = 'notifications'");
         foreach (['tgOn', 'maxOn', 'tgRoutes', 'maxRoutes', 'mailRoutes'] as $key) {
             $settings->remove('itk:' . $key);
         }
@@ -91,13 +93,78 @@ final class SettingsNamespaceRegressionTest extends ResourceKernelTestCase
         self::assertSame('Updated site text', $settings->get('tgRoutes'));
         self::assertFalse($settings->notificationSettings()['maxOn']);
         self::assertSame(['*' => '-100123456'], $settings->notificationSettings()['tgRoutes']);
-        $baseline = self::getContainer()->get(\Itk\Cms\Repository\RevisionRepository::class)->findOneBy(['kind' => 'settings', 'resourceKey' => 'notifications'], ['id' => 'ASC']);
+        $baseline = self::getContainer()->get(\Itk\Cms\Repository\RevisionRepository::class)->findOneBy(['kind' => 'settings', 'resourceKey' => Revision::NOTIFICATION_SETTINGS_KEY], ['id' => 'ASC']);
         self::assertNotNull($baseline, 'notification edits have their own baseline despite colliding schema fields');
         self::assertTrue($baseline->snapshot['maxOn']);
         $settings->set('maxOn', false);
         self::getContainer()->get(\Itk\Cms\History\HistoryAdmin::class)->restore($baseline->id);
         self::assertTrue($settings->isMaxOn());
         self::assertFalse($settings->get('maxOn'), 'restoring delivery history preserves the site field');
+    }
+
+    #[Test]
+    public function legacyScalarFlagsKeepTheirPhpBooleanMeaningAndMcpKeepsStrictBooleanMeaning(): void
+    {
+        $settings = self::getContainer()->get(SettingsService::class);
+        foreach ([false, true, 0, 1, 0.5, '', '0', '1', 'false', 'Site text'] as $value) {
+            foreach (['forms', 'tgOn', 'maxOn', 'mcpEnabled'] as $key) {
+                $settings->remove('itk:' . $key);
+                // These legacy site fields stored scalars without the notification toggle's normalization.
+                $settings->set($key, $value);
+            }
+            self::migrateSettings();
+            $settings->reset();
+            self::assertSame((bool) $value, $settings->acceptsRequests());
+            self::assertSame((bool) $value, $settings->isTelegramOn());
+            self::assertSame((bool) $value, $settings->isMaxOn());
+            foreach (['forms', 'tgOn', 'maxOn'] as $key) {
+                self::assertSame((bool) $value, $settings->notificationSettings()[$key], $key . ' presents the effective flag');
+                self::assertSame($value, $settings->get($key), $key . ' keeps the raw site value');
+            }
+            $mcp = self::getContainer()->get(\Itk\Cms\Mcp\McpSettings::class);
+            $mcp->forget();
+            self::assertSame(true === $value, $mcp->isEnabled(), 'MCP was and remains enabled only by JSON true');
+        }
+    }
+
+    #[Test]
+    public function intakeAndSiteFormsHaveIndependentStorageRightsAndHistory(): void
+    {
+        $settings = self::getContainer()->get(SettingsService::class);
+        $settings->remove('itk:forms');
+        $settings->set('forms', false);
+        self::assertTrue($settings->acceptsRequests(), 'the site field cannot stop intake');
+        $controller = self::getContainer()->get(\Itk\Cms\Controller\Admin\SettingsController::class);
+        $em = self::getContainer()->get(EntityManagerInterface::class);
+        $em->getConnection()->executeStatement("DELETE FROM itk_revision WHERE resource_kind = 'settings' AND resource_id = 'notifications'");
+        $role = new \Itk\Cms\Entity\Role('test_forms_rights', 'Forms rights');
+        $role->perms = ['set:test_mail_namespace' => ['view', 'edit']];
+        $em->persist($role);
+        $em->flush();
+        $this->signIn($role->key);
+        $patch = static fn (string $scope, bool $value): \Symfony\Component\HttpFoundation\Request => \Symfony\Component\HttpFoundation\Request::create('/admin/api/settings' . $scope, 'PATCH', server: ['CONTENT_TYPE' => 'application/json'], content: \json_encode(['forms' => $value], \JSON_THROW_ON_ERROR));
+        $controller->update($patch('', true));
+        self::assertTrue($settings->get('forms'));
+        self::assertTrue($settings->acceptsRequests());
+        try {
+            $controller->update($patch('?scope=notifications', false));
+            self::fail('A site editor cannot edit request intake');
+        } catch (\Symfony\Component\Security\Core\Exception\AccessDeniedException) {
+            self::assertTrue($settings->acceptsRequests());
+        }
+        $role->perms = ['set:notifications' => ['view', 'edit']];
+        $em->flush();
+        $out = \json_decode($controller->update($patch('?scope=notifications', false))->getContent(), true, flags: \JSON_THROW_ON_ERROR);
+        self::assertFalse($out['forms']);
+        self::assertFalse($settings->acceptsRequests(), 'notification-only rights suffice even when the site field is hidden');
+        self::assertTrue($settings->get('forms'), 'the site field keeps its value');
+        self::assertFalse($settings->notificationSettings()['forms']);
+        $baseline = self::getContainer()->get(\Itk\Cms\Repository\RevisionRepository::class)->findOneBy(['kind' => 'settings', 'resourceKey' => Revision::NOTIFICATION_SETTINGS_KEY], ['id' => 'ASC']);
+        self::assertNotNull($baseline);
+        $this->signIn('admin');
+        self::getContainer()->get(\Itk\Cms\History\HistoryAdmin::class)->restore($baseline->id);
+        self::assertTrue($settings->acceptsRequests());
+        self::assertTrue($settings->get('forms'));
     }
 
     #[Test]
@@ -111,7 +178,7 @@ final class SettingsNamespaceRegressionTest extends ResourceKernelTestCase
         self::migrateSettings();
 
         self::assertSame($value, $settings->get('mail'));
-        self::assertFalse($settings->isSet(MailSettings::KEY));
+        self::assertSame($value, $settings->stored(MailSettings::KEY), 'the copy retains the raw value; SMTP ignores non-object settings');
         self::assertFalse(self::getContainer()->get(SiteMailer::class)->isConfigured());
     }
 
