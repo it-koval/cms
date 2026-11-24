@@ -12,6 +12,9 @@ namespace Itk\Cms\Analytics;
  */
 final class AnalyticsConfig
 {
+    public const AUTO = 'auto';
+    public const MANUAL = 'manual';
+
     public const METRIKA_ID = 'yandexMetrikaId';
     public const METRIKA_WEBVISOR = 'yandexMetrikaWebvisor';
     public const GA_ID = 'googleAnalyticsId';
@@ -31,6 +34,7 @@ final class AnalyticsConfig
         public readonly ?string $googleVerification,
         public readonly ?string $webmasterVerification,
         public readonly array $problems,
+        private readonly string $start,
     ) {
     }
 
@@ -38,7 +42,7 @@ final class AnalyticsConfig
      * @param array<string, mixed> $settings the flat settings (SettingsService::all())
      * @param ?string $webmasterUin the code Yandex Webmaster gave the CMS to verify the site (YandexWebmaster\WebmasterService); it goes on the page next to the owner's own code
      */
-    public static function fromSettings(array $settings, ?string $webmasterUin = null): self
+    public static function fromSettings(array $settings, ?string $webmasterUin = null, string $start = self::AUTO): self
     {
         $problems = [];
         $metrika = self::match($settings, self::METRIKA_ID, '/^\d{4,12}$/', $problems);
@@ -49,7 +53,12 @@ final class AnalyticsConfig
 
         $uin = null !== $webmasterUin && 1 === \preg_match(self::VERIFICATION_CODE, $webmasterUin) ? $webmasterUin : null;
 
-        return new self($metrika, null !== $metrika && $webvisor, $ga, $yandex, $google, $uin, $problems);
+        return new self($metrika, null !== $metrika && $webvisor, $ga, $yandex, $google, $uin, $problems, $start);
+    }
+
+    public function startMode(): string
+    {
+        return $this->start;
     }
 
     /** Is there anything to put on the page? */

@@ -196,6 +196,7 @@ final class TestKernel extends BaseKernel
 
     protected function configureRoutes(RoutingConfigurator $routes): void
     {
+        $routes->import(__DIR__ . '/Itk/Controller/AnalyticsFixtureController.php', 'attribute');
         $admin = $routes->import('@ItkCmsBundle/config/routes/admin.php');
         if ('' !== $this->routePrefix) {
             $admin->prefix($this->routePrefix);

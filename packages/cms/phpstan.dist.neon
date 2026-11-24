@@ -10,3 +10,10 @@ parameters:
     paths:
         - src
     tmpDir: .phpstan.cache
+    ignoreErrors:
+        # symfony/asset is optional and AnalyticsAsset can be used without it.
+        -
+            message: '#Symfony\\Component\\Asset\\PackageInterface#'
+            identifier: class.notFound
+            path: src/Analytics/AnalyticsAsset.php
+            reportUnmatched: false

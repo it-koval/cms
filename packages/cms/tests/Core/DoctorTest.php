@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Itk\Cms\Tests\Core;
 
 use Doctrine\DBAL\Connection;
+use Itk\Cms\Analytics\AnalyticsAsset;
 use Itk\Cms\Command\DoctorCommand;
 use Itk\Cms\Content\PageService;
 use Itk\Cms\Extension\Registry;
@@ -81,7 +82,7 @@ final class DoctorTest extends KernelTestCase
         $lines = $this->lines();
         $fails = \array_filter($lines, static fn (array $l): bool => HealthResult::FAIL === $l['status']);
         self::assertSame([], \array_values($fails), \json_encode($fails, \JSON_UNESCAPED_UNICODE));
-        foreach (['Расширения PHP', 'WebP', 'AVIF', 'APP_SECRET', 'Папка для загрузок', 'База данных', 'Адрес сайта', 'Миграции', 'Главная страница', 'Файрвол админки', 'Очередь и воркер', 'Админка: сборка', 'Схема сайта'] as $name) {
+        foreach (['Расширения PHP', 'WebP', 'AVIF', 'APP_SECRET', 'Папка для загрузок', 'База данных', 'Адрес сайта', 'Миграции', 'Главная страница', 'Файрвол админки', 'Очередь и воркер', 'Админка: сборка', 'Загрузчик аналитики', 'Схема сайта'] as $name) {
             $this->line($lines, $name);
         }
         self::assertSame(HealthResult::OK, $this->line($lines, 'Миграции')['status']);
@@ -167,6 +168,34 @@ final class DoctorTest extends KernelTestCase
         self::assertSame(HealthResult::FAIL, $line['status']);
         self::assertStringContainsString('/elsewhere', $line['message']);
         self::assertStringContainsString('security.yaml', $line['message']);
+    }
+
+    #[Test]
+    public function theAnalyticsLoaderNeedsACurrentInstalledCopy(): void
+    {
+        $dir = \dirname(__DIR__) . '/App/doctor-analytics-' . \bin2hex(\random_bytes(6));
+        \mkdir($dir, recursive: true);
+        $installed = $dir . '/analytics.js';
+        $bundle = new AnalyticsAsset();
+
+        try {
+            $missing = Doctor::checkAnalyticsLoader($bundle, $installed);
+            self::assertSame(HealthResult::WARN, $missing->status);
+            self::assertStringContainsString('отсутствует', $missing->message);
+
+            \file_put_contents($installed, 'outdated');
+            $outdated = Doctor::checkAnalyticsLoader($bundle, $installed);
+            self::assertSame(HealthResult::WARN, $outdated->status);
+            self::assertStringContainsString('отличается', $outdated->message);
+
+            \copy(\dirname(__DIR__, 2) . '/public/analytics.js', $installed);
+            self::assertSame(HealthResult::OK, Doctor::checkAnalyticsLoader($bundle, $installed)->status);
+        } finally {
+            if (\is_file($installed)) {
+                \unlink($installed);
+            }
+            \rmdir($dir);
+        }
     }
 
     #[Test]

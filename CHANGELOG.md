@@ -8,6 +8,7 @@ All notable changes to ITK CMS are recorded in this file. The format follows [Ke
 
 ### Added
 
+- `itk_cms.analytics.start` selects `auto` (default) or `manual` in site configuration. The browser API `window.itkAnalytics.start()` starts all configured counters, and `start(['ga'])` selects GA. Counter keys are `metrika` and `ga`. New starts dispatch the bubbling `itk-analytics:started` event on `document` with `detail.counters`. Repeated calls without new counters emit no event.
 - Multilingual SEO emits reciprocal `hreflang` links, including `x-default` for an indexable main version. Published pages use their own canonical URL when none is set. The sitemap covers every indexable language version, and `llms.txt` groups pages by language. Both generated files refresh after committed page changes and revalidate with content ETags.
 - `itk:doctor` checks language prefixes, home pages, missing translations in settings and menus, and overrides of generated crawler files.
 - Public routes serve published language versions at addresses such as `/kk/about`.
@@ -19,6 +20,7 @@ All notable changes to ITK CMS are recorded in this file. The format follows [Ke
 
 ### Changed
 
+- Analytics initialization uses one versioned external `defer` loader with `data-*` attributes. In `manual`, the bundle makes no provider requests or preliminary connections before `start()` and omits Metrika's `<noscript>` pixel. `auto` keeps that pixel. Verification meta tags remain available in both modes. Sites manage consent, persistence and reload after revocation, and must remove their direct analytics inserts before switching to `manual`. See [UPGRADE.md](UPGRADE.md#030).
 - `GET /admin/api/collections/{col}` always returns the paginated object `{ items, total, page, perPage, facets, metrics }`. Search, filters, status and translation selection apply before counting and pagination. Published versions with unpublished changes are included in the `draft` filter. Clients must read `items` and request further pages. See [UPGRADE.md](UPGRADE.md#030).
 - IndexNow submits the affected paths for all configured languages. Critical CSS is generated for the published versions of those languages.
 - Publishing or removing a translation refreshes the cached HTML and ETag of the other versions of the same page.

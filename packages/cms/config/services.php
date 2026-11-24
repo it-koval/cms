@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use Itk\Cms\Analytics\AnalyticsAsset;
 use Itk\Cms\Controller\Admin\AdminAppController;
 use Itk\Cms\Controller\Admin\TwoFactorLoginController;
 use Itk\Cms\Doctrine\MigrationVersionComparator;
@@ -66,6 +67,7 @@ return static function (ContainerConfigurator $container): void {
         ]);
 
     $services->alias(Embedder::class, OpenAiEmbedder::class);
+    $services->get(AnalyticsAsset::class)->arg('$assetPackage', service('assets._default_package_without_version')->nullOnInvalid());
     $services->get(OpenAiEmbedder::class)->arg('$http', service('http_client')->nullOnInvalid());
     $services->get(KnowledgeBaseHealthCheck::class)->arg('$http', service('http_client')->nullOnInvalid());
     $services->get(IndexNowSite::class)->arg('$http', service('http_client')->nullOnInvalid());

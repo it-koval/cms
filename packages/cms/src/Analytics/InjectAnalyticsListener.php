@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace Itk\Cms\Analytics;
 
 use Itk\Cms\Content\SettingsService;
+use Itk\Cms\Security\CspNonce;
 use Itk\Cms\YandexWebmaster\WebmasterStore;
+use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 use Symfony\Component\HttpFoundation\StreamedResponse;
@@ -25,8 +27,13 @@ final class InjectAnalyticsListener
 {
     private const SKIPPED_ROUTES = ['itk_admin', 'itk_api', 'itk_mcp', '_profiler', '_wdt'];
 
-    public function __construct(private readonly SettingsService $settings, private readonly WebmasterStore $webmaster)
-    {
+    public function __construct(
+        private readonly SettingsService $settings,
+        private readonly WebmasterStore $webmaster,
+        private readonly ?AnalyticsAsset $asset = null,
+        #[Autowire(param: 'itk_cms.analytics.start')]
+        private readonly string $startMode = AnalyticsConfig::AUTO,
+    ) {
     }
 
     public function __invoke(ResponseEvent $event): void
@@ -45,11 +52,11 @@ final class InjectAnalyticsListener
         if (!\is_string($html) || '' === $html) {
             return;
         }
-        $config = AnalyticsConfig::fromSettings($this->settings->all(), $this->webmaster->uin());
+        $config = AnalyticsConfig::fromSettings($this->settings->all(), $this->webmaster->uin(), $this->startMode);
         if ($config->isEmpty()) {
             return;
         }
-        $injected = AnalyticsInjector::inject($html, $config);
+        $injected = AnalyticsInjector::inject($html, $config, $this->asset, CspNonce::fromRequest($event->getRequest()));
         if ($injected === $html) {
             return;
         }

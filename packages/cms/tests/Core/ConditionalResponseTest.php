@@ -6,16 +6,23 @@ namespace Itk\Cms\Tests\Core;
 
 use Doctrine\DBAL\Connection;
 use Doctrine\ORM\EntityManagerInterface;
+use Itk\Cms\Analytics\AnalyticsAsset;
+use Itk\Cms\Analytics\AnalyticsConfig;
 use Itk\Cms\Content\CollectionService;
 use Itk\Cms\Content\MenuService;
 use Itk\Cms\Content\PageService;
 use Itk\Cms\Content\SettingsService;
 use Itk\Cms\CriticalCss\Stylesheets;
 use Itk\Cms\Entity\MediaFile;
+use Itk\Cms\Rendering\PageCache;
 use Itk\Cms\Rendering\PageValidators;
 use Itk\Cms\Repository\PageRepository;
+use Itk\Cms\Security\CspNonce;
 use Itk\Cms\Tests\App\QueryCounter;
 use Itk\Cms\Tests\App\TestKernel;
+use Itk\Cms\Tests\Core\Fixture\TemporarySettings;
+use Itk\Cms\YandexWebmaster\Model\WebmasterConnection;
+use Itk\Cms\YandexWebmaster\WebmasterStore;
 use PHPUnit\Framework\Attributes\Test;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
@@ -26,6 +33,8 @@ use Symfony\Component\HttpKernel\KernelInterface;
 /** Живая страница отвечает ETag и Last-Modified; посетитель без сессии получает 304, пока не изменилось то, от чего страница зависит. */
 final class ConditionalResponseTest extends WebTestCase
 {
+    use TemporarySettings;
+
     /** @var list<string> */
     private array $created = [];
     /** @var list<string> */
@@ -56,7 +65,7 @@ final class ConditionalResponseTest extends WebTestCase
         foreach ($this->files as $id) {
             $c->get(Connection::class)->executeStatement('DELETE FROM itk_media_file WHERE id = ?', [$id]);
         }
-        $c->get(SettingsService::class)->set('requestButtonText', null);
+        $this->restoreSettings();
         parent::tearDown();
     }
 
@@ -149,7 +158,7 @@ final class ConditionalResponseTest extends WebTestCase
         $c->get(PageService::class)->publish($id);
         $changed('publishing the page again, even in the same second');
 
-        $c->get(SettingsService::class)->set('requestButtonText', 'Позвоните мне');
+        $this->setting('requestButtonText', 'Позвоните мне');
         $changed('a setting');
 
         $c->get(MenuService::class)->syncSchemaAreas();
@@ -258,6 +267,148 @@ final class ConditionalResponseTest extends WebTestCase
 
         self::assertMatchesRegularExpression('/^[a-f0-9]{40}$/', (string) $fingerprint);
         self::assertSame('"' . \substr((string) $fingerprint, 0, 24) . '"', $validators->forPage($t, $request)['etag'] ?? null);
+    }
+
+    #[Test]
+    public function analyticsModeAndAssetVersionChangeTheFingerprint(): void
+    {
+        $c = self::getContainer();
+        $id = $this->publish('Аналитика', '/test-cond-analytics-asset');
+        $t = $c->get(PageRepository::class)->find($id)?->translation('ru');
+        self::assertNotNull($t);
+        $request = Request::create('/test-cond-analytics-asset');
+        $clock = new MockClock('2026-11-24 08:00:00 UTC');
+        $fingerprint = static function (string $mode, AnalyticsAsset $asset) use ($c, $clock, $t, $request): ?string {
+            $validators = new PageValidators(
+                $c->get(Connection::class),
+                true,
+                false,
+                $c->getParameter('kernel.cache_dir'),
+                $c->getParameter('kernel.container_class'),
+                $clock,
+                $c->get(Stylesheets::class),
+                analyticsStart: $mode,
+                analyticsAsset: $asset,
+            );
+
+            return $validators->fingerprint($t, $request);
+        };
+        $current = new AnalyticsAsset();
+        $differentFile = new AnalyticsAsset(file: __DIR__ . '/../../public/preview.js');
+        $auto = $fingerprint(AnalyticsConfig::AUTO, $current);
+
+        self::assertNotNull($auto);
+        self::assertSame($auto, $fingerprint(AnalyticsConfig::AUTO, new AnalyticsAsset()));
+        self::assertNotSame($auto, $fingerprint(AnalyticsConfig::MANUAL, $current));
+        self::assertNotSame($auto, $fingerprint(AnalyticsConfig::AUTO, $differentFile));
+    }
+
+    #[Test]
+    public function anEtagFromAutoGetsFreshManualHtml(): void
+    {
+        $auto = $this->client();
+        $url = '/test-cond-analytics-mode';
+        $this->publish('Аналитика', $url);
+        $this->setting(AnalyticsConfig::METRIKA_ID, '12345678');
+
+        [$status, $etag, $html] = $this->get($auto, $url);
+        self::assertSame(200, $status);
+        self::assertNotSame('', $etag);
+        self::assertStringContainsString('data-start="auto"', $html);
+
+        self::ensureKernelShutdown();
+        $manual = $this->client(['itk' => ['analytics' => ['start' => 'manual']]]);
+        [$status, $manualEtag, $html] = $this->get($manual, $url, ['HTTP_IF_NONE_MATCH' => $etag]);
+        self::assertSame(200, $status);
+        self::assertNotSame($etag, $manualEtag);
+        self::assertStringContainsString('data-start="manual"', $html);
+        self::assertSame(304, $this->get($manual, $url, ['HTTP_IF_NONE_MATCH' => $manualEtag])[0]);
+    }
+
+    #[Test]
+    public function aRequestNonceBypassesTheCachedPageAndConditionalResponse(): void
+    {
+        $client = $this->client();
+        $url = '/test-cond-analytics-nonce';
+        $this->publish('Аналитика с CSP', $url);
+        $this->setting('domain', 'localhost');
+        $this->setting(AnalyticsConfig::GA_ID, 'G-ABCD1234');
+        $cache = self::getContainer()->get(PageCache::class);
+
+        try {
+            [, $etag] = $this->get($client, $url);
+            self::assertNotSame('', $etag);
+            $this->get($client, $url);
+            self::assertSame('HIT', $client->getResponse()->headers->get('X-ITK-Cache'));
+
+            $request = Request::create('http://localhost' . $url, server: ['HTTP_IF_NONE_MATCH' => $etag]);
+            $request->attributes->set(CspNonce::ATTRIBUTE, 'test-response-nonce');
+            $kernel = self::$kernel;
+            self::assertNotNull($kernel);
+            $response = $kernel->handle($request, catch: false);
+
+            self::assertSame(200, $response->getStatusCode());
+            self::assertSame('BYPASS', $response->headers->get('X-ITK-Cache'));
+            self::assertFalse($response->headers->has('ETag'));
+            self::assertStringContainsString('nonce="test-response-nonce"', (string) $response->getContent());
+            [, , $cached] = $this->get($client, $url);
+            self::assertSame('HIT', $client->getResponse()->headers->get('X-ITK-Cache'));
+            self::assertStringNotContainsString('test-response-nonce', $cached);
+        } finally {
+            $cache->clear();
+        }
+    }
+
+    #[Test]
+    public function counterIdsAndVerificationCodesInvalidateCachedHtml(): void
+    {
+        $client = $this->client();
+        $url = '/test-cond-analytics-settings';
+        $this->publish('Аналитика', $url);
+        $this->setting('domain', 'localhost');
+        $container = self::getContainer();
+        $settings = $container->get(SettingsService::class);
+        $webmaster = $container->get(WebmasterStore::class);
+        $connectionWasSet = $settings->isSet(WebmasterStore::CONNECTION);
+        $connectionBefore = $settings->storedNow(WebmasterStore::CONNECTION);
+        $values = [
+            AnalyticsConfig::METRIKA_ID => ['12345678', 'data-metrika="12345678"'],
+            AnalyticsConfig::GA_ID => ['G-ABCD1234', 'data-ga="G-ABCD1234"'],
+            AnalyticsConfig::YANDEX_VERIFICATION => ['abcdef1234567890', 'name="yandex-verification" content="abcdef1234567890"'],
+            AnalyticsConfig::GOOGLE_VERIFICATION => ['ghijkl1234567890', 'name="google-site-verification" content="ghijkl1234567890"'],
+        ];
+        try {
+            [, $etag] = $this->get($client, $url);
+            self::assertNotSame('', $etag);
+            $changed = function (string $markup) use ($client, $url, &$etag): void {
+                [$status, $now, $html] = $this->get($client, $url, ['HTTP_IF_NONE_MATCH' => $etag]);
+                self::assertSame(200, $status);
+                self::assertNotSame($etag, $now);
+                self::assertStringContainsString($markup, $html);
+                $etag = $now;
+            };
+
+            foreach ($values as $key => [$value, $markup]) {
+                $this->setting($key, $value);
+                $changed($markup);
+            }
+            $webmaster->saveConnection(new WebmasterConnection('fixture-token', new \DateTimeImmutable(), 1, 'https:localhost:443', 'https://localhost', '7890abcdef123456', false));
+            $changed('name="yandex-verification" content="7890abcdef123456"');
+
+            [$status, $cachedEtag, $html] = $this->get($client, $url);
+            self::assertSame(200, $status);
+            self::assertSame($etag, $cachedEtag);
+            self::assertSame('HIT', $client->getResponse()->headers->get('X-ITK-Cache'));
+            self::assertSame(1, \substr_count($html, 'data-itk-analytics'));
+            self::assertSame([304, $etag, ''], $this->get($client, $url, ['HTTP_IF_NONE_MATCH' => $etag]));
+        } finally {
+            if ($connectionWasSet) {
+                $settings->set(WebmasterStore::CONNECTION, $connectionBefore);
+            } else {
+                $settings->remove(WebmasterStore::CONNECTION);
+            }
+            $container->get(PageCache::class)->clear();
+        }
     }
 
     #[Test]
