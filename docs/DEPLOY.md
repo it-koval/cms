@@ -8,7 +8,7 @@ Run the commands from the site root. Rehearse the update and restore on a stagin
 
 1. Keep the site’s Composer lock file and Docker kit with the release. Copy the kit into `docker/` and copy `vendor/itk/cms/docker/compose.prod.yaml` to `compose.prod.yaml` in the site root. Review changes to the kit when upgrading the bundle.
 2. Set `COMPOSE_PROJECT_NAME` once for this site. Keep it on updates and rollbacks so Compose uses the same PostgreSQL and upload volumes. Set `DEPLOY_PORT` for the loopback nginx listener and `DEPLOY_IMAGE_TAG` to the release commit or another unique identifier. `DEPLOY_DB_NAME` defaults to `app`.
-3. Load `DEPLOY_DB_PASSWORD` from the deployment secret store. Pass `APP_SECRET`, `DATABASE_URL`, and `MAILER_DSN` through the environment or Symfony vault. For a vault, supply `SYMFONY_DECRYPTION_SECRET`. Use `database` as the database host and the name from `DEPLOY_DB_NAME`. URL-encode the password in `DATABASE_URL`. Keep `APP_SECRET` stable across releases. Set `DEFAULT_URI` to the public HTTPS URL. Configure the trusted hosts and reverse proxy in Symfony. See [Runtime settings](../packages/cms/README.md#security-securityyaml).
+3. Load `DEPLOY_DB_PASSWORD` from the deployment secret store. Pass `APP_SECRET`, `DATABASE_URL`, and `MAILER_DSN` through the environment or Symfony vault. For a vault, supply `SYMFONY_DECRYPTION_SECRET`. Use `database` as the database host and the name from `DEPLOY_DB_NAME`. URL-encode the password in `DATABASE_URL`. Keep `APP_SECRET` stable across releases. Set `DEFAULT_URI` to the public HTTPS URL. Configure the trusted hosts and reverse proxy in Symfony. PHP sees requests from the Docker bridge gateway, not from 127.0.0.1, so set `framework.trusted_proxies` to the Compose network subnet or to `private_ranges`; otherwise every visitor shares one IP for the form and login limits and HTTPS is not detected. If the site uses other bundles with public assets, add `php bin/console assets:install public --no-interaction` to the site build stage: the image copies only the ITK CMS assets. See [Runtime settings](../packages/cms/README.md#security-securityyaml).
 4. Point the HTTPS reverse proxy at `127.0.0.1:$DEPLOY_PORT`. Preserve the original host and forward the scheme. PostgreSQL and PHP-FPM stay on the Compose network. Set `BACKUP_DIR` to a new protected directory outside the build context for each update.
 
 ## First deployment
@@ -55,6 +55,13 @@ Expect a healthy endpoint and a running worker. Open the public home page and si
 
 1. Put the site in maintenance and stop `nginx`, `php` and `worker`. Set `DEPLOY_IMAGE_TAG` to the previous value. Use the Compose file and runtime settings that match that release.
 2. If the old code works with the migrated database, skip data recovery. For incompatible migrations, preserve the current data first. Then restore the pre-update database and uploads together. This replaces data changed after the backup.
+
+   ```sh
+   docker compose -f compose.prod.yaml exec -T database sh -c 'pg_dump -U postgres -Fc "$POSTGRES_DB"' > "$BACKUP_DIR/before-rollback.dump"
+   docker compose -f compose.prod.yaml run --rm -T --no-deps --entrypoint tar php -C /app/public/uploads -cf - . > "$BACKUP_DIR/before-rollback-uploads.tar"
+   ```
+
+   Write this copy to the `before-rollback` files. Do not overwrite `before-deploy.dump` and `before-deploy-uploads.tar`: the restore below reads them. Then restore the pre-update database and uploads together. This replaces data changed after the backup.
 
    ```sh
    docker compose -f compose.prod.yaml exec -T database pg_restore --clean --if-exists --create --exit-on-error -U postgres -d postgres < "$BACKUP_DIR/before-deploy.dump"

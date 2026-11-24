@@ -8,7 +8,7 @@
 
 1. Храните Composer lock-файл и комплект Docker вместе с релизом сайта. Скопируйте комплект в `docker/`, а `vendor/itk/cms/docker/compose.prod.yaml` в корень сайта как `compose.prod.yaml`. При обновлении бандла проверьте изменения комплекта.
 2. Задайте `COMPOSE_PROJECT_NAME` для сайта. Сохраняйте его при обновлении и откате, чтобы Compose использовал те же тома базы и загрузок. В `DEPLOY_PORT` укажите локальный порт nginx. В `DEPLOY_IMAGE_TAG` укажите коммит релиза или другой уникальный идентификатор. По умолчанию `DEPLOY_DB_NAME` равен `app`.
-3. Загрузите `DEPLOY_DB_PASSWORD` из хранилища секретов. Передайте `APP_SECRET`, `DATABASE_URL` и `MAILER_DSN` через окружение или Symfony Vault. Для Vault передайте `SYMFONY_DECRYPTION_SECRET`. Укажите хост базы `database` и имя из `DEPLOY_DB_NAME`. Закодируйте пароль в `DATABASE_URL` по правилам URL. Сохраняйте `APP_SECRET` между релизами. Укажите публичный HTTPS-адрес в `DEFAULT_URI`. Настройте доверенные хосты и прокси в Symfony. См. [настройки безопасности](../packages/cms/README.ru.md#безопасность-securityyaml).
+3. Загрузите `DEPLOY_DB_PASSWORD` из хранилища секретов. Передайте `APP_SECRET`, `DATABASE_URL` и `MAILER_DSN` через окружение или Symfony Vault. Для Vault передайте `SYMFONY_DECRYPTION_SECRET`. Укажите хост базы `database` и имя из `DEPLOY_DB_NAME`. Закодируйте пароль в `DATABASE_URL` по правилам URL. Сохраняйте `APP_SECRET` между релизами. Укажите публичный HTTPS-адрес в `DEFAULT_URI`. Настройте доверенные хосты и прокси в Symfony. PHP видит запросы с адреса шлюза сети Docker, а не с 127.0.0.1, поэтому укажите в `framework.trusted_proxies` подсеть сети Compose или `private_ranges`. Иначе все посетители получат один IP для лимитов форм и входа, а HTTPS не определится. Если сайт использует другие бандлы с публичными файлами, добавьте в сборку сайта `php bin/console assets:install public --no-interaction`: образ копирует только файлы ITK CMS. См. [настройки безопасности](../packages/cms/README.ru.md#безопасность-securityyaml).
 4. Направьте HTTPS-прокси на `127.0.0.1:$DEPLOY_PORT`. Передавайте исходный хост и схему. PostgreSQL и PHP-FPM работают в сети Compose. Для каждого обновления укажите в `BACKUP_DIR` новый защищённый каталог вне контекста сборки.
 
 ## Первая выкладка
@@ -54,7 +54,14 @@ docker compose -f compose.prod.yaml logs --tail=50 worker
 ## Откат
 
 1. Включите режим обслуживания. Остановите `nginx`, `php` и `worker`. Верните прежний `DEPLOY_IMAGE_TAG`. Используйте файл Compose и настройки окружения прежнего релиза.
-2. Если старый код работает с обновлённой базой, пропустите восстановление. Если миграции несовместимы, сперва сохраните текущие данные. Затем восстановите базу и загрузки из одной резервной копии. Это заменит данные, изменённые после копирования.
+2. Если старый код работает с обновлённой базой, пропустите восстановление. Если миграции несовместимы, сперва сохраните текущие данные.
+
+   ```sh
+   docker compose -f compose.prod.yaml exec -T database sh -c 'pg_dump -U postgres -Fc "$POSTGRES_DB"' > "$BACKUP_DIR/before-rollback.dump"
+   docker compose -f compose.prod.yaml run --rm -T --no-deps --entrypoint tar php -C /app/public/uploads -cf - . > "$BACKUP_DIR/before-rollback-uploads.tar"
+   ```
+
+   Пишите эту копию в файлы `before-rollback`. Не перезаписывайте `before-deploy.dump` и `before-deploy-uploads.tar`: восстановление ниже читает их. Затем восстановите базу и загрузки из одной резервной копии. Это заменит данные, изменённые после копирования.
 
    ```sh
    docker compose -f compose.prod.yaml exec -T database pg_restore --clean --if-exists --create --exit-on-error -U postgres -d postgres < "$BACKUP_DIR/before-deploy.dump"

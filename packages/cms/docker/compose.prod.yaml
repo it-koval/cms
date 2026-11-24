@@ -67,7 +67,7 @@ services:
     init: true
     stop_grace_period: 2m
     healthcheck:
-      test: ["CMD-SHELL", "grep -zqx 'messenger:consume' /proc/[0-9]*/cmdline"]
+      test: ["CMD-SHELL", "grep -zq '[m]essenger:consume' /proc/[0-9]*/cmdline"]
       interval: 5s
       timeout: 3s
       retries: 12
