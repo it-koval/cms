@@ -51,16 +51,17 @@ final class HealthService
         private readonly iterable $checks = [],
         #[AutowireIterator('scheduler.schedule_provider', indexAttribute: 'name')]
         private readonly iterable $schedules = [],
+        private readonly ?Doctor $doctor = null,
     ) {
     }
 
     /** @return array<string, mixed> */
-    public function report(bool $refreshUpdates = false): array
+    public function report(bool $refreshUpdates = false, bool $includeLocaleChecks = true): array
     {
         $messenger = ['queues' => $this->messenger->queues(), 'failed' => $this->messenger->failed()];
         $requests = $this->failedRequests();
         $disk = $this->disk();
-        $checks = $this->runChecks();
+        $checks = $this->runChecks($includeLocaleChecks);
         $versions = $this->versions();
 
         $status = HealthResult::OK;
@@ -199,7 +200,7 @@ final class HealthService
      *
      * @return list<array{name: string, status: string, message: string}>
      */
-    private function runChecks(): array
+    private function runChecks(bool $includeLocaleChecks = true): array
     {
         $list = [];
         foreach ($this->checks as $check) {
@@ -229,6 +230,10 @@ final class HealthService
             } catch (\Throwable $e) {
                 $out[] = ['name' => $check->name(), 'status' => HealthResult::FAIL, 'message' => I18n::t('ops.health_check_failed', ['error' => MessengerMonitor::scrub($e->getMessage())])];
             }
+        }
+
+        foreach ($includeLocaleChecks ? ($this->doctor?->localeChecks() ?? []) : [] as [$name, $result]) {
+            $out[] = ['name' => $name, 'status' => $result->status, 'message' => $result->message];
         }
 
         return [...$out, ...$broken];

@@ -7,6 +7,7 @@ namespace Itk\Cms\Content;
 use Itk\Cms\Event\RecordDeleted;
 use Itk\Cms\Event\RecordEvent;
 use Itk\Cms\Event\RecordPublished;
+use Itk\Cms\Event\RecordTranslationRemoved;
 use Itk\Cms\Event\RecordUnpublished;
 use Itk\Cms\Event\RecordUpdated;
 use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
@@ -20,6 +21,7 @@ use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
 #[AsEventListener(event: RecordUnpublished::class)]
 #[AsEventListener(event: RecordUpdated::class)]
 #[AsEventListener(event: RecordDeleted::class)]
+#[AsEventListener(event: RecordTranslationRemoved::class)]
 final class SitemapInvalidator
 {
     public function __construct(private readonly SitemapBuilder $sitemap, private readonly CrawlerFiles $crawlerFiles)

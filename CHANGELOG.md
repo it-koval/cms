@@ -8,6 +8,8 @@ All notable changes to ITK CMS are recorded in this file. The format follows [Ke
 
 ### Added
 
+- Multilingual SEO emits reciprocal `hreflang` links, including `x-default` for an indexable main version. Published pages use their own canonical URL when none is set. The sitemap covers every indexable language version, and `llms.txt` groups pages by language. Both generated files refresh after committed page changes and revalidate with content ETags.
+- `itk:doctor` checks language prefixes, home pages, missing translations in settings and menus, and overrides of generated crawler files.
 - Public routes serve published language versions at addresses such as `/kk/about`.
 - Twig pages expose `html_lang`, `og_locale` and `translations`. The last field lists published versions for a language switcher.
 - `RecordTranslationAdded` and `RecordTranslationRemoved` extend `RecordEvent`, carry the operation locale and are dispatched after commit. Translation operations do not call object create/delete events or lifecycle hooks; removing a live translation still emits the unpublish events and hooks.
@@ -17,6 +19,8 @@ All notable changes to ITK CMS are recorded in this file. The format follows [Ke
 
 ### Changed
 
+- IndexNow submits the affected paths for all configured languages. Critical CSS is generated for the published versions of those languages.
+- Publishing or removing a translation refreshes the cached HTML and ETag of the other versions of the same page.
 - On configured sites, live and preview templates translate text in the page's language. JSON-LD uses its HTML language tag.
 - Public forms record the locale from `?locale=`, the same-origin referrer or the main language on configured sites.
 - MCP load hooks run once per resource and language.

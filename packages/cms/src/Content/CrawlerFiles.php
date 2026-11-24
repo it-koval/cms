@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Itk\Cms\Content;
 
 use Itk\Cms\Admin\AdminPath;
+use Itk\Cms\I18n\ContentLocales;
 use Itk\Cms\Support\Url;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Contracts\Cache\CacheInterface;
@@ -41,6 +42,7 @@ final class CrawlerFiles
         private readonly CacheInterface $cache,
         #[Autowire(param: 'kernel.project_dir')]
         private readonly string $projectDir,
+        private readonly ?ContentLocales $locales = null,
     ) {
     }
 
@@ -142,6 +144,11 @@ final class CrawlerFiles
         $this->cache->delete(self::KEY);
     }
 
+    public function isMultilingual(): bool
+    {
+        return $this->locales?->isMultilingual() ?? false;
+    }
+
     private function robotsDefault(): string
     {
         $lines = ['User-agent: *', 'Disallow: ' . $this->admin->base() . '/', 'Disallow: /request/', 'Disallow: /mcp'];
@@ -158,7 +165,7 @@ final class CrawlerFiles
     {
         $base = $this->sitemap->base();
         $name = $this->siteName($base);
-        $sig = \md5(($base ?? '') . "\0" . $name);
+        $sig = \md5(($base ?? '') . "\0" . $name . ($this->isMultilingual() ? "\0" . $this->pages->catalogSignature() : ''));
         $build = function (ItemInterface $item) use ($base, $name, $sig): array {
             $item->expiresAfter(self::TTL);
 
@@ -195,8 +202,8 @@ final class CrawlerFiles
                 $home = $r['description'];
             }
             $title = '' !== $r['title'] ? $r['title'] : $r['url'];
-            $href = \str_replace(['(', ')'], ['%28', '%29'], ($base ?? '') . Url::encodePath($r['url']));
-            $links[] = '- [' . self::label($title) . '](' . $href . ')' . ('' !== $r['description'] ? ': ' . self::line($r['description']) : '');
+            $href = \str_replace(['(', ')'], ['%28', '%29'], ($base ?? '') . Url::encodePath($this->isMultilingual() ? Url::spelling($r['url']) : $r['url']));
+            $links[$r['locale']][] = '- [' . self::label($title) . '](' . $href . ')' . ('' !== $r['description'] ? ': ' . self::line($r['description']) : '');
         }
         $out = ['# ' . self::line($name)];
         if ('' !== $home) {
@@ -205,9 +212,24 @@ final class CrawlerFiles
         }
         if ([] !== $links) {
             $out[] = '';
-            $out[] = '## Pages';
-            $out[] = '';
-            \array_push($out, ...$links);
+            if ($this->isMultilingual()) {
+                foreach ($this->locales->codes() as $code) {
+                    if (!isset($links[$code])) {
+                        continue;
+                    }
+                    $out[] = '## ' . self::line($this->locales->name($code));
+                    $out[] = '';
+                    \array_push($out, ...$links[$code]);
+                    $out[] = '';
+                }
+                \array_pop($out);
+            } else {
+                $out[] = '## Pages';
+                $out[] = '';
+                foreach ($links as $group) {
+                    \array_push($out, ...$group);
+                }
+            }
         }
 
         return \implode("\n", $out);

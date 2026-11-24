@@ -51,6 +51,12 @@ final class ContentLocales
         return $this->configured ?? (null !== $this->locales);
     }
 
+    /** Whether the site serves more than one content language. */
+    public function isMultilingual(): bool
+    {
+        return $this->isConfigured() && \count($this->codes()) >= 2;
+    }
+
     /** Whether a code is the main language or appears in the configured list. */
     public function has(string $code): bool
     {

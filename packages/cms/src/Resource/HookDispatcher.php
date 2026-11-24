@@ -136,10 +136,11 @@ final class HookDispatcher
         $this->resource($record->kind, $record->resourceKey)?->beforeDeleting($record, $this->contextOf($record));
     }
 
-    public function deleted(Record $record): void
+    /** @param array<string, mixed> $data Mutation snapshots for after-event consumers. */
+    public function deleted(Record $record, array $data = []): void
     {
-        $this->after(function () use ($record): void {
-            $this->events->dispatch(new RecordDeleted($record->resourceKey, $record->kind, $record, [], $this->access->viewer()));
+        $this->after(function () use ($record, $data): void {
+            $this->events->dispatch(new RecordDeleted($record->resourceKey, $record->kind, $record, $data, $this->access->viewer()));
             $this->resource($record->kind, $record->resourceKey)?->afterDeleted($record, $this->contextOf($record));
         });
     }
@@ -164,10 +165,11 @@ final class HookDispatcher
         $this->resource($record->kind, $record->resourceKey)?->beforePublishing($record, $this->contextOf($record));
     }
 
-    public function published(Record $record): void
+    /** @param array<string, mixed> $data Mutation snapshots for after-event consumers. */
+    public function published(Record $record, array $data = []): void
     {
-        $this->after(function () use ($record): void {
-            $this->events->dispatch(new RecordPublished($record->resourceKey, $record->kind, $record, [], $this->access->viewer()));
+        $this->after(function () use ($record, $data): void {
+            $this->events->dispatch(new RecordPublished($record->resourceKey, $record->kind, $record, $data, $this->access->viewer()));
             $this->resource($record->kind, $record->resourceKey)?->afterPublished($record, $this->contextOf($record));
         });
     }
@@ -178,10 +180,11 @@ final class HookDispatcher
         $this->resource($record->kind, $record->resourceKey)?->beforeUnpublishing($record, $this->contextOf($record));
     }
 
-    public function unpublished(Record $record): void
+    /** @param array<string, mixed> $data Mutation snapshots for after-event consumers. */
+    public function unpublished(Record $record, array $data = []): void
     {
-        $this->after(function () use ($record): void {
-            $this->events->dispatch(new RecordUnpublished($record->resourceKey, $record->kind, $record, [], $this->access->viewer()));
+        $this->after(function () use ($record, $data): void {
+            $this->events->dispatch(new RecordUnpublished($record->resourceKey, $record->kind, $record, $data, $this->access->viewer()));
             $this->resource($record->kind, $record->resourceKey)?->afterUnpublished($record, $this->contextOf($record));
         });
     }

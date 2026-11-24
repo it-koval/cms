@@ -25,7 +25,7 @@
         <link rel="canonical" href="{{ seo.canonical }}"/>
         {%- elseif not preview and page.url is defined %}
         <link rel="canonical" href="{{ app.request.schemeAndHttpHost ~ app.request.baseUrl ~ app.request.pathInfo }}"/>
-        {%- endif %}
+        {%- endif %}{% for alternate in seo.alternates %}<link rel="alternate" hreflang="{{ alternate.hreflang }}" href="{{ alternate.href }}">{% endfor %}
         <meta property="og:type" content="website"/>
         <meta property="og:title" content="{{ seo.title }}"/>
         {% if seo.description != '' %}<meta property="og:description" content="{{ seo.description }}"/>{% endif %}

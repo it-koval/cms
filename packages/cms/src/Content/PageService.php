@@ -641,10 +641,16 @@ final class PageService
         }
         $record = $this->recordOf($p);
         $this->hooks->deleting($record);
+        $liveVersions = [];
+        foreach ($p->translations as $t) {
+            if (null !== $version = $this->liveAddress($t)) {
+                $liveVersions[] = $version;
+            }
+        }
         $this->history->pageRemoved($p);
         $this->em->remove($p);
         $this->em->flush();
-        $this->hooks->deleted($record);
+        $this->hooks->deleted($record, ['liveVersions' => $liveVersions]);
     }
 
     /**
@@ -755,6 +761,7 @@ final class PageService
             }
         }
         $this->hooks->publishing($this->record($p, $t));
+        $previous = $this->liveAddress($t);
         $was = $this->history->pageState($p, $t);
         $before = $t->isLive() ? (string) ($t->published['url'] ?? '') : null;
         $t->published = $this->snapshot($t->draft);
@@ -769,7 +776,7 @@ final class PageService
         }
         $this->history->page($p, $t, Revision::PUBLISH, $was);
         $this->em->flush();
-        $this->hooks->published($this->record($p, $t));
+        $this->hooks->published($this->record($p, $t), ['liveVersions' => \array_values(\array_filter([$previous, $this->liveAddress($t)]))]);
 
         return $this->flat($p, $t);
     }
@@ -842,12 +849,27 @@ final class PageService
             throw ContentException::conflict(I18n::t('content.page_already_unpublished'));
         }
         $this->hooks->unpublishing($this->record($p, $t));
+        $previous = $this->liveAddress($t);
         $was = $this->history->pageState($p, $t);
         $t->status = PageTranslation::DRAFT;
         $t->publishedUrl = null;
         $this->history->page($p, $t, Revision::UNPUBLISH, $was);
         $this->em->flush();
-        $this->hooks->unpublished($this->record($p, $t));
+        $this->hooks->unpublished($this->record($p, $t), ['liveVersions' => null !== $previous ? [$previous] : []]);
+    }
+
+    /**
+     * Capture the last live path and its SEO before a mutation: after hooks may run after the version or the whole page has been removed.
+     *
+     * @return array{locale: string, url: string, seo: array<string, mixed>}|null
+     */
+    private function liveAddress(PageTranslation $t): ?array
+    {
+        if (!$t->isLive()) {
+            return null;
+        }
+
+        return ['locale' => $t->locale, 'url' => (string) ($t->published['url'] ?? $t->publishedUrl), 'seo' => (array) ($t->published['seo'] ?? [])];
     }
 
     /** Takes back unpublish(): the version is on the site again exactly as it was. */
@@ -872,7 +894,7 @@ final class PageService
         $t->publishedUrl = $url;
         $this->history->page($p, $t, Revision::PUBLISH, $was);
         $this->em->flush();
-        $this->hooks->published($this->record($p, $t)); // live again: the sitemap and llms.txt caches and the hooks of the site hear it as a publish
+        $this->hooks->published($this->record($p, $t), ['liveVersions' => [$this->liveAddress($t)]]); // live again: the sitemap and llms.txt caches and the hooks of the site hear it as a publish
 
         return $this->flat($p, $t);
     }

@@ -5,12 +5,13 @@ declare(strict_types=1);
 namespace Itk\Cms\Content;
 
 use Itk\Cms\Entity\PageTranslation;
+use Itk\Cms\I18n\ContentLocales;
 use Itk\Cms\Repository\PageTranslationRepository;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 
 /**
- * The live pages of the main language that a search engine or an AI service may be pointed at: the one selection behind the sitemap and llms.txt.
- *  - the other languages are left out until the public route serves them (it answers with the main language only);
+ * The live pages that a search engine or an AI service may be pointed at: the one selection behind the sitemap and llms.txt.
+ *  - only languages from the public content catalog are included;
  *  - a page whose robots (its own SEO or the SEO rule of its address) say `noindex` is left out;
  *  - the SEO of a page is the one of its published version with the rule of its address laid over it.
  *
@@ -23,13 +24,14 @@ final class IndexablePages
         private readonly SeoResolver $seo,
         #[Autowire(param: 'itk_cms.main_locale')]
         private readonly string $mainLocale,
+        private readonly ?ContentLocales $locales = null,
     ) {
     }
 
     /**
      * One row per address, in the order of the pages.
      *
-     * @return list<array{url: string, title: string, description: string, locale: string, publishedAt: \DateTimeImmutable|null}>
+     * @return list<array{pageId: string, url: string, title: string, description: string, locale: string, publishedAt: \DateTimeImmutable|null}>
      */
     public function rows(): array
     {
@@ -43,6 +45,7 @@ final class IndexablePages
             $seo = $this->seo->apply((array) ($version['seo'] ?? []), $this->seo->best($url, [], $t->locale));
             $title = \trim((string) ($seo['title'] ?? ''));
             $rows[$url] = [
+                'pageId' => $t->page->id,
                 'url' => $url,
                 'title' => '' !== $title ? $title : \trim((string) ($version['title'] ?? '')),
                 'description' => \trim((string) ($seo['description'] ?? '')),
@@ -54,16 +57,30 @@ final class IndexablePages
         return \array_values($rows);
     }
 
-    /** Whether one page version is in that selection: the main language, live, at a path, not `noindex` by its SEO or the rule of its address. */
+    /** Whether one page version is in that selection: an enabled language, live, at a path, not `noindex` by its SEO or the rule of its address. */
     public function admits(PageTranslation $t): bool
     {
-        if ($t->locale !== $this->mainLocale || !$t->isLive()) {
+        if (!($this->locales?->has($t->locale) ?? ($t->locale === $this->mainLocale)) || !$t->isLive()) {
             return false;
         }
         $version = (array) $t->published;
         $url = (string) ($version['url'] ?? $t->publishedUrl);
 
         return \str_starts_with($url, '/') && !$this->noindex((array) ($version['seo'] ?? []), $url, $t->locale);
+    }
+
+    public function isMultilingual(): bool
+    {
+        return $this->locales?->isMultilingual() ?? false;
+    }
+
+    /** Configuration changes must not reuse a crawler file from another catalog. */
+    public function catalogSignature(): string
+    {
+        return \serialize($this->locales?->catalog()) . \serialize(\array_map(
+            fn (string $code): string => $this->locales->htmlLang($code),
+            $this->locales?->codes() ?? [],
+        ));
     }
 
     /**

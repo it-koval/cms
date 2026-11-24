@@ -6,6 +6,7 @@ namespace Itk\Cms\Content;
 
 use Itk\Cms\Entity\Page;
 use Itk\Cms\I18n\ContentLocales;
+use Itk\Cms\Mail\PublicUrl;
 use Itk\Cms\Support\Url;
 
 /** @internal */
@@ -44,5 +45,55 @@ final class PageVersions
         }
 
         return $versions;
+    }
+
+    /** @return list<array{hreflang: string, href: string}> */
+    public function alternates(Page $page, ?string $base): array
+    {
+        if (null === $base || !$this->locales->isMultilingual()) {
+            return [];
+        }
+        $rows = [];
+        foreach ($this->live($page) as $version) {
+            if (!$version['noindex']) {
+                $rows[] = ['locale' => $version['code'], 'url' => $version['path']];
+            }
+        }
+
+        return $this->alternatesForRows($rows, $base);
+    }
+
+    /**
+     * The same link set for the already selected sitemap rows, without loading each page's translations again.
+     *
+     * @param list<array{locale: string, url: string}> $rows indexable live versions of one page
+     *
+     * @return list<array{hreflang: string, href: string}>
+     */
+    public function alternatesForRows(array $rows, ?string $base): array
+    {
+        if (!$this->locales->isMultilingual() || null === $base || !PublicUrl::isValid($base)) {
+            return [];
+        }
+        $urls = [];
+        foreach ($rows as $row) {
+            if ($this->locales->has($row['locale']) && \str_starts_with($row['url'], '/')) {
+                $urls[$row['locale']] = \rtrim($base, '/') . Url::encodePath(Url::spelling($row['url']));
+            }
+        }
+        if (\count($urls) < 2) {
+            return [];
+        }
+        $alternates = [];
+        foreach ($this->locales->codes() as $code) {
+            if (isset($urls[$code])) {
+                $alternates[] = ['hreflang' => $this->locales->htmlLang($code), 'href' => $urls[$code]];
+            }
+        }
+        if (isset($urls[$this->locales->main()])) {
+            $alternates[] = ['hreflang' => 'x-default', 'href' => $urls[$this->locales->main()]];
+        }
+
+        return $alternates;
     }
 }

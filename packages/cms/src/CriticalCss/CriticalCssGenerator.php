@@ -17,6 +17,7 @@ use Itk\Cms\CriticalCss\Model\SourcePage;
 use Itk\Cms\CriticalCss\Model\When;
 use Itk\Cms\Entity\CriticalCss;
 use Itk\Cms\Entity\PageTranslation;
+use Itk\Cms\I18n\ContentLocales;
 use Itk\Cms\Rendering\PageRenderer;
 use Psr\Clock\ClockInterface;
 use Psr\Log\LoggerInterface;
@@ -38,6 +39,7 @@ final class CriticalCssGenerator
         private readonly CssExtractor $extractor,
         private readonly ClockInterface $clock,
         private readonly LoggerInterface $logger,
+        private readonly ?ContentLocales $contentLocales = null,
     ) {
     }
 
@@ -73,7 +75,7 @@ final class CriticalCssGenerator
         $todo = [];
         foreach ($ids as $id => $when) {
             $t = $this->em->find(PageTranslation::class, $id);
-            if (null === $t || !$t->isLive()) {
+            if (null === $t || !$t->isLive() || !($this->contentLocales?->has($t->locale) ?? true)) {
                 ++$skipped;
                 continue;
             }

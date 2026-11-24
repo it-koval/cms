@@ -10,12 +10,16 @@ use Doctrine\Migrations\DependencyFactory;
 use Doctrine\Migrations\Metadata\AvailableMigration;
 use Doctrine\Migrations\Metadata\Storage\TableMetadataStorageConfiguration;
 use Itk\Cms\Admin\AdminPath;
+use Itk\Cms\Content\SettingsService;
+use Itk\Cms\I18n\ContentLocales;
 use Itk\Cms\I18n\I18n;
 use Itk\Cms\Mail\PublicUrl;
 use Itk\Cms\Mcp\ApiTokenAuthenticator;
 use Itk\Cms\Mcp\McpGate;
 use Itk\Cms\Media\ImageVariants;
+use Itk\Cms\Repository\MenuAreaRepository;
 use Itk\Cms\Repository\PageTranslationRepository;
+use Itk\Cms\Schema\Schema;
 use Itk\Cms\Schema\SchemaLint;
 use Itk\Cms\Support\Url;
 use Psr\Container\ContainerInterface;
@@ -55,12 +59,13 @@ final class Doctor
         private readonly SchemaLint $lint,
         #[Autowire(service: 'doctrine.migrations.dependency_factory')]
         private readonly DependencyFactory $migrations,
-        #[AutowireLocator([HealthService::class, PublicUrl::class])]
+        #[AutowireLocator([HealthService::class, PublicUrl::class, SettingsService::class, Schema::class, MenuAreaRepository::class])]
         private readonly ContainerInterface $services,
         #[Autowire('%kernel.project_dir%')]
         private readonly string $projectDir,
         #[Autowire(param: 'itk_cms.main_locale')]
         private readonly string $mainLocale,
+        private readonly ?ContentLocales $contentLocales = null,
     ) {
     }
 
@@ -83,9 +88,17 @@ final class Doctor
         }
 
         $site = I18n::t('ops.doctor_group_site');
-        $add($site, I18n::t('ops.doctor_name_public_url'), $this->publicUrl());
+        if (!$this->multilingual()) {
+            $add($site, I18n::t('ops.doctor_name_public_url'), $this->publicUrl());
+        }
         $add($site, I18n::t('ops.doctor_name_migrations'), $this->migrations());
-        $add($site, I18n::t('ops.doctor_name_home'), $this->home());
+        if (!$this->multilingual()) {
+            $add($site, I18n::t('ops.doctor_name_home'), $this->home());
+        }
+        foreach ($this->localeChecks() as [$name, $result]) {
+            $done[$name] = true;
+            $add($site, $name, $result);
+        }
         $add($site, I18n::t('ops.doctor_name_firewall_admin'), $this->firewall($this->admin->base() . '/login', null));
         $add($site, I18n::t('ops.doctor_name_firewall_mcp'), $this->firewall(McpGate::PATH, ApiTokenAuthenticator::class));
         $add($site, I18n::t('ops.doctor_name_queue'), $this->queue());
@@ -102,6 +115,114 @@ final class Doctor
         }
 
         return $lines;
+    }
+
+    private function multilingual(): bool
+    {
+        return $this->contentLocales?->isMultilingual() ?? false;
+    }
+
+    /** Shared by the console and Site Health; legacy sites keep their existing report.
+     * @return list<array{0: string, 1: HealthResult}>
+     */
+    public function localeChecks(): array
+    {
+        if (!$this->multilingual()) {
+            return [];
+        }
+        $locales = $this->contentLocales;
+        $out = [[I18n::t('ops.doctor_name_languages'), HealthResult::ok(I18n::t('ops.doctor_languages', [
+            'main' => $locales->main(),
+            'list' => \implode(', ', \array_map(static fn (string $code): string => $code . (' ' . ('' === $locales->prefix($code) ? I18n::t('ops.doctor_no_prefix') : $locales->prefix($code))), $locales->codes())),
+        ]))]];
+        foreach ($locales->codes() as $code) {
+            $path = $locales->prefix($code) ?: '/';
+            try {
+                $live = $this->translations->findLive($code, Url::key($path));
+                $result = null !== $live
+                    ? HealthResult::ok(I18n::t('ops.doctor_locale_home_ok', ['path' => $path]))
+                    : ($code === $locales->main()
+                        ? HealthResult::fail(I18n::t('ops.doctor_home_unpublished'))
+                        : HealthResult::warn(I18n::t('ops.doctor_locale_home_missing', ['path' => $path])));
+            } catch (\Throwable $e) {
+                $result = HealthResult::fail(I18n::t('ops.doctor_pages_unreadable', ['error' => MessengerMonitor::scrub($e->getMessage())]));
+            }
+            $out[] = [I18n::t('ops.doctor_name_locale_home', ['locale' => $code]), $result];
+        }
+        try {
+            $conflicts = [];
+            foreach ($this->translations->findAddresses($locales->main()) as $row) {
+                foreach ([$row['draftUrl'], $row['publishedUrl']] as $path) {
+                    if (null !== $path && $locales->fromPath($path) !== $locales->main()) {
+                        $conflicts[$path] = true;
+                    }
+                }
+            }
+            $paths = \array_keys($conflicts);
+            \sort($paths, \SORT_STRING);
+            $out[] = [I18n::t('ops.doctor_name_locale_conflicts'), [] === $conflicts
+                ? HealthResult::ok(I18n::t('ops.doctor_locale_conflicts_ok'))
+                : HealthResult::warn(I18n::t('ops.doctor_locale_conflicts', ['list' => self::shortList($paths)]))];
+        } catch (\Throwable $e) {
+            $out[] = [I18n::t('ops.doctor_name_locale_conflicts'), HealthResult::warn(I18n::t('ops.doctor_check_unavailable', ['error' => MessengerMonitor::scrub($e->getMessage())]))];
+        }
+        $base = $this->publicUrl();
+        if (HealthResult::WARN === $base->status && I18n::t('ops.doctor_public_url_missing') === $base->message) {
+            $base = HealthResult::warn(I18n::t('ops.doctor_seo_base_missing'));
+        }
+        $out[] = [I18n::t('ops.doctor_name_seo_base'), $base];
+        try {
+            $settings = $this->services->get(SettingsService::class);
+            $schema = $this->services->get(Schema::class);
+            $areas = [];
+            foreach ($schema->menuAreas() as $area) {
+                $areas[$area->key] = [];
+            }
+            foreach ($this->services->get(MenuAreaRepository::class)->findAll() as $area) {
+                $areas[$area->key] = $area->items;
+            }
+            $overrides = [];
+            foreach (['robots.txt' => 'robotsTxt', 'llms.txt' => 'llmsTxt', 'sitemap.xml' => null] as $file => $key) {
+                if (\is_file($this->projectDir . '/public/' . $file) || (null !== $key && '' !== \trim((string) $settings->get($key, null, '')))) {
+                    $overrides[] = $file;
+                }
+            }
+            $out[] = [I18n::t('ops.doctor_name_crawler_overrides'), [] === $overrides
+                ? HealthResult::ok(I18n::t('ops.doctor_crawler_auto'))
+                : HealthResult::warn(I18n::t('ops.doctor_crawler_overrides', ['list' => \implode(', ', $overrides)]))];
+            foreach ($locales->codes() as $code) {
+                $values = $settings->all($code);
+                $empty = [];
+                foreach ($schema->settingsFields() as $field) {
+                    $value = $values[$field->key()] ?? null;
+                    if ($field->isTranslatable() && !$field->isNote() && (null === $value || [] === $value || (\is_string($value) && '' === \trim($value)))) {
+                        $empty[] = $field->key();
+                    }
+                }
+                $out[] = [I18n::t('ops.doctor_name_locale_settings', ['locale' => $code]), [] === $empty
+                    ? HealthResult::ok(I18n::t('ops.doctor_locale_settings_ok'))
+                    : HealthResult::warn(I18n::t('ops.doctor_locale_settings_empty', ['list' => self::shortList($empty)]))];
+                $empty = [];
+                foreach ($areas as $key => $items) {
+                    if ([] === ($items[$code] ?? [])) {
+                        $empty[] = $key;
+                    }
+                }
+                $out[] = [I18n::t('ops.doctor_name_locale_menus', ['locale' => $code]), [] === $empty
+                    ? HealthResult::ok(I18n::t('ops.doctor_locale_menus_ok'))
+                    : HealthResult::warn(I18n::t('ops.doctor_locale_menus_empty', ['list' => self::shortList($empty)]))];
+            }
+        } catch (\Throwable $e) {
+            $out[] = [I18n::t('ops.doctor_name_locale_content'), HealthResult::warn(I18n::t('ops.doctor_check_unavailable', ['error' => MessengerMonitor::scrub($e->getMessage())]))];
+        }
+
+        return $out;
+    }
+
+    /** @param list<string> $items */
+    private static function shortList(array $items): string
+    {
+        return \implode(', ', \array_slice($items, 0, 10)) . (\count($items) > 10 ? I18n::t('ops.doctor_list_more', ['count' => \count($items) - 10]) : '');
     }
 
     private function extensions(): HealthResult
@@ -291,7 +412,7 @@ final class Doctor
     private function report(array $done): array
     {
         try {
-            $report = $this->services->get(HealthService::class)->report();
+            $report = $this->services->get(HealthService::class)->report(false, false);
         } catch (\Throwable $e) {
             return [[I18n::t('ops.doctor_name_report'), HealthResult::fail(I18n::t('ops.doctor_report_failed', ['error' => MessengerMonitor::scrub($e->getMessage())]))]];
         }

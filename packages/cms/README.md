@@ -907,7 +907,7 @@ A URL rule sets the title, description, indexing (`robots`), canonical URL and s
 - Among matching rules, the most specific one wins: more parameters, `exact` before `prefix`, a longer path, a rule in the request's language, a newer rule.
 - A tag value comes from the rule, then from the page SEO, then from the page title (only `title`), then from the `itk_seo()` argument. Relative `canonical` and `ogImage` become full URLs. Rules do not apply on an error page.
 
-The layout outputs the tags with `itk_seo()`. It works in any template and returns `{title, description, robots, canonical, ogImage, rule}`:
+The layout outputs the tags with `itk_seo()`. It works in any template and returns `{title, description, robots, canonical, ogImage, rule, alternates}`:
 
 ```twig
 {% set seo = itk_seo({title: 'My site', robots: 'index,follow'}) %}
@@ -922,7 +922,7 @@ API: `GET seo-rules?q=&locale=`, `POST seo-rules`, `PATCH|DELETE seo-rules/{id}`
 The core serves `GET /sitemap.xml` from the published pages. The site does not need to write a sitemap.
 
 - The sitemap includes published pages, each with `<loc>` and `<lastmod>`. Pages with indexing turned off (in the page SEO or by a URL rule) are left out. Collection records are not included.
-- URLs are built from the **Site address** setting (`domain`), not from the `Host` header. Without a scheme, `https://` is used. Until the address is set, `/sitemap.xml` returns 404.
+- On a single-language site, URLs use the **Site address** setting (`domain`) and default to `https://` when the scheme is omitted. A multilingual site uses the trusted public base for links in both HTML and the sitemap. The generated route returns 404 when its base is missing. [Multilingual indexing and operations](#multilingual-indexing-and-operations)
 - The sitemap is cached for an hour. The cache is cleared when a page is published, unpublished, changed or deleted, and when a URL rule changes.
 - A site's own `public/sitemap.xml` file wins, because the web server serves it before PHP.
 
@@ -931,8 +931,8 @@ The core serves `GET /sitemap.xml` from the published pages. The site does not n
 The core serves `GET /robots.txt` and `GET /llms.txt` (a site description for AI services in the [llmstxt.org](https://llmstxt.org) format). The text is edited in **Settings** → **SEO** → **robots.txt and llms.txt** (the `set:seo` area), and the edits go into history.
 
 - The response comes from the first of these that exists: a file in the site's `public/`, a custom text from the admin panel, the standard text.
-- The standard `robots.txt` opens the site and closes the admin path, `/request/` and `/mcp`. It adds the `Sitemap:` line when the **Site address** is set.
-- The standard `llms.txt` is built from published pages by the same rules as the sitemap: `# Site name`, `> SEO description of the home page`, then `## Pages` and a `- [Title](url): description` line for each page.
+- The standard `robots.txt` opens the site and closes the admin path, `/request/` and `/mcp`. It adds the `Sitemap:` line when the sitemap has a base URL.
+- The standard `llms.txt` has a site title, the SEO description of the home page if available, and one `- [Title](url): description` line per indexable page. Single-language sites use one `## Pages` section. Multilingual sites use a section per language.
 - A custom text is up to 64 KB. An empty field, the **Back to the standard text** button, and a text equal to the standard one all return the standard text.
 - You cannot create a page with the URL `/robots.txt` or `/llms.txt`.
 - The **AI search** line on **Site status** warns if `robots.txt` closes at least one AI bot: OAI-SearchBot, Claude-SearchBot, PerplexityBot, Googlebot, Bingbot, YandexBot, YandexAdditional, YandexAdditionalBot, ChatGPT-User, Claude-User, Perplexity-User, GPTBot, ClaudeBot, Google-Extended.
@@ -1558,6 +1558,28 @@ const form = document.getElementById('callback');
 const response = await fetch(form.action, { method: 'POST', body: new FormData(form) });
 const result = await response.json();
 ```
+
+#### Multilingual indexing and operations
+
+With two or more configured content languages, `itk_seo().alternates` contains `{hreflang, href}` for the indexable published versions of the same page, including the current version. Language tags use `html_lang`, so `zh` may produce `zh-CN`. The main version comes first, followed by configuration order. At least two indexable versions are required. `x-default` points to the main version when it is published and indexable. Preview and a current `noindex` page expose no SEO alternatives. The language switcher can still use `page.translations` to link to published `noindex` versions.
+
+Absolute links use the trusted base from `PublicUrl::base()`, in order of precedence from `itk_cms.public_url`, a request whose host is covered by `framework.trusted_hosts`, or the `domain` site setting. Debug mode can fall back to the request URL. Configure `public_url` or the site address for consistent links in HTTP requests and workers. Without a base, the language switcher retains relative links and SEO alternatives are empty. A live multilingual page uses its own absolute canonical URL when the page SEO, a rule and the `itk_seo()` defaults leave it empty.
+
+The stock layout prints the links after the canonical. A custom layout can use the same loop.
+
+```twig
+{% set seo = itk_seo() %}
+{% if seo.canonical != '' %}<link rel="canonical" href="{{ seo.canonical }}">{% endif %}
+{% for alternate in seo.alternates %}
+    <link rel="alternate" hreflang="{{ alternate.hreflang }}" href="{{ alternate.href }}">
+{% endfor %}
+```
+
+One `/sitemap.xml` lists all enabled, indexable published versions and adds `xhtml:link` with the same alternates as HTML. Generated `/llms.txt` groups page titles, descriptions and links under language names in configuration order, omitting empty languages. Publishing, moving, unpublishing or deleting a version invalidates both files after commit. Generated multilingual responses revalidate with content ETags, including for changes within one second. Date-only conditional requests receive the current body. A site's `public/sitemap.xml` or `public/llms.txt` takes precedence. Saved SEO text takes precedence over generated `llms.txt`.
+
+IndexNow uses the affected language's full path. Moves include the old and new addresses. Unpublishing and deleting use the last live address. Deleting a page covers its indexable live versions across enabled languages. Critical CSS also uses the full path of each published version of an enabled language, including pages with `noindex`.
+
+Run `php bin/console itk:doctor --ci` to check the main language and prefixes, home pages, conflicting paths, the SEO base, manual crawler files, and empty settings or menu areas by language. A missing main home page is an error. A missing secondary home page is a warning.
 
 ### Rate limits
 

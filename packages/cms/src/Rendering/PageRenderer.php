@@ -76,6 +76,9 @@ final class PageRenderer
      */
     public function renderSource(PageTranslation $t): string
     {
+        if (!$t->isLive() || !($this->contentLocales?->has($t->locale) ?? true)) {
+            throw new \LogicException('Critical CSS requires a live version in an enabled content language.');
+        }
         $path = (string) ($t->published['url'] ?? '/');
         $request = Request::create(($this->publicUrl->base() ?? 'http://localhost') . Url::encodePath('' === $path ? '/' : $path));
         $request->setSession(new Session(new MockArraySessionStorage()));
@@ -182,6 +185,12 @@ final class PageRenderer
             'sections' => $sections,
             'h1Id' => $this->h1->pageH1Id($sections, $tpl),
         ];
+        if (!$preview && ($this->contentLocales?->isMultilingual() ?? false)) {
+            $base = $this->publicUrl->base();
+            $base = null !== $base && PublicUrl::isValid($base) ? $base : null;
+            $page['seo_alternates'] = $this->versions?->alternates($p, $base) ?? [];
+            $page['seo_canonical'] = null === $base ? '' : $base . Url::encodePath(Url::spelling($page['url']));
+        }
         $site = $this->settings->all($t->locale) + ['locale' => $t->locale];
         $site['name'] = $site['siteName'] ?? '';
 
