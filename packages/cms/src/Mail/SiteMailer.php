@@ -77,15 +77,15 @@ final class SiteMailer
                 ->html($mail->html);
             $this->factory->transport($route)->send($email);
         } catch (\Throwable $e) {
-            $this->failed($mail, $this->reason($e, $route->secrets), $route->secrets);
+            $this->failed($mail, $this->reason($e, $route->secrets, $route->usernames), $route->secrets, $route->usernames);
         }
         $this->status->sent();
     }
 
     /** @param list<string> $secrets */
-    private function failed(SendMail $mail, string $reason, array $secrets = []): never
+    private function failed(SendMail $mail, string $reason, #[\SensitiveParameter] array $secrets = [], #[\SensitiveParameter] array $usernames = []): never
     {
-        $reason = DsnBuilder::clean($reason, $secrets);
+        $reason = DsnBuilder::clean($reason, $secrets, $usernames);
         $this->logger->error('Could not send a {kind} letter: {error}', ['kind' => $mail->kind, 'error' => $reason]);
         $this->status->failed($mail->kind, $reason);
 
@@ -93,9 +93,9 @@ final class SiteMailer
     }
 
     /** @param list<string> $secrets */
-    private function reason(\Throwable $e, array $secrets): string
+    private function reason(\Throwable $e, #[\SensitiveParameter] array $secrets, #[\SensitiveParameter] array $usernames = []): string
     {
-        $text = DsnBuilder::clean(\trim(\preg_replace('/\s+/', ' ', $e->getMessage()) ?? $e->getMessage()), $secrets);
+        $text = DsnBuilder::clean(\trim(\preg_replace('/\s+/', ' ', $e->getMessage()) ?? $e->getMessage()), $secrets, $usernames);
 
         return '' === $text ? I18n::t('http.mail_rejected') : \mb_substr($text, 0, 300);
     }

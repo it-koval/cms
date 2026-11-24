@@ -5,9 +5,8 @@ declare(strict_types=1);
 namespace Itk\Cms\Security;
 
 use Itk\Cms\Entity\User;
-use Itk\Cms\I18n\I18n;
 use Symfony\Component\Security\Core\Authentication\Token\TokenInterface;
-use Symfony\Component\Security\Core\Exception\CustomUserMessageAccountStatusException;
+use Symfony\Component\Security\Core\Exception\BadCredentialsException;
 use Symfony\Component\Security\Core\User\UserCheckerInterface;
 use Symfony\Component\Security\Core\User\UserInterface;
 
@@ -17,7 +16,7 @@ final class UserChecker implements UserCheckerInterface
     public function checkPreAuth(UserInterface $user): void
     {
         if ($user instanceof User && User::BLOCKED === $user->status) {
-            throw new CustomUserMessageAccountStatusException(I18n::t('http.account_closed'));
+            throw new BadCredentialsException();
         }
     }
 

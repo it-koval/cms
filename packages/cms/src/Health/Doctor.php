@@ -92,6 +92,7 @@ final class Doctor
         $site = I18n::t('ops.doctor_group_site');
         if (!$this->multilingual()) {
             $add($site, I18n::t('ops.doctor_name_public_url'), $this->publicUrl());
+            $done[I18n::t('ops.doctor_name_public_url')] = true;
         }
         $add($site, I18n::t('ops.doctor_name_migrations'), $this->migrations());
         if (!$this->multilingual()) {
@@ -107,6 +108,8 @@ final class Doctor
         $add($site, I18n::t('ops.doctor_name_admin_build'), $this->adminBuild());
         $add($site, I18n::t('ops.doctor_name_analytics_loader'), self::checkAnalyticsLoader($this->analyticsAsset, $this->projectDir . '/public/' . AnalyticsAsset::PATH));
 
+        // SchemaLint below owns the schema group; its tagged Health counterpart must not repeat it.
+        $done[I18n::t('ops.doctor_name_schema_warnings')] = true;
         foreach ($this->report($done) as [$name, $result]) {
             $add(I18n::t('ops.doctor_group_health'), $name, $result);
         }
@@ -114,7 +117,7 @@ final class Doctor
         $schema = $this->lint->run();
         $add(I18n::t('ops.doctor_group_schema'), I18n::t('ops.doctor_name_schema'), [] === $schema['errors'] ? HealthResult::ok(I18n::t('ops.doctor_schema_ok')) : HealthResult::fail(\implode('; ', $schema['errors'])));
         if ([] !== $schema['warnings']) {
-            $add(I18n::t('ops.doctor_group_schema'), I18n::t('ops.doctor_name_templates'), HealthResult::warn(\implode('; ', $schema['warnings'])));
+            $add(I18n::t('ops.doctor_group_schema'), I18n::t('ops.doctor_name_schema_warnings'), HealthResult::warn(\implode('; ', $schema['warnings'])));
         }
 
         return $lines;
@@ -171,7 +174,7 @@ final class Doctor
         } catch (\Throwable $e) {
             $out[] = [I18n::t('ops.doctor_name_locale_conflicts'), HealthResult::warn(I18n::t('ops.doctor_check_unavailable', ['error' => MessengerMonitor::scrub($e->getMessage())]))];
         }
-        $base = $this->publicUrl();
+        $base = $this->publicUrl(accountLinks: false);
         if (HealthResult::WARN === $base->status && I18n::t('ops.doctor_public_url_missing') === $base->message) {
             $base = HealthResult::warn(I18n::t('ops.doctor_seo_base_missing'));
         }
@@ -246,10 +249,11 @@ final class Doctor
         return [] === $loose ? HealthResult::ok(I18n::t('ops.doctor_extensions_ok')) : HealthResult::warn(I18n::t('ops.doctor_extensions_optional', ['list' => \implode('; ', $loose)]));
     }
 
-    private function publicUrl(): HealthResult
+    private function publicUrl(bool $accountLinks = true): HealthResult
     {
         try {
-            $base = $this->services->get(PublicUrl::class)->base();
+            $urls = $this->services->get(PublicUrl::class);
+            $base = $accountLinks ? $urls->trustedBase() : $urls->base();
         } catch (\UnexpectedValueException $e) {
             return HealthResult::fail($e->getMessage());
         } catch (\Throwable $e) {

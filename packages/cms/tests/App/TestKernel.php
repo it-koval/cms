@@ -43,9 +43,10 @@ final class TestKernel extends BaseKernel
      * @param array<string, mixed> $framework top-level blocks of the framework config that replace the ones of the test site
      * @param array<string, string> $migrationPaths migrations of the site: namespace => directory
      * @param array<string, mixed> $itk keys of the itk_cms config that replace the ones of the test site
+     * @param array<string, mixed> $security top-level security config overrides for HTTP boundary tests
      * @param int $loginAttempts how many failed sign-ins the limiter of the admin firewall lets through (a test of the lock lowers it)
      */
-    public function __construct(string $environment, bool $debug, private readonly ?string $adminPath = null, private readonly string $routePrefix = '', private readonly array $framework = [], private readonly array $migrationPaths = [], private readonly array $itk = [], private readonly int $loginAttempts = 1000)
+    public function __construct(string $environment, bool $debug, private readonly ?string $adminPath = null, private readonly string $routePrefix = '', private readonly array $framework = [], private readonly array $migrationPaths = [], private readonly array $itk = [], private readonly int $loginAttempts = 1000, private readonly array $security = [])
     {
         parent::__construct($environment, $debug);
     }
@@ -62,7 +63,7 @@ final class TestKernel extends BaseKernel
         $root = \getenv('ITK_TEST_CACHE_DIR');
         $dir = \is_string($root) && '' !== $root ? \rtrim($root, '/') . '/' . $this->getEnvironment() : parent::getCacheDir();
 
-        return null === $this->adminPath && '' === $this->routePrefix && [] === $this->framework && [] === $this->migrationPaths && [] === $this->itk && 1000 === $this->loginAttempts ? $dir : $dir . '/' . \md5($this->mount() . '|' . $this->adminPath . '|' . \serialize([$this->framework, $this->migrationPaths, $this->itk, $this->loginAttempts]));
+        return null === $this->adminPath && '' === $this->routePrefix && [] === $this->framework && [] === $this->migrationPaths && [] === $this->itk && 1000 === $this->loginAttempts && [] === $this->security ? $dir : $dir . '/' . \md5($this->mount() . '|' . $this->adminPath . '|' . \serialize([$this->framework, $this->migrationPaths, $this->itk, $this->loginAttempts, $this->security]));
     }
 
     public function registerBundles(): iterable
@@ -135,7 +136,7 @@ final class TestKernel extends BaseKernel
         $mount = $this->mount();
 
         // the setup of README, step 4
-        $container->extension('security', [
+        $container->extension('security', $this->security + [
             'password_hashers' => [
                 'Itk\Cms\Entity\User' => ['algorithm' => 'auto', 'cost' => 4, 'time_cost' => 3, 'memory_cost' => 10], // the cheapest hashes: the tests make many users
             ],

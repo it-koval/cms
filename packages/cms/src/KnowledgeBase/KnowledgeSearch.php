@@ -36,6 +36,8 @@ final class KnowledgeSearch
     private const MAX_QUERY = 1000;
     /** a repeated query (a site search box) is embedded once a day */
     private const QUERY_TTL = 86400;
+    /** Fixed slots bound storage across processes and embedding spaces, without a racy eviction index. */
+    private const QUERY_SLOTS = 256;
 
     public function __construct(
         private readonly Connection $db,
@@ -149,11 +151,12 @@ final class KnowledgeSearch
     /** The query's vector, from the cache when the same text was asked in the same space today. */
     private function queryVector(string $q): Vector
     {
-        $key = 'itk_kb_q_' . \sha1($this->embedder->space()->id() . "\x1f" . $q);
+        $identity = \sha1($this->embedder->space()->id() . "\x1f" . $q);
+        $key = 'itk_kb_q_slot_' . (\hexdec(\substr($identity, 0, 4)) % self::QUERY_SLOTS);
         try {
             $item = $this->cache->getItem($key);
-            if ($item->isHit() && \is_string($item->get())) {
-                return Vector::fromSql($item->get());
+            if ($item->isHit() && \is_array($cached = $item->get()) && ($cached['identity'] ?? null) === $identity && \is_string($cached['vector'] ?? null)) {
+                return Vector::fromSql($cached['vector']);
             }
         } catch (\Throwable) {
             $item = null;
@@ -165,7 +168,7 @@ final class KnowledgeSearch
         }
         if (null !== $item) {
             try {
-                $this->cache->save($item->set($vector->toSql())->expiresAfter(self::QUERY_TTL));
+                $this->cache->save($item->set(['identity' => $identity, 'vector' => $vector->toSql()])->expiresAfter(self::QUERY_TTL));
             } catch (\Throwable) {
             }
         }

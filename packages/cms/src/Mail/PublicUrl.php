@@ -17,7 +17,7 @@ use Symfony\Component\HttpFoundation\RequestStack;
  *   2. the address of the request that is being served, only when the site has framework.trusted_hosts (Symfony has then answered an untrusted Host with 400 already);
  *   3. the setting «domain» (https:// unless it carries a scheme);
  *   4. the address of the request as it came, only in debug mode (development).
- * With none of these there is no trusted address: base() says null, and a link of a password letter is not made (a link must never lead to a Host that a stranger sent).
+ * These fallbacks apply to ordinary site links through base(). Password and invitation links use only the explicit full origin through trustedBase().
  */
 final class PublicUrl
 {
@@ -34,7 +34,30 @@ final class PublicUrl
     /** Is this an address of the form «https://example.com» (a trailing slash is allowed, a path and a query are not)? */
     public static function isValid(string $url): bool
     {
-        return 1 === \preg_match('~^https?://[^\s/?#]+$~i', \rtrim($url, '/'));
+        if (\str_contains($url, '\\') || 1 === \preg_match('/[\x00-\x20\x7f]/', $url)) {
+            return false;
+        }
+        // Capture the original authority: parse_url() can replace bytes of an international hostname with underscores.
+        if (1 !== \preg_match('~^https?://(?<host>\[[0-9a-f:.]+\]|[^\s/?#@:\[\]]+)(?::(?<port>[0-9]+))?/?$~iuD', $url, $parts)) {
+            return false;
+        }
+        if (isset($parts['port']) && ((int) $parts['port'] < 1 || (int) $parts['port'] > 65535)) {
+            return false;
+        }
+        $host = $parts['host'];
+        if (\str_starts_with($host, '[')) {
+            return false !== \filter_var(\substr($host, 1, -1), \FILTER_VALIDATE_IP, \FILTER_FLAG_IPV6);
+        }
+
+        // Keep international domain names as configured; DNS resolution/IDNA is the transport's job.
+        $domain = \str_ends_with($host, '.') ? \substr($host, 0, -1) : $host;
+        foreach (\explode('.', $domain) as $label) {
+            if (1 !== \preg_match('~^[\p{L}\p{N}_](?:[\p{L}\p{M}\p{N}_-]*[\p{L}\p{M}\p{N}_])?$~uD', $label)) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /**
@@ -44,10 +67,7 @@ final class PublicUrl
      */
     public function base(): ?string
     {
-        $base = \trim((string) $this->configured);
-        if ('' !== $base && !self::isValid($base)) {
-            throw new \UnexpectedValueException(I18n::t('http.mail_public_url_invalid', ['value' => $base]));
-        }
+        $base = $this->trustedBase() ?? '';
         if ('' === $base && [] !== Request::getTrustedHosts()) {
             $base = $this->requests->getMainRequest()?->getSchemeAndHttpHost() ?? '';
         }
@@ -74,6 +94,21 @@ final class PublicUrl
         }
 
         return null !== $base && self::isValid($base) ? $base : null;
+    }
+
+    /** Password and invitation links require a configured full origin: trusted_hosts validates only a hostname, not a scheme or port. */
+    public function trustedBase(): ?string
+    {
+        $base = \trim((string) $this->configured);
+        if ('' !== $base) {
+            if (!self::isValid($base)) {
+                throw new \UnexpectedValueException(I18n::t('http.mail_public_url_invalid', ['value' => $base]));
+            }
+
+            return \rtrim($base, '/');
+        }
+
+        return null;
     }
 
     /**

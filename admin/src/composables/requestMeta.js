@@ -23,6 +23,11 @@ export const chipOf = (state) => (state === 'sent' ? 'delivered' : state === 'fa
 
 /** What a resend answered, for the toast: { state: 'sent'|'failed'|'pending', error }. With a channel only that channel counts; without one the aggregate does. */
 export function resendOutcome(r, channel) {
+  const outcomes = Object.values(r.outcomes || {})
+  const failed = channel ? r.outcomes?.[channel]?.state === 'failed' && r.outcomes[channel] : outcomes.find((outcome) => outcome.state === 'failed')
+  if (failed) return { state: 'failed', error: failed.error || '' }
+  const queued = Array.isArray(r.queuedChannels) ? r.queuedChannels : []
+  if (channel ? queued.includes(channel) : queued.length > 0) return { state: 'queued', error: '' }
   if (channel) {
     const c = channelsOf(r).find((x) => x.channel === channel)
     if (c) return { state: c.state, error: c.error || '' }

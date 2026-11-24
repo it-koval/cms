@@ -96,7 +96,7 @@ final class TelegramNotifier implements ChannelNotifier
             return ChannelOutcome::pending();
         }
 
-        $parts = MessageParts::telegram($this->buildText($r, $resend));
+        $parts = $this->parts($r, $resend);
         $errors = [];
         foreach ($chats as $chat) {
             foreach ($parts->texts as $i => $text) {
@@ -118,8 +118,13 @@ final class TelegramNotifier implements ChannelNotifier
     }
 
     /** Writes the outcome of attempt() into the request and announces it. Returns true when it needs no retry. */
-    public function record(Request $r, ChannelOutcome $outcome): bool
+    public function record(Request $r, ChannelOutcome $outcome, bool $announce = true): bool
     {
+        if (!$announce) {
+            $r->markChannel(Request::CHANNEL_TELEGRAM, $outcome->state, $outcome->error);
+
+            return !$outcome->isFailed();
+        }
         if ($outcome->isPending()) {
             $wasFailed = Request::DELIVERY_FAILED === $r->channelState(Request::CHANNEL_TELEGRAM);
             $r->markChannel(Request::CHANNEL_TELEGRAM, Request::DELIVERY_PENDING);
@@ -164,6 +169,22 @@ final class TelegramNotifier implements ChannelNotifier
     public function buildText(Request $r, bool $resend = false): string
     {
         return RequestText::build($this->schema, $r, $resend, HtmlSanitizer::escape(...));
+    }
+
+    /** The exact formatter used by delivery and by the synchronous resend limit. */
+    public function parts(Request $r, bool $resend = false): MessageParts
+    {
+        return MessageParts::telegram($this->buildText($r, $resend));
+    }
+
+    /** Called only after the durable delivery result has committed. */
+    public function announce(Request $r, ChannelOutcome $outcome): void
+    {
+        try {
+            $this->events->dispatch(new RequestDelivery($r, Request::DELIVERY_SENT === $outcome->state, $outcome->error, $outcome->isPending()));
+        } catch (\Throwable) {
+            $this->logger->error('A delivery listener failed for request #{id}.', ['id' => $r->id]);
+        }
     }
 
     private function fail(Request $r, string $error): bool

@@ -40,7 +40,7 @@ final class CoreSchema
             ->fields(Field::description('description', 'description')->texts(label: 'model.core_category_description', help: 'model.core_category_description_help')->max(200)->rows(3))
             ->listing(of: ['blog_article'])->texts(listing: 'model.core_category_articles');
 
-        $s->template('blog_article', 'blog_article')->markCore()
+        $s->template('blog_article', 'blog_article')->markCore()->forAuthors()
             ->texts(name: 'model.core_article_name', about: 'model.core_article_about', shortcut: 'model.core_blog_articles')
             ->parents('blog', 'blog_category')->sections('all')
             ->fields(...self::articleFields())

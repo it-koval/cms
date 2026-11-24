@@ -17,7 +17,7 @@ final class SendRequestNotificationHandler
 
     public function __invoke(SendRequestNotification $message): void
     {
-        $delivered = $this->deliverer->deliver($message->requestId, $message->channel, $message->resend);
+        $delivered = $this->deliverer->deliver($message->requestId, $message->channel, $message->resend, $message->jobId ?? 'legacy');
         if (false === $delivered) {
             // Messenger retries (retry_strategy of the async transport), this messenger only; its state stays «failed» until a delivery works
             throw new RequestNotDeliveredException(\sprintf('Request #%d was not delivered to %s.', $message->requestId, Request::CHANNELS[$message->channel] ?? $message->channel));

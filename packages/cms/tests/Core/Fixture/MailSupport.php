@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace Itk\Cms\Tests\Core\Fixture;
 
 use Doctrine\ORM\EntityManagerInterface;
+use Itk\Cms\Entity\Setting;
 use Itk\Cms\Mail\MailSettings;
+use Itk\Cms\Mail\MailStatus;
 use Itk\Cms\Mail\SendMail;
 use Symfony\Component\HttpClient\HttpClient;
 use Symfony\Component\Messenger\Transport\InMemory\InMemoryTransport;
@@ -79,7 +81,9 @@ trait MailSupport
     {
         $em = self::getContainer()->get(EntityManagerInterface::class);
         $em->clear();
-        $em->createQuery("DELETE FROM Itk\\Cms\\Entity\\Setting s WHERE s.key IN ('mail', 'mailStatus', 'mailRoutes')")->execute();
+        $em->createQuery('DELETE FROM Itk\Cms\Entity\Setting s WHERE s.key IN (:keys) AND s.locale = :locale')
+            ->setParameter('keys', [MailSettings::KEY, MailStatus::KEY, 'mailRoutes'])
+            ->setParameter('locale', Setting::ALL)->execute();
     }
 
     /** Письма, которые страница поставила в очередь. @return list<SendMail> */
@@ -93,6 +97,41 @@ trait MailSupport
         }
 
         return $out;
+    }
+
+    /** Runs a password delivery job and inspects its transient message at the transport boundary; no SMTP connection is opened. @return list<SendMail> */
+    private function capturePasswordMail(callable $work, string $kind = SendMail::RESET): array
+    {
+        $mail = [];
+        $listener = static function (\Symfony\Component\Mailer\Event\MessageEvent $event) use (&$mail, $kind): void {
+            $message = $event->getMessage();
+            \assert($message instanceof \Symfony\Component\Mime\Email);
+            $mail[] = new SendMail($message->getTo()[0]->getAddress(), $message->getSubject() ?? '', $message->getTextBody() ?? '', $message->getHtmlBody() ?? '', $kind);
+            $event->reject();
+        };
+        $dispatcher = self::getContainer()->get('event_dispatcher');
+        $dispatcher->addListener(\Symfony\Component\Mailer\Event\MessageEvent::class, $listener, 1000);
+        try {
+            $work();
+        } finally {
+            $dispatcher->removeListener(\Symfony\Component\Mailer\Event\MessageEvent::class, $listener);
+        }
+
+        return $mail;
+    }
+
+    /** @return list<SendMail> Executes the pending password jobs explicitly; ordinary SendMail messages stay in the queue. */
+    private function deliverPasswordMail(): array
+    {
+        $mail = [];
+        foreach (self::getContainer()->get('messenger.transport.async')->getSent() as $envelope) {
+            $job = $envelope->getMessage();
+            if ($job instanceof \Itk\Cms\Security\DeliverPasswordLink) {
+                \array_push($mail, ...$this->capturePasswordMail(static fn () => self::getContainer()->get(\Itk\Cms\Security\DeliverPasswordLinkHandler::class)($job), $job->kind));
+            }
+        }
+
+        return $mail;
     }
 
     private function clearQueue(): void

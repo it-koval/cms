@@ -74,6 +74,7 @@ final class LongRequestDeliveryTest extends WebTestCase
                 $settings->set($key, $value);
             }
         }
+        $em->createQuery("DELETE FROM Itk\\Cms\\Entity\\User u WHERE u.email = 'test-f1-resend@example.com'")->execute();
         parent::tearDown();
     }
 
@@ -485,5 +486,368 @@ final class LongRequestDeliveryTest extends WebTestCase
         self::assertTrue($outcome->isFailed());
         self::assertStringStartsWith(self::CHATS[$channel] . ': ', (string) $outcome->error);
         self::assertStringNotContainsString('часть', (string) $outcome->error);
+    }
+
+    #[Test]
+    #[DataProvider('f1ResendSizes')]
+    public function f1ResendUsesTheSelectedChannelActualParts(string $channel, int $parts): void
+    {
+        $limit = 'telegram' === $channel ? 4096 : 4000;
+        $r = self::request(['items' => \str_repeat('x', $limit * ($parts - 1) - 100)], 'long_f1_resend');
+        $r->markChannel($channel, Request::DELIVERY_FAILED, 'earlier test refusal');
+        self::assertCount($parts, $this->notifier($channel)->parts($r, true)->texts, 'the actual resend formatter defines the boundary');
+        $em = self::getContainer()->get(EntityManagerInterface::class);
+        $em->persist($r);
+        $em->flush();
+        $queued = [];
+        $middleware = new class($queued) implements \Symfony\Component\Messenger\Middleware\MiddlewareInterface {
+            public function __construct(public array &$queued)
+            {
+            }
+
+            public function handle(\Symfony\Component\Messenger\Envelope $envelope, \Symfony\Component\Messenger\Middleware\StackInterface $stack): \Symfony\Component\Messenger\Envelope
+            {
+                $this->queued[] = $envelope->getMessage();
+
+                return $envelope;
+            }
+        };
+        $service = $this->f1Service(new \Symfony\Component\Messenger\MessageBus([$middleware]));
+        $result = $service->resendResult((int) $r->id, $channel);
+        self::assertSame($parts > 20 ? [$channel] : [], $result['queuedChannels']);
+        if ($parts > 20) {
+            self::assertCount(1, $queued);
+            self::assertSame($channel, $queued[0]->channel);
+            self::assertSame((int) $r->id, $queued[0]->requestId);
+            self::assertSame([], $this->api->texts($channel), 'HTTP did not deliver');
+            (new \Itk\Cms\Request\SendRequestNotificationHandler(new RequestDeliverer($em, $this->telegram, $this->max, self::getContainer()->get(AdminLocale::class))))($queued[0]);
+        }
+        self::assertCount($parts, $this->api->texts($channel));
+        self::assertSame(Request::DELIVERY_SENT, $r->channelState($channel));
+    }
+
+    public static function f1ResendSizes(): iterable
+    {
+        foreach (['telegram', 'max'] as $channel) {
+            foreach ([20, 21] as $parts) {
+                yield $channel . $parts => [$channel, $parts];
+            }
+        }
+    }
+
+    #[Test]
+    public function f1PartialDispatchReturnsEveryOutcomeAndCannotQueueTheFirstChannelTwice(): void
+    {
+        $r = self::request(['items' => \str_repeat('x', 85000)], 'long_f1_resend');
+        foreach (['telegram', 'max'] as $channel) {
+            $r->markChannel($channel, Request::DELIVERY_FAILED, 'earlier refusal');
+        }
+        $em = self::getContainer()->get(EntityManagerInterface::class);
+        $em->persist($r);
+        $em->flush();
+        $messages = [];
+        $bus = $this->createMock(\Symfony\Component\Messenger\MessageBusInterface::class);
+        $bus->expects(self::exactly(3))->method('dispatch')->willReturnCallback(static function ($message) use (&$messages) {
+            if ('max' === $message->channel) {
+                throw new \RuntimeException('test refusal');
+            }
+            $messages[] = $message;
+
+            return new \Symfony\Component\Messenger\Envelope($message);
+        });
+        $service = $this->f1Service($bus);
+        $result = $service->resendResult((int) $r->id);
+        self::assertSame(['telegram'], $result['queuedChannels']);
+        self::assertSame('failed', $result['outcomes']['max']['state']);
+        $em->refresh($r);
+        self::assertSame(['telegram'], $service->card($r)['queuedChannels'], 'reopening the card preserves the queue state');
+        $service->resendResult((int) $r->id);
+        self::assertCount(1, $messages, 'a partial failure cannot enqueue the accepted channel again');
+        $handler = new \Itk\Cms\Request\SendRequestNotificationHandler(new RequestDeliverer($em, $this->telegram, $this->max, self::getContainer()->get(AdminLocale::class)));
+        $handler($messages[0]);
+        $count = \count($this->api->texts('telegram'));
+        $handler($messages[0]);
+        self::assertCount($count, $this->api->texts('telegram'), 'redelivery of the accepted job is idempotent');
+        self::assertSame([], $service->card($r)['queuedChannels']);
+    }
+
+    #[Test]
+    public function f1AQueueFailureReturnsTheEarlierSynchronousDeliveryToo(): void
+    {
+        $r = self::request(['items' => \str_repeat('&', 16400)], 'long_f1_resend');
+        foreach (['telegram', 'max'] as $channel) {
+            $r->markChannel($channel, Request::DELIVERY_FAILED, 'earlier refusal');
+        }
+        self::assertLessThanOrEqual(20, \count($this->telegram->parts($r, true)->texts));
+        self::assertGreaterThan(20, \count($this->max->parts($r, true)->texts));
+        $em = self::getContainer()->get(EntityManagerInterface::class);
+        $em->persist($r);
+        $em->flush();
+        $bus = $this->createMock(\Symfony\Component\Messenger\MessageBusInterface::class);
+        $bus->expects(self::exactly(2))->method('dispatch')->willThrowException(new \RuntimeException('test refusal'));
+        $service = $this->f1Service($bus);
+        $out = $service->resendResult((int) $r->id);
+        self::assertSame('sent', $out['outcomes']['telegram']['state']);
+        self::assertSame('failed', $out['outcomes']['max']['state']);
+        self::assertSame(200, $out['status']);
+        $count = \count($this->api->texts('telegram'));
+        $again = $service->resendResult((int) $r->id);
+        self::assertArrayNotHasKey('telegram', $again['outcomes']);
+        self::assertCount($count, $this->api->texts('telegram'));
+    }
+
+    #[Test]
+    #[DataProvider('f1SynchronousOutcomes')]
+    public function f1SynchronousBusReturnsTheDeliveryOutcomeInsteadOfQueueAcceptance(bool $refused, bool $otherQueued = false): void
+    {
+        if ($refused) {
+            $this->api->refuseAttempt = 1;
+        }
+        $r = self::request(['items' => \str_repeat('x', 85000)], 'long_f1_resend');
+        $em = self::getContainer()->get(EntityManagerInterface::class);
+        $em->persist($r);
+        $em->flush();
+        if ($otherQueued) {
+            self::assertNotNull(RequestDeliverer::reserve($em, (int) $r->id, 'max', false));
+        }
+        $handler = new \Itk\Cms\Request\SendRequestNotificationHandler(new RequestDeliverer($em, $this->telegram, $this->max, self::getContainer()->get(AdminLocale::class)));
+        $handlers = new \Symfony\Component\Messenger\Handler\HandlersLocator([\Itk\Cms\Request\SendRequestNotification::class => [$handler]]);
+        $sync = new \Symfony\Component\Messenger\Transport\Sync\SyncTransport(new \Symfony\Component\Messenger\MessageBus([new \Symfony\Component\Messenger\Middleware\HandleMessageMiddleware($handlers)]));
+        $send = new class($sync) implements \Symfony\Component\Messenger\Middleware\MiddlewareInterface {
+            public function __construct(private readonly \Symfony\Component\Messenger\Transport\Sync\SyncTransport $transport)
+            {
+            }
+
+            public function handle(\Symfony\Component\Messenger\Envelope $envelope, \Symfony\Component\Messenger\Middleware\StackInterface $stack): \Symfony\Component\Messenger\Envelope
+            {
+                return $this->transport->send($envelope);
+            }
+        };
+        $bus = new \Symfony\Component\Messenger\MessageBus([$send]);
+        $out = $this->f1Service($bus)->resendResult((int) $r->id, 'telegram');
+        self::assertSame($otherQueued ? ['max'] : [], $out['queuedChannels']);
+        self::assertSame($refused ? 'failed' : 'sent', $out['outcomes']['telegram']['state']);
+        self::assertSame(200, $out['status'], 'a handled refusal is not a failed enqueue');
+        self::assertSame($refused ? 'failed' : 'done', $r->channelJobPhase('telegram'));
+        if ($refused) {
+            self::assertStringContainsString('test refusal', $out['outcomes']['telegram']['error']);
+            self::assertStringContainsString('часть 1 из', $out['outcomes']['telegram']['error']);
+        }
+    }
+
+    public static function f1SynchronousOutcomes(): iterable
+    {
+        yield 'sent synchronously' => [false];
+        yield 'handler refused after recording the real error' => [true];
+        yield 'existing queued job in another channel' => [false, true];
+    }
+
+    #[Test]
+    public function f1DeliveryListenerRunsAfterCommitAndCannotCauseASecondSend(): void
+    {
+        $c = self::getContainer();
+        $em = $c->get(EntityManagerInterface::class);
+        $r = self::request(['items' => 'after-commit-regression']);
+        $em->persist($r);
+        $em->flush();
+        $job = RequestDeliverer::reserve($em, (int) $r->id, 'telegram', false);
+        $message = new \Itk\Cms\Request\SendRequestNotification((int) $r->id, false, 'telegram', $job);
+        $handler = new \Itk\Cms\Request\SendRequestNotificationHandler(new RequestDeliverer($em, $this->telegram, $this->max, $c->get(AdminLocale::class)));
+        $seen = false;
+        $listener = static function ($event) use ($em, &$seen): void {
+            self::assertFalse($em->getConnection()->isTransactionActive());
+            $stored = \json_decode($em->getConnection()->fetchOne('SELECT channels FROM itk_request WHERE id = ?', [$event->request->id]), true);
+            self::assertSame('sent', $stored['telegram']['state']);
+            $seen = true;
+            throw new \RuntimeException('test extension failure after delivery');
+        };
+        $dispatcher = $c->get('event_dispatcher');
+        $dispatcher->addListener(\Itk\Cms\Event\RequestDelivery::class, $listener);
+        try {
+            $handler($message);
+            self::assertTrue($seen);
+            self::assertTrue($em->isOpen());
+            $handler($message);
+            self::assertCount(1, $this->api->texts('telegram'));
+            self::assertSame(Request::DELIVERY_SENT, $r->channelState('telegram'));
+        } finally {
+            $dispatcher->removeListener(\Itk\Cms\Event\RequestDelivery::class, $listener);
+        }
+    }
+
+    #[Test]
+    public function f1FinalFailureReleasesTheActionAndStaleJobsCannotRevive(): void
+    {
+        $em = self::getContainer()->get(EntityManagerInterface::class);
+        $r = self::request(['items' => 'final-failure-regression']);
+        $r->markChannel('telegram', Request::DELIVERY_FAILED, 'earlier refusal');
+        $em->persist($r);
+        $em->flush();
+        $deliverer = new RequestDeliverer($em, $this->telegram, $this->max, self::getContainer()->get(AdminLocale::class));
+        $job = RequestDeliverer::reserve($em, (int) $r->id, 'telegram', true);
+        $message = new \Itk\Cms\Request\SendRequestNotification((int) $r->id, true, 'telegram', $job);
+        $retry = new \Symfony\Component\Messenger\Event\WorkerMessageFailedEvent(new \Symfony\Component\Messenger\Envelope($message), 'async', new \RuntimeException('retryable refusal'));
+        $retry->setForRetry();
+        (new \Itk\Cms\Request\RequestDeliveryJobListener($deliverer))($retry);
+        self::assertSame(['telegram'], $r->queuedChannels(), 'a scheduled retry keeps the reservation active');
+        $failure = new \Symfony\Component\Messenger\Event\WorkerMessageFailedEvent(new \Symfony\Component\Messenger\Envelope($message), 'async', new \RuntimeException('terminal refusal'));
+        (new \Itk\Cms\Request\RequestDeliveryJobListener($deliverer))($failure);
+        self::assertSame([], $r->queuedChannels());
+        self::assertTrue($deliverer->resumeJob($message), 'explicit failed queue retry rearms the same token');
+        self::assertSame(['telegram'], $r->queuedChannels());
+        $deliverer->queueFailed((int) $r->id, 'telegram', $job, 'refused again');
+        $newJob = RequestDeliverer::reserve($em, (int) $r->id, 'telegram', true);
+        self::assertNotSame($job, $newJob);
+        self::assertFalse($deliverer->resumeJob($message), 'a new operator action supersedes the old failed job');
+        (new \Itk\Cms\Request\SendRequestNotificationHandler($deliverer))($message);
+        self::assertSame([], $this->api->texts('telegram'));
+        self::assertSame(['telegram'], $r->queuedChannels());
+    }
+
+    #[Test]
+    public function f1TerminalListenerWithAClosedManagerPreservesTheWorkerFailure(): void
+    {
+        $c = self::getContainer();
+        $em = $c->get(EntityManagerInterface::class);
+        $r = self::request(['items' => 'closed-manager-regression']);
+        $em->persist($r);
+        $em->flush();
+        $job = RequestDeliverer::reserve($em, (int) $r->id, 'telegram', false);
+        $isolated = new \Doctrine\ORM\EntityManager($em->getConnection(), $em->getConfiguration());
+        $isolated->close();
+        $deliverer = new RequestDeliverer($isolated, $this->telegram, $this->max, $c->get(AdminLocale::class));
+        $message = new \Itk\Cms\Request\SendRequestNotification((int) $r->id, false, 'telegram', $job);
+        $original = new \RuntimeException('original failed flush');
+        $failure = new \Symfony\Component\Messenger\Event\WorkerMessageFailedEvent(new \Symfony\Component\Messenger\Envelope($message), 'async', $original);
+        (new \Itk\Cms\Request\RequestDeliveryJobListener($deliverer))($failure);
+        self::assertSame($original, $failure->getThrowable());
+        self::assertFalse($failure->willRetry());
+        $em->refresh($r);
+        self::assertSame('queued', $r->channelJobPhase('telegram'));
+        self::assertGreaterThan(\time(), $r->channelJobLease('telegram'));
+        self::assertLessThanOrEqual(\time() + 3600, $r->channelJobLease('telegram'));
+        self::assertFalse($em->getConnection()->isTransactionActive());
+    }
+
+    #[Test]
+    public function f1AnExpiredReservationCanBeReclaimedWithoutSendingItsOldJob(): void
+    {
+        $em = self::getContainer()->get(EntityManagerInterface::class);
+        $r = self::request(['items' => 'expired-reservation-regression']);
+        $r->markChannelJob('telegram', 'expired', 'queued', \time() - 1);
+        $em->persist($r);
+        $em->flush();
+        self::assertSame([], $r->queuedChannels());
+        $job = RequestDeliverer::reserve($em, (int) $r->id, 'telegram', false);
+        self::assertNotNull($job);
+        self::assertNotSame('expired', $job);
+        $deliverer = new RequestDeliverer($em, $this->telegram, $this->max, self::getContainer()->get(AdminLocale::class));
+        self::assertTrue($deliverer->deliver((int) $r->id, 'telegram', false, 'expired'));
+        self::assertSame([], $this->api->texts('telegram'));
+    }
+
+    private function f1Service(\Symfony\Component\Messenger\MessageBusInterface $bus): \Itk\Cms\Request\RequestService
+    {
+        $c = self::getContainer();
+
+        return new \Itk\Cms\Request\RequestService(
+            $c->get(EntityManagerInterface::class),
+            $c->get(\Itk\Cms\Repository\RequestRepository::class),
+            $c->get(Schema::class),
+            $c->get(SettingsService::class),
+            $this->telegram,
+            $this->max,
+            new RequestDeliverer($c->get(EntityManagerInterface::class), $this->telegram, $this->max, $c->get(AdminLocale::class)),
+            $c->get(\Itk\Cms\Notification\NotifierInterface::class),
+            $bus,
+            'f1-secret',
+            'ru',
+        );
+    }
+
+    #[Test]
+    public function f1FailedQueueDispatchCannotReportAcceptance(): void
+    {
+        $r = self::request(['items' => \str_repeat('x', 85000)], 'long_f1_resend');
+        $em = self::getContainer()->get(EntityManagerInterface::class);
+        $em->persist($r);
+        $em->flush();
+        $bus = $this->createMock(\Symfony\Component\Messenger\MessageBusInterface::class);
+        $bus->expects(self::once())->method('dispatch')->willThrowException(new \RuntimeException('unavailable'));
+        $result = $this->f1Service($bus)->resendResult((int) $r->id, 'telegram');
+        self::assertSame([], $result['queuedChannels']);
+        self::assertSame('failed', $result['outcomes']['telegram']['state']);
+        self::assertSame(Request::DELIVERY_FAILED, $r->delivery);
+        self::assertSame([], $this->api->texts('telegram'));
+    }
+
+    public static function f1HttpCases(): iterable
+    {
+        yield '20 stays synchronous' => [20, false, 200];
+        yield '21 accepted in queue' => [21, false, 202];
+        yield 'queue rejected' => [21, true, 502];
+        yield 'health synchronous' => [20, false, 200, true];
+        yield 'health queued' => [21, false, 202, true];
+        yield 'health queue rejected' => [21, true, 502, true];
+    }
+
+    #[Test]
+    #[DataProvider('f1HttpCases')]
+    public function f1HttpResendSeparatesQueueAcceptanceFromDelivery(int $parts, bool $reject, int $status, bool $health = false): void
+    {
+        $client = static::getClient();
+        $client->disableReboot();
+        $c = self::getContainer();
+        $r = self::request(['items' => \str_repeat('x', 4096 * ($parts - 1) - 100)], 'long_f1_resend');
+        $r->markChannel('telegram', Request::DELIVERY_FAILED, 'earlier test refusal');
+        self::assertCount($parts, $this->telegram->parts($r, true)->texts, 'the actual resend formatter defines the boundary');
+        $em = $c->get(EntityManagerInterface::class);
+        $em->persist($r);
+        $em->flush();
+        $bus = $this->createMock(\Symfony\Component\Messenger\MessageBusInterface::class);
+        if ($parts > 20) {
+            $expectation = $bus->expects(self::once())->method('dispatch');
+            if ($reject) {
+                $expectation->willThrowException(new \RuntimeException('test queue refusal'));
+            } else {
+                $expectation->willReturnCallback(static fn ($message) => new \Symfony\Component\Messenger\Envelope($message));
+            }
+        } else {
+            $bus->expects(self::never())->method('dispatch');
+        }
+        $c->set(\Itk\Cms\Request\RequestService::class, $this->f1Service($bus));
+        $admin = $c->get(\Itk\Cms\Security\UserManager::class)->create('test-f1-resend@example.com', 'F1 resend', 'admin', 'f1-harmless-password');
+        $client->loginUser($admin, 'itk_admin');
+        $client->request('GET', '/admin');
+        \preg_match('/"csrf":"([a-f0-9]+)"/', (string) $client->getResponse()->getContent(), $match);
+        $client->jsonRequest('POST', '/admin/api/' . ($health ? 'health/requests/' : 'requests/') . $r->id . '/resend', ['channel' => 'telegram'], ['HTTP_X_CSRF_TOKEN' => $match[1]]);
+        self::assertSame($status, $client->getResponse()->getStatusCode());
+        $out = \json_decode((string) $client->getResponse()->getContent(), true);
+        if (!$reject) {
+            self::assertSame($parts > 20 ? ['telegram'] : [], $out['queuedChannels']);
+        } else {
+            self::assertSame([], $out['queuedChannels']);
+            self::assertSame('failed', $out['outcomes']['telegram']['state']);
+        }
+        self::assertCount($parts > 20 ? 0 : 20, $this->api->texts('telegram'));
+    }
+
+    #[Test]
+    #[DataProvider('channels')]
+    public function f1ResendCountsEscapedPartsOnlyInTheChosenChannel(string $channel): void
+    {
+        $r = self::request(['items' => \str_repeat('&', 16400)], 'long_f1_resend');
+        $em = self::getContainer()->get(EntityManagerInterface::class);
+        $em->persist($r);
+        $em->flush();
+        $bus = $this->createMock(\Symfony\Component\Messenger\MessageBusInterface::class);
+        if ('max' === $channel) {
+            $bus->expects(self::once())->method('dispatch')->willReturnCallback(static fn ($message) => new \Symfony\Component\Messenger\Envelope($message));
+        } else {
+            $bus->expects(self::never())->method('dispatch');
+        }
+        $out = $this->f1Service($bus)->resendResult((int) $r->id, $channel);
+        self::assertSame('max' === $channel ? ['max'] : [], $out['queuedChannels']);
+        self::assertCount('max' === $channel ? 0 : 5, $this->api->texts($channel));
     }
 }

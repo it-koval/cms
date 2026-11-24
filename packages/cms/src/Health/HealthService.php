@@ -86,16 +86,20 @@ final class HealthService
     }
 
     /**
-     * Sends a request whose delivery failed to its messengers again, right now: to the one asked for, else to each that failed.
+     * Sends a failed request to its messengers again, queueing a channel above 20 formatted parts: to the one asked for, else to each that failed.
      *
-     * @return array{delivery: string, error: string, channels: list<array{channel: string, state: string, error: ?string}>}
+     * @return array{delivery: string, queuedChannels: list<string>, error: string, channels: list<array{channel: string, state: string, error: ?string}>, httpStatus: int}
      */
     public function resendRequest(string $id, ?string $channel = null): array
     {
-        $r = $this->requests->resend($id, $channel);
+        $result = $this->requests->resendResult($id, $channel);
+        $r = $result['request'];
 
         return [
             'delivery' => $r->delivery,
+            'queuedChannels' => $result['queuedChannels'],
+            'outcomes' => \array_map(static fn (array $outcome): array => [...$outcome, 'error' => null === $outcome['error'] ? null : MessengerMonitor::scrub($outcome['error'])], $result['outcomes']),
+            'httpStatus' => $result['status'],
             'error' => MessengerMonitor::scrub((string) $r->deliveryError),
             'channels' => \array_map(static fn (array $c): array => [...$c, 'error' => null === $c['error'] ? null : MessengerMonitor::scrub($c['error'])], $this->requests->channels($r)),
         ];
@@ -119,6 +123,8 @@ final class HealthService
                 'dt' => $r->createdAt->setTimezone(new \DateTimeZone('UTC'))->format('Y-m-d\TH:i:s\Z'),
                 'form' => $this->schema->form($r->form)?->formTitle() ?? $r->form, // no name or phone: this screen is for developers
                 'error' => MessengerMonitor::scrub((string) $r->deliveryError),
+                'queuedChannels' => $r->queuedChannels(),
+                'canResend' => [] !== \array_filter($r->channelStates(), static fn (array $state, string $channel): bool => SiteRequest::DELIVERY_FAILED === $state['state'] && !\in_array($channel, $r->queuedChannels(), true), \ARRAY_FILTER_USE_BOTH),
             ];
         }
 

@@ -118,7 +118,10 @@ final class SourceReader
             return null;
         }
         $published = $version['published'];
-        $title = $this->html->oneLine($published[$collection->titleFieldKey()] ?? '');
+        $titleKey = $collection->titleFieldKey();
+        $title = Extractor::allowsField($collection->field($titleKey))
+            ? $this->html->oneLine($published[$titleKey] ?? '')
+            : $collection->title();
 
         return new LiveSource(new Source(SourceKind::Item, $item->id, $locale, $item->collection, $title, null), $published, null);
     }

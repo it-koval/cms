@@ -88,6 +88,14 @@ final class FieldAccess
             foreach ($fields as $field) {
                 if (!$field->visibleTo($viewer)) {
                     unset($data[$field->key()]);
+                    continue;
+                }
+                if ('repeater' === $field->type() && \is_array($data[$field->key()] ?? null)) {
+                    foreach ($data[$field->key()] as $index => $row) {
+                        if (\is_array($row)) {
+                            $data[$field->key()][$index] = self::outputFor($field->subFields(), $row, $viewer);
+                        }
+                    }
                 }
             }
         }

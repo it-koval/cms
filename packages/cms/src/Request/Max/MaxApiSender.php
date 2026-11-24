@@ -195,15 +195,6 @@ final class MaxApiSender implements MaxSender, ResetInterface
     /** The token goes in a header, but an error text may quote more than it should: never show or log it. */
     private function scrub(string $message): string
     {
-        if ('' !== $this->token) {
-            $json = \json_encode($this->token);
-            $variants = [$this->token, \rawurlencode($this->token), \urlencode($this->token), \base64_encode($this->token)];
-            if (\is_string($json)) {
-                $variants[] = \substr($json, 1, -1);
-            }
-            $message = \str_replace($variants, '***', $message);
-        }
-
-        return (string) \preg_replace('~([a-z][a-z0-9+.-]*://)[^\s"\'@/]*@~i', '$1***@', $message);
+        return \Itk\Cms\Logging\SecretScrubber::scrub($message, [$this->token]);
     }
 }

@@ -9,7 +9,10 @@ use Itk\Cms\Entity\Request;
 use Itk\Cms\I18n\I18n;
 use Itk\Cms\Mail\SendMail;
 use Itk\Cms\Media\GenerateImageVariants;
+use Itk\Cms\Request\RequestDeliverer;
 use Itk\Cms\Request\SendRequestNotification;
+use Itk\Cms\Security\RequestPasswordLink;
+use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\Messenger\Envelope;
 use Symfony\Component\Messenger\Stamp\BusNameStamp;
 use Symfony\Component\Messenger\Stamp\ErrorDetailsStamp;
@@ -45,6 +48,8 @@ final class MessengerMonitor
     public function __construct(
         private readonly ServiceProviderInterface $receivers,
         private readonly \Closure|ReceiverInterface|null $failed = null,
+        #[Autowire(lazy: true)]
+        private readonly ?RequestDeliverer $requestDeliverer = null,
     ) {
     }
 
@@ -103,6 +108,10 @@ final class MessengerMonitor
     public function retry(string $id): void
     {
         $envelope = $this->envelope($id);
+        $message = $envelope->getMessage();
+        if (($message instanceof SendMail && \in_array($message->kind, [SendMail::RESET, SendMail::INVITE], true)) || ($message instanceof RequestPasswordLink && !$message->trusted)) {
+            throw ContentException::invalid(I18n::t('ops.queue_legacy_password_no_retry'));
+        }
         $from = $envelope->last(SentToFailureTransportStamp::class)?->getOriginalReceiverName();
         try {
             $target = null !== $from && $this->receivers->has($from) ? $this->receivers->get($from) : null;
@@ -112,7 +121,19 @@ final class MessengerMonitor
         if (!$target instanceof SenderInterface) {
             throw ContentException::invalid(I18n::t('ops.queue_no_origin'));
         }
-        $target->send(new Envelope($envelope->getMessage(), $envelope->all(BusNameStamp::class)));
+        if ($message instanceof SendRequestNotification && null !== $this->requestDeliverer && !$this->requestDeliverer->resumeJob($message)) {
+            $this->failedTransport()?->ack($envelope);
+
+            return;
+        }
+        try {
+            $target->send(new Envelope($message, $envelope->all(BusNameStamp::class)));
+        } catch (\Throwable $e) {
+            if ($message instanceof SendRequestNotification && null !== $this->requestDeliverer) {
+                $this->requestDeliverer->queueFailed($message->requestId, $message->channel, $message->jobId ?? 'legacy', I18n::t('http.request_queue_failed'));
+            }
+            throw $e;
+        }
         $this->failedTransport()?->ack($envelope);
     }
 
@@ -205,7 +226,7 @@ final class MessengerMonitor
     /** Error texts are shown on the screen: the bot token of a Telegram address never goes there, and a long trace is cut. */
     public static function scrub(string $text): string
     {
-        $text = \preg_replace('~bot\d+:[A-Za-z0-9_-]+~', 'bot***', $text) ?? $text;
+        $text = \Itk\Cms\Logging\SecretScrubber::scrub($text);
 
         return \mb_strlen($text) > 400 ? \mb_substr($text, 0, 400) . '…' : $text;
     }

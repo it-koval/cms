@@ -345,73 +345,38 @@ final class I18nLocaleTest extends WebTestCase
     #[Test]
     public function theLettersOfAWorkerGoInTheLanguageOfTheirPersonAndNothingStays(): void
     {
-        self::getContainer()->get(MailSettings::class)->save(['enabled' => true, 'host' => 'localhost', 'port' => 25, 'encryption' => 'none', 'username' => '', 'clearPassword' => true, 'fromAddress' => 'test-site@example.com', 'fromName' => 'Тест']);
+        self::getContainer()->get(MailSettings::class)->save(['enabled' => true, 'host' => '127.0.0.1', 'port' => 1, 'encryption' => 'none', 'username' => '', 'clearPassword' => true, 'fromAddress' => 'test-site@example.com', 'fromName' => 'Тест']);
         $kazakh = $this->person(Role::EDITOR, 'kk');
         $default = $this->person(Role::EDITOR);
         $english = $this->person(Role::EDITOR, 'en');
         $bus = self::getContainer()->get(MessageBusInterface::class);
         foreach ([$kazakh, $default, $english] as $user) {
-            $bus->dispatch(new RequestPasswordLink($user->email, 'https://site.test'));
+            $bus->dispatch(new RequestPasswordLink($user->email, 'https://site.test', trusted: true));
         }
 
         $transport = self::getContainer()->get('messenger.transport.async');
-        $languages = [];
         $events = self::getContainer()->get('event_dispatcher');
-        $listen = function (WorkerRunningEvent $event) use (&$languages): void {
-            $languages[] = \count($this->lettersIn()) >= 3 ? $event->getWorker()->stop() : null;
+        $worker = new Worker(['async' => $transport], $bus, $events);
+        $stopWhenIdle = static function (WorkerRunningEvent $event): void {
+            if ($event->isWorkerIdle()) {
+                $event->getWorker()->stop();
+            }
         };
-        $events->addListener(WorkerRunningEvent::class, $listen);
-        (new Worker(['async' => new class($transport) implements \Symfony\Component\Messenger\Transport\Receiver\ReceiverInterface {
-            /** @var array<string, true> */
-            private array $done = [];
+        $events->addListener(WorkerRunningEvent::class, $stopWhenIdle);
+        try {
+            $letters = $this->capturePasswordMail(static function () use ($worker): void {
+                $worker->run(['sleep' => 0]);
+            });
+        } finally {
+            $events->removeListener(WorkerRunningEvent::class, $stopWhenIdle);
+        }
 
-            public function __construct(private readonly \Symfony\Component\Messenger\Transport\InMemory\InMemoryTransport $transport)
-            {
-            }
-
-            public function get(): iterable
-            {
-                foreach ($this->transport->getSent() as $envelope) { // one by one and only the requests: the letters stay in the queue for the test to read
-                    $id = \spl_object_hash($envelope->getMessage());
-                    if ($envelope->getMessage() instanceof RequestPasswordLink && !isset($this->done[$id])) {
-                        $this->done[$id] = true;
-
-                        return [$envelope];
-                    }
-                }
-
-                return [];
-            }
-
-            public function ack(Envelope $envelope): void
-            {
-            }
-
-            public function reject(Envelope $envelope): void
-            {
-            }
-        }], $bus, $events))->run(['sleep' => 0]);
-        $events->removeListener(WorkerRunningEvent::class, $listen);
-
-        $letters = $this->lettersIn();
         self::assertCount(3, $letters);
         self::assertSame([$kazakh->email, $default->email, $english->email], \array_map(static fn (SendMail $m): string => $m->to, $letters));
         self::assertStringContainsString('<html lang="kk">', $letters[0]->html);
         self::assertStringContainsString('<html lang="ru">', $letters[1]->html);
         self::assertStringContainsString('<html lang="en">', $letters[2]->html);
-    }
-
-    /** @return list<SendMail> */
-    private function lettersIn(): array
-    {
-        $out = [];
-        foreach (self::getContainer()->get('messenger.transport.async')->getSent() as $envelope) {
-            if ($envelope->getMessage() instanceof SendMail) {
-                $out[] = $envelope->getMessage();
-            }
-        }
-
-        return $out;
+        self::assertSame('ru', I18n::locale());
     }
 
     #[Test]

@@ -29,6 +29,7 @@ use Symfony\Component\Routing\Attribute\Route;
 final class RequestSubmitController
 {
     public const HONEYPOT = 'itk_hp';
+    public const DEFAULT_MAX_BODY = 262144;
 
     public function __construct(
         private readonly RequestService $requests,
@@ -38,6 +39,8 @@ final class RequestSubmitController
         private readonly string $mainLocale,
         private readonly ContentLocales $contentLocales,
         private readonly AdminLocale $adminLocale,
+        #[Autowire(param: 'itk_cms.requests.max_body')]
+        private readonly int $maxBody = self::DEFAULT_MAX_BODY,
     ) {
     }
 
@@ -62,12 +65,11 @@ final class RequestSubmitController
             return $this->failure(I18n::t('http.requests_too_many'), Response::HTTP_TOO_MANY_REQUESTS);
         }
 
-        $input = 'json' === $request->getContentTypeFormat() ? (array) \json_decode($request->getContent(), true) : $request->request->all();
-        if ('' !== \trim((string) ($input[self::HONEYPOT] ?? ''))) {
-            return new JsonResponse(['success' => true]); // a robot: pretend it worked, save nothing
-        }
-
         try {
+            $input = $this->input($request);
+            if (!\is_scalar($input[self::HONEYPOT] ?? '') || '' !== \trim((string) ($input[self::HONEYPOT] ?? ''))) {
+                return new JsonResponse(['success' => true]); // a robot: pretend it worked, save nothing
+            }
             if ($invalidLocale) {
                 throw ContentException::invalid(I18n::t('http.no_such_language'));
             }
@@ -81,6 +83,67 @@ final class RequestSubmitController
         }
 
         return new JsonResponse(['success' => true]);
+    }
+
+    /** Read at most one byte beyond the limit, before JSON decoding or allocating its values.
+     * @return array<string, mixed>
+     */
+    private function input(Request $request): array
+    {
+        $length = $request->headers->get('Content-Length');
+        if (null !== $length && \is_numeric($length) && (float) $length > $this->maxBody) {
+            throw new ContentException(I18n::t('http.request_body_too_large'), 413);
+        }
+        $stream = $request->getContent(true);
+        $body = \stream_get_contents($stream, $this->maxBody + 1);
+        if (false === $body || \strlen($body) > $this->maxBody) {
+            throw new ContentException(I18n::t('http.request_body_too_large'), 413);
+        }
+        if ('json' !== $request->getContentTypeFormat()) {
+            $input = $request->request->all();
+        } else {
+            // Only a flat object of scalar fields is useful to a form. Check before decoding:
+            // many tiny objects otherwise allocate far more memory than the wire body.
+            $quoted = false;
+            $escaped = false;
+            $members = 0;
+            $opened = false;
+            for ($i = 0, $size = \strlen($body); $i < $size; ++$i) {
+                $char = $body[$i];
+                if ($quoted) {
+                    if ($escaped) {
+                        $escaped = false;
+                    } elseif ('\\' === $char) {
+                        $escaped = true;
+                    } elseif ('"' === $char) {
+                        $quoted = false;
+                    }
+                    continue;
+                }
+                if ('"' === $char) {
+                    $quoted = true;
+                } elseif ('[' === $char || ('{' === $char && $opened)) {
+                    throw ContentException::invalid(I18n::t('http.request_bad_input'));
+                } elseif ('{' === $char) {
+                    $opened = true;
+                } elseif (':' === $char && ++$members > RequestService::MAX_FIELDS) {
+                    throw ContentException::invalid(I18n::t('http.request_bad_input'));
+                }
+            }
+            try {
+                $input = \json_decode($body, true, 2, \JSON_THROW_ON_ERROR);
+            } catch (\JsonException) {
+                throw ContentException::invalid(I18n::t('http.request_bad_input'));
+            }
+            if (!\is_array($input) || !\str_starts_with(\ltrim($body), '{')) {
+                throw ContentException::invalid(I18n::t('http.request_bad_input'));
+            }
+        }
+        if ('json' === $request->getContentTypeFormat()) {
+            RequestService::validateInput($input);
+        }
+
+        return $input;
     }
 
     private function locale(Request $request): ?string

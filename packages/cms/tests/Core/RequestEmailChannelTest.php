@@ -244,7 +244,7 @@ final class RequestEmailChannelTest extends KernelTestCase
     #[Test]
     public function aFailureOfSendingIsOnTheHealthScreenWithoutAnyPassword(): void
     {
-        $this->useMailpit(['host' => '127.0.0.1', 'port' => 1, 'username' => 'robot', 'password' => 'S3cr3t!pa$$word']);
+        $this->useMailpit(['host' => '127.0.0.1', 'port' => 1, 'encryption' => 'starttls', 'username' => 'robot', 'password' => 'S3cr3t!pa$$word']);
         $this->routes(['*' => 'test-req-a@example.com']);
         $this->submit('call');
 

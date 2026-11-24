@@ -20,6 +20,10 @@ final class RequestPasswordLinkHandler
 
     public function __invoke(RequestPasswordLink $message): void
     {
+        // Old serialized requests may contain a base resolved from editable settings.
+        if (!$message->trusted) {
+            return;
+        }
         $this->recovery->sendRequested($message->email, $message->baseUrl);
     }
 }

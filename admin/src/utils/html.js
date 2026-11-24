@@ -23,9 +23,16 @@ const BLOCK = new Set(['p', 'div', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'blockquo
 // tags that start a new line inside a table cell (a cell holds inline text only)
 const CELL_BLOCK = new Set(['ul', 'ol', 'li', 'table', 'thead', 'tbody', 'tfoot', 'tr', 'td', 'th', 'caption'])
 const lineBlock = (tag, mode) => BLOCK.has(tag) || (mode === 'cell' && CELL_BLOCK.has(tag))
-const SAFE_HREF = /^(https?:\/\/|mailto:|tel:|\/|#)/i
+function hasUrlControls(value) {
+  for (const character of value) {
+    const code = character.charCodeAt(0)
+    if (code <= 0x1f || code === 0x7f) return true
+  }
+  return false
+}
+const SAFE_HREF = /^(https?:\/\/|mailto:|tel:|\/(?![/\\])|#)/i
 // photos of an article: the media library (relative path, data URL of an uploaded photo) or an absolute address
-const SAFE_SRC = /^(assets\/[^"'<>\s]+|\/[^"'<>\s]+|https?:\/\/[^"'<>\s]+|data:image\/(png|jpe?g|webp|gif|avif);base64,[A-Za-z0-9+/=]+)$/i
+const SAFE_SRC = /^(assets\/[^"'<>\s]+|\/(?![/\\])[^"'<>\s]+|https?:\/\/[^"'<>\s]+|data:image\/(png|jpe?g|webp|gif|avif);base64,[A-Za-z0-9+/=]+)$/i
 
 function parse(html) {
   return new DOMParser().parseFromString(`<body>${html ?? ''}</body>`, 'text/html').body
@@ -66,8 +73,8 @@ function walk(node, mode) {
       case 'blockquote': return kids.trim() ? `<blockquote>${/^<p>/.test(kids) ? kids : `<p>${kids}</p>`}</blockquote>` : ''
       case 'hr': return '<hr>'
       case 'img': {
-        const src = (node.getAttribute('src') || '').trim()
-        if (!SAFE_SRC.test(src)) return ''
+        const src = (node.getAttribute('src') || '').trim().replace(/\u00a0/g, '%C2%A0')
+        if (hasUrlControls(src) || !SAFE_SRC.test(src)) return ''
         const alt = (node.getAttribute('alt') || '').trim()
         // width and height: positive whole numbers only (the display size the author set; the site uses it for sizes/srcset)
         const size = ['width', 'height'].map((d) => { const v = (node.getAttribute(d) || '').trim(); return /^\d{1,5}$/.test(v) && Number(v) > 0 ? ` ${d}="${Number(v)}"` : '' }).join('')
@@ -82,7 +89,7 @@ function walk(node, mode) {
     case 'em': case 'i': return kids ? `<em>${kids}</em>` : ''
     case 'a': {
       const href = (node.getAttribute('href') || '').trim()
-      if (!SAFE_HREF.test(href)) return kids
+      if (hasUrlControls(href) || !SAFE_HREF.test(href)) return kids
       const ext = /^https?:/i.test(href)
       return `<a href="${escapeHtml(href)}"${ext ? ' target="_blank" rel="noopener noreferrer"' : ''}>${kids}</a>`
     }

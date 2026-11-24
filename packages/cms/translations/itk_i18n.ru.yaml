@@ -14,5 +14,6 @@
 'i18n.notification_max_failed': 'Заявка №{id} не дошла в MAX'
 'i18n.notification_mail_failed_request': 'Письмо о заявке №{id} не дошло'
 'i18n.notification_mail_failed': 'Письмо не отправлено: {subject}'
+'i18n.notification_mail_failed_account': 'Письмо для сброса пароля или приглашения не отправлено'
 'i18n.notification_mail_refused': 'Почтовый сервер не принял письмо'
 'i18n.plural_example': '{count} страница|{count} страницы|{count} страниц'

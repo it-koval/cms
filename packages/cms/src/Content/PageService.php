@@ -425,12 +425,14 @@ final class PageService
      * With `$baseVersion` (the `version` of the page the editor loaded or saved last) the draft must still be that one, else 409 `conflict` and nothing is written.
      * The check and the write are one step under the lock of the page, on the copy read after the lock was taken. Without a version the save is not checked.
      *
+     * @param (callable(Page, string): void)|null $guard authorizes the refreshed page and effective target template under the write lock
+     *
      * @return array<string, mixed> flat page + changed
      */
-    public function saveDraft(string $id, ?string $locale, array $data, ?string $baseVersion = null): array
+    public function saveDraft(string $id, ?string $locale, array $data, ?string $baseVersion = null, ?callable $guard = null): array
     {
         $locale ??= $this->mainLocale;
-        $flat = $this->writeVersion($id, $locale, $data, true, baseVersion: $baseVersion);
+        $flat = $this->writeVersion($id, $locale, $data, true, baseVersion: $baseVersion, guard: $guard);
         $t = $this->find($id)->translation($locale);
 
         return $flat + ['changed' => $this->changeCount($t) > 0];
@@ -439,11 +441,13 @@ final class PageService
     /**
      * List-level edit: title, url, seo, fields of that language + parentId, template (shared). No sections.
      *
+     * @param (callable(Page, string): void)|null $guard
+     *
      * @return array<string, mixed>
      */
-    public function update(string $id, ?string $locale, array $patch): array
+    public function update(string $id, ?string $locale, array $patch, ?callable $guard = null): array
     {
-        return $this->writeVersion($id, $locale ?? $this->mainLocale, $patch, false);
+        return $this->writeVersion($id, $locale ?? $this->mainLocale, $patch, false, guard: $guard);
     }
 
     /**
@@ -1351,28 +1355,34 @@ final class PageService
 
     /**
      * @param array<string, mixed> $data
+     * @param (callable(Page, string): void)|null $guard
      *
      * @return array<string, mixed> the flat page
      */
-    private function writeVersion(string $id, string $locale, array $data, bool $withSections, string $action = Revision::EDIT, ?string $baseVersion = null): array
+    private function writeVersion(string $id, string $locale, array $data, bool $withSections, string $action = Revision::EDIT, ?string $baseVersion = null, ?callable $guard = null): array
     {
-        return $this->lock->publish('page', $id, function () use ($id, $locale, $data, $withSections, $action, $baseVersion): array {
+        return $this->lock->publish('page', $id, function () use ($id, $locale, $data, $withSections, $action, $baseVersion, $guard): array {
             $p = $this->reloadTranslations($id);
+            $requestedTemplate = $this->templateForChange($p, $data);
+            if (null !== $guard) {
+                $guard($p, $requestedTemplate);
+            }
             $t = $this->version($p, $locale);
             if (null !== $baseVersion) {
                 $this->assertDraftVersion($p, $t, $baseVersion);
             }
 
-            return $this->applyVersion($p, $t, $data, $withSections, $action);
+            return $this->applyVersion($p, $t, $data, $withSections, $action, $guard);
         });
     }
 
     /**
      * @param array<string, mixed> $data
+     * @param (callable(Page, string): void)|null $guard
      *
      * @return array<string, mixed> the flat page
      */
-    private function applyVersion(Page $p, PageTranslation $t, array $data, bool $withSections, string $action): array
+    private function applyVersion(Page $p, PageTranslation $t, array $data, bool $withSections, string $action, ?callable $guard = null): array
     {
         $was = $this->history->pageState($p, $t);
         $cur = $t->draft;
@@ -1384,6 +1394,10 @@ final class PageService
             $data['sections'] = $this->guardSections($data['sections'], (array) ($cur['sections'] ?? []));
         }
         $data = $this->hooks->updating($this->record($p, $t), $data);
+        $nextTemplate = $this->templateForChange($p, $data);
+        if (null !== $guard) {
+            $guard($p, $nextTemplate);
+        }
 
         $currentAddress = (string) ($cur['url'] ?? '');
         $nextAddress = \array_key_exists('url', $data) ? \trim((string) $data['url']) : $currentAddress;
@@ -1408,7 +1422,7 @@ final class PageService
         }
 
         $templateWas = $p->template;
-        $tplChanged = $this->applySharedChange($p, $data);
+        $tplChanged = $this->applySharedChange($p, $data, $nextTemplate);
         $next = $t->draft;
         $tpl = $this->schema->template($p->template);
         if (\array_key_exists('title', $data)) {
@@ -1449,15 +1463,27 @@ final class PageService
         return $this->flat($p, $t);
     }
 
+    /** @param array<string, mixed> $data */
+    private function templateForChange(Page $page, array $data): string
+    {
+        if (!\array_key_exists('template', $data)) {
+            return $page->template;
+        }
+        if (!\is_string($data['template'])) {
+            throw ContentException::invalid(I18n::t('content.page_template_unknown'));
+        }
+
+        return '' === $data['template'] ? $page->template : $data['template'];
+    }
+
     /**
      * The shared part of a change: the parent page and the template. Returns true when the template changed.
      *
      * @param array<string, mixed> $patch
      */
-    private function applySharedChange(Page $p, array $patch): bool
+    private function applySharedChange(Page $p, array $patch, string $nextTpl): bool
     {
         $nextParentId = \array_key_exists('parentId', $patch) ? ($patch['parentId'] ?: null) : $p->parentId();
-        $nextTpl = !empty($patch['template']) ? (string) $patch['template'] : $p->template;
         $moved = $nextParentId !== $p->parentId();
         $tplChanged = $nextTpl !== $p->template;
         if (!$moved && !$tplChanged) {

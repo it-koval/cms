@@ -35,7 +35,12 @@ final class AdminUserProvider implements UserProviderInterface, PasswordUpgrader
             throw new UnsupportedUserException(\sprintf('Instances of "%s" are not supported.', $user::class));
         }
 
-        return $this->users->find($user->id) ?? throw new UserNotFoundException(I18n::t('http.user_removed'));
+        $fresh = $this->users->find($user->id);
+        if (null === $fresh || User::BLOCKED === $fresh->status) {
+            throw new UserNotFoundException(I18n::t('http.user_removed'));
+        }
+
+        return $fresh;
     }
 
     public function supportsClass(string $class): bool
@@ -43,7 +48,7 @@ final class AdminUserProvider implements UserProviderInterface, PasswordUpgrader
         return User::class === $class || \is_subclass_of($class, User::class);
     }
 
-    public function upgradePassword(PasswordAuthenticatedUserInterface $user, string $newHashedPassword): void
+    public function upgradePassword(PasswordAuthenticatedUserInterface $user, #[\SensitiveParameter] string $newHashedPassword): void
     {
         if ($user instanceof User) {
             $user->passwordHash = $newHashedPassword;

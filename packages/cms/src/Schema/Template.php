@@ -18,6 +18,7 @@ final class Template
 {
     private string $about = '';
     private bool $core = false;
+    private bool $authors = false;
     private bool $single = false;
     private bool $root = false;
     /** @var 'any'|list<string>|null null = top level only */
@@ -84,6 +85,19 @@ final class Template
         $this->core = true;
 
         return $this;
+    }
+
+    /** Explicitly permits the built-in Author role to edit this template. */
+    public function forAuthors(bool $allow = true): self
+    {
+        $this->authors = $allow;
+
+        return $this;
+    }
+
+    public function allowsAuthors(): bool
+    {
+        return $this->authors;
     }
 
     /** Only one page with this template on the site. */

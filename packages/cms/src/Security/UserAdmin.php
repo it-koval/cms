@@ -220,11 +220,13 @@ final class UserAdmin
                 throw ContentException::conflict(I18n::t(self::LAST_ADMIN));
             }
             $u->status = User::BLOCKED;
-            $this->recovery->revokeLinks($u->id);
         } else {
             $u->status = null !== $u->lastSignInAt ? User::ACTIVE : User::INVITED;
         }
         $this->em->flush();
+        if ($blocked) {
+            $this->recovery->revokeLinks($u->id);
+        }
 
         return $this->presentUser($u);
     }

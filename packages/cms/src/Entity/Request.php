@@ -110,6 +110,7 @@ class Request
             throw new \InvalidArgumentException(\sprintf('Unknown delivery channel "%s".', $channel));
         }
         $states = $this->channelStates();
+        $jobs = $this->channels;
         if (self::DELIVERY_PENDING === $state) {
             unset($states[$channel]);
         } else {
@@ -122,7 +123,7 @@ class Request
             if (!isset($states[$key])) {
                 continue;
             }
-            $this->channels[$key] = $states[$key];
+            $this->channels[$key] = $states[$key] + \array_intersect_key($jobs[$key] ?? [], \array_flip(['job', 'phase', 'lease']));
             $sent = $sent || self::DELIVERY_SENT === $states[$key]['state'];
             if (self::DELIVERY_FAILED === $states[$key]['state']) {
                 $errors[] = $name . ': ' . $states[$key]['error'];
@@ -152,5 +153,37 @@ class Request
         }
 
         return $ordered;
+    }
+
+    /** Durable job identity lives beside the historical state/error; old rows need no conversion. */
+    public function channelJob(string $channel): ?string
+    {
+        return $this->channels[$channel]['job'] ?? null;
+    }
+
+    public function channelJobPhase(string $channel): ?string
+    {
+        return $this->channels[$channel]['phase'] ?? null;
+    }
+
+    public function channelJobLease(string $channel): int
+    {
+        return $this->channels[$channel]['lease'] ?? 0;
+    }
+
+    public function markChannelJob(string $channel, string $job, string $phase, int $lease = 0): void
+    {
+        // Materialize the legacy aggregate before adding job metadata for another channel.
+        $states = $this->channelStates();
+        foreach ($states as $key => $state) {
+            $this->channels[$key] = ($this->channels[$key] ?? []) + $state;
+        }
+        $this->channels[$channel] = \array_replace($this->channels[$channel] ?? ['state' => self::DELIVERY_PENDING, 'error' => null], ['job' => $job, 'phase' => $phase, 'lease' => $lease]);
+    }
+
+    /** @return list<string> */
+    public function queuedChannels(): array
+    {
+        return \array_values(\array_filter(\array_keys(self::CHANNELS), fn (string $channel): bool => \in_array($this->channelJobPhase($channel), ['queued', 'processing', 'retry'], true) && $this->channelJobLease($channel) > \time()));
     }
 }

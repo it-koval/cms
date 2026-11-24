@@ -2,7 +2,7 @@
 //   list({ status, form, period, q, from, to, locale })   GET   requests      locale: only requests that came from that language version ('' = all)
 //   get(id)                                       GET   requests/:id
 //   update(id, { work, comment })                 PATCH requests/:id          work: 'new' | 'progress' | 'closed' | 'spam'; comment: private note
-//   resend(id, { channel }?)                      POST  requests/:id/resend   sends again: to `channel` ('telegram' | 'max'), without it to every channel that failed (none failed: every active one). Answers the request with its new delivery state
+//   resend(id, { channel }?)                      POST  requests/:id/resend   sends again: to `channel` ('telegram' | 'max'), without it to every channel that failed (none failed: every active one). Answers the request with its new delivery state; HTTP 202 + queuedChannels for a delivery queued after formatting more than 20 parts
 //   counts()                                      GET   requests/counts       { total, new, failed }   new = work status «Новая»
 //   forms()                                       the site's forms [{ key, title }] (schema.forms) for the «Форма» filter; `form` of list() is the key
 // A request: { id, dt (ISO), locale, form, phone, name, city, place (= the form's title), note (what the visitor wrote), data (submitted values keyed by the form field), st: 'delivered'|'failed' (the aggregate of the channels),

@@ -15,11 +15,12 @@ final class SecretBox
 {
     public function __construct(
         #[Autowire(param: 'kernel.secret')]
+        #[\SensitiveParameter]
         private readonly string $secret,
     ) {
     }
 
-    public function seal(string $plain): string
+    public function seal(#[\SensitiveParameter] string $plain): string
     {
         $nonce = \random_bytes(\SODIUM_CRYPTO_SECRETBOX_NONCEBYTES);
 
@@ -27,7 +28,7 @@ final class SecretBox
     }
 
     /** @return string|null null when the value is damaged or APP_SECRET changed */
-    public function open(string $sealed): ?string
+    public function open(#[\SensitiveParameter] string $sealed): ?string
     {
         if (!\str_starts_with($sealed, 'v1.')) {
             return null;
@@ -42,7 +43,7 @@ final class SecretBox
     }
 
     /** A keyed hash of a recovery code. */
-    public function hash(string $value): string
+    public function hash(#[\SensitiveParameter] string $value): string
     {
         return \hash_hmac('sha256', $value, $this->key('recovery'));
     }

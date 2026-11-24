@@ -57,7 +57,7 @@ return static function (ContainerConfigurator $container): void {
             '../src/Notification/Notification.php',
             '../src/Health/HealthResult.php',
             '../src/Mail/{MailConfig,MailRoute,MailDeliveryException,SendMail}.php',
-            '../src/Security/RequestPasswordLink.php',
+            '../src/Security/{RequestPasswordLink,DeliverPasswordLink}.php',
             '../src/Mcp/{McpScopes,McpToolException,McpProtocolError,ApiTokenException,ArgumentChecker,McpContext}.php',
             '../src/CriticalCss/Model',
             '../src/KnowledgeBase/Model',

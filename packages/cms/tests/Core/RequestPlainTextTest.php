@@ -164,10 +164,14 @@ final class RequestPlainTextTest extends WebTestCase
     }
 
     #[Test]
-    public function aFieldWithoutALimitKeepsTheSame1001Characters(): void
+    public function aFieldWithoutALimitCountsTheAddedSpaceInIts1000Characters(): void
     {
-        self::assertSame(200, $this->post(['free' => '<' . \str_repeat('б', 5000)]));
-        self::assertSame('< ' . \str_repeat('б', 999), $this->last()->data['free']);
+        foreach ([999, 5000] as $size) {
+            self::assertSame(422, $this->post(['free' => '<' . \str_repeat('б', $size)]));
+            self::assertNull($this->last());
+        }
+        self::assertSame(200, $this->post(['free' => '<' . \str_repeat('б', 998)]));
+        self::assertSame('< ' . \str_repeat('б', 998), $this->last()->data['free']);
     }
 
     #[Test]

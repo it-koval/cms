@@ -176,6 +176,7 @@
   "ui.rd_open_failed": "Could not open the request",
   "ui.rd_status_set": "Request #{id} status: “{status}”",
   "ui.rd_status_failed": "Could not change the status",
+  "ui.rd_queued": "Queued for delivery",
   "ui.rd_delivered": "Request #{id} delivered",
   "ui.rd_not_sent": "The request was not sent. A messenger is not connected, is turned off in settings, or no chat is set for the form",
   "ui.rd_resend_failed": "Could not send. Try again",

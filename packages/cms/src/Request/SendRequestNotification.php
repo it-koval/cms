@@ -16,6 +16,7 @@ final class SendRequestNotification
         public readonly int $requestId,
         public readonly bool $resend = false,
         public readonly string $channel = Request::CHANNEL_TELEGRAM,
+        public readonly ?string $jobId = null,
     ) {
     }
 
@@ -25,5 +26,6 @@ final class SendRequestNotification
         $this->requestId = (int) $data['requestId'];
         $this->resend = (bool) ($data['resend'] ?? false);
         $this->channel = (string) ($data['channel'] ?? Request::CHANNEL_TELEGRAM);
+        $this->jobId = isset($data['jobId']) ? (string) $data['jobId'] : null;
     }
 }

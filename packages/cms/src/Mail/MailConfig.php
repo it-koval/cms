@@ -36,4 +36,14 @@ final class MailConfig
     {
         return $this->enabled && '' !== $this->host && $this->port > 0;
     }
+
+    public static function canSendCredentials(string $encryption, bool $hasPassword): bool
+    {
+        return !$hasPassword || \in_array($encryption, [self::SSL, self::STARTTLS], true);
+    }
+
+    public function hasSafeCredentials(): bool
+    {
+        return self::canSendCredentials($this->encryption, '' !== $this->password);
+    }
 }

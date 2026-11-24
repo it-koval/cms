@@ -12,9 +12,14 @@ namespace Itk\Cms\Security;
  */
 final class RequestPasswordLink
 {
+    /** Defaults on deserialization too: queued pre-0.3 jobs did not establish trust. */
+    public bool $trusted = false;
+
     public function __construct(
         public readonly string $email,
         public readonly string $baseUrl,
+        bool $trusted = false,
     ) {
+        $this->trusted = $trusted;
     }
 }

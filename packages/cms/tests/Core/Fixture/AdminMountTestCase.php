@@ -221,7 +221,7 @@ abstract class AdminMountTestCase extends WebTestCase
 
         self::getContainer()->get(PasswordRecovery::class)->sendLink($person, SendMail::INVITE, PasswordRecovery::INVITE_TTL, 'https://site.test');
 
-        $mail = $this->queuedMail()[0];
+        $mail = $this->deliverPasswordMail()[0];
         self::assertStringContainsString('https://site.test' . static::mount() . '/reset-password/', $mail->text);
         self::assertStringContainsString('входите по адресу https://site.test' . static::mount() . '.', $mail->text, 'the sign-in address of the letter');
     }

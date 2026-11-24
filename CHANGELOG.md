@@ -11,6 +11,7 @@ All notable changes to ITK CMS are recorded in this file. The format follows [Ke
 - `itk_cms.analytics.start` selects `auto` (default) or `manual` in site configuration. The browser API `window.itkAnalytics.start()` starts all configured counters, and `start(['ga'])` selects GA. Counter keys are `metrika` and `ga`. New starts dispatch the bubbling `itk-analytics:started` event on `document` with `detail.counters`. Repeated calls without new counters emit no event.
 - Page and collection lists show translation status and open the selected version. Content editors, translated settings and menus have a language picker. The dashboard and collection counters cover all configured languages.
 - Page and record history can show one language or all languages. `GET /admin/api/history/{kind}/{id}?scope=all` paginates across languages, and restoring a revision targets its own draft.
+- `itk_cms.requests.max_body` sets the byte limit for public form submissions. `itk:install --password-file` reads the first administrator password from a mounted secret.
 - Multilingual SEO emits reciprocal `hreflang` links, including `x-default` for an indexable main version. Published pages use their own canonical URL when none is set. The sitemap covers every indexable language version, and `llms.txt` groups pages by language. Both generated files refresh after committed page changes and revalidate with content ETags.
 - `itk:doctor` checks language prefixes, home pages, missing translations in settings and menus, and overrides of generated crawler files.
 - Public routes serve published language versions at addresses such as `/kk/about`.
@@ -23,6 +24,9 @@ All notable changes to ITK CMS are recorded in this file. The format follows [Ke
 ### Changed
 
 - Analytics initialization uses one versioned external `defer` loader with `data-*` attributes. In `manual`, the bundle makes no provider requests or preliminary connections before `start()` and omits Metrika's `<noscript>` pixel. `auto` keeps that pixel. Verification meta tags remain available in both modes. Sites manage consent, persistence and reload after revocation, and must remove their direct analytics inserts before switching to `manual`. See [UPGRADE.md](UPGRADE.md#030).
+- Forms use a 1,000-character limit for fields without `max()`. Schema lint and Site status report those fields. MCP `request_get` reads up to 6,000 characters of each form value.
+- The default async transport retries request delivery after 60, 120 and 240 seconds. A manual resend of more than 20 parts per channel is queued and the admin panel confirms it.
+- Page templates grant Author access via `forAuthors()`. Media usage calls require a `Viewer`. Custom fields may opt into knowledge-base extraction via `PublicFieldInterface`.
 - `GET /admin/api/collections/{col}` always returns the paginated object `{ items, total, page, perPage, facets, metrics }`. Search, filters, status and translation selection apply before counting and pagination. Published versions with unpublished changes are included in the `draft` filter. Clients must read `items` and request further pages. See [UPGRADE.md](UPGRADE.md#030).
 - IndexNow submits the affected paths for all configured languages. Critical CSS is generated for the published versions of those languages.
 - Publishing or removing a translation refreshes the cached HTML and ETag of the other versions of the same page.
@@ -41,6 +45,17 @@ All notable changes to ITK CMS are recorded in this file. The format follows [Ke
 - Language links, crawler files, IndexNow and critical CSS include only versions whose addresses route to their language. Moving a multilingual version preserves any live page at its old address.
 - An invalid public URL leaves public HTML and crawler routes usable. The doctor reports the invalid configuration.
 - Canonical slash redirects preserve the original query string, including repeated parameters. The SEO address check applies the same routing and shows the canonical and rules for the URL's language.
+- Site status lists form fields that lack an explicit limit. Long request retries retain per-channel outcomes across reloads and release failed channels for another retry.
+- Malformed or nested JSON in public forms returns a validation error. Oversized submissions return HTTP 413 before decoding.
+- An existing SMTP setting with a password and disabled encryption reports how to restore mail delivery.
+
+### Security
+
+- Account links use a configured origin and can be consumed only once under a database lock. The Docker kit applies the form body limit at nginx and runs Chromium with a seccomp profile derived from Docker Engine 27.5.1.
+- Collection actions require sign-in and permission. Blocking a user revokes their next admin request, and sign-in failures use the same public message. Two-step sign-in serializes verification and limits attempts per person.
+- Queue jobs no longer carry rendered password links. The worker revokes each failed attempt's link.
+- Saved SMTP passwords require TLS. Site status and `itk:doctor` warn when `MAILER_DSN` uses a password with optional TLS. Sensitive parameters and transport errors use credential redaction. The installer checks passwords of 10 to 200 characters, including passwords read from a mounted file.
+- PHP and the admin editor reject control characters in HTML URLs. Critical CSS runs Chrome in its sandbox and restricts connections to the local render server. The search embedding cache is bounded.
 
 ## [0.2.2] - 2026-11-22
 
