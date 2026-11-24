@@ -26,7 +26,7 @@ import { schema } from '@/schema/registry.js'
 
 const toast = useToast()
 const router = useRouter()
-const MULTI = isMulti()
+const multi = computed(() => isMulti())
 
 const data = ref(null)
 const loadError = ref('')
@@ -64,6 +64,7 @@ const unpubList = computed(() => (data.value ? data.value.unpublished.filter((u)
 const proposalList = computed(() => (data.value ? data.value.proposals.filter((p) => propRight(p, 'edit')) : []))
 const recentList = computed(() => (data.value ? data.value.recent : []))
 const showAside = computed(() => seeContent.value)
+const localeCounts = computed(() => Object.entries(data.value?.locales || {}))
 
 // blocks that plugins of the site put under the sections (window.ITK.registerPlugin({ widgets }))
 const widgets = computed(() => pluginWidgets())
@@ -145,7 +146,7 @@ async function decide(p, accept) {
             <template v-if="awaiting.length">
               <router-link v-for="u in awaiting" :key="u.kind + u.id + u.locale" class="row-i" :to="u.to">
                 <span class="pdot"><span class="pmark" aria-hidden="true"><i /></span></span>
-                <span class="main-c"><span class="ttl">{{ u.title }}</span><LangTag v-if="MULTI && u.locale" :code="u.locale" /><br><span class="meta">{{ t('ui.today_sent', { kind: u.pageKind, when: fmtUpdated(u.at), by: u.by }) }}</span></span>
+                <span class="main-c"><span class="ttl">{{ u.title }}</span><LangTag v-if="multi && u.locale" :code="u.locale" /><br><span class="meta">{{ t('ui.today_sent', { kind: u.pageKind, when: fmtUpdated(u.at), by: u.by }) }}</span></span>
                 <span class="btn sm go-btn">{{ t('ui.today_view') }}</span>
               </router-link>
             </template>
@@ -162,7 +163,7 @@ async function decide(p, accept) {
                 <router-link class="rl" :to="'/requests/' + r.id">
                   <span class="dot-new" aria-hidden="true" />
                   <span class="main-c">
-                    <span class="ttl num">{{ r.phone }}</span><LangTag v-if="MULTI && r.locale" :code="r.locale" /><br>
+                    <span class="ttl num">{{ r.phone }}</span><LangTag v-if="multi && r.locale" :code="r.locale" /><br>
                     <span class="meta">{{ r.city }} · {{ r.place }}</span>
                     <span v-if="r.note" class="meta note">{{ t('ui.today_note_quote', { text: r.note }) }}</span>
                   </span>
@@ -184,10 +185,16 @@ async function decide(p, accept) {
         <section v-if="seeContent" aria-labelledby="t-unpub">
           <h2 id="t-unpub">{{ t('ui.today_unpublished') }}<span v-if="unpubList.length" class="chip draft"><span class="dot" />{{ unpubList.length }}</span></h2>
           <div class="sheet list">
+            <ul v-if="multi && localeCounts.length" class="t-locale-counts">
+              <li v-for="[code, counts] in localeCounts" :key="code">
+                <LangTag :code="code" />
+                <span>{{ t('ui.today_locale_counts', { pages: counts.pages.count, records: counts.collections.count, drafts: counts.pages.unpublished + counts.collections.unpublished }) }}</span>
+              </li>
+            </ul>
             <template v-if="unpubList.length">
-              <router-link v-for="u in unpubShown" :key="u.kind + u.id" class="row-i" :to="u.to">
+              <router-link v-for="u in unpubShown" :key="[u.kind, u.id, u.locale].join(':')" class="row-i" :to="u.to">
                 <span class="pdot"><span class="pmark" aria-hidden="true"><i /></span></span>
-                <span class="main-c"><span class="ttl">{{ u.title }}</span><LangTag v-if="MULTI && u.locale" :code="u.locale" /><span v-if="u.awaiting" class="chip warn wait-c">{{ t('ui.today_waiting_chip') }}</span><br><span class="meta">{{ unpubMeta(u) }}</span></span>
+                <span class="main-c"><span class="ttl">{{ u.title }}</span><LangTag v-if="multi && u.locale" :code="u.locale" /><span v-if="u.awaiting" class="chip warn wait-c">{{ t('ui.today_waiting_chip') }}</span><br><span class="meta">{{ unpubMeta(u) }}</span></span>
                 <span class="go"><Icon name="chevR" /></span>
               </router-link>
               <button v-if="unpubList.length > UNPUB_LIMIT" type="button" class="all" @click="showAllUnpub = !showAllUnpub">
@@ -223,9 +230,9 @@ async function decide(p, accept) {
         <section class="done-l" aria-labelledby="t-rec">
           <h2 id="t-rec">{{ t('ui.today_recent') }}</h2>
           <div class="sheet list">
-            <router-link v-for="r in recentList" :key="r.label + (r.locale || '')" class="row-i" :to="r.to">
+            <router-link v-for="r in recentList" :key="r.to" class="row-i" :to="r.to">
               <span class="ok"><Icon name="check" size="s16" /></span>
-              <span class="main-c"><span class="ttl" style="font-weight:520">{{ r.label }}</span><LangTag v-if="r.locale && isMulti()" :code="r.locale" /></span>
+              <span class="main-c"><span class="ttl" style="font-weight:520">{{ r.label }}</span><LangTag v-if="multi && r.locale" :code="r.locale" /></span>
               <span class="when">{{ fmtDT(r.at) }}</span>
             </router-link>
             <div v-if="!recentList.length" class="empty" style="padding:26px"><p>{{ t('ui.today_recent_empty') }}</p></div>
@@ -239,6 +246,8 @@ async function decide(p, accept) {
 <style scoped>
 .today.one{grid-template-columns:minmax(0,760px)}
 .today-none{max-width:760px}
+.t-locale-counts{list-style:none;margin:0;padding:8px 12px;border-bottom:1px solid var(--hair-2);font-size:var(--t-sm);color:var(--ink-2)}
+.t-locale-counts li{display:flex;align-items:baseline;gap:6px;padding:2px 0}
 .go-btn{flex:none;pointer-events:none}
 .wait-c{margin-left:8px;vertical-align:1px}
 .row-i .rl{display:flex;gap:12px;align-items:center;flex:1;min-width:0;color:inherit;text-decoration:none}

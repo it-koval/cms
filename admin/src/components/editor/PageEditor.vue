@@ -304,7 +304,7 @@ onBeforeUnmount(() => {
   toast.dismissOwner('editor') // «название и адрес» of the «версия создана» toast opens THIS editor's settings
   ed.dispose()
 })
-defineExpose({ flushAll: () => ed.flushAll() })
+defineExpose({ flushAll: () => ed.flushAll(), canLeave: () => !ed.busy })
 
 const hint = computed(() => (vp.phone ? t('editor.hint_phone') : t('editor.hint')))
 // the hint gives way to the notes above it (read-only, waits for publication, sent back)

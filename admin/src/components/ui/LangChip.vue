@@ -40,4 +40,5 @@ defineProps({
 .lc.link:hover { box-shadow: 0 0 0 2px var(--cy-100); text-decoration: none; }
 .lc.link.missing:hover { box-shadow: inset 0 0 0 1px var(--cy), 0 0 0 2px var(--cy-100); color: var(--brand-text-d); }
 .lc.link:focus-visible { outline: 2px solid var(--cy); outline-offset: 2px; }
+.lc.link { min-height: 44px; box-sizing: border-box; }
 </style>

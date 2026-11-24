@@ -2,8 +2,8 @@
 //   currentSiteSync()                      { key, name, domain }   from window.ITK_ADMIN.site (written by the server shell)
 //   getLanguages()                         GET /languages         -> { main:'ru', list:[{ code:'ru', name:'Русский' }] }  main is always first
 //                                          (the server may answer a plain list of codes / { code, name } rows: both are turned into this shape)
-//   getDashboard()                         GET /dashboard         -> { newRequests, failedCount, unpublished, awaiting, proposals, recent, languages }  for «Сегодня»
-// The first iteration has the Russian language only; adding languages is a later feature, so there are no language-management calls.
+//   getDashboard()                         GET /dashboard         -> { newRequests, failedCount, unpublished, awaiting, proposals, recent, languages, locales }  for «Сегодня»
+// Content languages are configured by the site developer.
 import { http, boot } from './http.js'
 import { knownName } from '@/utils/locales.js'
 

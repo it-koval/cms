@@ -13,13 +13,13 @@
 // The same template rules as «Настройки страницы» say where a page may go (canPlace), the home page stays first, and the server checks them again.
 // RIGHTS: the list shows only the pages whose template the role may see (an author sees articles only: such a list is flat, its parent pages are not his); «Новая страница» and the child / settings / list-switch actions
 // need «Править», publishing and unpublishing «Публиковать», both deletes «Удалять» (each judged for the template of the row); a version that waits for publication wears a «Ждёт публикации» chip.
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { t, collator, formatDate } from '@/i18n/index.js'
 import { api, isConflict } from '@/api/index.js'
 import { thumbUrl } from '@/utils/media.js'
-import { app, can, setContentLocale } from '@/stores/app.js'
-import { isMain, isMulti } from '@/utils/locales.js'
+import { app, can } from '@/stores/app.js'
+import { isMain, isMulti, withLang } from '@/utils/locales.js'
 import Icon from '@/components/ui/Icon.vue'
 import FilterSheet from '@/components/ui/FilterSheet.vue'
 import Popover from '@/components/ui/Popover.vue'
@@ -74,9 +74,15 @@ watch(() => route.query.template, (v) => { tpl.value = typeof v === 'string' ? v
 // the filter in the toolbar keeps the address in step, so a reload or the back button brings the same list
 function onTpl() { remember(); router.replace({ path: '/pages', query: tpl.value ? { template: tpl.value } : {} }) }
 
+let loadSeq = 0
+onBeforeUnmount(() => { loadSeq++ })
 async function load() {
+  const my = ++loadSeq
+  const locale = app.locale
   try {
-    allPages.value = await api.pages.list({ locale: app.locale })
+    const result = await api.pages.list({ locale })
+    if (my !== loadSeq || locale !== app.locale) return
+    allPages.value = result
     loadError.value = ''
     if (!openMap.value) {
       // first visit: the first level is open, deeper levels are folded
@@ -84,9 +90,10 @@ async function load() {
       openMap.value = Object.fromEntries(parentIds(pages.value).filter((id) => roots.has(id)).map((id) => [id, true]))
     }
   } catch (e) {
+    if (my !== loadSeq || locale !== app.locale) return
     loadError.value = e.message || t('pages.load_failed')
   } finally {
-    loaded.value = true
+    if (my === loadSeq && locale === app.locale) loaded.value = true
   }
 }
 onMounted(load)
@@ -176,7 +183,7 @@ const subtitle = computed(() => {
 
 const go = (p) => router.push(pageHref(p))
 function onRow(p, e) {
-  if (e.target.closest('a,button,label,input')) return
+  if (e.target.closest('a,button,label,input,select,textarea')) return
   go(p)
 }
 
@@ -209,7 +216,7 @@ const m = computed(() => {
     openLabel: miss ? (edit ? cap(t('pages.create_version', { version: ver.acc })) : t('pages.open')) : edit ? t('pages.open') : t('pages.view'),
     publish: pub && !miss && (p.status === 'draft' || p.changed),
     publishLabel: lng ? (p.status === 'draft' ? cap(t('pages.publish_version', { version: ver.acc })) : cap(t('pages.publish_version_changes', { version: ver.gen }))) : (p.status === 'draft' ? t('pages.publish') : t('pages.publish_changes')),
-    unpublish: pub && !miss && !home && p.status === 'published',
+    unpublish: pub && !miss && (!home || (lng && !isMain(app.locale))) && p.status === 'published',
     unpublishLabel: lng ? cap(t('pages.unpublish_version', { version: ver.acc })) : t('pages.unpublish'),
     nest: edit && canNew.value && !home && !leaf,
     removeVersion: del && lng && !isMain(app.locale) && !miss, // delete ONE translation (never the main language)
@@ -244,8 +251,7 @@ const mainRows = computed(() => allPages.value.map((p) => {
 
 async function onCreated(page) {
   toast.show(t('pages.created_toast', { title: page.title }))
-  setContentLocale(app.languages.main) // a new page is born in the main language: the editor opens that version
-  router.push(`/pages/${page.id}`)
+  router.push(withLang(`/pages/${page.id}`, app.languages.main))
 }
 async function onSaved(page) {
   await load()

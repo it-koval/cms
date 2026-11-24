@@ -8,8 +8,8 @@
 // A language whose menu is still empty can take the items of the main language's menu (links are mapped to the translated pages).
 import { computed, onMounted, ref } from 'vue'
 import { api } from '@/api/index.js'
-import { app } from '@/stores/app.js'
-import { isMain, isMulti } from '@/utils/locales.js'
+import { app, can } from '@/stores/app.js'
+import { isMain, isMulti, prefix } from '@/utils/locales.js'
 import { useToast } from '@/components/ui/useToast.js'
 import Icon from '@/components/ui/Icon.vue'
 import StatusChip from '@/components/ui/StatusChip.vue'
@@ -41,11 +41,15 @@ const ready = ref(false)
 const mainMenus = ref(null) // the saved menus of the main language, for «Скопировать …» (only when another language is open)
 
 onMounted(async () => {
-  try {
-    const [list, main] = await Promise.all([api.pages.list({ locale: LOC }), isMain(LOC) ? null : api.settings.getMenus(MAIN)])
-    rows.value = list
-    mainMenus.value = main
-  } catch (e) { /* the picker stays empty, the warnings stay off */ } finally { ready.value = true }
+  const [list, main] = await Promise.allSettled([
+    can('pages') ? api.pages.list({ locale: LOC }) : null,
+    isMain(LOC) ? null : api.settings.getMenus(MAIN),
+  ])
+  if (list.status === 'fulfilled' && list.value) {
+    rows.value = list.value
+    ready.value = true
+  }
+  if (main.status === 'fulfilled') mainMenus.value = main.value
 })
 
 const pages = computed(() => rows.value.filter((p) => p.translated).map((p) => ({ value: p.url, label: p.title, draft: p.status !== 'published' })))
@@ -84,7 +88,7 @@ function remove(key, id) {
 }
 // a new item leads to the home page OF THIS LANGUAGE (the main language's home is '/', the English one '/en'), else to the first page there is
 function add(key) {
-  const home = pages.value.find((p) => p.value === '/' || p.value === '/' + LOC)
+  const home = pages.value.find((p) => p.value === prefix('/', LOC))
   setList(key, [...list(key), newMenuItem(home ? home.value : (pages.value[0] || {}).value || '')])
 }
 

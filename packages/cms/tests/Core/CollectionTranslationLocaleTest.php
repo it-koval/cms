@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Itk\Cms\Tests\Core;
 
+use Doctrine\ORM\EntityManagerInterface;
 use Itk\Cms\Content\CollectionService;
 use Itk\Cms\Content\ContentException;
 use Itk\Cms\Controller\Admin\AbstractApiController;
@@ -95,6 +96,49 @@ final class CollectionTranslationLocaleTest extends KernelTestCase
         } catch (ContentException $error) {
             self::assertSame(422, $error->status());
             self::assertSame(I18n::t('content.locale_unknown', ['locale' => $locale]), $error->getMessage());
+        }
+    }
+
+    #[Test]
+    public function overviewWithoutALanguageListKeepsMainCountsAndExplicitLegacyLocaleReads(): void
+    {
+        self::bootKernel();
+        $key = 'test_locale_counts_' . \bin2hex(\random_bytes(6));
+        self::getContainer()->get(ResourceRegistry::class)->add(new class($key) extends CollectionResource {
+            public function __construct(private readonly string $resourceKey)
+            {
+            }
+
+            public function key(): string
+            {
+                return $this->resourceKey;
+            }
+
+            public function title(): string
+            {
+                return 'Legacy language counts';
+            }
+
+            public function fields(): iterable
+            {
+                yield Text::make('Title', 'title');
+            }
+        });
+        $service = self::getContainer()->get(CollectionService::class);
+        try {
+            $service->create($key, ['title' => 'Main']);
+            $service->create($key, ['title' => 'Legacy'], 'en');
+            $main = \array_column($service->collections(), null, 'key')[$key];
+            $legacy = \array_column($service->collections('en'), null, 'key')[$key];
+            self::assertSame(2, $main['count']);
+            self::assertSame(1, $main['unpublished']);
+            self::assertSame(['ru' => ['count' => 1, 'unpublished' => 1]], $main['locales']);
+            self::assertSame(1, $legacy['unpublished']);
+            self::assertSame($main['locales'], $legacy['locales']);
+        } finally {
+            $em = self::getContainer()->get(EntityManagerInterface::class);
+            $em->createQuery('DELETE FROM Itk\Cms\Entity\CollectionItem i WHERE i.collection = :key')->setParameter('key', $key)->execute();
+            $em->createQuery('DELETE FROM Itk\Cms\Entity\Revision r WHERE r.resourceKey = :key')->setParameter('key', $key)->execute();
         }
     }
 }

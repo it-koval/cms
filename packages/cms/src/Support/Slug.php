@@ -7,17 +7,12 @@ namespace Itk\Cms\Support;
 /** Latin slugs from Russian and Kazakh text. */
 final class Slug
 {
-    /** The transliteration table of the Russian and Kazakh alphabets: a rule for the content of the site, not a text of the interface. */
-    private const MAP = [
-        'а' => 'a', 'б' => 'b', 'в' => 'v', 'г' => 'g', 'д' => 'd', 'е' => 'e', 'ё' => 'e', 'ж' => 'zh', 'з' => 'z', 'и' => 'i', 'й' => 'y', // i18n-ignore
-        'к' => 'k', 'л' => 'l', 'м' => 'm', 'н' => 'n', 'о' => 'o', 'п' => 'p', 'р' => 'r', 'с' => 's', 'т' => 't', 'у' => 'u', 'ф' => 'f', // i18n-ignore
-        'х' => 'h', 'ц' => 'ts', 'ч' => 'ch', 'ш' => 'sh', 'щ' => 'sch', 'ъ' => '', 'ы' => 'y', 'ь' => '', 'э' => 'e', 'ю' => 'yu', 'я' => 'ya', // i18n-ignore
-        'ә' => 'a', 'ғ' => 'gh', 'қ' => 'q', 'ң' => 'ng', 'ө' => 'o', 'ұ' => 'u', 'ү' => 'u', 'һ' => 'h', 'і' => 'i', // i18n-ignore
-    ];
-
     public static function slugify(string $text, int $max = 64): string
     {
-        $s = \strtr(\mb_strtolower(\trim($text)), self::MAP);
+        /** @var array<string, string>|null $map */
+        static $map = null;
+        $map ??= \json_decode(\file_get_contents(__DIR__ . '/slug-map.json') ?: throw new \RuntimeException('Cannot read slug-map.json'), true, 512, \JSON_THROW_ON_ERROR);
+        $s = \strtr(\mb_strtolower(\trim($text)), $map);
         $s = (string) \preg_replace('/[^a-z0-9]+/', '-', $s);
 
         return \trim(\substr(\trim($s, '-'), 0, $max), '-');

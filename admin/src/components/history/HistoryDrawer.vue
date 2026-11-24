@@ -3,7 +3,7 @@
 // returning to it would change now), and «Вернуть эту версию». The return makes the DRAFT that version and is itself written to the history; nothing goes live by itself.
 //   <HistoryDrawer v-model:open="o" kind="page" :resource-id="id" :locale="loc" :can-restore="canEdit" @restored="reload" />
 // RIGHTS: the server decides; a person without «Править» only reads (canRestore=false hides the button). The page or record must be saved before opening (the parent flushes its autosave).
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import Drawer from '@/components/ui/Drawer.vue'
 import Icon from '@/components/ui/Icon.vue'
 import Skeleton from '@/components/ui/Skeleton.vue'
@@ -13,6 +13,7 @@ import { api } from '@/api/index.js'
 import { useConfirm } from '@/components/ui/useConfirm.js'
 import { useToast } from '@/components/ui/useToast.js'
 import { fmtDT } from '@/utils/format.js'
+import { isMulti, langName } from '@/utils/locales.js'
 import { t } from '@/i18n/index.js'
 import { actionLabel, kindOf, shortSummary, whoLabel } from './historyWords.js'
 
@@ -28,6 +29,8 @@ const confirm = useConfirm()
 const toast = useToast()
 
 const subject = computed(() => kindOf(props.kind))
+const multi = computed(() => isMulti() && !!props.locale)
+const scope = ref(undefined)
 const items = ref([])
 const total = ref(0)
 const keep = ref(0)
@@ -38,13 +41,15 @@ const opened = ref(null) // the entry on screen: { …entry, against, current }
 const openBusy = ref(0) // id of the entry being opened
 const restoring = ref(false)
 let seq = 0
+let context = 0
 
 async function load({ append = false } = {}) {
+  if (append && more.value) return
   const my = ++seq
   if (append) more.value = true
   else { loading.value = true; error.value = '' }
   try {
-    const r = await api.history.list(props.kind, props.resourceId, { locale: props.locale, limit: 30, offset: append ? items.value.length : 0 })
+    const r = await api.history.list(props.kind, props.resourceId, { locale: props.locale, scope: scope.value, limit: 30, offset: append ? items.value.length : 0 })
     if (my !== seq) return
     items.value = append ? [...items.value, ...r.items] : r.items
     total.value = r.total
@@ -56,26 +61,49 @@ async function load({ append = false } = {}) {
     if (my === seq) { loading.value = false; more.value = false }
   }
 }
-watch(() => props.open, (v) => {
-  if (v) { opened.value = null; load() } else seq++
-})
+
+function invalidate() {
+  ++seq
+  ++context
+  opened.value = null
+  openBusy.value = 0
+  restoring.value = false
+  more.value = false
+}
+
+function changeScope(next) {
+  if (scope.value === next) return
+  scope.value = next
+  invalidate()
+  load()
+}
+
+watch([() => props.open, () => props.kind, () => props.resourceId, () => props.locale], ([open]) => {
+  invalidate()
+  scope.value = undefined
+  if (open) load()
+}, { immediate: true })
+onBeforeUnmount(invalidate)
 
 async function show(e) {
   if (openBusy.value) return
+  const here = context
   openBusy.value = e.id
   try {
-    opened.value = await api.history.entry(e.id)
+    const entry = await api.history.entry(e.id)
+    if (here === context) opened.value = entry
   } catch (err) {
-    toast.error(err.message || t('ui.history_open_failed'))
+    if (here === context) toast.error(err.message || t('ui.history_open_failed'))
   } finally {
-    openBusy.value = 0
+    if (here === context) openBusy.value = 0
   }
 }
 
 const lead = computed(() => {
   const o = opened.value
   if (!o) return ''
-  return `${whoLabel(o)}, ${fmtDT(o.updatedAt)}`
+  const whoAndWhen = `${whoLabel(o)}, ${fmtDT(o.updatedAt)}`
+  return multi.value && o.locale ? `${langName(o.locale)} · ${whoAndWhen}` : whoAndWhen
 })
 const sameAsNow = computed(() => !!opened.value && (opened.value.current || opened.value.same))
 const restorable = computed(() => !!opened.value && opened.value.action !== 'delete_locale' && opened.value.canRestore !== false)
@@ -83,29 +111,42 @@ const restorable = computed(() => !!opened.value && opened.value.action !== 'del
 async function restore() {
   const o = opened.value
   if (!o || !restorable.value || restoring.value) return
-  const ok = await confirm({
-    title: t('ui.history_restore_title'),
-    message: t(`ui.history_restore_msg_${subject.value}`, { when: fmtDT(o.updatedAt) }),
-    confirmLabel: t('ui.history_restore'), cancelLabel: t('ui.history_not_now'),
-  })
-  if (!ok) return
+  const here = context
   restoring.value = true
   try {
+    const message = t(`ui.history_restore_msg_${subject.value}`, { when: fmtDT(o.updatedAt) })
+    const locale = o.locale || props.locale
+    const ok = await confirm({
+      title: t('ui.history_restore_title'),
+      message: multi.value && locale ? `${t('ui.history_restore_language', { lang: langName(locale) })} ${message}` : message,
+      confirmLabel: t('ui.history_restore'), cancelLabel: t('ui.history_not_now'),
+    })
+    if (!ok || here !== context) return
     const r = await api.history.restore(o.id)
-    toast.show(t('ui.history_restored'))
-    emit('restored', r)
+    if (here !== context) return
+    const restoredLocale = r.locale || locale
+    if (multi.value && restoredLocale && restoredLocale !== props.locale) {
+      toast.show(t('ui.history_restored_elsewhere', { lang: langName(restoredLocale) }))
+    } else {
+      toast.show(t('ui.history_restored'))
+      emit('restored', r)
+    }
     opened.value = null
     await load()
   } catch (e) {
-    toast.error(e.message || t('ui.history_restore_failed'))
+    if (here === context) toast.error(e.message || t('ui.history_restore_failed'))
   } finally {
-    restoring.value = false
+    if (here === context) restoring.value = false
   }
 }
 </script>
 
 <template>
   <Drawer :open="open" :title="opened ? actionLabel(opened) : t('ui.history_title')" :width="480" @update:open="emit('update:open', $event)">
+    <div v-if="multi" class="hd-scope" role="group" :aria-label="t('ui.language')">
+      <button type="button" class="btn" :disabled="restoring" :aria-pressed="!scope" @click="changeScope(undefined)">{{ t('ui.history_this_language') }}</button>
+      <button type="button" class="btn" :disabled="restoring" data-history-scope="all" :aria-pressed="scope === 'all'" @click="changeScope('all')">{{ t('ui.history_all_languages') }}</button>
+    </div>
     <template v-if="opened">
       <button type="button" class="btn ghost hd-back" @click="opened = null"><Icon name="chevL" size="s14" />{{ t('ui.history_back_all') }}</button>
       <p class="hd-lead">{{ lead }}</p>
@@ -132,12 +173,12 @@ async function restore() {
       <template v-else>
         <p class="muted hd-p">{{ t('ui.history_keep', { count: keep }) }}</p>
         <ul class="hd-list">
-          <li v-for="(e, i) in items" :key="e.id">
-            <button type="button" :class="['hd-row', { busy: openBusy === e.id }]" :aria-label="`${actionLabel(e)}, ${whoLabel(e)}, ${fmtDT(e.updatedAt)}`" @click="show(e)">
+          <li v-for="e in items" :key="e.id">
+            <button type="button" :class="['hd-row', { busy: openBusy === e.id }]" :aria-label="[actionLabel(e), multi && e.locale ? langName(e.locale) : '', whoLabel(e), fmtDT(e.updatedAt)].filter(Boolean).join(', ')" @click="show(e)">
               <span class="hd-dot" :data-a="e.action" aria-hidden="true" />
               <span class="hd-main">
-                <b>{{ actionLabel(e) }}<span v-if="i === 0 && e.action !== 'delete_locale'" class="chip pub hd-now">{{ t('ui.history_now') }}</span></b>
-                <span class="muted">{{ whoLabel(e) }} · {{ fmtDT(e.updatedAt) }}</span>
+                <b>{{ actionLabel(e) }}<span v-if="e.current && e.action !== 'delete_locale'" class="chip pub hd-now">{{ t('ui.history_now') }}</span></b>
+                <span class="muted"><template v-if="multi && e.locale">{{ langName(e.locale) }} · </template>{{ whoLabel(e) }} · {{ fmtDT(e.updatedAt) }}</span>
                 <span v-if="shortSummary(e.summary)" class="hd-sum">{{ shortSummary(e.summary) }}</span>
               </span>
               <Icon name="chevR" size="s14" />
@@ -156,6 +197,9 @@ async function restore() {
 </template>
 
 <style scoped>
+.hd-scope { display: flex; flex-wrap: wrap; gap: 8px; }
+.hd-scope .btn { min-height: 44px; }
+.hd-scope .btn[aria-pressed="true"] { background: var(--cy-50); border-color: var(--cy); color: var(--brand-text); }
 .hd-back { align-self: flex-start; margin: -6px 0 -6px -8px; }
 .hd-lead { margin: 0; color: var(--ink-2); font-size: var(--t-sm); }
 .hd-h { margin: 0 0 4px; font-size: var(--t-sm); font-weight: 650; }

@@ -2,8 +2,8 @@
 // fixtures.js. Everything written stays in memory, in the closure: a reload of the page starts again from the fixtures. Pure code, no DOM: install.js puts it behind `fetch`.
 //
 // What is answered: schema, me, languages, dashboard, collections (the rail), prefs, the bell, pages (list, draft, save, create, update, delete, publish, revert, unpublish, submit, return, tree)
-// and records of collections (query, get, save, create, delete, publish, revert, submit, return, order; the options matrix is one record 'main'), robots.txt / llms.txt (seo-files), Яндекс Вебмастер (yandex-webmaster), requests (with the delivery of each messenger) and the notification settings. Anything else is a 404 that says it is the demo.
-import { makeDb } from './fixtures.js'
+// and records of collections (query, get, save, create, delete, translations, publish, revert, submit, return, order; the options matrix is one record 'main'), history, menus, settings texts, robots.txt / llms.txt (seo-files), Яндекс Вебмастер (yandex-webmaster), requests (with the delivery of each messenger) and the notification settings. Anything else is a 404 that says it is the demo.
+import { LANGUAGES, makeDb } from './fixtures.js'
 
 const copy = (v) => (v === undefined ? undefined : JSON.parse(JSON.stringify(v)))
 const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b)
@@ -47,7 +47,7 @@ const SEO_FILES_DEFAULT = {
 
 const PAGE_KEYS = ['title', 'url', 'seo', 'sections', 'fields', 'parentId', 'template']
 const PAGE_EDIT = ['title', 'url', 'seo', 'fields', 'parentId', 'template']
-const RECORD_META = ['id', 'status', 'updatedAt', 'version', 'awaiting', 'returned', 'published']
+const RECORD_META = ['id', 'status', 'updatedAt', 'version', 'awaiting', 'returned', 'published', 'translations', 'pos']
 const LOCALE = 'ru'
 
 export function createMock(db = makeDb()) {
@@ -55,101 +55,181 @@ export function createMock(db = makeDb()) {
   const bump = (rec) => { rec.version = `v${++db.seq}`; rec.updatedAt = now() }
   const by = () => ({ by: db.user.name, at: now() })
 
-  /* ---------- pages ---------- */
-  const pageDiff = (p) => (p.published ? PAGE_KEYS.filter((k) => !eq(p[k], p.published[k])) : [])
+  const codes = LANGUAGES.list.map((l) => l.code)
+  const versions = (r) => ({ [LOCALE]: r, ...r.translations })
+  const version = (r, locale) => locale === LOCALE ? r : r.translations?.[locale]
+  const strip = (r) => Object.fromEntries(Object.entries(r).filter(([k]) => k !== 'translations' && k !== 'published' && k !== 'pos'))
+  const noTranslation = (locale) => fail(404, 'Перевода на этот язык нет', { code: 'no_translation', locale })
+  const invalidLocale = () => fail(422, 'Выберите язык из списка')
+  const localeOf = (query, body = {}) => query.locale ?? body.locale ?? LOCALE
+  const validLocale = (locale) => typeof locale === 'string' && codes.includes(locale)
+  const localeError = (query, body) => !validLocale(localeOf(query, body) || LOCALE) ? invalidLocale() : null
+  const cfgOf = (key) => db.schema.collections.find((c) => c.key === key)
+  const findPage = (id) => db.pages.find((p) => p.id === id)
+  const dataKeys = (r) => Object.keys(r).filter((k) => !RECORD_META.includes(k))
+  const pageDiff = (p) => p.published ? PAGE_KEYS.filter((k) => !eq(p[k], p.published[k])) : []
+  const recDiff = (r) => r.published ? dataKeys(r).filter((k) => !eq(r[k], r.published[k])) : []
   const pageSummary = (p) => ({
     status: p.published ? 'published' : 'draft', changed: pageDiff(p).length > 0, changes: pageDiff(p).length, published: !!p.published, title: p.title, url: p.url,
-    updatedAt: p.updatedAt, migrated: !!p.migrated, sectionsCount: p.sections.length, awaiting: p.awaiting,
+    updatedAt: p.updatedAt, migrated: !!p.migrated, sectionsCount: (p.sections || []).length, awaiting: p.awaiting,
   })
-  const flatPage = (p) => {
-    const { published, pos, ...draft } = p
-    return { ...copy(draft), locale: LOCALE, translated: true, ...pageSummary(p), locales: { [LOCALE]: pageSummary(p) } }
+  const recSummary = (cfg, r) => ({
+    status: r.published ? 'published' : 'draft', changed: recDiff(r).length > 0, changes: recDiff(r).length, title: r[cfg.titleField] ?? '', updatedAt: r.updatedAt, awaiting: r.awaiting,
+  })
+  const summaries = (r, summarize) => Object.fromEntries(Object.entries(versions(r)).map(([loc, v]) => [loc, summarize(v)]))
+  const flatPage = (p, locale = LOCALE) => {
+    const t = version(p, locale)
+    const source = t || p
+    return { ...copy(strip(source)), id: p.id, parentId: p.parentId, template: p.template, locale, translated: !!t,
+      ...pageSummary(source), ...(!t ? { status: 'missing', changed: false, changes: 0, published: false, version: null, updatedAt: null, awaiting: null, returned: null, migrated: false } : {}),
+      locales: summaries(p, pageSummary) }
   }
-  const snapshot = (p) => (p.published ? { ...copy(p.published), id: p.id, locale: LOCALE, translated: true, status: 'published', version: p.version, updatedAt: p.updatedAt } : null)
-  const findPage = (id) => db.pages.find((p) => p.id === id)
+  const snapshot = (p, locale = LOCALE) => {
+    const t = version(p, locale)
+    return t?.published ? { ...copy(strip(t.published)), id: p.id, locale, translated: true, status: 'published' } : null
+  }
+  const flatRecord = (cfg, r, locale = LOCALE) => {
+    const t = version(r, locale)
+    const source = t || r
+    return { ...copy(strip(source)), id: r.id, locale, translated: !!t, ...recSummary(cfg, source),
+      ...(!t ? { status: 'missing', changed: false, changes: 0, version: null, updatedAt: null, awaiting: null, returned: null } : {}),
+      locales: summaries(r, (v) => recSummary(cfg, v)) }
+  }
+  const publishedRecord = (r, locale = LOCALE) => {
+    const t = version(r, locale)
+    return t?.published ? { ...copy(strip(t.published)), id: r.id, locale, translated: true, status: 'published' } : null
+  }
   const inOrder = () => [...db.pages].sort((a, b) => (a.pos ?? 0) - (b.pos ?? 0))
   db.pages.forEach((p, i) => { if (p.pos === undefined) p.pos = i * 10 })
   const withKids = (id) => [id, ...db.pages.filter((p) => p.parentId === id).flatMap((p) => withKids(p.id))]
 
+  /* History fixtures and writes use the same version identity as the real API. */
+  let historySeq = 0
+  const revisions = []
+  const revisionSnapshots = new Map()
+  const recordHistory = (kind, r, locale, action, key = '') => {
+    const v = version(r, locale)
+    if (!v) return
+    const id = ++historySeq
+    const at = now()
+    revisions.unshift({ id, kind, resourceId: r.id, key, locale, action, userId: db.user.id, userName: db.user.name, via: 'admin', viaName: '', title: v.title || cfgOf(key)?.title || '', summary: [], baseline: false, createdAt: at, updatedAt: at })
+    revisionSnapshots.set(id, copy(strip(v)))
+  }
+  db.pages.forEach((p) => Object.keys(versions(p)).forEach((locale) => recordHistory('page', p, locale, 'create', p.template)))
+  db.schema.collections.forEach((cfg) => db.collections[cfg.key].records.forEach((r) => Object.keys(versions(r)).forEach((locale) => recordHistory('item', r, locale, 'create', cfg.key))))
+  recordHistory('page', db.pages[0], 'kk', 'edit', db.pages[0].template)
+  const settingsState = (id, locale) => {
+    const cfg = db.schema.settings.groups.find((g) => g.key === id)
+    if (!cfg) return null
+    return { id, title: cfg.title, ...Object.fromEntries(cfg.fields.map((f) => [f.k, f.tr ? db.settingsTexts[locale]?.[f.k] || '' : db.settings[f.k]])) }
+  }
+  const menuState = (id, locale) => {
+    const area = db.schema.menuAreas.find((a) => a.key === id)
+    return area ? { id, title: area.name, items: copy(db.menus[locale]?.[id] || []) } : null
+  }
+  const recordStateHistory = (kind, id, locale, action) => {
+    const state = kind === 'settings' ? settingsState(id, locale) : menuState(id, locale)
+    if (state) recordHistory(kind, locale === LOCALE ? state : { id, translations: { [locale]: state } }, locale, action, id)
+  }
+  Object.keys(db.settingsTexts).forEach((locale) => db.schema.settings.groups.forEach((g) => recordStateHistory('settings', g.key, locale, 'edit')))
+  Object.keys(db.menus).forEach((locale) => db.schema.menuAreas.forEach((a) => recordStateHistory('menu', a.key, locale, 'edit')))
+
+  function translation(method, r, locale, from, removeLocale, kind, cfg) {
+    const target = method === 'DELETE' ? removeLocale : locale
+    if (!validLocale(target)) return invalidLocale()
+    if (method === 'DELETE') {
+      if (!version(r, target)) return noTranslation(target)
+      if (target === LOCALE || Object.keys(versions(r)).length < 2) return fail(409, 'Основной или последний перевод нельзя удалить')
+      recordHistory(kind, r, target, 'delete_locale', cfg?.key || r.template)
+      delete r.translations[target]
+      return ok({ ok: true })
+    }
+    if (from !== undefined && from !== null && (!validLocale(from) || from === target)) return fail(422, 'Выберите другой язык для копирования')
+    if (version(r, target)) return fail(409, 'Перевод уже существует', { code: 'translation_exists', locale: target })
+    const source = from != null ? version(r, from) : r
+    if (!source) return fail(422, 'В выбранном языке нет версии для копирования', { code: 'translation_source_missing' })
+    let v
+    if (kind === 'page') {
+      const prefix = from && from !== LOCALE ? `/${from}` : ''
+      const sourcePath = source.url === prefix ? '/' : source.url.slice(prefix.length) || '/'
+      v = { ...copy(strip(source)), seo: { title: '', description: '' }, fields: {}, sections: [] }
+      if (from != null) v = copy(strip(source))
+      v.url = `/${target}${sourcePath === '/' ? '' : sourcePath}`
+    } else {
+      const fields = (cfg.tabs || []).flatMap((tab) => tab.fields || [])
+      v = from != null ? Object.fromEntries(dataKeys(source).map((k) => [k, copy(source[k])])) : Object.fromEntries(fields.map((f) => [f.k, f.t === 'toggle' ? false : '']))
+      if (cfg.view === 'matrix' && from == null) v = { cols: [], rows: [] }
+    }
+    v = { ...v, id: r.id, status: 'draft', updatedAt: now(), version: `v${++db.seq}`, awaiting: null, returned: null, published: null }
+    r.translations ||= {}
+    r.translations[target] = v
+    recordHistory(kind, r, target, 'create', cfg?.key || r.template)
+    return { status: 201, body: kind === 'page' ? flatPage(r, target) : flatRecord(cfg, r, target) }
+  }
+
+  /* ---------- pages ---------- */
   function pages(method, rest, query, body) {
     const [id, action, extra] = rest
+    const locale = localeOf(query, body) || LOCALE
     if (!id) {
-      if (method === 'GET') {
-        return ok(inOrder().filter((p) => (!query.template || p.template === query.template) && (query.parentId === undefined || (p.parentId || '') === query.parentId)).map(flatPage))
-      }
+      if (method === 'GET') return ok(inOrder().filter((p) => (!query.template || p.template === query.template) && (query.parentId === undefined || (['null', 'root'].includes(query.parentId) ? p.parentId === null : !query.parentId || p.parentId === query.parentId))).map((p) => flatPage(p, locale)))
       if (method === 'POST') {
-        const made = {
-          id: body.id || `p${++db.seq}`, parentId: body.parentId ?? null, template: body.template || 'default', title: body.title || 'Без названия', url: body.url || '/', seo: { title: '', description: '' },
-          fields: copy(body.fields) || {}, sections: copy(body.sections) || [], updatedAt: now(), version: `v${++db.seq}`, migrated: false, awaiting: null, returned: null, published: null, pos: db.pages.length * 10 + 5,
-        }
+        const made = { id: `p${++db.seq}`, parentId: body.parentId ?? null, template: body.template || 'default', title: body.title || 'Без названия', url: body.url || '/', seo: { title: '', description: '' },
+          fields: copy(body.fields) || {}, sections: copy(body.sections) || [], updatedAt: now(), version: `v${++db.seq}`, migrated: false, awaiting: null, returned: null, published: null, pos: db.pages.length * 10 + 5, translations: {} }
         db.pages.push(made)
+        recordHistory('page', made, LOCALE, 'create', made.template)
         return { status: 201, body: flatPage(made) }
       }
       return NOT_HERE()
     }
     if (id === 'tree' && method === 'PUT') {
-      ;(Array.isArray(body) ? body : []).forEach((n) => {
+      const nodes = Array.isArray(body) ? body : body.nodes || []
+      nodes.forEach((n) => {
         const p = findPage(n.id)
         if (!p) return
         p.parentId = n.parentId ?? null
         p.pos = Number(n.position) || 0
-        bump(p)
+        Object.values(versions(p)).forEach(bump)
       })
-      return ok({ ok: true, moved: Array.isArray(body) ? body.length : 0 })
+      return ok({ ok: true, moved: nodes.length })
     }
     const p = findPage(id)
     if (!p) return NO_PAGE()
-    if (((action === 'draft' && method === 'PUT') || (action === 'publish' && method === 'POST')) && body.baseVersion && body.baseVersion !== p.version) {
-      return fail(409, 'Страницу изменили, пока она была открыта', { code: 'conflict', current: { version: p.version, ...by(), via: 'admin', viaName: '' } })
+    if (action === 'translations' && ['POST', 'DELETE'].includes(method)) return translation(method, p, query.locale, body.from, extra, 'page')
+    const t = version(p, locale)
+    if (action === 'draft' && method === 'GET') return ok({ page: t ? flatPage(p, locale) : null, published: snapshot(p, locale), changes: [], locale, translated: !!t, locales: summaries(p, pageSummary), shell: { id: p.id, parentId: p.parentId, template: p.template } })
+    if (!action && method === 'DELETE') {
+      const gone = new Set(withKids(id))
+      db.pages = db.pages.filter((x) => !gone.has(x.id))
+      return none()
     }
-    if (!action) {
-      if (method === 'DELETE') {
-        const gone = new Set(withKids(id))
-        db.pages = db.pages.filter((x) => !gone.has(x.id))
-        return none()
-      }
-      if (method === 'PATCH') {
-        PAGE_EDIT.forEach((k) => { if (body[k] !== undefined) p[k] = copy(body[k]) })
-        bump(p)
-        return ok(flatPage(p))
-      }
-      return NOT_HERE()
-    }
-    if (action === 'draft') {
-      if (method === 'GET') return ok({ page: flatPage(p), published: snapshot(p), changes: [], locale: LOCALE, translated: true, locales: { [LOCALE]: pageSummary(p) }, shell: { id: p.id, parentId: p.parentId, template: p.template } })
-      if (method === 'PUT') {
-        PAGE_KEYS.forEach((k) => { if (body[k] !== undefined) p[k] = copy(body[k]) })
-        bump(p)
-        return ok(flatPage(p))
-      }
+    if (!t) return noTranslation(locale)
+    if (action === 'published' && method === 'GET') return ok(snapshot(p, locale))
+    if (((action === 'draft' && method === 'PUT') || (action === 'publish' && method === 'POST')) && body.baseVersion && body.baseVersion !== t.version) return fail(409, 'Страницу изменили, пока она была открыта', { code: 'conflict', current: { version: t.version, ...by(), via: 'admin', viaName: '' } })
+    if (!action && method === 'GET') return ok(flatPage(p, locale))
+    if ((!action && method === 'PATCH') || (action === 'draft' && method === 'PUT')) {
+      ;(action ? PAGE_KEYS : PAGE_EDIT).forEach((k) => { if (body[k] !== undefined) { t[k] = copy(body[k]); if (['parentId', 'template'].includes(k)) p[k] = copy(body[k]) } })
+      bump(t)
+      recordHistory('page', p, locale, 'edit', p.template)
+      return ok(flatPage(p, locale))
     }
     if (method === 'POST' && extra === undefined) {
-      if (action === 'publish') { p.published = copy(Object.fromEntries(PAGE_KEYS.map((k) => [k, p[k]]))); p.awaiting = null; p.returned = null; p.updatedAt = now(); return ok(flatPage(p)) }
-      if (action === 'revert') { if (p.published) PAGE_KEYS.forEach((k) => { p[k] = copy(p.published[k]) }); bump(p); return ok(flatPage(p)) }
-      if (action === 'unpublish') { p.published = null; bump(p); return ok(flatPage(p)) }
-      if (action === 'submit') { p.awaiting = by(); bump(p); return ok(flatPage(p)) }
-      if (action === 'return') { p.awaiting = null; bump(p); return ok(flatPage(p)) }
+      if (action === 'publish') { t.published = copy(Object.fromEntries(PAGE_KEYS.map((k) => [k, t[k]]))); t.awaiting = null; t.returned = null; t.updatedAt = now() }
+      else if (action === 'revert') { if (t.published) PAGE_KEYS.forEach((k) => { t[k] = copy(t.published[k]) }); bump(t) }
+      else if (action === 'unpublish') { t.published = null; bump(t) }
+      else if (action === 'submit') { t.awaiting = by(); bump(t) }
+      else if (action === 'return') { t.awaiting = null; bump(t) }
+      else return NOT_HERE()
+      recordHistory('page', p, locale, action, p.template)
+      return ok(flatPage(p, locale))
     }
     return NOT_HERE()
   }
 
   /* ---------- collections ---------- */
-  const cfgOf = (key) => db.schema.collections.find((c) => c.key === key)
-  const dataKeys = (r) => Object.keys(r).filter((k) => !RECORD_META.includes(k))
-  const recDiff = (r) => (r.published ? dataKeys(r).filter((k) => !eq(r[k], r.published[k])) : [])
-  const recSummary = (cfg, r) => ({
-    status: r.published ? 'published' : 'draft', changed: recDiff(r).length > 0, changes: recDiff(r).length, title: r[cfg.titleField] ?? '', updatedAt: r.updatedAt, awaiting: r.awaiting,
-  })
-  const flatRecord = (cfg, r) => {
-    const { published, ...rest } = r
-    const s = recSummary(cfg, r)
-    return { ...copy(rest), locale: LOCALE, translated: true, ...s, locales: { [LOCALE]: s } }
-  }
-  const publishedRecord = (r) => (r.published ? { ...copy(r.published), id: r.id, locale: LOCALE, translated: true, status: 'published', version: r.version, updatedAt: r.updatedAt } : null)
-  const asRows = (cfg, filtered) => filtered.map((r) => flatRecord(cfg, r))
-
   function compareBy(sort) {
     const keys = String(sort || '').split(',').filter(Boolean).map((k) => (k.startsWith('-') ? [k.slice(1), -1] : [k, 1]))
+    keys.push(['id', 1])
     return (a, b) => {
       for (const [k, dir] of keys) {
         const x = a[k] ?? ''
@@ -160,82 +240,156 @@ export function createMock(db = makeDb()) {
       return 0
     }
   }
+  const truthy = (v) => [true, 1, '1', 'true', 'on', 'yes'].includes(v)
 
   function collections(method, rest, query, body) {
-    const [key, id, action] = rest
-    if (!key) return method === 'GET' ? ok(railList()) : NOT_HERE()
+    const [key, id, action, extra] = rest
+    const locale = localeOf(query, body) || LOCALE
+    if (!key) return method === 'GET' ? ok(railList(query.locale || null)) : NOT_HERE()
     const cfg = cfgOf(key)
     const store = db.collections[key]
     if (!cfg || !store) return fail(404, 'Такой коллекции нет')
     const recs = store.records
-    const find = (rid) => recs.find((r) => r.id === rid)
     if (!id) {
       if (method === 'GET') {
+        const status = query.status || ''
+        if (!['', 'draft', 'published', 'missing'].includes(status)) return fail(422, 'Выберите статус из списка')
         const q = String(query.q || '').trim().toLowerCase()
-        const status = (query.filter && query.filter.status) || query.status || ''
-        let rows = recs.filter((r) => {
+        const filters = query.filter || {}
+        const allowedFilters = ['status', ...(cfg.filters || []).map((f) => f.k)]
+        const unknown = Object.keys(filters).find((k) => !allowedFilters.includes(k))
+        if (unknown) return fail(422, 'Такой фильтр недоступен', { filter: unknown })
+        const allRows = recs.map((r) => flatRecord(cfg, r, locale))
+        let rows = allRows.filter((r) => {
           if (q && !(cfg.searchKeys || [cfg.titleField]).some((k) => String(r[k] ?? '').toLowerCase().includes(q))) return false
-          if (status === 'published') return !!r.published
-          if (status === 'draft') return !r.published || recDiff(r).length > 0
-          if (status === 'missing') return false
+          if (truthy(query.onlyTranslated) && !r.translated) return false
+          if (Object.entries(filters).some(([k, v]) => v !== '' && v != null && String(k === 'status' ? (r.translated ? r.status : '') : r[k] ?? '') !== String(v))) return false
+          const draft = r.status === 'draft' || r.changed
+          if (status === 'published') return r.translated && !draft
+          if (status === 'draft') return r.translated && draft
+          if (status === 'missing') return !r.translated
           return true
         })
-        if (!query.envelope) return ok(asRows(cfg, rows))
-        rows = asRows(cfg, rows).sort(compareBy(query.sort || cfg.defaultSort))
-        const perPage = Math.max(1, Number(query.perPage) || cfg.perPage || 25)
-        const page = Math.max(1, Number(query.page) || 1)
-        return ok({ items: rows.slice((page - 1) * perPage, page * perPage), total: rows.length, page, perPage, facets: {}, metrics: [] })
+        rows = rows.sort(compareBy(query.sort || cfg.defaultSort))
+        const perPage = Math.max(1, Math.min(200, Math.trunc(Number(query.perPage)) || cfg.perPage || 25))
+        const page = Math.max(1, Math.trunc(Number(query.page)) || 1)
+        const facets = {}
+        allRows.filter((r) => r.translated).forEach((r) => { facets.status ||= {}; facets.status[r.status] = (facets.status[r.status] || 0) + 1 })
+        return ok({ items: rows.slice((page - 1) * perPage, page * perPage), total: rows.length, page, perPage, facets, metrics: [] })
       }
       if (method === 'POST') {
-        const made = { id: `n${++db.seq}`, status: 'draft', updatedAt: now(), version: `v${++db.seq}`, awaiting: null, returned: null, published: null, ...copy(body) }
+        if (cfg.singleton && recs.length) return fail(409, 'Единственная запись этой коллекции уже существует')
+        const { locale: ignoredLocale, id: ignoredId, baseVersion, ...fields } = body
+        const made = { ...copy(fields), id: `n${++db.seq}`, status: 'draft', updatedAt: now(), version: `v${++db.seq}`, awaiting: null, returned: null, published: null, translations: {} }
         recs.unshift(made)
+        recordHistory('item', made, LOCALE, 'create', key)
         return { status: 201, body: flatRecord(cfg, made) }
       }
       return NOT_HERE()
     }
     if (id === 'order' && method === 'PUT') return ok({ ok: true })
-    const r = find(id)
+    const r = recs.find((v) => v.id === id)
     if (!r) return NO_RECORD()
-    if (((!action && method === 'PUT') || (action === 'publish' && method === 'POST')) && body.baseVersion && body.baseVersion !== r.version) {
-      return fail(409, 'Запись изменили, пока она была открыта', { code: 'conflict', current: { version: r.version, ...by(), via: 'admin', viaName: '' } })
-    }
+    if (action === 'translations' && ['POST', 'DELETE'].includes(method)) return translation(method, r, query.locale, body.from, extra, 'item', cfg)
+    const t = version(r, locale)
     if (!action) {
-      if (method === 'GET') return ok({ item: flatRecord(cfg, r), published: publishedRecord(r), changes: [], locale: LOCALE, translated: true, locales: { [LOCALE]: recSummary(cfg, r) } })
-      if (method === 'PUT') {
-        Object.entries(body).forEach(([k, v]) => { if (k !== 'baseVersion' && !RECORD_META.includes(k)) r[k] = copy(v) })
-        bump(r)
-        return ok(flatRecord(cfg, r))
-      }
+      if (method === 'GET') return ok({ item: t ? flatRecord(cfg, r, locale) : null, published: publishedRecord(r, locale), changes: [], locale, translated: !!t, locales: summaries(r, (v) => recSummary(cfg, v)) })
       if (method === 'DELETE') { store.records = recs.filter((x) => x.id !== id); return none() }
-      return NOT_HERE()
+    }
+    if (!t) return noTranslation(locale)
+    if (((!action && ['PUT', 'PATCH'].includes(method)) || (action === 'publish' && method === 'POST')) && body.baseVersion && body.baseVersion !== t.version) return fail(409, 'Запись изменили, пока она была открыта', { code: 'conflict', current: { version: t.version, ...by(), via: 'admin', viaName: '' } })
+    if (!action && ['PUT', 'PATCH'].includes(method)) {
+      Object.entries(body).forEach(([k, v]) => { if (!['baseVersion', 'locale', ...RECORD_META].includes(k)) t[k] = copy(v) })
+      bump(t)
+      recordHistory('item', r, locale, 'edit', key)
+      return ok(flatRecord(cfg, r, locale))
     }
     if (method === 'POST') {
-      if (action === 'publish') { r.published = copy(Object.fromEntries(dataKeys(r).map((k) => [k, r[k]]))); r.awaiting = null; r.returned = null; r.updatedAt = now(); return ok(flatRecord(cfg, r)) }
-      if (action === 'revert') { if (r.published) dataKeys(r).forEach((k) => { r[k] = copy(r.published[k]) }); bump(r); return ok(flatRecord(cfg, r)) }
-      if (action === 'submit') { r.awaiting = by(); bump(r); return ok(flatRecord(cfg, r)) }
-      if (action === 'return') { r.awaiting = null; bump(r); return ok(flatRecord(cfg, r)) }
+      if (action === 'publish') { t.published = copy(Object.fromEntries(dataKeys(t).map((k) => [k, t[k]]))); t.awaiting = null; t.returned = null; t.updatedAt = now() }
+      else if (action === 'revert') { if (t.published) dataKeys(t).forEach((k) => { t[k] = copy(t.published[k]) }); bump(t) }
+      else if (action === 'submit') { t.awaiting = by(); bump(t) }
+      else if (action === 'return') { t.awaiting = null; bump(t) }
+      else return NOT_HERE()
+      recordHistory('item', r, locale, action, key)
+      return ok(flatRecord(cfg, r, locale))
     }
     return NOT_HERE()
   }
 
-  const railList = () => db.schema.collections.map((cfg) => {
+  const railList = (locale = null) => db.schema.collections.map((cfg) => {
     const rs = db.collections[cfg.key].records
-    const open = rs.filter((r) => !r.published || recDiff(r).length > 0).length
-    return { key: cfg.key, title: cfg.title, count: rs.length, unpublished: open, locales: { [LOCALE]: { count: rs.length, unpublished: open } } }
+    const locales = Object.fromEntries(codes.map((code) => {
+      const vs = rs.map((r) => version(r, code)).filter(Boolean)
+      return [code, { count: vs.length, unpublished: vs.filter((r) => !r.published || recDiff(r).length).length }]
+    }))
+    return { ...Object.fromEntries(['key', 'title', 'singular', 'newLabel', 'icon', 'view', 'description'].map((k) => [k, cfg[k]])), count: cfg.view === 'matrix' ? rs[0]?.cols?.length || 0 : rs.length,
+      unpublished: locale ? locales[locale].unpublished : Object.values(locales).reduce((n, l) => n + l.unpublished, 0), locales }
   })
 
   /* ---------- «Сегодня» ---------- */
   function dashboard() {
-    const unpublished = [
-      ...db.pages.filter((p) => !p.published || pageDiff(p).length).map((p) => ({
-        kind: 'page', id: p.id, locale: LOCALE, template: p.template, title: p.title, pageKind: 'Страница', to: `/pages/${p.id}`, changes: pageDiff(p).length, draft: !p.published, updatedAt: p.updatedAt, migrated: !!p.migrated, awaiting: p.awaiting,
-      })),
-      ...db.schema.collections.flatMap((cfg) => db.collections[cfg.key].records.filter((r) => !r.published || recDiff(r).length).map((r) => ({
-        kind: 'item', collection: cfg.key, id: r.id, locale: LOCALE, title: String(r[cfg.titleField] || cfg.title), pageKind: cfg.title, to: `/collections/${cfg.key}/${r.id}`, changes: recDiff(r).length, draft: !r.published, updatedAt: r.updatedAt, migrated: false, awaiting: r.awaiting,
-      }))),
-    ]
-    const recent = db.pages.filter((p) => p.published).slice(0, 4).map((p) => ({ label: p.title, to: `/pages/${p.id}`, at: p.updatedAt, locale: LOCALE }))
-    return { newRequests: [], failedCount: 0, unpublished, awaiting: [], proposals: [], recent, languages: { main: LOCALE, list: [{ code: LOCALE, name: 'Русский' }] } }
+    const unpublished = []
+    const recent = []
+    const locales = Object.fromEntries(codes.map((locale) => [locale, { pages: { count: 0, unpublished: 0 }, collections: { count: 0, unpublished: 0 } }]))
+    for (const p of db.pages) for (const [locale, t] of Object.entries(versions(p))) {
+      if (!codes.includes(locale)) continue
+      ++locales[locale].pages.count
+      if (!t.published || pageDiff(t).length) ++locales[locale].pages.unpublished
+      const to = `/pages/${p.id}?lang=${locale}`
+      if (!t.published || pageDiff(t).length) unpublished.push({ kind: 'page', id: p.id, locale, template: p.template, title: t.title, pageKind: 'Страница', to, changes: pageDiff(t).length, draft: !t.published, updatedAt: t.updatedAt, migrated: !!t.migrated, awaiting: t.awaiting })
+      if (t.published) recent.push({ label: t.title, to, at: t.updatedAt, locale })
+    }
+    for (const cfg of db.schema.collections) for (const r of db.collections[cfg.key].records) for (const [locale, t] of Object.entries(versions(r))) {
+      if (!codes.includes(locale)) continue
+      ++locales[locale].collections.count
+      if (!t.published || recDiff(t).length) ++locales[locale].collections.unpublished
+      if (!t.published || recDiff(t).length) unpublished.push({ kind: 'item', collection: cfg.key, id: r.id, locale, title: String(t[cfg.titleField] || cfg.title), pageKind: cfg.title, to: `/collections/${cfg.key}/${r.id}?lang=${locale}`, changes: recDiff(t).length, draft: !t.published, updatedAt: t.updatedAt, migrated: false, awaiting: t.awaiting })
+      if (t.published) recent.push({ label: String(t[cfg.titleField] || cfg.title), to: `/collections/${cfg.key}/${r.id}?lang=${locale}`, at: t.updatedAt, locale })
+    }
+    const newest = (a, b) => String(b.updatedAt || b.at).localeCompare(String(a.updatedAt || a.at))
+    return { newRequests: [], failedCount: 0, unpublished: unpublished.sort(newest), awaiting: [], proposals: [], recent: recent.sort(newest).slice(0, 8), languages: copy(LANGUAGES), locales }
+  }
+
+  function history(method, rest, query) {
+    const [kind, id, action] = rest
+    const can = (r, right = 'view') => (db.user.perms[r.kind === 'page' ? 'pages' : r.kind === 'item' ? `col:${r.key}` : r.kind === 'menu' ? 'set:menus' : `set:${r.key}`] || []).includes(right) && (r.kind !== 'page' || !db.user.templates || db.user.templates.includes(r.key))
+    const present = (r) => ({ ...copy(r), current: !['delete', 'delete_locale'].includes(r.action) && !revisions.some((other) => other.kind === r.kind && other.resourceId === r.resourceId && other.locale === r.locale && other.id > r.id) })
+    if (kind === 'revision') {
+      const r = revisions.find((v) => v.id === Number(id))
+      if (!r) return fail(404, 'Такой версии нет')
+      if (!can(r, action === 'restore' ? 'edit' : 'view')) return fail(403, 'Нет доступа')
+      if (method === 'GET') return ok({ ...present(r), against: [], inTrash: false, ...(r.action === 'delete_locale' ? { canRestore: false } : {}) })
+      if (method === 'POST' && action === 'restore') {
+        if (r.action === 'delete_locale') return fail(409, 'Удалённый перевод нельзя восстановить этой операцией')
+        if (r.kind === 'settings' || r.kind === 'menu') {
+          const snapshot = revisionSnapshots.get(r.id)
+          if (r.kind === 'menu') { db.menus[r.locale] ||= {}; db.menus[r.locale][r.resourceId] = copy(snapshot.items) }
+          else db.schema.settings.groups.find((g) => g.key === r.resourceId).fields.forEach((f) => {
+            if (f.tr) { db.settingsTexts[r.locale] ||= {}; db.settingsTexts[r.locale][f.k] = copy(snapshot[f.k]) }
+            else db.settings[f.k] = copy(snapshot[f.k])
+          })
+          recordStateHistory(r.kind, r.resourceId, r.locale, 'restore')
+          return ok({ ok: true, kind: r.kind, id: r.resourceId, key: r.key, locale: r.locale, restored: 'version' })
+        }
+        const object = r.kind === 'page' ? findPage(r.resourceId) : db.collections[r.key]?.records.find((v) => v.id === r.resourceId)
+        if (!object || !version(object, r.locale)) return noTranslation(r.locale)
+        const t = version(object, r.locale)
+        Object.entries(revisionSnapshots.get(r.id)).forEach(([k, v]) => { if (![...RECORD_META, 'parentId', 'template'].includes(k)) t[k] = copy(v) })
+        bump(t)
+        recordHistory(r.kind, object, r.locale, 'restore', r.key)
+        return ok({ ok: true, kind: r.kind, id: r.resourceId, key: r.key, locale: r.locale, restored: 'version' })
+      }
+      return NOT_HERE()
+    }
+    if (!['page', 'item', 'settings', 'menu'].includes(kind) || method !== 'GET') return NOT_HERE()
+    const object = kind === 'page' ? findPage(id) : kind === 'settings' ? settingsState(id, query.locale || LOCALE) : kind === 'menu' ? menuState(id, query.locale || LOCALE) : db.schema.collections.flatMap((c) => db.collections[c.key].records).find((r) => r.id === id)
+    const all = revisions.filter((r) => r.kind === kind && r.resourceId === id)
+    if (!object || !all.length) return fail(404, 'Такого объекта нет')
+    if (!can(all[0])) return fail(403, 'Нет доступа')
+    const rows = all.filter((r) => query.scope === 'all' || r.locale === (query.locale || LOCALE))
+    const limit = Math.max(1, Math.min(200, Math.trunc(Number(query.limit ?? 50)) || 1))
+    const offset = Math.max(0, Math.trunc(Number(query.offset)) || 0)
+    return ok({ items: rows.slice(offset, offset + limit).map(present), total: rows.length, limit, offset, keep: 100, days: 365 })
   }
 
   /** «Мой профиль → Язык интерфейса»: PUT me/locale { locale }, as the server answers it. The choice itself outlives a reload in localStorage (i18n/index.js), this memory does not. */
@@ -354,7 +508,7 @@ export function createMock(db = makeDb()) {
     return NOT_HERE()
   }
 
-  /* ---------- settings: only the notification keys (the demo schema has no settings groups); the yes / no answers of the server are never taken from a PATCH ---------- */
+  /* ---------- shared settings and per-language texts; readiness answers are never taken from a PATCH ---------- */
   const SETTINGS_READ_ONLY = ['tgFallback', 'tgReady', 'maxFallback', 'mailReady', 'maxReady']
   function botsMetadata() {
     return Object.fromEntries(['telegram', 'max'].map((key) => {
@@ -394,13 +548,17 @@ export function createMock(db = makeDb()) {
     db.settings.maxReady = metadata.max.ready
     return ok(metadata)
   }
-  function settingsCall(method, tail, data) {
+  function settingsCall(method, tail, data, locale = LOCALE) {
     if (tail.length === 1 && tail[0] === 'bots') return botsCall(method, data)
     if (!tail.length) {
-      if (method === 'GET') return ok(copy(db.settings))
+      if (method === 'GET') return ok({ ...copy(db.settings), siteTitle: db.settingsTexts[locale]?.siteTitle || '' })
       if (method !== 'PATCH') return NOT_HERE()
-      Object.entries(data).filter(([k]) => !SETTINGS_READ_ONLY.includes(k)).forEach(([k, v]) => { db.settings[k] = copy(v) })
-      return ok(copy(db.settings))
+      Object.entries(data).filter(([k]) => !SETTINGS_READ_ONLY.includes(k)).forEach(([k, v]) => {
+        if (k === 'siteTitle') { db.settingsTexts[locale] ||= {}; db.settingsTexts[locale][k] = copy(v) }
+        else db.settings[k] = copy(v)
+      })
+      db.schema.settings.groups.forEach((g) => recordStateHistory('settings', g.key, locale, 'edit'))
+      return ok({ ...copy(db.settings), siteTitle: db.settingsTexts[locale]?.siteTitle || '' })
     }
     const [what] = tail
     if (method !== 'POST' || !['telegram-test', 'max-test'].includes(what)) return NOT_HERE()
@@ -422,12 +580,29 @@ export function createMock(db = makeDb()) {
     switch (head) {
       case 'schema': return ok(copy(db.schema))
       case 'me': return tail[0] === 'locale' ? setUiLocale(m, data) : ok({ ...copy(db.user), csrf: 'mock' })
-      case 'languages': return ok({ main: LOCALE, list: [{ code: LOCALE, name: 'Русский' }] })
+      case 'languages': return ok(copy(LANGUAGES))
       case 'dashboard': return ok(dashboard())
-      case 'pages': return pages(m, tail, query, data)
-      case 'collections': return collections(m, tail, query, data)
+      case 'pages': return localeError(query, data) || pages(m, tail, query, data)
+      case 'collections': return localeError(query, data) || collections(m, tail, query, data)
       case 'requests': return requestsCall(m, tail, query, data)
-      case 'settings': return settingsCall(m, tail, data)
+      case 'settings': return localeError(query, data) || settingsCall(m, tail, data, localeOf(query, data) || LOCALE)
+      case 'menu-areas': return m === 'GET' ? ok(db.schema.menuAreas.map((area) => ({
+        ...copy(area), snippet: `{{ itk_menu('${area.key}') }}`, usedIn: [], usedInAll: false,
+        counts: { ru: 0, ...Object.fromEntries(Object.entries(db.menus).map(([locale, menus]) => [locale, (menus[area.key] || []).length])) },
+      }))) : NOT_HERE()
+      case 'menus': {
+        const error = localeError(query, data)
+        if (error) return error
+        const locale = localeOf(query, data) || LOCALE
+        if (m === 'PUT') {
+          db.menus[locale] = copy(data)
+          db.schema.menuAreas.forEach((a) => recordStateHistory('menu', a.key, locale, 'edit'))
+          return ok(copy(db.menus[locale]))
+        }
+        return m === 'GET' ? ok(copy(db.menus[locale] || Object.fromEntries(db.schema.menuAreas.map((a) => [a.key, []])))) : NOT_HERE()
+      }
+      case 'redirects': return ok([])
+      case 'history': return localeError(query) || history(m, tail, query)
       case 'notifications': return tail.length ? ok({ ok: true, unread: 0 }) : ok({ items: [], total: 0, unread: 0 })
       case 'seo-files': return seoFilesCall(m, data)
       case 'yandex-webmaster': return yandexWebmaster(m, tail, data)

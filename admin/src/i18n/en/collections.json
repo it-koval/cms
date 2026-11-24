@@ -133,7 +133,7 @@
   "collections.mv_copy_from": "Copy {lang}",
   "collections.mv_copy_hint": "All texts and photos go into a draft. All that is left is to translate them.",
   "collections.mv_blank": "Start with an empty record",
-  "collections.mv_blank_hint": "The title, address, switches and photos are kept; the texts will be empty.",
+  "collections.mv_blank_hint": "Start with the default values for this record type.",
   "collections.mv_title": "The {version} of this record does not exist yet",
   "collections.mv_sub": "The record is not shown {site} until you add a translation and publish it.",
   "collections.mv_sub_linked": "The record is not shown {site} until you add a translation and publish it. The page on the site will appear along with it.",

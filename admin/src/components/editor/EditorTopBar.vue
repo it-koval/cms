@@ -45,7 +45,7 @@ const ver = computed(() => version(ed.locale))
 const n = computed(() => ed.changes.length)
 const canRemoveVersion = computed(() => multi.value && !isMain(ed.locale) && !!ed.page && ed.canDelete)
 const submitMode = computed(() => !ed.canPublish) // «Отправить на публикацию» instead of «Опубликовать»
-// the home page of a language stays while that language has other pages on the site (the same rule as «Снять с публикации» for the home page)
+// Removing a home translation is blocked while that language has other pages on the site.
 const held = computed(() => canRemoveVersion.value && homeVersionHeld(ed.pages, ed.shell, ed.locale))
 const pend = computed(() => ed.liveProps.length)
 // an article or a product goes back to its flat list («Статьи блога», «Товары»), any other page to «Страницы»

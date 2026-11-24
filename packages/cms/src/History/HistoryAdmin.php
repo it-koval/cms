@@ -47,22 +47,23 @@ final class HistoryAdmin
     }
 
     /**
-     * The entries of one object in one language, newest first.
+     * The entries of one object in one language, or all languages, newest first.
      *
      * @return array{items: list<array<string, mixed>>, total: int, limit: int, offset: int, keep: int, days: int}
      */
-    public function entries(string $kind, string $id, ?string $locale, int $limit = 50, int $offset = 0): array
+    public function entries(string $kind, string $id, ?string $locale, int $limit = 50, int $offset = 0, bool $allLocales = false): array
     {
-        $locale ??= $this->schema->mainLocale();
+        $locale = $allLocales ? null : ($locale ?? $this->schema->mainLocale());
         $limit = \max(1, \min(self::MAX_PER_PAGE, $limit));
         $offset = \max(0, $offset);
         $key = $this->keyOf($kind, $id);
         $this->need($kind, $key, 'view');
 
         $rows = $this->revisions->history($kind, $id, $locale, $limit, $offset);
+        $latest = $this->revisions->latestIds($kind, $id);
 
         return [
-            'items' => \array_map(fn (Revision $r): array => $this->present($r), $rows),
+            'items' => \array_map(fn (Revision $r): array => $this->present($r) + ['current' => !\in_array($r->action, [Revision::DELETE, Revision::DELETE_TRANSLATION], true) && ($latest[$r->locale] ?? null) === $r->id], $rows),
             'total' => $this->revisions->countOf($kind, $id, $locale),
             'limit' => $limit,
             'offset' => $offset,

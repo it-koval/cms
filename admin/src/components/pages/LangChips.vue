@@ -3,6 +3,7 @@
 // Each chip is a link: it opens the page in THAT language (the router switches the content language through ?lang=).
 //   <LangChips :page="row" :to="pageHref(row)" />       row = a row of api.pages.list(): row.locales = { ru: {status,changed,changes,...} | null, en: ... }
 import { computed } from 'vue'
+import { useRouter } from 'vue-router'
 import { t } from '@/i18n/index.js'
 import { app } from '@/stores/app.js'
 import { withLang } from '@/utils/locales.js'
@@ -11,6 +12,7 @@ import LangChip from '@/components/ui/LangChip.vue'
 import { stateOf } from './langWords.js'
 
 const props = defineProps({ page: { type: Object, required: true }, to: { type: String, required: true } })
+const router = useRouter()
 
 // a whole sentence per state: the order of the words differs between the languages
 const hint = (code, s) => t(`pages.chip_hint_${s.key}`, { version: cap(version(code).nom), changes: (props.page.locales[code] || {}).changes })
@@ -22,5 +24,27 @@ const rows = computed(() => app.languages.list.map((l) => {
 </script>
 
 <template>
-  <LangChip v-for="r in rows" :key="r.code" :code="r.code" :state="r.s.key" :word="r.word" :to="withLang(to, r.code)" :hint="hint(r.code, r.s)" />
+  <span :class="['version-links', { many: rows.length > 3 }]">
+    <select v-if="rows.length > 3" class="version-select" value="" :aria-label="`${t('pages.col_versions')}: ${page.title}`" @change="router.push(withLang(to, $event.target.value)); $event.target.value = ''">
+      <option value="" disabled>{{ t('pages.col_versions') }}</option>
+      <option v-for="r in rows" :key="r.code" :value="r.code">{{ r.code.toUpperCase() }} · {{ r.word }}</option>
+    </select>
+    <span class="version-chips"><LangChip v-for="r in rows" :key="r.code" :code="r.code" :state="r.s.key" :word="r.word" :to="withLang(to, r.code)" :hint="hint(r.code, r.s)" /></span>
+  </span>
 </template>
+
+<style scoped>
+.version-links { display: block; min-width: 0; max-width: 100%; }
+.version-select { width: 100%; min-width: 0; min-height: 44px; font: inherit; font-size: 16px; }
+.version-chips { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.many .version-chips { display: none; }
+.version-chips :deep(.lc-w) { display: none; }
+.version-chips :deep(.lc.link) { justify-content: center; min-width: 44px; padding-inline: 6px; }
+@media (min-width: 360px) {
+  .version-select { display: none; }
+  .many .version-chips { display: inline-flex; }
+}
+@media (min-width: 768px) {
+  .version-chips :deep(.lc-w) { display: inline; }
+}
+</style>

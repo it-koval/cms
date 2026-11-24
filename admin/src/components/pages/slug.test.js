@@ -16,6 +16,10 @@ describe('slugify', () => {
   it('cuts at the limit without a dangling dash', () => {
     expect(slugify('один два три', 8)).toBe('odin-dva')
   })
+
+  it('keeps the default limit for an editor address', () => {
+    expect(slugify('Қ'.repeat(70))).toBe('q'.repeat(48))
+  })
 })
 
 describe('addresses', () => {

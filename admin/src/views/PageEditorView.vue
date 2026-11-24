@@ -5,7 +5,7 @@
 import { ref, watch } from 'vue'
 import { onBeforeRouteLeave, onBeforeRouteUpdate, useRoute } from 'vue-router'
 import PageEditor from '@/components/editor/PageEditor.vue'
-import { app, setContentLocale } from '@/stores/app.js'
+import { app, useLocaleGuard } from '@/stores/app.js'
 import { confirm } from '@/components/ui/useConfirm.js'
 import { toast } from '@/components/ui/useToast.js'
 import { t } from '@/i18n/index.js'
@@ -16,6 +16,7 @@ const editor = ref(null)
 // or the last save failed (code 'save_failed') and the person does not want to lose the edits that are not on the server
 const flush = async () => {
   if (!editor.value) return true
+  if (editor.value.canLeave && !editor.value.canLeave()) return false
   try {
     await editor.value.flushAll()
   } catch (e) {
@@ -31,15 +32,12 @@ const flush = async () => {
   return true
 }
 onBeforeRouteLeave(flush)
-onBeforeRouteUpdate(flush)
+onBeforeRouteUpdate((to, from) => to.params.id === from.params.id ? true : flush())
+useLocaleGuard(flush)
 
 // the editor on screen keeps its own language until its last autosave is done, then the new language is shown
 const shown = ref(app.locale)
-watch(() => app.locale, async (next) => {
-  if (next === shown.value) return
-  if (await flush()) shown.value = next
-  else setContentLocale(shown.value) // the edits on screen are not decided yet: the editor stays in its language
-})
+watch(() => app.locale, (next) => { shown.value = next }, { flush: 'sync' })
 </script>
 
 <template>

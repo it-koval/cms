@@ -82,23 +82,60 @@ final class CollectionService
         $out = [];
         foreach ($this->schema->collections() as $c) {
             $rows = $this->items->findByCollection($c->key());
-            $open = fn (CollectionItem $i, string $loc): bool => null !== ($t = $i->translations[$loc] ?? null) && ('draft' === ($t['status'] ?? 'draft') || $this->countChanges($c, $t) > 0);
+            $locales = $this->localeCounts($c, $rows);
             $count = \count($rows);
             if ('matrix' === $c->viewName()) {
                 $count = isset($rows[0]) ? \count($rows[0]->translations[$this->mainLocale]['draft']['cols'] ?? []) : 0;
             }
-            $unpublished = 0;
-            foreach ($rows as $i) {
-                if ($locale ? $open($i, $locale) : $open($i, $this->mainLocale)) {
-                    ++$unpublished;
-                }
+            $unpublished = null !== $locale ? ($locales[$locale]['unpublished'] ?? 0) : \array_sum(\array_column($locales, 'unpublished'));
+            if (null !== $locale && !isset($locales[$locale]) && !$this->locales->isConfigured()) {
+                $unpublished = $this->countLocale($c, $rows, $locale)['unpublished'];
             }
             $a = $c->toArray();
             $out[] = [
                 'key' => $c->key(), 'title' => $c->title(), 'singular' => $a['singular'], 'newLabel' => $a['newLabel'], 'icon' => $a['icon'],
                 'view' => $a['view'], 'description' => $a['description'], 'count' => $count, 'unpublished' => $unpublished,
-                'locales' => [$this->mainLocale => ['count' => \count($rows), 'unpublished' => $unpublished]],
+                'locales' => $locales,
             ];
+        }
+
+        return $out;
+    }
+
+    /**
+     * Existing language versions, including zeroes for enabled languages. A matrix is one record, independently of its column count.
+     *
+     * @param list<CollectionItem> $items
+     *
+     * @return array<string, array{count: int, unpublished: int}>
+     */
+    private function localeCounts(Collection $c, array $items): array
+    {
+        $out = [];
+        foreach ($this->locales->codes() as $locale) {
+            $out[$locale] = $this->countLocale($c, $items, $locale);
+        }
+
+        return $out;
+    }
+
+    /**
+     * @param list<CollectionItem> $items
+     *
+     * @return array{count: int, unpublished: int}
+     */
+    private function countLocale(Collection $c, array $items, string $locale): array
+    {
+        $out = ['count' => 0, 'unpublished' => 0];
+        foreach ($items as $item) {
+            $t = $item->translations[$locale] ?? null;
+            if (null === $t) {
+                continue;
+            }
+            ++$out['count'];
+            if ('draft' === ($t['status'] ?? 'draft') || $this->countChanges($c, $t) > 0) {
+                ++$out['unpublished'];
+            }
         }
 
         return $out;

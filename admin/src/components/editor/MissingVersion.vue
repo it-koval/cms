@@ -6,7 +6,7 @@ import { computed, inject } from 'vue'
 import VersionChoice from '@/components/ui/VersionChoice.vue'
 import { toast } from '@/components/ui/useToast.js'
 import { t } from '@/i18n/index.js'
-import { app, setContentLocale } from '@/stores/app.js'
+import { app, switchContentLocale } from '@/stores/app.js'
 import { prefix } from '@/utils/locales.js'
 import { versionNone } from '@/components/pages/langWords.js'
 import { cap, capParam, fromLang, onLang, version } from '@/utils/langWords.js'
@@ -56,7 +56,7 @@ async function make(from) {
     class="stage-empty sheet" :title="cap(t('editor.missing_title', { ver: versionNone(ed.locale) }))" :sub="t('editor.missing_sub', { lang: onLang(ed.locale) })" :options="options" :busy="busy"
     :note="capParam('editor.missing_note', { ver: mainVer.nom, title: mainTitle }, 'ver')" @pick="pick"
   >
-    <button type="button" class="btn ghost sm mv-back" @click="setContentLocale(main)">{{ t('editor.missing_back', { lang: onLang(main) }) }}</button>
+    <button type="button" class="btn ghost sm mv-back" @click="switchContentLocale(main)">{{ t('editor.missing_back', { lang: onLang(main) }) }}</button>
   </VersionChoice>
 </template>
 

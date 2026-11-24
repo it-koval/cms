@@ -8,6 +8,8 @@ All notable changes to ITK CMS are recorded in this file. The format follows [Ke
 
 ### Added
 
+- Page and collection lists show translation status and open the selected version. Content editors, translated settings and menus have a language picker. The dashboard and collection counters cover all configured languages.
+- Page and record history can show one language or all languages. `GET /admin/api/history/{kind}/{id}?scope=all` paginates across languages, and restoring a revision targets its own draft.
 - Multilingual SEO emits reciprocal `hreflang` links, including `x-default` for an indexable main version. Published pages use their own canonical URL when none is set. The sitemap covers every indexable language version, and `llms.txt` groups pages by language. Both generated files refresh after committed page changes and revalidate with content ETags.
 - `itk:doctor` checks language prefixes, home pages, missing translations in settings and menus, and overrides of generated crawler files.
 - Public routes serve published language versions at addresses such as `/kk/about`.
@@ -28,7 +30,7 @@ All notable changes to ITK CMS are recorded in this file. The format follows [Ke
 - `Mcp\AbstractMcpTool::locale()` is now non-static. Both `self::locale($args)` and `$this->locale($args)` work inside instance methods. Calls from a static context are no longer supported. See [UPGRADE.md](UPGRADE.md#030).
 - The admin API uses a shared language check and returns `422` for a code outside an explicitly configured list.
 - On sites with several configured languages, page versions use their language's address prefix. The main language's addresses cannot start with another configured language's path segment.
-- PHP and the admin editor transliterate Kazakh letters when generating slugs.
+- PHP and the admin editor use a shared Russian and Kazakh transliteration table when generating slugs.
 
 ## [0.2.2] - 2026-11-22
 

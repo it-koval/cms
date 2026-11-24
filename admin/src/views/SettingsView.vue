@@ -247,7 +247,9 @@ async function reveal(k) {
 }
 
 /* ---- save ---- */
-async function save() {
+let savePromise = null
+
+function save() {
   if (saving.value || !total.value) return
   const keys = Object.keys(errors.value)
   if (settingsDirty.value && keys.length) {
@@ -264,6 +266,10 @@ async function save() {
   const patch = settingsDirty.value ? clone(changedPatch()) : null
   const sentSettings = patch ? clone(draftSettings.value) : null
   const sentMenus = menusDirty.value ? clone(draftMenus.value) : null
+  savePromise = persist(patch, sentSettings, sentMenus)
+}
+
+async function persist(patch, sentSettings, sentMenus) {
   saving.value = true
   try {
     if (patch) {
@@ -281,29 +287,25 @@ async function save() {
     toast.error(e.message || t('settings.save_failed'))
   } finally {
     saving.value = false
+    savePromise = null
   }
 }
 
-onBeforeRouteLeave(async (to) => {
-  if (to.name === 'settings' || !total.value) return true
+async function confirmUnsaved(languageSwitch = false) {
+  if (savePromise) await savePromise
+  if (!total.value) return true
   return confirm({
-    title: t('settings.leave_title'),
-    message: t('settings.leave_message', { total: total.value }),
-    confirmLabel: t('settings.leave_confirm'), cancelLabel: t('settings.stay'), danger: true,
+    title: t(languageSwitch ? 'settings.switch_title' : 'settings.leave_title'),
+    message: t(languageSwitch ? 'settings.switch_message' : 'settings.leave_message', { total: total.value }),
+    confirmLabel: t(languageSwitch ? 'settings.switch_confirm' : 'settings.leave_confirm'), cancelLabel: t('settings.stay'), danger: true,
   })
-})
+}
+
+onBeforeRouteLeave((to) => to.name === 'settings' || confirmUnsaved())
 
 const unsavedBar = t('settings.unsaved_bar').split('{total}') // the number stands in bold between the halves of the sentence
 
-// the content language is switched from the rail or from the line above the panel: both re-mount this screen, so unsaved edits are asked about first
-useLocaleGuard(async () => {
-  if (!total.value) return true
-  return confirm({
-    title: t('settings.switch_title'),
-    message: t('settings.switch_message', { total: total.value }),
-    confirmLabel: t('settings.switch_confirm'), cancelLabel: t('settings.stay'), danger: true,
-  })
-})
+useLocaleGuard(() => confirmUnsaved(true))
 </script>
 
 <template>

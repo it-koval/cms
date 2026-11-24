@@ -352,7 +352,11 @@ export function useEditorState(pageId, locale = app.locale) {
   }
 
   /* ---------- load ---------- */
+  let loadSeq = 0
+  let disposed = false
   async function load() {
+    if (disposed) return
+    const my = ++loadSeq
     loading.value = true
     error.value = ''
     try {
@@ -361,6 +365,7 @@ export function useEditorState(pageId, locale = app.locale) {
         api.proposals.list({ locale }).catch(() => []),
         api.pages.list({ locale }).catch(() => []),
       ])
+      if (my !== loadSeq) return
       translated.value = d.translated
       locales.value = d.locales
       shell.value = d.shell
@@ -389,9 +394,10 @@ export function useEditorState(pageId, locale = app.locale) {
         histPending.value = false
       } else resetHist()
     } catch (e) {
+      if (my !== loadSeq) return
       error.value = (e && e.message) || t('editor.err_open_page')
     } finally {
-      loading.value = false
+      if (my === loadSeq) loading.value = false
     }
   }
 
@@ -669,7 +675,9 @@ export function useEditorState(pageId, locale = app.locale) {
 
   /** The draft was changed on the server (a version returned from «История»): take it as it is now. */
   async function reloadDraft() {
+    const my = ++loadSeq
     const d = await api.pages.getDraft(pageId, locale)
+    if (my !== loadSeq || disposed) return
     page.value = d.page
     takeVersion(d.page)
     published.value = d.published
@@ -735,10 +743,10 @@ export function useEditorState(pageId, locale = app.locale) {
       saveT = null
       clearTimeout(histT)
       histT = null
-      dirty = false // what waits in the autosave dies with the version
-      failure = null
       await saveChain
       await api.pages.removeTranslation(pageId, locale)
+      dirty = false
+      failure = null
       conflict.value = null // the version the person had to choose about is gone
       histCache.delete(cacheKey)
       await load()
@@ -763,6 +771,8 @@ export function useEditorState(pageId, locale = app.locale) {
     if (!flying && !conflict.value) queueSave(true)
   }
   function dispose() {
+    disposed = true
+    loadSeq++
     if (page.value && isMulti()) { pushHist(); parkHist(cacheKey, hist) }
     clearTimeout(histT)
     clearTimeout(saveT)

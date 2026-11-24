@@ -23,7 +23,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } 
 import { useRouter } from 'vue-router'
 import { api } from '@/api/index.js'
 import { PREVIEW, thumbUrl } from '@/utils/media.js'
-import { app, can, refreshCounters, setContentLocale } from '@/stores/app.js'
+import { app, can, refreshCounters } from '@/stores/app.js'
 import Icon from '@/components/ui/Icon.vue'
 import Popover from '@/components/ui/Popover.vue'
 import StatusChip from '@/components/ui/StatusChip.vue'
@@ -48,7 +48,7 @@ import { useConfirm } from '@/components/ui/useConfirm.js'
 import { useToast } from '@/components/ui/useToast.js'
 import { fmtUpdated } from '@/utils/format.js'
 import { htmlToText } from '@/utils/html.js'
-import { isMain, isMulti, pathPrefix } from '@/utils/locales.js'
+import { isMain, isMulti, pathPrefix, withLang } from '@/utils/locales.js'
 import { freshIds, labelsOf, countText, pickFields, statusOf, titleOf, toggleLabelOf, toggleNote, dataFields } from './labels.js'
 import { cap, onLang, siteIn, toLang, up, verAcc } from '@/utils/langWords.js'
 import { t } from '@/i18n/index.js'
@@ -102,7 +102,7 @@ const total = ref(0)
 const facets = ref({})
 const metrics = ref([])
 const wholeTotal = ref((app.collections.find((c) => c.key === props.cfg.key) || {}).count || 0) // all records of the collection, whatever the filters
-const translatedCount = ref(0) // records that have a version in the language on screen
+const translatedCount = ref((app.collections.find((c) => c.key === props.cfg.key) || {}).locales?.[app.locale]?.count || 0) // records that have a version in the language on screen
 const loaded = ref(false)
 const refreshing = ref(false)
 const adding = ref(false)
@@ -141,7 +141,9 @@ async function load() {
     facets.value = res.facets || {}
     metrics.value = res.metrics || []
     if (!filtered.value) wholeTotal.value = res.total
-    translatedCount.value = Object.values(facets.value.status || {}).reduce((a, n) => a + n, 0)
+    const languageCounts = (app.collections.find((c) => c.key === props.cfg.key) || {}).locales?.[app.locale]
+    if (languageCounts) translatedCount.value = languageCounts.count
+    else if (!filtered.value) translatedCount.value = Object.entries(facets.value.status || {}).filter(([status]) => status !== 'missing').reduce((a, [, n]) => a + n, 0)
     // the ticks of rows that are gone (deleted, filtered out and not on this page) are dropped
     if (selected.value.size && res.total === 0) selected.value = new Set()
     loaded.value = true
@@ -241,7 +243,7 @@ const thumbOf = (r) => {
 const openPath = (r) => `/collections/${props.cfg.key}/${r.id}`
 const open = (r) => router.push(openPath(r))
 function onRow(e, r) {
-  if (e.target.closest('a,button,label,input')) return
+  if (e.target.closest('a,button,label,input,select,textarea')) return
   open(r)
 }
 
@@ -261,8 +263,7 @@ async function add(extra = {}) {
     const rec = await api.collections.create(props.cfg.key, { ...initialData(), ...extra })
     refreshCounters()
     if (!IS_MAIN) toast.show(t('collections.cl_created_other', { lang: onLang(mainLang.value), version: up(verAcc(app.locale)) }))
-    setContentLocale(app.languages.main) // a new record is born in the main language
-    router.push({ path: openPath(rec), query: { new: '1' } })
+    router.push(withLang(openPath(rec) + '?new=1', app.languages.main))
   } catch (e) {
     toast.error(e.message || t('collections.cl_create_failed'))
   } finally {
@@ -280,9 +281,8 @@ async function duplicate(r) {
     data[props.cfg.titleField] = tf && tf.max ? copy.slice(0, tf.max) : copy
     const rec = await api.collections.create(props.cfg.key, data)
     refreshCounters()
-    setContentLocale(app.languages.main) // the copy is a new record: it is born in the main language
     toast.show(MULTI ? t('collections.cl_copied_multi', { lang: onLang(mainLang.value) }) : t('collections.cl_copied'))
-    router.push({ path: openPath(rec), query: { new: '1' } })
+    router.push(withLang(openPath(rec) + '?new=1', app.languages.main))
   } catch (e) {
     toast.error(e.message || t('collections.cl_copy_failed'))
   }
@@ -740,7 +740,7 @@ const runRow = (a) => { const r = menu.value.row; menu.value.open = false; if (r
                 <b v-else>{{ titleOf(cfg, r) }}</b>
                 <p v-if="subLine(r)" class="cl-clip">{{ subLine(r) }}</p>
                 <span class="so">
-                  <LangChips v-if="MULTI" :cfg="cfg" :row="r" compact />
+                  <LangChips v-if="MULTI" :cfg="cfg" :row="r" compact :interactive="!reorder.on" />
                   <StatusChip v-else v-bind="statusOf(cfg, r)" />
                   <span v-if="awaitingOf(r)" class="chip warn">{{ t('collections.awaiting') }}</span>
                   <template v-if="Array.isArray(r.soc)">

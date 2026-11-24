@@ -55,7 +55,7 @@ export function localeOfUrl(url, languages) {
   return hit ? hit.code : languages.main
 }
 
-/** Admin route + `?lang=xx` (the router guard switches the content language and removes the query). Only on sites with 2+ languages. */
+/** Admin route + `?lang=xx` to link to a version in a specific language. Only on sites with 2+ languages. */
 export function addLang(path, locale, languages) {
   if (!languages || languages.list.length < 2 || !locale) return path
   return path + (path.includes('?') ? '&' : '?') + 'lang=' + locale
