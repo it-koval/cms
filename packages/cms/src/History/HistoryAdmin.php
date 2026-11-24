@@ -307,7 +307,11 @@ final class HistoryAdmin
         };
     }
 
-    /** The version the thing has now, in the shape of the entries (null: it is not there any more). @return null|array<string, mixed> */
+    /**
+     * The version the thing has now, in the shape of the entries (null: it is not there any more).
+     *
+     * @return array<string, mixed>|null
+     */
     private function now(Revision $r): ?array
     {
         switch ($r->kind) {

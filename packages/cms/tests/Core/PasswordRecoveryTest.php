@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Itk\Cms\Tests\Core;
 
+use Doctrine\Bundle\DoctrineBundle\DataCollector\DoctrineDataCollector;
 use Doctrine\ORM\EntityManagerInterface;
 use Itk\Cms\Content\SettingsService;
 use Itk\Cms\Entity\PasswordReset;
@@ -39,6 +40,7 @@ final class PasswordRecoveryTest extends WebTestCase
     /** @var list<SendMail> letters put into the queue by the pages (the in-memory queue of a test is emptied after every request) */
     private array $sent = [];
 
+    /** @param array<string, mixed> $options */
     protected static function createKernel(array $options = []): \Symfony\Component\HttpKernel\KernelInterface
     {
         return new \Itk\Cms\Tests\App\TestKernel('test', true, itk: ['public_url' => 'http://localhost']);
@@ -444,9 +446,7 @@ final class PasswordRecoveryTest extends WebTestCase
         self::assertNotFalse($profile, 'the profiler is on');
         $out = [];
         $collector = $profile->getCollector('db');
-        if (!$collector instanceof \Doctrine\Bundle\DoctrineBundle\DataCollector\DoctrineDataCollector) {
-            throw new \LogicException('The SQL regression check requires the Doctrine profiler collector.');
-        }
+        self::assertInstanceOf(DoctrineDataCollector::class, $collector);
         foreach ($collector->getQueries() as $queries) {
             foreach ($queries as $q) {
                 if (\preg_match('/^\s*(INSERT|UPDATE|DELETE)\b/i', (string) $q['sql'])) {

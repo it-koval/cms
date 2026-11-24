@@ -215,7 +215,7 @@ final class ResourceSchemaTest extends TestCase
                 return 'Первый экран';
             }
 
-            public function template(): ?string
+            public function template(): string
             {
                 return 'custom/banner.html.twig';
             }
@@ -344,6 +344,7 @@ final class ResourceSchemaTest extends TestCase
 
             public function fields(): iterable
             {
+                // @phpstan-ignore generator.valueType (Verify the runtime guard for resources without static analysis.)
                 yield 'not a field';
             }
         };
@@ -426,7 +427,7 @@ final class ResourceSchemaTest extends TestCase
                 yield Text::make('Название', 'title');
             }
 
-            public function emptyState(): ?array
+            public function emptyState(): array
             {
                 return ['title' => 'Поездок пока нет', 'text' => 'Добавьте первую.'];
             }

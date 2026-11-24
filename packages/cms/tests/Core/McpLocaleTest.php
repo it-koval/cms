@@ -31,6 +31,7 @@ final class McpLocaleTest extends KernelTestCase
     private const RESOURCE = 'test_mcp_locale';
     private const SETTING = 'testMcpLocaleTitle';
 
+    /** @param array<string, mixed> $options */
     protected static function createKernel(array $options = []): KernelInterface
     {
         return new TestKernel($options['environment'] ?? 'test', $options['debug'] ?? true, itk: [
@@ -179,7 +180,11 @@ final class McpLocaleTest extends KernelTestCase
         self::assertSame(['ru', 'kk'], $collection->loads);
     }
 
-    /** @return array<string, mixed> */
+    /**
+     * @param array<array-key, mixed> $arguments
+     *
+     * @return array<string, mixed>
+     */
     private function read(McpContext $context, string $tool, array $arguments): array
     {
         $reply = $this->mcpCall($context, $tool, $arguments);

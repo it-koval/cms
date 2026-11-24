@@ -14,6 +14,7 @@ use Twig\Environment;
 /** itk_cms.strict: false (prod): неверный вызов itk_collection() / itk_pages() даёт пустой список и строку в журнале, страница не падает. */
 final class ContentReaderLenientTest extends ResourceKernelTestCase
 {
+    /** @param array<string, mixed> $options */
     protected static function createKernel(array $options = []): KernelInterface
     {
         return new TestKernel('test', true, null, '', [], [], ['strict' => false]);

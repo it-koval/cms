@@ -43,6 +43,7 @@ final class RuntimeRecoveryRegressionTest extends KernelTestCase
     private ?string $trigger = null;
     private CollectionResource $resource;
 
+    /** @param array<string, mixed> $options */
     protected static function createKernel(array $options = []): KernelInterface
     {
         return new TestKernel('test', true, itk: ['knowledge_base' => ['enabled' => true], 'locales' => ['ru' => ['name' => 'Русский'], 'en' => ['name' => 'English']]]);
@@ -53,6 +54,7 @@ final class RuntimeRecoveryRegressionTest extends KernelTestCase
         self::bootKernel();
         $this->key = 'test_recovery_' . \bin2hex(\random_bytes(6));
         $this->resource = new class($this->key) extends CollectionResource {
+            /** @var list<string> */
             public array $log = [];
 
             public function __construct(private string $collectionKey)
@@ -120,6 +122,7 @@ final class RuntimeRecoveryRegressionTest extends KernelTestCase
         parent::tearDown();
     }
 
+    /** @return iterable<array-key, mixed> */
     public static function badRows(): iterable
     {
         yield 'PostgreSQL jsonb NUL rejection' => [['title' => "bad\0row"]];
@@ -129,6 +132,7 @@ final class RuntimeRecoveryRegressionTest extends KernelTestCase
         yield 'NaN float' => [['seats' => \NAN]];
     }
 
+    /** @param array<string, mixed> $bad */
     #[Test]
     #[DataProvider('badRows')]
     public function anInvalidRowIsReportedAndTheSameInjectedServicesKeepWorking(array $bad): void
@@ -175,6 +179,7 @@ final class RuntimeRecoveryRegressionTest extends KernelTestCase
         $service = $c->get(CollectionService::class);
         $initial = $service->get($this->key, $schema->singletonId())['item'];
         $saved = $service->update($this->key, $schema->singletonId(), ['title' => ' Saved '], baseVersion: $initial['version']);
+        // @phpstan-ignore property.notFound (The anonymous test resource records its hook calls in $log.)
         self::assertSame(['before:Initial', 'after:Saved'], $this->resource->log);
         self::assertSame('Saved', $saved['title']);
         $history = $c->get(Connection::class)->fetchAllAssociative('SELECT action, snapshot FROM itk_revision WHERE resource_id = ?', [$schema->singletonId()]);
@@ -201,6 +206,7 @@ final class RuntimeRecoveryRegressionTest extends KernelTestCase
         self::assertSame([1, 0, 0, 0, 1, 0, 0], \array_column($query->run($schema, [], 'en')['metrics'], 'value'));
     }
 
+    /** @return iterable<array-key, mixed> */
     public static function transientFailures(): iterable
     {
         yield 'deadlock' => ['40P01'];

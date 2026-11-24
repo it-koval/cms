@@ -67,7 +67,10 @@ final class DoctorLocalesTest extends KernelTestCase
         return new ContentLocales('ru', ['ru' => ['name' => 'Русский'], 'kk' => ['name' => 'Қазақша'], 'tr' => ['name' => 'Türkçe'], 'zh' => ['name' => '中文'], 'en' => ['name' => 'English']]); // i18n-ignore: configured names
     }
 
-    /** @param list<array{pageId: string, draftUrl: ?string, publishedUrl: ?string}> $addresses */
+    /**
+     * @param list<array{pageId: string, draftUrl: ?string, publishedUrl: ?string}> $addresses
+     * @param array<array-key, mixed> $shared
+     */
     private function doctor(?ContentLocales $locales = null, array $addresses = [], bool $home = true, ?string $base = 'https://example.test', string $dir = '', array $shared = []): Doctor
     {
         $builder = new SchemaBuilder();
@@ -107,7 +110,7 @@ final class DoctorLocalesTest extends KernelTestCase
         $db = $this->createStub(Connection::class);
 
         return new Doctor(
-            new AppSecretHealthCheck('locale-test'),
+            new AppSecretHealthCheck('locale-test', $this->createStub(\Itk\Cms\Repository\UserTwoFactorRepository::class), new \Itk\Cms\Security\TwoFactor\SecretBox('locale-test')),
             new UploadsHealthCheck($dir),
             new DatabaseHealthCheck($db),
             new ImageVariants($dir, '/uploads', [375], 80, 1000000),
@@ -121,6 +124,7 @@ final class DoctorLocalesTest extends KernelTestCase
             $services,
             $dir,
             'ru',
+            new \Itk\Cms\Health\WebpHealthCheck(new ImageVariants($dir, '/uploads', [375], 80, 1000000)),
             $locales ?? $this->locales(),
         );
     }

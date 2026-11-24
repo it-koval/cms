@@ -17,6 +17,7 @@ use Symfony\Component\HttpKernel\KernelInterface;
 /** Блог отключается: $s->withoutBlog() в schema.php или itk_cms.blog: false — шаблонов блога нет, ссылки «Статьи блога» в меню тоже. */
 final class WithoutBlogTest extends KernelTestCase
 {
+    /** @param array<string, mixed> $options */
     protected static function createKernel(array $options = []): KernelInterface
     {
         return new TestKernel('test', true, null, '', [], [], $options['itk'] ?? []);

@@ -32,6 +32,7 @@ final class MediaGetTool extends AbstractMcpTool
         return ['readOnly' => true, 'destructive' => false, 'idempotent' => true];
     }
 
+    /** @return array<string, mixed> */
     public function inputSchema(): array
     {
         return self::schema(['id' => self::string('Media id (from media_search).', 64)], ['id']);

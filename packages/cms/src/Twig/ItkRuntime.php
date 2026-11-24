@@ -473,7 +473,11 @@ final class ItkRuntime implements RuntimeExtensionInterface, ResetInterface
         return $this->read(fn (): array => $this->reader->pages($options, $this->locale()), []);
     }
 
-    /** The published page with this id, or null. @return null|array<string, mixed> */
+    /**
+     * The published page with this id, or null.
+     *
+     * @return array<string, mixed>|null
+     */
     public function page(mixed $id): ?array
     {
         return \is_string($id) && '' !== $id ? $this->reader->page($id, $this->locale()) : null;
@@ -553,7 +557,10 @@ final class ItkRuntime implements RuntimeExtensionInterface, ResetInterface
         }
     }
 
-    /** @param array<string, mixed> $subject @param null|array<string, mixed> $base */
+    /**
+     * @param array<string, mixed> $subject
+     * @param array<string, mixed>|null $base
+     */
     private function fieldChanged(array $subject, FieldInterface $field, string $path, ?array $base): bool
     {
         if (null === $this->state->published || null === $base) {

@@ -18,6 +18,7 @@ use Symfony\Component\HttpKernel\KernelInterface;
 /** A persistent HTTP kernel must load each resource again for the next request. */
 final class HookDispatcherRequestTest extends WebTestCase
 {
+    /** @param array<string, mixed> $options */
     protected static function createKernel(array $options = []): KernelInterface
     {
         return new TestKernel('test_hook_request', $options['debug'] ?? true, itk: [

@@ -60,7 +60,11 @@ final class BotsControllerTest extends TestCase
         $this->controller = new BotsController($bots, $telegram, $max, $access);
     }
 
-    /** @param array<string, mixed> $body @return array<string, mixed> */
+    /**
+     * @param array<string, mixed> $body
+     *
+     * @return array<string, mixed>
+     */
     private function save(array $body): array
     {
         $request = Request::create('/admin/api/settings/bots', 'PUT', server: ['CONTENT_TYPE' => 'application/json'], content: \json_encode($body));

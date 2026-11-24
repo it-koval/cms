@@ -11,7 +11,9 @@ use Itk\Cms\Command\MakePluginCommand;
 use Itk\Cms\Command\MakeSectionCommand;
 use Itk\Cms\Command\MakeSettingsCommand;
 use Itk\Cms\Command\MakeTemplateCommand;
+use Itk\Cms\Extension\ItkExtensionInterface;
 use Itk\Cms\Extension\Registry;
+use Itk\Cms\Field\AbstractField;
 use Itk\Cms\Generator\CollectionClassBuilder;
 use Itk\Cms\Generator\CollectionSpecReader;
 use Itk\Cms\Generator\FileWriter;
@@ -20,7 +22,11 @@ use Itk\Cms\Generator\Naming;
 use Itk\Cms\Generator\ProjectLayout;
 use Itk\Cms\Generator\SkeletonRenderer;
 use Itk\Cms\Generator\TableReader;
+use Itk\Cms\Resource\CollectionResource;
 use Itk\Cms\Resource\ResourceRegistry;
+use Itk\Cms\Resource\SectionResource;
+use Itk\Cms\Resource\SettingsResource;
+use Itk\Cms\Resource\TemplateResource;
 use Itk\Cms\Tests\Core\Fixture\TripsCollection;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
@@ -100,9 +106,24 @@ final class GeneratorsTest extends TestCase
     private function code(string $path): string
     {
         $code = (string) \file_get_contents($this->project . '/' . $path);
-        \token_get_all($code, \TOKEN_PARSE); // a ParseError fails the test
+        self::assertNotEmpty(\token_get_all($code, \TOKEN_PARSE));
 
         return $code;
+    }
+
+    /**
+     * @template T of object
+     *
+     * @param class-string<T> $base
+     *
+     * @return class-string<T>
+     */
+    private function generatedClass(string $path, string $name, string $base): string
+    {
+        require_once $this->project . '/' . $path;
+        self::assertTrue(\is_a($name, $base, true), $name . ' must extend or implement ' . $base);
+
+        return $name;
     }
 
     #[Test]
@@ -149,8 +170,8 @@ final class GeneratorsTest extends TestCase
 
         $code = $this->code('src/Itk/Template/TestGenTplTemplate.php');
         self::assertStringContainsString('namespace Gen\\Itk\\Template;', $code);
-        require_once $this->project . '/src/Itk/Template/TestGenTplTemplate.php';
-        $r = new \Gen\Itk\Template\TestGenTplTemplate();
+        $class = $this->generatedClass('src/Itk/Template/TestGenTplTemplate.php', 'Gen\\Itk\\Template\\TestGenTplTemplate', TemplateResource::class);
+        $r = new $class();
         self::assertSame('test_gen_tpl', $r->key());
         self::assertSame('Тестовый шаблон', $r->title());
         self::assertSame([], [...$r->fields()]);
@@ -167,8 +188,8 @@ final class GeneratorsTest extends TestCase
         $t = $this->exec(new MakeSectionCommand($this->make), ['key' => 'test_gen_sec', 'name' => 'Секция «Тест»', '--group' => 'Формы']);
         self::assertSame(Command::SUCCESS, $t->getStatusCode());
         $this->code('src/Itk/Section/TestGenSecSection.php');
-        require_once $this->project . '/src/Itk/Section/TestGenSecSection.php';
-        $r = new \Gen\Itk\Section\TestGenSecSection();
+        $class = $this->generatedClass('src/Itk/Section/TestGenSecSection.php', 'Gen\\Itk\\Section\\TestGenSecSection', SectionResource::class);
+        $r = new $class();
         self::assertSame(['test_gen_sec', 'Секция «Тест»', 'Формы'], [$r->key(), $r->title(), $r->group()]);
         self::assertSame(['headline', 'text', 'image'], \array_map(static fn ($f): string => $f->key(), [...$r->fields()]));
         $twig = (string) \file_get_contents($this->project . '/templates/sections/test_gen_sec.html.twig');
@@ -183,8 +204,8 @@ final class GeneratorsTest extends TestCase
         self::assertSame(Command::SUCCESS, $t->getStatusCode());
         $code = $this->code('src/Itk/Settings/TestGenSetSettings.php');
         self::assertStringContainsString("settings('testGenSetText')", $code);
-        require_once $this->project . '/src/Itk/Settings/TestGenSetSettings.php';
-        $r = new \Gen\Itk\Settings\TestGenSetSettings();
+        $class = $this->generatedClass('src/Itk/Settings/TestGenSetSettings.php', 'Gen\\Itk\\Settings\\TestGenSetSettings', SettingsResource::class);
+        $r = new $class();
         self::assertSame(['testGenSetText'], \array_map(static fn ($f): string => $f->key(), [...$r->fields()]));
     }
 
@@ -194,8 +215,8 @@ final class GeneratorsTest extends TestCase
         $t = $this->exec(new MakeFieldCommand($this->make), ['key' => 'test_gen_fld', 'name' => 'Рейтинг']);
         self::assertSame(Command::SUCCESS, $t->getStatusCode());
         $this->code('src/Itk/Field/TestGenFldField.php');
-        require_once $this->project . '/src/Itk/Field/TestGenFldField.php';
-        $f = \Gen\Itk\Field\TestGenFldField::make('Оценка', 'rate')->required();
+        $class = $this->generatedClass('src/Itk/Field/TestGenFldField.php', 'Gen\\Itk\\Field\\TestGenFldField', AbstractField::class);
+        $f = $class::make('Оценка', 'rate')->required();
         self::assertSame(['k' => 'rate', 't' => 'test_gen_fld', 'label' => 'Оценка', 'req' => true], \array_intersect_key($f->toArray(), \array_flip(['k', 't', 'label', 'req'])));
 
         $js = (string) \file_get_contents($this->project . '/public/itk/fields/test_gen_fld.js');
@@ -210,9 +231,9 @@ final class GeneratorsTest extends TestCase
         $t = $this->exec(new MakePluginCommand($this->make), ['key' => 'test_gen_plg', 'name' => 'Отчёты «для своих»']);
         self::assertSame(Command::SUCCESS, $t->getStatusCode());
         $this->code('src/Itk/Plugin/TestGenPlgExtension.php');
-        require_once $this->project . '/src/Itk/Plugin/TestGenPlgExtension.php';
+        $class = $this->generatedClass('src/Itk/Plugin/TestGenPlgExtension.php', 'Gen\\Itk\\Plugin\\TestGenPlgExtension', ItkExtensionInterface::class);
 
-        $registry = new Registry([new \Gen\Itk\Plugin\TestGenPlgExtension()]);
+        $registry = new Registry([new $class()]);
         self::assertSame(['/itk/plugins/test_gen_plg/admin.js'], $registry->adminAssetList()['js']);
         self::assertCount(1, $registry->menuItems());
 
@@ -307,8 +328,8 @@ final class GeneratorsTest extends TestCase
         self::assertSame(Command::SUCCESS, $t->getStatusCode());
         $code = $this->code('src/Itk/Collection/TestGenPlainCollection.php');
         self::assertStringContainsString("#[Group('Каталог')]", $code);
-        require_once $this->project . '/src/Itk/Collection/TestGenPlainCollection.php';
-        $r = new \Gen\Itk\Collection\TestGenPlainCollection();
+        $class = $this->generatedClass('src/Itk/Collection/TestGenPlainCollection.php', 'Gen\\Itk\\Collection\\TestGenPlainCollection', CollectionResource::class);
+        $r = new $class();
         self::assertSame(['name', 'photo'], \array_map(static fn ($f): string => $f->key(), [...$r->fields()]));
         self::assertSame(['box', 'name'], [$r->icon(), $r->titleField()]);
         self::assertStringContainsString("'Фото'", $code, 'the label of the photo comes from the catalogue (model.label_photo), in the language of the person who runs the command');
@@ -340,8 +361,8 @@ final class GeneratorsTest extends TestCase
         self::assertStringContainsString("yield Date::make('Начало', 'start')->sortable()->filterable();", $code);
         self::assertStringContainsString("yield DateTime::make('Время', 'at')->sortable()->filterable();", $code);
 
-        require_once $this->project . '/src/Itk/Collection/TestGenJsonCollection.php';
-        $r = new \Gen\Itk\Collection\TestGenJsonCollection();
+        $class = $this->generatedClass('src/Itk/Collection/TestGenJsonCollection.php', 'Gen\\Itk\\Collection\\TestGenJsonCollection', CollectionResource::class);
+        $r = new $class();
         self::assertSame(['Поездки из файла', 'поездка', 'map', 'city'], [$r->title(), $r->singular(), $r->icon(), $r->titleField()]);
         self::assertSame(
             ['text', 'textarea', 'number', 'toggle', 'select', 'text', 'text', 'image'],

@@ -77,7 +77,7 @@ final class ContentSchemaRegressionTest extends TestCase
                 return 'Hero';
             }
 
-            public function group(): ?string
+            public function group(): string
             {
                 return 'First screen';
             }

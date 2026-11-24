@@ -21,6 +21,7 @@ final class TwinMcpTool extends AbstractMcpTool
         return 'Test tool.';
     }
 
+    /** @return array<array-key, mixed> */
     public function inputSchema(): array
     {
         return self::schema([]);

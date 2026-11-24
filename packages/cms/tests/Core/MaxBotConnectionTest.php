@@ -28,6 +28,7 @@ final class MaxBotConnectionTest extends TestCase
     /** @return array{BotSettings, EntityManagerInterface, SettingRepository} */
     private function settings(): array
     {
+        /** @var array<string, Setting> $rows */
         $rows = [];
         $repo = $this->createStub(SettingRepository::class);
         $repo->method('find')->willReturnCallback(static function (array $id) use (&$rows): ?Setting {

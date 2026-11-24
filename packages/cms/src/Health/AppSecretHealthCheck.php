@@ -4,7 +4,10 @@ declare(strict_types=1);
 
 namespace Itk\Cms\Health;
 
+use Doctrine\DBAL\Exception;
 use Itk\Cms\I18n\I18n;
+use Itk\Cms\Repository\UserTwoFactorRepository;
+use Itk\Cms\Security\TwoFactor\SecretBox;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 
 /**
@@ -17,6 +20,8 @@ final class AppSecretHealthCheck implements HealthCheckInterface
     public function __construct(
         #[Autowire(param: 'kernel.secret')]
         private readonly string $secret,
+        private readonly UserTwoFactorRepository $factors,
+        private readonly SecretBox $box,
     ) {
     }
 
@@ -33,6 +38,19 @@ final class AppSecretHealthCheck implements HealthCheckInterface
 
     public function check(): HealthResult
     {
-        return '' === \trim($this->secret) ? HealthResult::warn(self::emptyMessage()) : HealthResult::ok(I18n::t('ops.health_secret_ok'));
+        if ('' === \trim($this->secret)) {
+            return HealthResult::warn(self::emptyMessage());
+        }
+        try {
+            foreach ($this->factors->enabledSecrets() as $sealed) {
+                if (null === $this->box->open($sealed)) {
+                    return HealthResult::fail(I18n::t('ops.health_secret_2fa_unreadable'));
+                }
+            }
+        } catch (Exception) {
+            return HealthResult::warn(I18n::t('ops.health_secret_2fa_unavailable'));
+        }
+
+        return HealthResult::ok(I18n::t('ops.health_secret_ok'));
     }
 }

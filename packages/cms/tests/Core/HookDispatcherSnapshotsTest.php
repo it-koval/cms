@@ -60,7 +60,7 @@ final class HookDispatcherSnapshotsTest extends TestCase
             self::assertSame([], $seen, 'after events wait until the write succeeds');
         });
 
-        self::assertSame([['liveVersions' => [['locale' => 'kk', 'url' => '/kk/test-hook-snapshot', 'seo' => []]]]], $seen);
+        self::assertSame([['liveVersions' => [['locale' => 'kk', 'url' => '/kk/test-hook-snapshot', 'seo' => []]], 'fields' => [], 'meta' => [], 'status' => 'published']], $seen);
     }
 
     #[Test]
@@ -88,6 +88,6 @@ final class HookDispatcherSnapshotsTest extends TestCase
         self::assertSame($failure, $caught);
         self::assertSame([], $seen);
         $hooks->$method($record);
-        self::assertSame([[]], $seen, 'failure does not prevent subsequent events and the old signature remains valid');
+        self::assertSame([['fields' => [], 'meta' => [], 'status' => 'published']], $seen, 'failure does not prevent subsequent events and the old signature remains valid');
     }
 }

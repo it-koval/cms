@@ -35,6 +35,7 @@ final class AdminMailLinksTest extends WebTestCase
     private string $csrf = '';
     private int $n = 0;
 
+    /** @param array<string, mixed> $options */
     protected static function createKernel(array $options = []): \Symfony\Component\HttpKernel\KernelInterface
     {
         return new \Itk\Cms\Tests\App\TestKernel('test', true, itk: ['public_url' => 'http://localhost']);

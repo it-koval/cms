@@ -17,6 +17,7 @@ use Symfony\Component\HttpKernel\KernelInterface;
 
 final class AccountSecurityHttpTest extends WebTestCase
 {
+    /** @param array<string, mixed> $options */
     protected static function createKernel(array $options = []): KernelInterface
     {
         return new TestKernel('test', true, security: ['access_control' => []]);

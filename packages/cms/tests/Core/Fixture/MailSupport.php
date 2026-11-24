@@ -55,7 +55,11 @@ trait MailSupport
         \putenv('MAILER_DSN');
     }
 
-    /** Включает «Настройки → Почта» с Mailpit. @param array<string, mixed> $override */
+    /**
+     * Включает «Настройки → Почта» с Mailpit.
+     *
+     * @param array<string, mixed> $override
+     */
     private function useMailpit(array $override = []): void
     {
         $this->requireMailpit();
@@ -86,7 +90,11 @@ trait MailSupport
             ->setParameter('locale', Setting::ALL)->execute();
     }
 
-    /** Письма, которые страница поставила в очередь. @return list<SendMail> */
+    /**
+     * Письма, которые страница поставила в очередь.
+     *
+     * @return list<SendMail>
+     */
     private function queuedMail(): array
     {
         $out = [];
@@ -99,7 +107,11 @@ trait MailSupport
         return $out;
     }
 
-    /** Runs a password delivery job and inspects its transient message at the transport boundary; no SMTP connection is opened. @return list<SendMail> */
+    /**
+     * Runs a password delivery job and inspects its transient message at the transport boundary; no SMTP connection is opened.
+     *
+     * @return list<SendMail>
+     */
     private function capturePasswordMail(callable $work, string $kind = SendMail::RESET): array
     {
         $mail = [];

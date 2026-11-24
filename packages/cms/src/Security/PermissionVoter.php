@@ -14,6 +14,8 @@ use Symfony\Component\Security\Core\Authorization\Voter\Voter;
  *
  *   $this->isGranted('itk', new Permission('pages', 'edit', template: 'blog_article'))
  *   #[IsGranted('itk:requests:view')]      (attribute form 'itk:<area>:<action>', areas like 'col:ambassadors' contain a colon: the LAST colon splits the action)
+ *
+ * @extends Voter<string, mixed>
  */
 final class PermissionVoter extends Voter
 {

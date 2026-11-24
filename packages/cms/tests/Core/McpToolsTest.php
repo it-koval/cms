@@ -38,7 +38,11 @@ final class McpToolsTest extends KernelTestCase
         parent::tearDown();
     }
 
-    /** @return array{0: \Itk\Cms\Mcp\McpContext, 1: \Itk\Cms\Entity\User} */
+    /**
+     * @param array<array-key, mixed> $scopes
+     *
+     * @return array{0: \Itk\Cms\Mcp\McpContext, 1: \Itk\Cms\Entity\User}
+     */
     private function as(string $role, array $scopes = self::ALL, string $name = 'TestMcp key'): array
     {
         $user = $this->mcpUser($role);
@@ -71,7 +75,7 @@ final class McpToolsTest extends KernelTestCase
             self::assertSame('object', $tool->inputSchema()['type'], $name);
             self::assertNotSame('', $tool->description(), $name);
             self::assertMatchesRegularExpression('/^[a-z_]+$/', $name);
-            self::assertTrue(\in_array($tool->requiredScope(), McpScopes::ALL, true), $name);
+            self::assertContains($tool->requiredScope(), McpScopes::ALL, $name);
             if ($tool->annotations()['readOnly']) {
                 self::assertContains($tool->requiredScope(), [McpScopes::READ, McpScopes::REQUESTS], $name . ': a read-only tool needs read (or requests)');
             }
@@ -648,7 +652,11 @@ final class McpToolsTest extends KernelTestCase
         self::assertStringContainsString('админке', $changed['text']);
     }
 
-    /** @return array{0: \Itk\Cms\Mcp\McpContext, 1: string} the assistant and the page that holds the section «testlocked1» with the given rows */
+    /**
+     * @param array<array-key, mixed> $rows
+     *
+     * @return array{0: \Itk\Cms\Mcp\McpContext, 1: string} the assistant and the page that holds the section «testlocked1» with the given rows
+     */
     private function pageWithLockedRows(string $title, string $url, array $rows): array
     {
         self::getContainer()->get(\Itk\Cms\Resource\ResourceRegistry::class)->add(new \Itk\Cms\Tests\Core\Fixture\LockedRowsSection());
@@ -849,7 +857,11 @@ final class McpToolsTest extends KernelTestCase
         self::assertSame('<b>q</b>', $region['points'][0]['code']);
     }
 
-    /** Takes the _id off items of a section of the draft, straight in the database: what the content looks like after an old import or a hand-made fix. @param list<string> $ids */
+    /**
+     * Takes the _id off items of a section of the draft, straight in the database: what the content looks like after an old import or a hand-made fix.
+     *
+     * @param list<string> $ids
+     */
     private function dropItemIds(string $pageId, string $sectionId, array $ids): void
     {
         $db = self::getContainer()->get(\Doctrine\DBAL\Connection::class);
@@ -1466,10 +1478,12 @@ final class McpToolsTest extends KernelTestCase
             $reply = (array) \json_decode($raw, true);
             self::assertSame(['code' => -32603, 'message' => 'Internal error'], $reply['error'], $method);
             self::assertStringNotContainsString('TestTwin', $raw, 'the client is not told how the site is built');
-            self::assertCount(1, $logger->lines);
-            self::assertSame(['error', 'MCP tools are misconfigured: {problem}'], [$logger->lines[0][0], $logger->lines[0][1]]);
-            self::assertStringContainsString(Fixture\EchoMcpTool::class, $logger->lines[0][2]['problem']);
-            self::assertStringContainsString(Fixture\TwinMcpTool::class, $logger->lines[0][2]['problem']);
+            /** @var list<array{string, string, array<string, mixed>}> $lines */
+            $lines = $logger->lines;
+            self::assertCount(1, $lines);
+            self::assertSame(['error', 'MCP tools are misconfigured: {problem}'], [$lines[0][0], $lines[0][1]]);
+            self::assertStringContainsString(Fixture\EchoMcpTool::class, $lines[0][2]['problem']);
+            self::assertStringContainsString(Fixture\TwinMcpTool::class, $lines[0][2]['problem']);
         }
     }
 

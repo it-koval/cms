@@ -17,6 +17,7 @@ final class PublicHeadersTest extends WebTestCase
     /** @var list<string> */
     private array $created = [];
 
+    /** @param array<string, mixed> $options */
     protected static function createKernel(array $options = []): KernelInterface
     {
         return new TestKernel('test', true, null, '', [], [], $options['itk'] ?? []);
@@ -42,6 +43,7 @@ final class PublicHeadersTest extends WebTestCase
         $pages->publish($page['id']);
     }
 
+    /** @param array<string, mixed> $options */
     private function client(array $options = []): KernelBrowser
     {
         return static::createClient($options);

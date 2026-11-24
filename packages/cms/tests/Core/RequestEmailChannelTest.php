@@ -41,7 +41,11 @@ final class RequestEmailChannelTest extends KernelTestCase
     private mixed $domainBefore = null;
     private int $failedQueueMark = 0;
 
-    /** The site has a connected Telegram (nothing here really sends: the bus only records): only then a request queues its delivery, see TelegramChannelTest. */
+    /**
+     * The site has a connected Telegram (nothing here really sends: the bus only records): only then a request queues its delivery, see TelegramChannelTest.
+     *
+     * @param array<string, mixed> $options
+     */
     protected static function createKernel(array $options = []): KernelInterface
     {
         return new TestKernel($options['environment'] ?? 'test', $options['debug'] ?? true, null, '', ['notifier' => ['chatter_transports' => ['telegram' => 'telegram://123456:test-token@default']]]);
@@ -84,11 +88,13 @@ final class RequestEmailChannelTest extends KernelTestCase
         parent::tearDown();
     }
 
+    /** @param array<array-key, mixed> $routes */
     private function routes(array $routes): void
     {
         self::getContainer()->get(SettingsService::class)->update(['mailRoutes' => $routes]);
     }
 
+    /** @param array<string, mixed> $data */
     private function submit(string $form = 'call', array $data = []): Request
     {
         $input = $data + ('call' === $form ? ['phone' => '+7(900)000-11-22', 'city' => 'Москва'] : ['phone' => '+7(900)000-11-22', 'name' => 'Иван', 'city' => 'Казань']);

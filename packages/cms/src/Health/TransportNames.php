@@ -9,7 +9,11 @@ use Symfony\Contracts\Service\ServiceProviderInterface;
 /** Messenger registers each receiver by its configured name and by messenger.transport.<name>. */
 final class TransportNames
 {
-    /** @return list<string> */
+    /**
+     * @param ServiceProviderInterface<mixed> $locator
+     *
+     * @return list<string>
+     */
     public static function of(ServiceProviderInterface $locator): array
     {
         $names = \array_keys($locator->getProvidedServices());

@@ -74,7 +74,11 @@ class SeoRule
         return \explode('?', $this->path, 2)[0];
     }
 
-    /** The query of the rule as parameters ([] when it has none). @return array<string, mixed> */
+    /**
+     * The query of the rule as parameters ([] when it has none).
+     *
+     * @return array<string, mixed>
+     */
     public function queryParams(): array
     {
         $q = \explode('?', $this->path, 2)[1] ?? '';

@@ -14,6 +14,7 @@ use Symfony\Component\HttpKernel\KernelInterface;
 /** itk:schema:lint и загрузка схемы в debug: ошибки названы, код выхода 1; хорошая схема проходит. */
 final class SchemaLintTest extends KernelTestCase
 {
+    /** @param array<string, mixed> $options */
     protected static function createKernel(array $options = []): KernelInterface
     {
         return new TestKernel('test', $options['debug'] ?? true, null, '', [], [], $options['itk'] ?? []);

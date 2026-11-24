@@ -80,7 +80,11 @@ abstract class ResourceKernelTestCase extends KernelTestCase
         return $this->collections->create('test_trips', ['title' => $title] + $data);
     }
 
-    /** @return array<string, mixed> */
+    /**
+     * @param array<string, mixed> $fields
+     *
+     * @return array<string, mixed>
+     */
     protected function page(string $template, string $title, string $url, ?string $parentId = null, array $fields = []): array
     {
         $page = $this->pages->create(['template' => $template, 'title' => $title, 'url' => $url, 'parentId' => $parentId, 'fields' => $fields]);

@@ -19,9 +19,12 @@ final class ContentHttpRegressionTest extends WebTestCase
     private KernelBrowser $client;
     private string $csrf;
     private string $email;
+    /** @var list<string> */
     private array $pages = [];
+    /** @var list<string> */
     private array $items = [];
 
+    /** @param array<string, mixed> $options */
     protected static function createKernel(array $options = []): KernelInterface
     {
         return new TestKernel($options['environment'] ?? 'test', $options['debug'] ?? true, itk: ['schema_file' => __DIR__ . '/Fixture/schema_field_validation.php']);
@@ -54,6 +57,11 @@ final class ContentHttpRegressionTest extends WebTestCase
         parent::tearDown();
     }
 
+    /**
+     * @param array<string, mixed> $data
+     *
+     * @return array<string, mixed>
+     */
     private function json(string $method, string $path, array $data): array
     {
         $this->client->request($method, $path, [], [], ['CONTENT_TYPE' => 'application/json', 'HTTP_X_CSRF_TOKEN' => $this->csrf], \json_encode($data, \JSON_THROW_ON_ERROR));

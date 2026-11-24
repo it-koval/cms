@@ -25,7 +25,7 @@ final class BlogTemplate extends TemplateResource
         yield Headline::make('Заголовок страницы (H1)', 'headline')->hint('Если оставить пустым, будет название страницы.');
     }
 
-    public function h1(): ?string
+    public function h1(): string
     {
         return 'headline';
     }

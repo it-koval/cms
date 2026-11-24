@@ -114,7 +114,13 @@ final class SettingsService implements ResetInterface
         return $this->write($patch, $locale, $action);
     }
 
-    /** Explicit notification scope: API names stay stable even when a site declares a field with the same key. */
+    /**
+     * Explicit notification scope: API names stay stable even when a site declares a field with the same key.
+     *
+     * @param array<string, mixed> $patch
+     *
+     * @return array<string, mixed>
+     */
     public function updateNotifications(array $patch, ?string $locale = null, string $action = Revision::EDIT): array
     {
         $this->write(\array_intersect_key($patch, \array_flip(Schema::CORE_SETTING_KEYS)), $locale, $action, true);
@@ -134,7 +140,11 @@ final class SettingsService implements ResetInterface
         return $out;
     }
 
-    /** @param array<string, mixed> $patch @return array<string, mixed> */
+    /**
+     * @param array<string, mixed> $patch
+     *
+     * @return array<string, mixed>
+     */
     private function write(array $patch, ?string $locale, string $action, bool $notifications = false): array
     {
         $locale ??= $this->mainLocale;
@@ -334,13 +344,21 @@ final class SettingsService implements ResetInterface
         return \array_values($out);
     }
 
-    /** Chats from the bundle option `telegram.chat_ids` (config / ITK_TELEGRAM_CHAT_IDS): they receive the requests when Settings → Уведомления has none. @return list<string> */
+    /**
+     * Chats from the bundle option `telegram.chat_ids` (config / ITK_TELEGRAM_CHAT_IDS): they receive the requests when Settings → Уведомления has none.
+     *
+     * @return list<string>
+     */
     public function fallbackChatIds(): array
     {
         return self::splitIds($this->fallbackChatIds);
     }
 
-    /** The same for MAX: the bundle option `max.chat_ids` (config / ITK_MAX_CHAT_IDS). @return list<string> */
+    /**
+     * The same for MAX: the bundle option `max.chat_ids` (config / ITK_MAX_CHAT_IDS).
+     *
+     * @return list<string>
+     */
     public function maxFallbackChatIds(): array
     {
         return self::splitIds($this->maxFallbackChatIds);

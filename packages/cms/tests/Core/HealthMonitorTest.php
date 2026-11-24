@@ -24,62 +24,11 @@ use Symfony\Component\Messenger\Stamp\TransportMessageIdStamp;
 use Symfony\Component\Messenger\Transport\InMemory\InMemoryTransport;
 use Symfony\Component\Messenger\Transport\Receiver\ListableReceiverInterface;
 use Symfony\Component\Messenger\Transport\Receiver\MessageCountAwareInterface;
-use Symfony\Component\Messenger\Transport\TransportInterface;
 
 /** «Состояние сайта», логика без HTTP: очередь и упавшие сообщения (повторить, удалить), проверка обновлений с кешем на 12 часов. */
 final class HealthMonitorTest extends TestCase
 {
-    private function failedTransport(Envelope ...$envelopes): ListableReceiverInterface&MessageCountAwareInterface
-    {
-        return new class($envelopes) implements ListableReceiverInterface, MessageCountAwareInterface {
-            /** @var array<string, Envelope> */
-            public array $items = [];
-            /** @var list<string> */
-            public array $acked = [];
-            /** @var list<string> */
-            public array $rejected = [];
-
-            /** @param list<Envelope> $envelopes */
-            public function __construct(array $envelopes)
-            {
-                foreach ($envelopes as $e) {
-                    $this->items[(string) $e->last(TransportMessageIdStamp::class)?->getId()] = $e;
-                }
-            }
-
-            public function get(): iterable
-            {
-                return [];
-            }
-
-            public function ack(Envelope $envelope): void
-            {
-                $this->acked[] = (string) $envelope->last(TransportMessageIdStamp::class)?->getId();
-            }
-
-            public function reject(Envelope $envelope): void
-            {
-                $this->rejected[] = (string) $envelope->last(TransportMessageIdStamp::class)?->getId();
-            }
-
-            public function all(?int $limit = null): iterable
-            {
-                return \array_values($this->items);
-            }
-
-            public function find(mixed $id): ?Envelope
-            {
-                return $this->items[(string) $id] ?? null;
-            }
-
-            public function getMessageCount(): int
-            {
-                return \count($this->items);
-            }
-        };
-    }
-
-    private function queue(int $waiting): TransportInterface&MessageCountAwareInterface
+    private function queue(int $waiting): InMemoryTransport&MessageCountAwareInterface
     {
         return new class($waiting) extends InMemoryTransport implements MessageCountAwareInterface {
             public function __construct(private readonly int $waiting)
@@ -106,7 +55,11 @@ final class HealthMonitorTest extends TestCase
         ]);
     }
 
-    /** @param array<string, object> $transports by name; each is also known by its service id, as in the real locator */
+    /**
+     * @param array<string, object> $transports by name; each is also known by its service id, as in the real locator
+     *
+     * @return ServiceLocator<object>
+     */
     private function locator(array $transports): ServiceLocator
     {
         $factories = [];
@@ -121,7 +74,7 @@ final class HealthMonitorTest extends TestCase
     #[Test]
     public function queuesListOnlyTransportsThatCountAndSkipTheFailureOne(): void
     {
-        $failed = $this->failedTransport($this->failedEnvelope('7'));
+        $failed = new FailedHealthMonitorTransport($this->failedEnvelope('7'));
         $monitor = new MessengerMonitor($this->locator(['async' => $this->queue(3), 'failed' => $failed, 'sync' => new InMemoryTransport()]), $failed);
 
         self::assertSame([['name' => 'async', 'waiting' => 3]], $monitor->queues());
@@ -130,7 +83,7 @@ final class HealthMonitorTest extends TestCase
     #[Test]
     public function failedMessagesComeWithAReasonAndNoBotToken(): void
     {
-        $failed = $this->failedTransport($this->failedEnvelope('7', 'async', 'Client error for https://api.telegram.org/bot123456:AAH-secret_token/sendMessage'));
+        $failed = new FailedHealthMonitorTransport($this->failedEnvelope('7', 'async', 'Client error for https://api.telegram.org/bot123456:AAH-secret_token/sendMessage'));
         $monitor = new MessengerMonitor($this->locator(['async' => $this->queue(0), 'failed' => $failed]), $failed);
 
         $report = $monitor->failed();
@@ -152,7 +105,7 @@ final class HealthMonitorTest extends TestCase
     {
         $old = \unserialize('O:39:"Itk\\Cms\\Request\\SendRequestNotification":2:{s:9:"requestId";i:736;s:6:"resend";b:1;}');
         $envelope = new Envelope($old, [new TransportMessageIdStamp('9'), new SentToFailureTransportStamp('async'), new ErrorDetailsStamp(\RuntimeException::class, 0, 'x'), new RedeliveryStamp(5)]);
-        $failed = $this->failedTransport($envelope);
+        $failed = new FailedHealthMonitorTransport($envelope);
         $monitor = new MessengerMonitor($this->locator(['async' => $this->queue(0), 'failed' => $failed]), $failed);
 
         self::assertSame('Отправка заявки № 736 в Telegram', $monitor->failed()['items'][0]['label']);
@@ -162,7 +115,7 @@ final class HealthMonitorTest extends TestCase
     public function aFailedMaxMessageIsLabelledWithMax(): void
     {
         $envelope = new Envelope(new SendRequestNotification(736, true, 'max'), [new TransportMessageIdStamp('8'), new SentToFailureTransportStamp('async'), new ErrorDetailsStamp(\RuntimeException::class, 0, 'no access'), new RedeliveryStamp(5)]);
-        $failed = $this->failedTransport($envelope);
+        $failed = new FailedHealthMonitorTransport($envelope);
         $monitor = new MessengerMonitor($this->locator(['async' => $this->queue(0), 'failed' => $failed]), $failed);
 
         self::assertSame('Отправка заявки № 736 в MAX', $monitor->failed()['items'][0]['label']);
@@ -187,7 +140,7 @@ final class HealthMonitorTest extends TestCase
     #[Test]
     public function retryPutsTheMessageBackIntoItsQueueAsANewOne(): void
     {
-        $failed = $this->failedTransport($this->failedEnvelope('7'), $this->failedEnvelope('8'));
+        $failed = new FailedHealthMonitorTransport($this->failedEnvelope('7'), $this->failedEnvelope('8'));
         $async = $this->queue(0);
         $monitor = new MessengerMonitor($this->locator(['async' => $async, 'failed' => $failed]), $failed);
 
@@ -207,7 +160,7 @@ final class HealthMonitorTest extends TestCase
     #[Test]
     public function retryRefusesWhenTheOriginalQueueIsGone(): void
     {
-        $failed = $this->failedTransport($this->failedEnvelope('7', 'vanished'));
+        $failed = new FailedHealthMonitorTransport($this->failedEnvelope('7', 'vanished'));
         $monitor = new MessengerMonitor($this->locator(['async' => $this->queue(0), 'failed' => $failed]), $failed);
 
         try {
@@ -224,7 +177,7 @@ final class HealthMonitorTest extends TestCase
     {
         foreach ([new \Itk\Cms\Mail\SendMail('fixture@example.com', 'Legacy', 'Fixture', '<p>Fixture</p>', 'reset'), new \Itk\Cms\Security\RequestPasswordLink('fixture@example.com', 'https://old.example')] as $job) {
             $envelope = new Envelope($job, [new TransportMessageIdStamp('legacy'), new SentToFailureTransportStamp('async')]);
-            $failed = $this->failedTransport($envelope);
+            $failed = new FailedHealthMonitorTransport($envelope);
             $async = $this->queue(0);
             $monitor = new MessengerMonitor($this->locator(['async' => $async, 'failed' => $failed]), $failed);
             try {
@@ -241,7 +194,7 @@ final class HealthMonitorTest extends TestCase
     #[Test]
     public function deleteDropsOneMessage(): void
     {
-        $failed = $this->failedTransport($this->failedEnvelope('7'), $this->failedEnvelope('8'));
+        $failed = new FailedHealthMonitorTransport($this->failedEnvelope('7'), $this->failedEnvelope('8'));
         $monitor = new MessengerMonitor($this->locator(['async' => $this->queue(0), 'failed' => $failed]), $failed);
 
         $monitor->delete('8');
@@ -253,7 +206,7 @@ final class HealthMonitorTest extends TestCase
     #[Test]
     public function anUnknownMessageIsNotFound(): void
     {
-        $failed = $this->failedTransport();
+        $failed = new FailedHealthMonitorTransport();
         $monitor = new MessengerMonitor($this->locator(['async' => $this->queue(0), 'failed' => $failed]), $failed);
 
         foreach (['retry', 'delete'] as $do) {
@@ -266,7 +219,11 @@ final class HealthMonitorTest extends TestCase
         }
     }
 
-    /** @param array<string, \Closure> $factories by name; each is also known by its service id */
+    /**
+     * @param array<string, \Closure(): object> $factories by name; each is also known by its service id
+     *
+     * @return ServiceLocator<object>
+     */
     private function lazyLocator(array $factories): ServiceLocator
     {
         $all = [];
@@ -323,7 +280,7 @@ final class HealthMonitorTest extends TestCase
     public function theFailureTransportIsBuiltOnlyWhenNeededAndOnlyOnce(): void
     {
         $built = 0;
-        $failed = $this->failedTransport($this->failedEnvelope('7'));
+        $failed = new FailedHealthMonitorTransport($this->failedEnvelope('7'));
         $monitor = new MessengerMonitor($this->locator(['async' => $this->queue(0), 'failed' => $failed]), static function () use (&$built, $failed) {
             ++$built;
 
@@ -427,5 +384,52 @@ final class HealthMonitorTest extends TestCase
         self::assertFalse($down['hasUpdate']);
         self::assertNull($down['latest']);
         self::assertStringContainsString('Не получилось проверить', $down['message']);
+    }
+}
+
+final class FailedHealthMonitorTransport implements ListableReceiverInterface, MessageCountAwareInterface
+{
+    /** @var array<string, Envelope> */
+    public array $items = [];
+    /** @var list<string> */
+    public array $acked = [];
+    /** @var list<string> */
+    public array $rejected = [];
+
+    public function __construct(Envelope ...$envelopes)
+    {
+        foreach ($envelopes as $e) {
+            $this->items[(string) $e->last(TransportMessageIdStamp::class)?->getId()] = $e;
+        }
+    }
+
+    public function get(): iterable
+    {
+        return [];
+    }
+
+    public function ack(Envelope $envelope): void
+    {
+        $this->acked[] = (string) $envelope->last(TransportMessageIdStamp::class)?->getId();
+    }
+
+    public function reject(Envelope $envelope): void
+    {
+        $this->rejected[] = (string) $envelope->last(TransportMessageIdStamp::class)?->getId();
+    }
+
+    public function all(?int $limit = null): iterable
+    {
+        return \array_values($this->items);
+    }
+
+    public function find(mixed $id): ?Envelope
+    {
+        return $this->items[(string) $id] ?? null;
+    }
+
+    public function getMessageCount(): int
+    {
+        return \count($this->items);
     }
 }

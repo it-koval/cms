@@ -148,7 +148,7 @@ final class ContentReaderTest extends ResourceKernelTestCase
         self::assertNull($this->reader->page($this->pageIds[0], 'en'));
     }
 
-    /** @return list<string> */
+    /** @return array<string, string> */
     private function seedTrips(): array
     {
         $ids = [];
@@ -169,7 +169,11 @@ final class ContentReaderTest extends ResourceKernelTestCase
         return $ids;
     }
 
-    /** @param array<string, mixed> $options @return list<string> */
+    /**
+     * @param array<string, mixed> $options
+     *
+     * @return list<string>
+     */
     private function trips(array $options = []): array
     {
         return \array_column($this->reader->collection('test_trips', $options), 'title');

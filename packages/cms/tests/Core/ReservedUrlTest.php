@@ -14,6 +14,7 @@ use Symfony\Component\HttpKernel\KernelInterface;
 /** Адреса, которые ядро отвечает само (/mcp, /healthz, /robots.txt, /llms.txt), нельзя отдать странице: её там не увидят. */
 final class ReservedUrlTest extends KernelTestCase
 {
+    /** @param array<string, mixed> $options */
     protected static function createKernel(array $options = []): KernelInterface
     {
         return new TestKernel('test', true);

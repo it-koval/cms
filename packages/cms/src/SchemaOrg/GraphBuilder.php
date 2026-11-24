@@ -188,7 +188,11 @@ final class GraphBuilder
         return \is_scalar($v) ? \trim((string) $v) : '';
     }
 
-    /** One URL per line; only http(s) addresses stay. @return list<string> */
+    /**
+     * One URL per line; only http(s) addresses stay.
+     *
+     * @return list<string>
+     */
     private function links(string $text): array
     {
         $links = [];

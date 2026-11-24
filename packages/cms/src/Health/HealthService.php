@@ -105,7 +105,11 @@ final class HealthService
         ];
     }
 
-    /** Asks the update source again, without waiting for the 12 hours to pass. @return array<string, mixed> */
+    /**
+     * Asks the update source again, without waiting for the 12 hours to pass.
+     *
+     * @return array<string, mixed>
+     */
     public function refreshUpdates(): array
     {
         return $this->updates->check($this->versions()['itk'], true);

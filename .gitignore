@@ -23,6 +23,10 @@ coverage/
 # Other
 .impeccable
 docs/
+!/docs/
+/docs/*
+!/docs/DEPLOY.md
+!/docs/DEPLOY.ru.md
 
 # Internal notes of the maintainers: kept locally, not published
 /PRODUCT.md

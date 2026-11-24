@@ -39,6 +39,7 @@ final class ContentInputRegressionTest extends KernelTestCase
     private array $requestIds = [];
     private User $user;
 
+    /** @param array<string, mixed> $options */
     protected static function createKernel(array $options = []): KernelInterface
     {
         return new TestKernel($options['environment'] ?? 'test', $options['debug'] ?? true, itk: ['schema_file' => __DIR__ . '/Fixture/schema_content_writes.php']);

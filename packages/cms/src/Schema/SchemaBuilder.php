@@ -45,7 +45,11 @@ final class SchemaBuilder
     private array $settings = [];
     /** @var array<string, FormDef> */
     private array $forms = [];
-    /** Who described what: "kind:key" => 'core' | file | class. Two descriptions of one key are an error (a core template may be changed). */
+    /**
+     * Who described what: "kind:key" => 'core' | file | class. Two descriptions of one key are an error (a core template may be changed).
+     *
+     * @var array<string, string>
+     */
     private array $origins = [];
     private string $source = 'core';
     /** @var list<string> what validate() of the built schema reports besides the definitions themselves */

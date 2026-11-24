@@ -104,6 +104,7 @@ final class WorkerStateResetTest extends KernelTestCase
             ], $seen);
             self::assertCount(2, $transport->getAcknowledged());
             foreach ([SettingsService::class, LiveUrlIndex::class, ContentReader::class, SeoResolver::class, McpSettings::class, RoleResolver::class, ItkRuntime::class, MaxApiSender::class] as $class) {
+                // @phpstan-ignore function.alreadyNarrowedType (Keep the runtime check if a service drops ResetInterface.)
                 self::assertTrue(\is_a($class, ResetInterface::class, true), $class . ' participates in kernel.reset');
             }
         } finally {

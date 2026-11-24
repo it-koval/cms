@@ -20,7 +20,7 @@ final class MaxApiSenderTest extends TestCase
 {
     private const TOKEN = 'tok-3n-SECRET-value';
 
-    /** @var list<HttpRequestInterface<HttpResponseInterface>> */
+    /** @var list<HttpRequestInterface<HttpResponseInterface<*>>> */
     public array $requests = [];
 
     /** A wire that answers every request with the given status and body and keeps the requests. */

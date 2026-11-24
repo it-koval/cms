@@ -261,7 +261,11 @@ final class Schema
         return $out;
     }
 
-    /** @param list<FieldInterface> $fields @return list<string> */
+    /**
+     * @param list<FieldInterface> $fields
+     *
+     * @return list<string>
+     */
     private function h1Problems(string $at, ?string $key, array $fields): array
     {
         if (null === $key || \in_array($key, \array_map(static fn (FieldInterface $f): string => $f->key(), $fields), true)) {
@@ -306,7 +310,11 @@ final class Schema
         return ($this->templates[$template] ?? null)?->fieldList() ?? [];
     }
 
-    /** Page-level fields outside sections (title, address, SEO); keys may be dotted. */
+    /**
+     * Page-level fields outside sections (title, address, SEO); keys may be dotted.
+     *
+     * @return list<FieldInterface>
+     */
     public static function pageFields(): array
     {
         return [
@@ -317,7 +325,11 @@ final class Schema
         ];
     }
 
-    /** Templates explicitly available to the built-in Author role. @return list<string> */
+    /**
+     * Templates explicitly available to the built-in Author role.
+     *
+     * @return list<string>
+     */
     public function articleTemplates(): array
     {
         $out = [];

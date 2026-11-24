@@ -34,7 +34,7 @@ final class SecretBox
             return null;
         }
         $raw = \base64_decode(\substr($sealed, 3), true);
-        if (false === $raw || \strlen($raw) <= \SODIUM_CRYPTO_SECRETBOX_NONCEBYTES) {
+        if (false === $raw || \strlen($raw) < \SODIUM_CRYPTO_SECRETBOX_NONCEBYTES + \SODIUM_CRYPTO_SECRETBOX_MACBYTES) {
             return null;
         }
         $plain = \sodium_crypto_secretbox_open(\substr($raw, \SODIUM_CRYPTO_SECRETBOX_NONCEBYTES), \substr($raw, 0, \SODIUM_CRYPTO_SECRETBOX_NONCEBYTES), $this->key('secret'));

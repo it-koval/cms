@@ -15,9 +15,11 @@ use Itk\Cms\Security\Viewer;
  *   Action::make('Закрыть набор', 'close')->bulk()->danger()->confirm('Закрыть набор?')
  *       ->modal('Причина', Textarea::make('Причина', 'reason')->required())->handle(...);
  *
- * Places: row() = in the menu of a row, bulk() = for the ticked rows, top() = above the list, form() = on the record's own page (several allowed;
- * none = row). Rights: canSee() hides the action; requires() is the right on the collection it needs (default «Править»); permission() makes it
- * a separate line in the role matrix, `action:<resource>:<key>`.
+ * An action can appear in the row menu (row()), the bulk toolbar (bulk()), the list header (top()),
+ * or the record form (form()). Several places are allowed. The default is row().
+ * Only an action with top() can run without records.
+ * canSee() controls visibility. requires() selects the required collection right (edit by default).
+ * permission() adds a separate right to the role matrix, `action:<resource>:<key>`.
  */
 final class Action
 {

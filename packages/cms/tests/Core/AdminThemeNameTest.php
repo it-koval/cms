@@ -16,6 +16,7 @@ use Symfony\Component\HttpKernel\KernelInterface;
 /** Название продукта в шапке админки (itk_cms.admin.theme.name): из конфига сайта до окна ITK_ADMIN.theme. */
 final class AdminThemeNameTest extends WebTestCase
 {
+    /** @param array<string, mixed> $options */
     protected static function createKernel(array $options = []): KernelInterface
     {
         return new TestKernel('test', true, null, '', [], [], $options['itk'] ?? []);

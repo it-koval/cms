@@ -19,7 +19,7 @@ final class ContentHeadingTemplate extends TemplateResource
         return 'Content heading';
     }
 
-    public function h1(): ?string
+    public function h1(): string
     {
         return 'heading';
     }

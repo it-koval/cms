@@ -37,6 +37,7 @@ final class HistoryTranslationsApiTest extends WebTestCase
     /** @var list<string> */
     private array $itemIds = [];
 
+    /** @param array<string, mixed> $options */
     protected static function createKernel(array $options = []): KernelInterface
     {
         $locales = ['ru' => ['name' => 'Русский'], 'kk' => ['name' => 'Қазақша'], 'en' => ['name' => 'English']]; // i18n-ignore: configured language names
@@ -196,6 +197,7 @@ final class HistoryTranslationsApiTest extends WebTestCase
         }
     }
 
+    /** @return iterable<array-key, mixed> */
     public static function contentKinds(): iterable
     {
         yield 'page' => ['page'];

@@ -22,6 +22,7 @@ final class LongRequestTest extends WebTestCase
 {
     private KernelBrowser $client;
 
+    /** @param array<string, mixed> $options */
     protected static function createKernel(array $options = []): KernelInterface
     {
         return new TestKernel($options['environment'] ?? 'test', $options['debug'] ?? true, null, '', [], [], ['schema_file' => __DIR__ . '/Fixture/schema_long_requests.php']);
@@ -41,12 +42,21 @@ final class LongRequestTest extends WebTestCase
         parent::tearDown();
     }
 
+    /**
+     * @param array<string, mixed> $fields
+     *
+     * @return array<array-key, mixed>
+     */
     private static function order(array $fields = []): array
     {
         return $fields + ['name' => 'Иван', 'phone' => '+79000000011', 'items' => 'Шлем', 'consent' => '1'];
     }
 
-    /** @return array{status: int, body: array<string, mixed>} */
+    /**
+     * @param array<string, mixed> $fields
+     *
+     * @return array{status: int, body: array<string, mixed>}
+     */
     private function post(string $form, array $fields): array
     {
         $this->client->request('POST', '/request/' . $form, $fields);
@@ -55,7 +65,11 @@ final class LongRequestTest extends WebTestCase
         return ['status' => $response->getStatusCode(), 'body' => (array) \json_decode((string) $response->getContent(), true)];
     }
 
-    /** What is in the table, not what the entity manager remembers. */
+    /**
+     * What is in the table, not what the entity manager remembers.
+     *
+     * @return array<array-key, mixed>|null
+     */
     private function stored(string $form = 'long_order'): ?array
     {
         $json = self::getContainer()->get(Connection::class)->fetchOne('SELECT data FROM itk_request WHERE form_key = ? ORDER BY id DESC LIMIT 1', [$form]);
@@ -63,6 +77,7 @@ final class LongRequestTest extends WebTestCase
         return false === $json ? null : \json_decode((string) $json, true);
     }
 
+    /** @param array<string, mixed> $fields */
     private function assertSaved(array $fields, string $key, string $expected): void
     {
         $out = $this->post('long_order', self::order($fields));
@@ -72,6 +87,7 @@ final class LongRequestTest extends WebTestCase
         self::assertSame($expected, $this->stored()[$key]);
     }
 
+    /** @param array<string, mixed> $fields */
     private function assertTooLong(array $fields, string $key, int $max): void
     {
         $out = $this->post('long_order', self::order($fields));
@@ -83,6 +99,7 @@ final class LongRequestTest extends WebTestCase
         self::assertNull($this->stored(), 'no request is created');
     }
 
+    /** @return iterable<array-key, mixed> */
     public static function lengthsWithinTheLimit(): iterable
     {
         foreach ([1000, 1001, 1002, 5999, 6000] as $length) {
@@ -99,6 +116,7 @@ final class LongRequestTest extends WebTestCase
         $this->assertSaved(['items' => $text], 'items', $text);
     }
 
+    /** @return iterable<array-key, mixed> */
     public static function lengthsOverTheLimit(): iterable
     {
         foreach ([6001, 6500, 100000] as $length) {
@@ -125,6 +143,7 @@ final class LongRequestTest extends WebTestCase
         $this->assertTooLong(['remark' => \str_repeat('п', 121)], 'remark', 120);
     }
 
+    /** @return iterable<array-key, mixed> */
     public static function f1DefaultLimitCharacters(): iterable
     {
         foreach (['б', 'қ', '字', '😀'] as $char) {
@@ -146,6 +165,7 @@ final class LongRequestTest extends WebTestCase
         $this->assertTooLong(['free' => \str_repeat($char, 1001)], 'free', 1000);
     }
 
+    /** @return iterable<array-key, mixed> */
     public static function f1DefaultOvershoots(): iterable
     {
         yield '1002' => [1002];
@@ -159,6 +179,7 @@ final class LongRequestTest extends WebTestCase
         $this->assertTooLong(['free' => \str_repeat('б', $length)], 'free', 1000);
     }
 
+    /** @return iterable<array-key, mixed> */
     public static function valuesThatAreMeasuredAfterCleaning(): iterable
     {
         $cyrillic = \str_repeat('ж', 6000);
@@ -176,6 +197,7 @@ final class LongRequestTest extends WebTestCase
         $this->assertSaved(['items' => $sent], 'items', $kept);
     }
 
+    /** @return iterable<array-key, mixed> */
     public static function valuesTooLongAfterCleaning(): iterable
     {
         yield 'Cyrillic' => [\str_repeat('ж', 6001)];
@@ -206,6 +228,7 @@ final class LongRequestTest extends WebTestCase
         self::assertSame($text, $this->stored()['items']);
     }
 
+    /** @return iterable<string, array{array<string, string>, string, string}> */
     public static function refusalsThatDidNotChange(): iterable
     {
         yield 'empty' => [['items' => ''], 'items', 'нужно заполнить'];
@@ -214,6 +237,7 @@ final class LongRequestTest extends WebTestCase
         yield 'pattern' => [['phone' => '12345'], 'phone', 'Проверьте номер телефона'];
     }
 
+    /** @param array<string, string> $fields */
     #[Test]
     #[DataProvider('refusalsThatDidNotChange')]
     public function requiredPatternAndToggleWorkAsBefore(array $fields, string $key, string $message): void
@@ -263,6 +287,7 @@ final class LongRequestTest extends WebTestCase
         self::assertNull($this->stored());
     }
 
+    /** @return array<array-key, mixed> */
     private function longCard(): array
     {
         $sent = ['name' => \str_repeat('И', 400), 'phone' => '+7 900 000-00-22, добавочный номер склада 123456', 'city' => \str_repeat('К', 300), 'message' => LongText::order(5500), 'items' => LongText::cart(20)];
@@ -281,6 +306,7 @@ final class LongRequestTest extends WebTestCase
         $this->client->loginUser($admin, 'itk_admin');
     }
 
+    /** @return array<array-key, mixed> */
     private function read(string $path): array
     {
         $this->client->request('GET', '/admin/api/' . $path);

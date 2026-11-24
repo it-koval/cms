@@ -66,7 +66,11 @@ final class SeoResolver implements ResetInterface
         return \array_map(static fn (array $h): SeoRule => $h[0], $hits);
     }
 
-    /** The same address matching is used when a changed rule invalidates derived content. @param array<array-key, mixed> $query */
+    /**
+     * The same address matching is used when a changed rule invalidates derived content.
+     *
+     * @param array<array-key, mixed> $query
+     */
     public static function covers(SeoRule $rule, string $path, array $query, string $locale): bool
     {
         if (!$rule->active || (null !== $rule->locale && '' !== $rule->locale && $rule->locale !== $locale)) {

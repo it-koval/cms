@@ -33,6 +33,7 @@ final class PageCacheLocalesTest extends WebTestCase
     private array $pageIds = [];
     private ?string $ruleId = null;
 
+    /** @param array<string, mixed> $options */
     protected static function createKernel(array $options = []): KernelInterface
     {
         return new TestKernel('test', false, itk: [

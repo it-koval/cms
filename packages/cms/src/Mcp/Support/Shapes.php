@@ -144,7 +144,11 @@ final class Shapes
         ];
     }
 
-    /** First readable text of a section (its first text, headline or article field that is not empty): what it is about. @param array<string, mixed> $data */
+    /**
+     * First readable text of a section (its first text, headline or article field that is not empty): what it is about.
+     *
+     * @param array<string, mixed> $data
+     */
     private function glance(string $type, array $data): string
     {
         foreach ($this->schema->section($type)?->fieldList() ?? [] as $f) {

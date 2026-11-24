@@ -17,7 +17,10 @@ final class SecretScrubProcessorTest extends TestCase
 {
     private const TOKEN = 'bot123456:AAFakeToken_x-y';
 
-    /** @param array<string, mixed> $context */
+    /**
+     * @param array<string, mixed> $context
+     * @param array<string, mixed> $extra
+     */
     private function process(array $context, string $message = 'ошибка', array $extra = []): LogRecord
     {
         return (new SecretScrubProcessor())(new LogRecord(new \DateTimeImmutable(), 'app', Level::Error, $message, $context, extra: $extra));

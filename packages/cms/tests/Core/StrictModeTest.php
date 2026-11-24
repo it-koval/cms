@@ -15,11 +15,13 @@ use Twig\Environment;
 /** itk_cms.strict: ошибка шаблона сайта (чужой ключ поля, неизвестный тип секции, нет шаблона секции) в debug — исключение со списком допустимого, в prod — предупреждение в лог. */
 final class StrictModeTest extends KernelTestCase
 {
+    /** @param array<string, mixed> $options */
     protected static function createKernel(array $options = []): KernelInterface
     {
         return new TestKernel('test', $options['debug'] ?? true, null, '', [], [], ($options['itk'] ?? []) + ['schema_file' => __DIR__ . '/Fixture/schema_ghost.php']);
     }
 
+    /** @param array<array-key, mixed> $context */
     private function render(string $template, array $context = []): string
     {
         return self::getContainer()->get(Environment::class)->createTemplate($template)->render($context);
@@ -33,7 +35,11 @@ final class StrictModeTest extends KernelTestCase
         return $logger;
     }
 
-    /** The message of the exception a template throws (the innermost one: Twig wraps it). */
+    /**
+     * The message of the exception a template throws (the innermost one: Twig wraps it).
+     *
+     * @param array<array-key, mixed> $context
+     */
     private function thrown(string $template, array $context = []): string
     {
         try {
@@ -48,7 +54,11 @@ final class StrictModeTest extends KernelTestCase
         self::fail('the template must throw');
     }
 
-    /** @return array<string, mixed> */
+    /**
+     * @param array<string, mixed> $data
+     *
+     * @return array<string, mixed>
+     */
     private function section(string $type, array $data = []): array
     {
         return ['id' => 's1', 'type' => $type, 'data' => $data];

@@ -15,6 +15,7 @@ use Symfony\Component\HttpKernel\KernelInterface;
 
 final class BundleAssetsPackageTest extends KernelTestCase
 {
+    /** @param array<string, mixed> $options */
     protected static function createKernel(array $options = []): KernelInterface
     {
         return new TestKernel('test', true, null, '', ['assets' => $options['assets']]);

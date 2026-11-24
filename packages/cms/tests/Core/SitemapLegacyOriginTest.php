@@ -17,6 +17,7 @@ use Symfony\Component\HttpKernel\KernelInterface;
 
 final class SitemapLegacyOriginTest extends KernelTestCase
 {
+    /** @param array<string, mixed> $options */
     protected static function createKernel(array $options = []): KernelInterface
     {
         return new TestKernel('test', true, itk: ['public_url' => '%env(ITK_TEST_LEGACY_PUBLIC_URL)%']);

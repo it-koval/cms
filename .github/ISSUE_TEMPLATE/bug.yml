@@ -1,0 +1,24 @@
+name: Bug report / Ошибка
+description: Report something that fails. Опишите, что не работает.
+body:
+  - type: markdown
+    attributes:
+      value: Report security issues privately through the [Security tab](https://github.com/it-koval/cms/security). Об уязвимостях сообщайте в закрытом порядке через вкладку Security.
+  - type: input
+    id: version
+    attributes:
+      label: ITK CMS version / Версия ITK CMS
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce / Шаги воспроизведения
+    validations:
+      required: true
+  - type: textarea
+    id: result
+    attributes:
+      label: Expected and actual results / Ожидаемый и фактический результат
+    validations:
+      required: true

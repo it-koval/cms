@@ -47,6 +47,7 @@ final class PublicLocaleRenderTest extends KernelTestCase
     private array $users = [];
     private LoaderInterface $loader;
 
+    /** @param array<string, mixed> $options */
     protected static function createKernel(array $options = []): KernelInterface
     {
         return new TestKernel($options['environment'] ?? 'test', $options['debug'] ?? true, itk: [
@@ -82,7 +83,7 @@ final class PublicLocaleRenderTest extends KernelTestCase
                 return [];
             }
 
-            public function listing(): ?array
+            public function listing(): array
             {
                 return ['of' => ['default']];
             }
@@ -369,6 +370,7 @@ TWIG]), $this->loader]));
         return $page;
     }
 
+    /** @param array<string, mixed> $fields */
     private function version(Page $page, string $locale, string $url, string $title, bool $live = true, array $fields = []): PageTranslation
     {
         $t = new PageTranslation($page, $locale);

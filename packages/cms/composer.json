@@ -14,6 +14,9 @@
     "type": "symfony-bundle",
     "license": "MIT",
     "homepage": "https://github.com/it-koval/cms",
+    "authors": [
+        {"name": "it-koval"}
+    ],
     "support": {
         "issues": "https://github.com/it-koval/cms/issues",
         "source": "https://github.com/it-koval/cms"

@@ -25,4 +25,12 @@ class UserTwoFactorRepository extends ServiceEntityRepository
     {
         return $this->findOneBy(['user' => $user]);
     }
+
+    /** @return iterable<string> sealed secrets of accounts with two-step sign-in enabled */
+    public function enabledSecrets(): iterable
+    {
+        foreach ($this->createQueryBuilder('f')->select('f.secret')->where('f.enabledAt IS NOT NULL')->getQuery()->toIterable() as $row) {
+            yield $row['secret'];
+        }
+    }
 }

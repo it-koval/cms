@@ -40,6 +40,8 @@ final class CollectionQueryTest extends ResourceKernelTestCase
     /**
      * @param array<string, mixed> $params
      *
+     * @param-out int $total
+     *
      * @return list<string>
      */
     private function titles(array $params, ?int &$total = null): array

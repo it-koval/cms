@@ -52,9 +52,15 @@ final class I18nLocaleTest extends WebTestCase
     /** The language of the moment the answer was made: nothing can be read about it after the request. */
     private ?string $spoke = null;
 
+    /** @param array<string, mixed> $options */
     protected static function createKernel(array $options = []): KernelInterface
     {
         return new TestKernel($options['environment'] ?? 'test', $options['debug'] ?? true, framework: ['default_locale' => 'en']);
+    }
+
+    private function assertResponseLocale(string $expected): void
+    {
+        self::assertSame($expected, $this->spoke);
     }
 
     protected function setUp(): void
@@ -205,10 +211,10 @@ final class I18nLocaleTest extends WebTestCase
             $this->client->request('GET', $path);
             self::assertResponseIsSuccessful();
             self::assertStringContainsString('<html lang="ru">', (string) $this->client->getResponse()->getContent());
-            self::assertSame('ru', $this->spoke);
+            $this->assertResponseLocale('ru');
         }
         $this->api('GET', 'me', null, 401);
-        self::assertSame('ru', $this->spoke);
+        $this->assertResponseLocale('ru');
     }
 
     #[Test]
@@ -217,9 +223,9 @@ final class I18nLocaleTest extends WebTestCase
         $this->signIn($this->person(Role::EDITOR, 'kk'));
 
         $this->api('PUT', 'me/locale', ['locale' => 'en'], 403, false); // the CSRF check runs before any controller
-        self::assertSame('kk', $this->spoke);
+        $this->assertResponseLocale('kk');
         $this->api('GET', 'users', null, 403); // a right the person does not have
-        self::assertSame('kk', $this->spoke);
+        $this->assertResponseLocale('kk');
     }
 
     #[Test]
@@ -402,14 +408,19 @@ final class I18nLocaleTest extends WebTestCase
     {
         $locale = self::getContainer()->get(AdminLocale::class);
         self::assertSame('kk', $locale->run('kk', static fn (): string => I18n::locale()));
-        self::assertSame('en', I18n::locale());
+        $this->assertCurrentLocale('en');
         try {
             $locale->run('en', static function (): void {
                 throw new \RuntimeException('in the middle of a letter');
             });
         } catch (\RuntimeException) {
         }
-        self::assertSame('en', I18n::locale());
+        $this->assertCurrentLocale('en');
+    }
+
+    private function assertCurrentLocale(string $expected): void
+    {
+        self::assertSame($expected, I18n::locale());
     }
 
     #[Test]

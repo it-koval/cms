@@ -41,6 +41,10 @@ final class ContentLocaleInputsTest extends TestCase
         yield 'query wins' => [['locale' => 'ru'], ['locale' => 'en'], 'ru'];
     }
 
+    /**
+     * @param array<string, mixed> $query
+     * @param array<string, mixed> $body
+     */
     #[Test]
     #[DataProvider('apiLocales')]
     public function apiKeepsItsOptionalLanguageContract(array $query, array $body, ?string $expected): void
@@ -65,6 +69,7 @@ final class ContentLocaleInputsTest extends TestCase
     private function api(?ContentLocales $locales = null): object
     {
         $api = new class extends AbstractApiController {
+            /** @param array<string, mixed> $body */
             public function selectedLocale(Request $request, array $body = []): ?string
             {
                 return $this->locale($request, $body);
@@ -214,6 +219,7 @@ final class ContentLocaleInputTool extends AbstractMcpTool
         return 'Select a configured content language.';
     }
 
+    /** @return array<array-key, mixed> */
     public function inputSchema(): array
     {
         return self::schema(['locale' => self::localeProperty()]);
@@ -234,6 +240,7 @@ final class ContentLocaleInputTool extends AbstractMcpTool
         return ['locale' => self::locale($args)];
     }
 
+    /** @param array<array-key, mixed> $args */
     public function selectedLocale(array $args): ?string
     {
         return self::locale($args);

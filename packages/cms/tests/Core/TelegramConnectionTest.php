@@ -216,6 +216,7 @@ final class TelegramConnectionTest extends TestCase
         $token = '123456:admin-secret';
         $this->token($token);
         $logger = new class extends AbstractLogger {
+            /** @var array<array-key, mixed> */
             public array $errors = [];
 
             public function log($level, string|\Stringable $message, array $context = []): void
@@ -282,6 +283,7 @@ final class TelegramConnectionTest extends TestCase
         self::assertSame('disconnected', $process->getOutput());
     }
 
+    /** @return iterable<array-key, mixed> */
     public static function optionalPackages(): iterable
     {
         yield 'notifier' => ['Symfony\\Component\\Notifier\\'];

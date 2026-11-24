@@ -518,6 +518,12 @@ final class UserAdmin
         return null === $mine || (null !== $templates && [] === \array_diff($templates, $mine));
     }
 
+    /**
+     * @param list<string>|null $mine
+     * @param list<string>|null $source
+     *
+     * @return list<string>|null
+     */
     private function copiedTemplates(?array $source, ?array $mine): ?array
     {
         if (null === $mine) {

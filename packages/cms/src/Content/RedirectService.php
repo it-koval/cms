@@ -52,6 +52,7 @@ final class RedirectService
         return $r;
     }
 
+    /** @param array<string, mixed> $patch */
     public function update(string $id, array $patch): Redirect
     {
         $r = $this->redirects->find($id) ?? throw ContentException::notFound(I18n::t('content.redirect_not_found'));

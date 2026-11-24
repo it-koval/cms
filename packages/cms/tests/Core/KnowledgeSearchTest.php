@@ -34,6 +34,7 @@ final class KnowledgeSearchTest extends KernelTestCase
     /** @var list<string> */
     private array $pages = [];
 
+    /** @param array<string, mixed> $options */
     protected static function createKernel(array $options = []): KernelInterface
     {
         return new TestKernel('test', true, null, '', [], [], $options['itk'] ?? ['knowledge_base' => ['enabled' => true]]);
@@ -90,7 +91,11 @@ final class KnowledgeSearchTest extends KernelTestCase
         $this->transport()->reset();
     }
 
-    /** @return list<string> the page ids of the hits, best first */
+    /**
+     * @param array<array-key, mixed> $hits
+     *
+     * @return list<string> the page ids of the hits, best first
+     */
     private static function ids(array $hits): array
     {
         return \array_map(static fn (Hit $h): string => $h->source->id, $hits);

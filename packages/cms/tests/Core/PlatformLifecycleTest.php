@@ -25,6 +25,7 @@ use Twig\Environment;
 
 final class PlatformLifecycleTest extends KernelTestCase
 {
+    /** @param array<string, mixed> $options */
     protected static function createKernel(array $options = []): KernelInterface
     {
         return new TestKernel('test', true, null, '', ['default_locale' => 'ru'], [], ['admin_locale' => 'en', 'strict' => false]);

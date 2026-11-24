@@ -21,6 +21,7 @@ final class EchoMcpTool extends AbstractMcpTool
         return 'Test tool: repeats the text.';
     }
 
+    /** @return array<array-key, mixed> */
     public function inputSchema(): array
     {
         return self::schema(['text' => self::string('Text to repeat.', 100)], ['text']);

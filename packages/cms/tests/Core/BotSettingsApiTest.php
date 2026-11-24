@@ -48,7 +48,11 @@ final class BotSettingsApiTest extends WebTestCase
         self::assertNotSame('', $this->csrf);
     }
 
-    /** @param array<string, mixed> $body @return array<string, mixed> */
+    /**
+     * @param array<string, mixed> $body
+     *
+     * @return array<string, mixed>
+     */
     private function api(string $method, array $body = [], int $status = 200): array
     {
         $this->client->request($method, '/admin/api/settings/bots', [], [], ['CONTENT_TYPE' => 'application/json', 'HTTP_X_CSRF_TOKEN' => $this->csrf], \json_encode($body));

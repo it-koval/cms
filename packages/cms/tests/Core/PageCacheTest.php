@@ -61,6 +61,7 @@ final class PageCacheTest extends WebTestCase
     private bool $domainWasSet = false;
     private mixed $domainBefore = '';
 
+    /** @param array<string, mixed> $options */
     protected static function createKernel(array $options = []): KernelInterface
     {
         return new TestKernel('test', $options['debug'] ?? false, null, '', [], [], $options['itk'] ?? []);

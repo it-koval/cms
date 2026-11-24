@@ -12,6 +12,7 @@ use Symfony\Component\HttpKernel\KernelInterface;
 
 final class RequestInputTest extends WebTestCase
 {
+    /** @param array<string, mixed> $options */
     protected static function createKernel(array $options = []): KernelInterface
     {
         return new TestKernel('test', true, null, '', [], [], ['schema_file' => __DIR__ . '/Fixture/schema_f1_input.php']);
@@ -25,6 +26,7 @@ final class RequestInputTest extends WebTestCase
         parent::tearDown();
     }
 
+    /** @return iterable<array-key, mixed> */
     public static function bodies(): iterable
     {
         foreach ([false, true] as $length) {

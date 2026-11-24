@@ -24,6 +24,7 @@ final class PublicLocaleRouteTest extends WebTestCase
     /** @var list<string> */
     private array $rules = [];
 
+    /** @param array<string, mixed> $options */
     protected static function createKernel(array $options = []): KernelInterface
     {
         $itk = ['main_locale' => 'ru', 'page_cache' => ['enabled' => false]];

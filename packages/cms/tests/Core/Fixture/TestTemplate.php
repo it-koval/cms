@@ -37,12 +37,13 @@ final class TestTemplate extends TemplateResource
         return 'Для тестов.';
     }
 
+    /** @return array<array-key, mixed> */
     public function parents(): array
     {
         return ['default'];
     }
 
-    public function shortcut(): ?string
+    public function shortcut(): string
     {
         return 'Тестовые страницы';
     }

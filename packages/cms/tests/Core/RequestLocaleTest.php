@@ -22,6 +22,7 @@ final class RequestLocaleTest extends WebTestCase
     private string $marker;
     private ?string $limitedIp = null;
 
+    /** @param array<string, mixed> $options */
     protected static function createKernel(array $options = []): KernelInterface
     {
         $itk = ['main_locale' => $options['mainLocale'] ?? 'ru'];
@@ -58,7 +59,11 @@ final class RequestLocaleTest extends WebTestCase
         }
     }
 
-    /** @return array<string, mixed> */
+    /**
+     * @param array<string, mixed> $fields
+     *
+     * @return array<string, mixed>
+     */
     private function post(string $query = '', ?string $referer = null, array $fields = [], int $status = 200, string $origin = 'http://localhost'): array
     {
         $server = null === $referer ? [] : ['HTTP_REFERER' => $referer];
@@ -83,6 +88,7 @@ final class RequestLocaleTest extends WebTestCase
         self::assertSame([['locale' => 'kk', 'source_url' => $referer]], $this->stored());
     }
 
+    /** @return iterable<array-key, mixed> */
     public static function invalidLocales(): iterable
     {
         yield 'unknown' => ['?locale=zz'];
@@ -101,6 +107,7 @@ final class RequestLocaleTest extends WebTestCase
         self::assertSame([], $this->stored());
     }
 
+    /** @return iterable<array-key, mixed> */
     public static function referrers(): iterable
     {
         yield 'same origin Kazakh' => ['http://localhost/kk/contact?x=1#form', 'kk', 'http://localhost'];

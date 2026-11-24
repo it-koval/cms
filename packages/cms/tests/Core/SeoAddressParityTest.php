@@ -30,6 +30,7 @@ final class SeoAddressParityTest extends WebTestCase
     private array $rules = [];
     private ?string $user = null;
 
+    /** @param array<string, mixed> $options */
     protected static function createKernel(array $options = []): KernelInterface
     {
         $itk = ['main_locale' => 'ru', 'public_url' => self::PUBLIC_BASE, 'page_cache' => ['enabled' => false]];
@@ -61,6 +62,7 @@ final class SeoAddressParityTest extends WebTestCase
         }
     }
 
+    /** @return iterable<array-key, mixed> */
     public static function localeModes(): iterable
     {
         yield 'single language' => [false];

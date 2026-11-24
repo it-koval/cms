@@ -20,9 +20,11 @@ use Symfony\Component\HttpKernel\KernelInterface;
 
 final class OpsF2Test extends KernelTestCase
 {
+    /** @var list<string> */
     private array $emails = [];
     private ?string $dir = null;
 
+    /** @param array<string, mixed> $options */
     protected static function createKernel(array $options = []): KernelInterface
     {
         return new TestKernel('test', true, null, '', $options['framework'] ?? [], [], $options['itk'] ?? []);

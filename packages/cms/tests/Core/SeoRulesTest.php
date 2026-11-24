@@ -83,7 +83,11 @@ final class SeoRulesTest extends WebTestCase
         return self::getContainer()->get(SeoRuleService::class);
     }
 
-    /** A published page at $url; $seo is its own SEO. */
+    /**
+     * A published page at $url; $seo is its own SEO.
+     *
+     * @param array<array-key, mixed> $seo
+     */
     private function page(string $title, string $url, array $seo = []): string
     {
         $svc = self::getContainer()->get(PageService::class);

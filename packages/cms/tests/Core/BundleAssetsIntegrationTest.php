@@ -18,9 +18,12 @@ use Twig\Loader\ChainLoader;
 
 final class BundleAssetsIntegrationTest extends WebTestCase
 {
+    /** @var list<string> */
     private array $pages = [];
+    /** @var list<string> */
     private array $emails = [];
 
+    /** @param array<string, mixed> $options */
     protected static function createKernel(array $options = []): KernelInterface
     {
         return new TestKernel('test', true, null, '', $options['framework'] ?? []);
@@ -39,6 +42,7 @@ final class BundleAssetsIntegrationTest extends WebTestCase
         parent::tearDown();
     }
 
+    /** @param array<string, mixed> $options */
     private function assertAssets(array $options, string $expectedBase): void
     {
         $client = self::createClient($options, [

@@ -25,13 +25,17 @@ interface McpToolInterface
     /** English, for the model: what the tool does and when to use it. */
     public function description(): string;
 
-    /** JSON Schema (type: object) of the arguments. */
+    /**
+     * JSON Schema (type: object) of the arguments.
+     *
+     * @return array<string, mixed>
+     */
     public function inputSchema(): array;
 
     /**
      * Hints for the client: ['readOnly' => bool, 'destructive' => bool, 'idempotent' => bool (optional)].
      *
-     * @return array{readOnly: bool, destructive: bool, idempotent?: bool}
+     * @return array<string, mixed> the registry validates hint values before exposing the tool
      */
     public function annotations(): array;
 

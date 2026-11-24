@@ -42,10 +42,10 @@ final class McpEndpointTest extends WebTestCase
     }
 
     /**
-     * @param array<string, mixed>|string $body
+     * @param array<array-key, mixed>|string $body
      * @param array<string, string> $headers
      *
-     * @return array<string, mixed>
+     * @return array<array-key, mixed>
      */
     private function rpc(?string $plain, array|string $body, array $headers = [], string $path = '/mcp'): array
     {
@@ -386,13 +386,18 @@ final class McpEndpointTest extends WebTestCase
         self::assertSame(400, $controller($good)->getStatusCode());
         $good->headers->remove('MCP-Protocol-Version');
         $last = 0;
-        for ($i = 0; $i < 130 && 429 !== $last; ++$i) {
+        for ($i = 0; $i < 130; ++$i) {
             $last = $controller($good)->getStatusCode();
+            if (429 === $last) {
+                break;
+            }
         }
         self::assertSame(429, $last);
-        $reasons = \array_column(\array_column($logger->lines, 2), 'reason');
+        /** @var list<array{string, string, array<string, mixed>}> $lines */
+        $lines = $logger->lines;
+        $reasons = \array_column(\array_column($lines, 2), 'reason');
         self::assertSame(['unsupported_protocol_version', 'too_many_calls'], $reasons);
-        foreach ($logger->lines as $line) {
+        foreach ($lines as $line) {
             self::assertSame(['warning', 'MCP call refused: {reason}'], [$line[0], $line[1]]);
             self::assertSame($made['token']->id, $line[2]['token']);
         }
@@ -592,7 +597,7 @@ final class McpEndpointTest extends WebTestCase
     public function pingNotificationsAndBatches(): void
     {
         $key = $this->mcpKey($this->mcpUser())['plain'];
-        self::assertEquals(new \stdClass(), (object) $this->rpc($key, $this->ping())['result'] ?: new \stdClass());
+        self::assertEquals(new \stdClass(), (object) $this->rpc($key, $this->ping())['result']);
         $this->rpc($key, ['jsonrpc' => '2.0', 'method' => 'notifications/initialized']);
         self::assertSame(202, $this->code());
         self::assertSame('', (string) $this->client->getResponse()->getContent());

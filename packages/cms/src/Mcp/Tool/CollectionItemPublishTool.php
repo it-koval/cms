@@ -38,6 +38,7 @@ final class CollectionItemPublishTool extends AbstractMcpTool
         return ['readOnly' => false, 'destructive' => true, 'idempotent' => true];
     }
 
+    /** @return array<string, mixed> */
     public function inputSchema(): array
     {
         return self::schema(['collection' => self::string('Collection key.', 64), 'id' => self::string('Record id.', 64), 'locale' => self::localeProperty()], ['collection', 'id']);

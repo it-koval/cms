@@ -16,6 +16,7 @@ final class LoginLockMessageTest extends WebTestCase
 {
     private const ATTEMPTS = 2;
 
+    /** @param array<string, mixed> $options */
     protected static function createKernel(array $options = []): KernelInterface
     {
         return new TestKernel('test', true, null, '', [], [], [], self::ATTEMPTS);

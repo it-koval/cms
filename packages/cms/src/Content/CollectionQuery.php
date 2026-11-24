@@ -378,7 +378,11 @@ final class CollectionQuery
         return $out;
     }
 
-    /** The virtual row belongs to the same metric corpus as a stored singleton, independently of list filters. */
+    /**
+     * The virtual row belongs to the same metric corpus as a stored singleton, independently of list filters.
+     *
+     * @return list<array<string, mixed>>
+     */
     private function initialMetrics(Collection $c, CollectionItem $initial, string $locale): array
     {
         $translation = $initial->translations[$locale] ?? [];

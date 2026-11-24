@@ -89,9 +89,14 @@ final class BundleAssetsTest extends TestCase
         }
         $requests = new RequestStack();
         $requests->push($this->request('/sub'));
+        // @phpstan-ignore class.notFound (symfony/asset is optional; the test is skipped without it.)
         $version = new StaticVersionStrategy('f2');
-        $path = new BundleAssets($requests, new Packages(new PathPackage('', $version, new RequestStackContext($requests))));
+        // @phpstan-ignore class.notFound (symfony/asset is optional; the test is skipped without it.)
+        $context = new RequestStackContext($requests);
+        // @phpstan-ignore class.notFound (symfony/asset is optional; the test is skipped without it.)
+        $path = new BundleAssets($requests, new Packages(new PathPackage('', $version, $context)));
         self::assertSame('/sub/bundles/itkcms/preview.js?f2', $path->url('preview.js'));
+        // @phpstan-ignore class.notFound (symfony/asset is optional; the test is skipped without it.)
         $cdn = new BundleAssets($requests, new Packages(new UrlPackage('https://cdn.example.test/static', $version)));
         self::assertSame('https://cdn.example.test/static/bundles/itkcms/preview.js?f2', $cdn->url('preview.js'));
         self::assertStringContainsString('url(https://cdn.example.test/static/bundles/itkcms/admin/assets/font.woff2?f2)', $this->font($cdn)->css());

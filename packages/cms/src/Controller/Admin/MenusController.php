@@ -117,6 +117,8 @@ final class MenusController extends AbstractApiController
 
     /**
      * @param array<string, mixed> $map
+     *
+     * @return array<string, mixed>|\stdClass
      */
     private function asObject(array $map): array|\stdClass
     {

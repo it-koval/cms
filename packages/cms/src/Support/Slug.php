@@ -18,7 +18,11 @@ final class Slug
         return \trim(\substr(\trim($s, '-'), 0, $max), '-');
     }
 
-    /** A key for a new menu area: latin, starts with a letter, unique among `taken`. @param list<string> $taken */
+    /**
+     * A key for a new menu area: latin, starts with a letter, unique among `taken`.
+     *
+     * @param list<string> $taken
+     */
     public static function areaKey(string $name, array $taken = []): string
     {
         $base = \str_replace('-', '_', self::slugify($name, 32)) ?: 'menu';

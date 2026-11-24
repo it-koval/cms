@@ -43,6 +43,7 @@ final class CollectionTranslationsApiTest extends WebTestCase
     private string $csrf = '';
     private const COLLECTION = 'test_translation_items';
 
+    /** @param array<string, mixed> $options */
     protected static function createKernel(array $options = []): KernelInterface
     {
         return new TestKernel($options['environment'] ?? 'test', $options['debug'] ?? true, itk: ['locales' => [
@@ -79,7 +80,11 @@ final class CollectionTranslationsApiTest extends WebTestCase
         $this->csrf = $matches[1] ?? '';
     }
 
-    /** @return array<string, mixed> */
+    /**
+     * @param array<string, mixed> $body
+     *
+     * @return array<string, mixed>
+     */
     private function api(string $method, string $path, array $body = [], int $status = 200): array
     {
         $this->client->request($method, '/admin/api/collections/' . self::COLLECTION . $path, [], [], ['CONTENT_TYPE' => 'application/json', 'HTTP_X_CSRF_TOKEN' => $this->csrf], [] === $body ? null : \json_encode($body, \JSON_THROW_ON_ERROR));
@@ -354,6 +359,7 @@ final class CollectionTranslationsApiTest extends WebTestCase
                 'submit' => $service->submit(self::COLLECTION, $id, 'ru'),
                 'returnToAuthor' => $service->returnToAuthor(self::COLLECTION, $id, 'ru'),
                 'unpublish' => $service->unpublish(self::COLLECTION, $id, 'ru'),
+                default => throw new \LogicException('Unexpected test mutation: ' . $mutation),
             };
             self::assertSame('ru', $result['locale']);
             $stored = \json_decode($other->fetchOne('SELECT translations FROM itk_collection_item WHERE id = ?', [$id]), true, flags: \JSON_THROW_ON_ERROR);

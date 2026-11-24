@@ -23,6 +23,7 @@ use Symfony\Component\HttpKernel\KernelInterface;
 /** New translations require the language catalog even when legacy reads accept arbitrary codes. */
 final class CollectionTranslationLocaleTest extends KernelTestCase
 {
+    /** @param array<string, mixed> $options */
     protected static function createKernel(array $options = []): KernelInterface
     {
         return new TestKernel($options['environment'] ?? 'test', $options['debug'] ?? true);

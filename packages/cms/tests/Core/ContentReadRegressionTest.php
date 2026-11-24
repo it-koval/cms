@@ -19,6 +19,7 @@ use Symfony\Component\Uid\Uuid;
 
 final class ContentReadRegressionTest extends ResourceKernelTestCase
 {
+    /** @param array<string, mixed> $options */
     protected static function createKernel(array $options = []): KernelInterface
     {
         return new TestKernel($options['environment'] ?? 'test', $options['debug'] ?? true, itk: ['locales' => ['ru' => ['name' => 'Русский'], 'kk' => ['name' => 'Қазақша'], 'en' => ['name' => 'English']]]);
@@ -32,8 +33,8 @@ final class ContentReadRegressionTest extends ResourceKernelTestCase
         self::bootKernel();
         $this->key = 'test_single_' . \bin2hex(\random_bytes(5));
         $this->id = Uuid::v7()->toRfc4122();
-        self::getContainer()->get(ResourceRegistry::class)->add(new class($this->key, $this->id) extends CollectionResource {
-            public function __construct(private string $name, private string $id)
+        self::getContainer()->get(ResourceRegistry::class)->add(new class($this->key) extends CollectionResource {
+            public function __construct(private string $name)
             {
             }
 

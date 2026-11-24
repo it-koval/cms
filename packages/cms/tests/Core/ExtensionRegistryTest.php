@@ -68,6 +68,7 @@ final class ExtensionRegistryTest extends TestCase
     public function aClassThatIsNotAResourceIsRefused(): void
     {
         $this->expectException(\InvalidArgumentException::class);
+        // @phpstan-ignore argument.type (Deliberately pass a class the registry must reject.)
         (new Registry())->resources(\stdClass::class);
     }
 

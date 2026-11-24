@@ -16,6 +16,7 @@ final class HealthzTest extends WebTestCase
 {
     private ?string $dir = null;
 
+    /** @param array<string, mixed> $options */
     protected static function createKernel(array $options = []): KernelInterface
     {
         return new TestKernel('test', true, null, '', [], [], $options['itk'] ?? []);

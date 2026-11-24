@@ -70,7 +70,11 @@ final class HistoryService
         $this->write(Revision::PAGE, $p->id, $p->template, $t->locale, $action, $this->snapshots->pageOf($p, $t), $before);
     }
 
-    /** The version of a page as the history sees it (take it before the change, pass it to page() as `$before`). @return array<string, mixed> */
+    /**
+     * The version of a page as the history sees it (take it before the change, pass it to page() as `$before`).
+     *
+     * @return array<string, mixed>
+     */
     public function pageState(Page $p, PageTranslation $t): array
     {
         return $this->snapshots->pageOf($p, $t);
@@ -122,7 +126,11 @@ final class HistoryService
         $this->write(Revision::ITEM, $i->id, $collection, $locale, $action, $this->snapshots->itemOf($i, $t), $before, $summary);
     }
 
-    /** The version of a record as the history sees it (take it before the change, pass it to item() as `$before`); null when it has no such language. @return null|array<string, mixed> */
+    /**
+     * The version of a record as the history sees it (take it before the change, pass it to item() as `$before`); null when it has no such language.
+     *
+     * @return array<string, mixed>|null
+     */
     public function itemState(CollectionItem $i, string $locale): ?array
     {
         $t = $i->translations[$locale] ?? null;
@@ -181,7 +189,13 @@ final class HistoryService
         }
     }
 
-    /** The values of one group out of all the settings of a language. @param array<string, mixed> $all @return array<string, mixed> */
+    /**
+     * The values of one group out of all the settings of a language.
+     *
+     * @param array<string, mixed> $all
+     *
+     * @return array<string, mixed>
+     */
     public function settingsOf(string $group, array $all): array
     {
         if ('notifications' === $group) {
@@ -288,7 +302,11 @@ final class HistoryService
         $this->trim($kind, $id, $locale);
     }
 
-    /** The version an object had before its first recorded change. */
+    /**
+     * The version an object had before its first recorded change.
+     *
+     * @param array<string, mixed> $before
+     */
     private function baseline(string $kind, string $id, string $key, string $locale, array $before): Revision
     {
         if (Revision::PAGE === $kind && \is_string($before['template'] ?? null) && '' !== $before['template']) {

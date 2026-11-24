@@ -37,7 +37,7 @@ final class KnowledgeCustomFieldTest extends TestCase
         $unsupported->method('type')->willReturn('internal-json');
         $unsupported->method('isPublic')->willReturn(true);
         $section = (new SectionType('custom', 'Custom'))->fields($open, $closed, $unknown, $unsupported);
-        $schema = new Schema('ru', [], [], [], [], ['custom' => $section], [], [], [], []);
+        $schema = new Schema('ru', [], [], [], ['top' => [], 'bottom' => []], ['custom' => $section], [], [], [], []);
         $live = new LiveSource(new Source(SourceKind::Page, 'fixture-page', 'ru', 'default', 'Page', '/fixture'), [
             'sections' => [['id' => 'fixture-section', 'type' => 'custom', 'data' => ['open' => 'Public fixture', 'closed' => 'Private fixture', 'unknown' => 'Undefined fixture', 'unsupported' => 'Unsupported fixture']]],
         ], 'fixture-translation');

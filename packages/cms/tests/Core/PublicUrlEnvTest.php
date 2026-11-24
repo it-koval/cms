@@ -18,6 +18,7 @@ use Symfony\Component\HttpKernel\KernelInterface;
 /** itk_cms.public_url принимает %env()%: формат проверяется после подстановки, пустое значение — как будто опции нет. */
 final class PublicUrlEnvTest extends KernelTestCase
 {
+    /** @param array<string, mixed> $options */
     protected static function createKernel(array $options = []): KernelInterface
     {
         return new TestKernel('test', true, null, '', [], [], ['public_url' => $options['public_url']] + ($options['itk'] ?? []));
@@ -29,6 +30,7 @@ final class PublicUrlEnvTest extends KernelTestCase
         parent::tearDown();
     }
 
+    /** @param array<string, mixed> $itk */
     private function boot(string $value, array $itk = []): PublicUrl
     {
         $_SERVER['ITK_TEST_PUBLIC_URL'] = $_ENV['ITK_TEST_PUBLIC_URL'] = $value;

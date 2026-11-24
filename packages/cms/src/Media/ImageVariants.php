@@ -96,7 +96,11 @@ final class ImageVariants
         return [(int) $m[1] / $g, (int) $m[2] / $g];
     }
 
-    /** "16:9" for [16, 9]. */
+    /**
+     * "16:9" for [16, 9].
+     *
+     * @param array{0: int, 1: int} $ratio
+     */
     public static function ratioKey(array $ratio): string
     {
         return $ratio[0] . ':' . $ratio[1];

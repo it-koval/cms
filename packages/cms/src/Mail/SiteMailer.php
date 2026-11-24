@@ -80,7 +80,10 @@ final class SiteMailer
         $this->status->sent();
     }
 
-    /** @param list<string> $secrets */
+    /**
+     * @param list<string> $secrets
+     * @param list<string> $usernames
+     */
     private function failed(SendMail $mail, string $reason, #[\SensitiveParameter] array $secrets = [], #[\SensitiveParameter] array $usernames = []): never
     {
         $reason = DsnBuilder::clean($reason, $secrets, $usernames);
@@ -90,7 +93,10 @@ final class SiteMailer
         throw new MailDeliveryException($reason);
     }
 
-    /** @param list<string> $secrets */
+    /**
+     * @param list<string> $secrets
+     * @param list<string> $usernames
+     */
     private function reason(\Throwable $e, #[\SensitiveParameter] array $secrets, #[\SensitiveParameter] array $usernames = []): string
     {
         $text = DsnBuilder::clean(\trim(\preg_replace('/\s+/', ' ', $e->getMessage()) ?? $e->getMessage()), $secrets, $usernames);

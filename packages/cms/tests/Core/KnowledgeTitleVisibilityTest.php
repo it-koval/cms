@@ -25,6 +25,7 @@ use Symfony\Component\HttpKernel\KernelInterface;
 
 final class KnowledgeTitleVisibilityTest extends KernelTestCase
 {
+    /** @param array<string, mixed> $options */
     protected static function createKernel(array $options = []): KernelInterface
     {
         return new TestKernel('test', true, itk: ['knowledge_base' => ['enabled' => true]]);
@@ -54,7 +55,7 @@ final class KnowledgeTitleVisibilityTest extends KernelTestCase
                 return 'Knowledge title fixture';
             }
 
-            public function titleField(): ?string
+            public function titleField(): string
             {
                 return 'title';
             }

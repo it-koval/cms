@@ -11,12 +11,16 @@ use Itk\Cms\Content\PageService;
 use Itk\Cms\Extension\Registry;
 use Itk\Cms\Health\Doctor;
 use Itk\Cms\Health\HealthResult;
+use Itk\Cms\Health\HealthService;
+use Itk\Cms\Media\ImageVariants;
 use Itk\Cms\Repository\PageRepository;
 use Itk\Cms\Tests\App\TestKernel;
 use Itk\Cms\Tests\Core\Fixture\OffHealthCheck;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use Symfony\Bundle\FrameworkBundle\Console\Application;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
+use Symfony\Component\Console\Command\LazyCommand;
 use Symfony\Component\Console\Tester\CommandTester;
 use Symfony\Component\HttpKernel\KernelInterface;
 
@@ -25,6 +29,7 @@ final class DoctorTest extends KernelTestCase
 {
     private ?string $homeId = null;
 
+    /** @param array<string, mixed> $options */
     protected static function createKernel(array $options = []): KernelInterface
     {
         return new TestKernel('test', true, null, '', [], [], $options['itk'] ?? []);
@@ -44,7 +49,11 @@ final class DoctorTest extends KernelTestCase
         return self::getContainer()->get(Doctor::class)->run();
     }
 
-    /** @param list<array{group: string, name: string, status: string, message: string}> $lines @return array{group: string, name: string, status: string, message: string} */
+    /**
+     * @param list<array{group: string, name: string, status: string, message: string}> $lines
+     *
+     * @return array{group: string, name: string, status: string, message: string}
+     */
     private function line(array $lines, string $name): array
     {
         foreach ($lines as $l) {
@@ -71,6 +80,29 @@ final class DoctorTest extends KernelTestCase
         $home = $this->line($this->lines(), 'Главная страница');
         self::assertSame(HealthResult::FAIL, $home['status']);
         self::assertStringContainsString('не опубликована', $home['message']);
+    }
+
+    /** @return iterable<string, array{bool, string}> */
+    public static function webpSupport(): iterable
+    {
+        yield 'WebP writer' => [true, HealthResult::OK];
+        yield 'no WebP writer' => [false, HealthResult::FAIL];
+    }
+
+    #[Test]
+    #[DataProvider('webpSupport')]
+    public function siteHealthAndDoctorUseTheSameWebpResult(bool $supported, string $status): void
+    {
+        self::bootKernel();
+        $container = self::getContainer();
+        $container->set(ImageVariants::class, new ImageVariants('', '/uploads', [375], 80, 1000000, gdWebp: $supported));
+
+        $checks = \array_column($container->get(HealthService::class)->report()['checks'], null, 'name');
+        $lines = $this->lines();
+        $line = $this->line($lines, 'WebP');
+        self::assertSame($status, $checks['WebP']['status']);
+        self::assertSame(['name' => 'WebP', 'status' => $line['status'], 'message' => $line['message']], $checks['WebP']);
+        self::assertSame(1, \count(\array_filter($lines, static fn (array $line): bool => 'WebP' === $line['name'])));
     }
 
     #[Test]
@@ -232,7 +264,8 @@ final class DoctorTest extends KernelTestCase
     {
         self::bootKernel();
 
-        self::assertInstanceOf(DoctorCommand::class, (new Application(self::$kernel))->find('itk:doctor')->getCommand());
+        $command = (new Application(self::$kernel))->find('itk:doctor');
+        self::assertInstanceOf(DoctorCommand::class, $command instanceof LazyCommand ? $command->getCommand() : $command);
     }
 
     #[Test]
