@@ -107,7 +107,7 @@ final class LegacyTwigFunctionsHealthCheck implements HealthCheckInterface
     private static function symbol(?Token $token, array $values): bool
     {
         // Twig 3.21 moved (, . and | from punctuation to operators. Test types without values:
-        // this also supports Twig 3.10 and avoids deprecated punctuation-value tests and getType().
+        // this works before and after that change and avoids deprecated punctuation-value tests and getType().
         return null !== $token
             && ($token->test(Token::OPERATOR_TYPE) || $token->test(Token::PUNCTUATION_TYPE))
             && \in_array($token->getValue(), $values, true);

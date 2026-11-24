@@ -37,8 +37,9 @@ Version 0.3.0, MIT license. Source code: [github.com/it-koval/cms](https://githu
 | What | Version |
 |---|---|
 | PHP | 8.3 or newer. Extensions `ctype`, `dom`, `gd` with WebP, `json`, `mbstring`, `pdo_pgsql`, `sodium`. Optional: `exif` (rotates JPEG by EXIF) and `intl` (Cyrillic domains in the page cache) |
-| Symfony | 7.4.23 or newer 7.4, or 8.1 and newer (Symfony 8 requires PHP 8.4; 8.0 is not supported) |
+| Symfony | 7.4.23 or newer 7.4, or 8.1.11 and newer (Symfony 8 requires PHP 8.4; 8.0 is not supported) |
 | Doctrine | ORM 3.8 or newer, DBAL 4.6 or newer |
+| Twig | 3.31.1 or newer |
 | PostgreSQL | 16 or newer with the pgvector extension 0.8 or newer |
 | Node | 22 or newer, only for the optional critical CSS. The admin panel ships prebuilt. Building it from source uses Node 24 (see [CONTRIBUTING.md](https://github.com/it-koval/cms/blob/main/CONTRIBUTING.md)) |
 
