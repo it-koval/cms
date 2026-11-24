@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace Itk\Cms\Content;
 
 use Itk\Cms\Entity\SeoRule;
+use Itk\Cms\I18n\ContentLocales;
 use Itk\Cms\Mail\PublicUrl;
 use Itk\Cms\Repository\SeoRuleRepository;
-use Itk\Cms\Support\Url;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\RequestStack;
@@ -37,6 +37,7 @@ final class SeoResolver implements ResetInterface
         #[Autowire(param: 'itk_cms.main_locale')]
         private readonly string $mainLocale,
         private readonly ?PublicUrl $publicUrl = null,
+        private readonly ?ContentLocales $contentLocales = null,
     ) {
     }
 
@@ -61,7 +62,7 @@ final class SeoResolver implements ResetInterface
             if (!self::covers($rule, $path, $query, $locale)) {
                 continue;
             }
-            $own = Url::key($rule->pathOnly());
+            $own = SeoRuleService::pathKey($rule->pathOnly());
             $params = $rule->queryParams();
             $hits[] = [$rule, [\count($params), SeoRule::EXACT === $rule->matchType ? 1 : 0, \strlen($own), $rule->locale === $locale ? 1 : 0, $rule->updatedAt->getTimestamp()]];
         }
@@ -80,8 +81,8 @@ final class SeoResolver implements ResetInterface
         if (!$rule->active || (null !== $rule->locale && '' !== $rule->locale && $rule->locale !== $locale)) {
             return false;
         }
-        $key = Url::key($path);
-        $own = Url::key($rule->pathOnly());
+        $key = SeoRuleService::pathKey($path);
+        $own = SeoRuleService::pathKey($rule->pathOnly());
         $covers = SeoRule::EXACT === $rule->matchType
             ? $key === $own
             : ('/' === $own || $key === $own || \str_starts_with($key, $own . '/'));
@@ -111,7 +112,11 @@ final class SeoResolver implements ResetInterface
             return null;
         }
 
-        return $this->best($request->getPathInfo(), $request->query->all(), $locale ?? (string) ($request->attributes->get('_locale') ?? $this->mainLocale));
+        $path = SeoRuleService::requestPathKey($request->getPathInfo());
+        $routeLocale = $request->attributes->get('_locale');
+        $locale ??= \is_string($routeLocale) ? $routeLocale : ($this->contentLocales?->fromPath($path) ?? $this->mainLocale);
+
+        return $this->best($path, $request->query->all(), $locale);
     }
 
     /**

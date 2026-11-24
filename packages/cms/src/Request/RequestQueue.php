@@ -20,7 +20,7 @@ use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 /**
  * A committed intent survives a dead broker, a lost dispatch response and a process dying before publication.
  *
- * @internal
+ * Site integrations enqueue messenger deliveries through enqueue(); the message and outbox lifecycle are internal.
  */
 final class RequestQueue
 {
@@ -35,9 +35,18 @@ final class RequestQueue
     ) {
     }
 
-    /** Initial submission: both the reservation and its intent use the caller's transaction. */
+    /**
+     * Reserve a delivery and durably stage its queue message. Use resend: true for an explicit new send.
+     * An already queued delivery coalesces calls; completed jobs and old queue replays never become new sends.
+     * Both reservation and intent use the caller's transaction. Publication waits for its commit, if any.
+     *
+     * @param Request::CHANNEL_* $channel
+     */
     public function enqueue(int $id, string $channel, bool $resend = false): void
     {
+        if (!isset(Request::CHANNELS[$channel])) {
+            throw new \InvalidArgumentException('Unknown request delivery channel.');
+        }
         $entry = $this->em->wrapInTransaction(function () use ($id, $channel, $resend): ?string {
             $job = RequestDeliverer::reserve($this->em, $id, $channel, $resend);
 

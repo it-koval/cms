@@ -24,13 +24,28 @@ final class RequestMailCheckpoint
     public static function key(SendMail $mail): ?string
     {
         return SendMail::REQUEST === $mail->kind && null !== $mail->ref && '' !== $mail->ref
-            ? \hash('sha256', $mail->ref . ':' . \strtolower(\trim($mail->to))) : null;
+            ? self::recipientKey($mail->ref, $mail->to) : null;
+    }
+
+    public static function recipientKey(string $requestId, string $recipient): string
+    {
+        return \hash('sha256', $requestId . ':' . \strtolower(\trim($recipient)));
+    }
+
+    /** A retry may reconstruct only a letter whose previous attempt is known to have been rejected. */
+    public function isRejected(string $requestId, string $recipient): bool
+    {
+        if ($this->connection instanceof PrimaryReadReplicaConnection) {
+            $this->connection->ensureConnectedToPrimary();
+        }
+
+        return 'rejected' === $this->connection->fetchOne('SELECT state FROM itk_request_mail_delivery WHERE delivery_key = ?', [self::recipientKey($requestId, $recipient)]);
     }
 
     /** Record an SMTP result independently verified by an operator; never modify an active sender. */
-    public function resolve(string $requestId, string $recipient, bool $accepted): bool
+    public function resolve(string $requestId, string $recipient, bool $accepted, bool $legacyWarning = false): bool
     {
-        $key = \hash('sha256', $requestId . ':' . \strtolower(\trim($recipient)));
+        $key = self::recipientKey($requestId, $recipient);
         $db = DriverManager::getConnection($this->connection->getParams(), $this->connection->getConfiguration());
         $db->setAutoCommit(true);
         try {
@@ -38,7 +53,17 @@ final class RequestMailCheckpoint
                 $db->ensureConnectedToPrimary();
             }
 
-            return EditLock::onConnection($db, 'request-mail', $key, static fn (): bool => 1 === $db->executeStatement("UPDATE itk_request_mail_delivery SET state = ? WHERE delivery_key = ? AND state IN ('sending', 'unknown')", [$accepted ? 'done' : 'rejected', $key]));
+            return EditLock::onConnection($db, 'request-mail', $key, static function () use ($db, $key, $accepted, $legacyWarning): bool {
+                $updated = $db->executeStatement("UPDATE itk_request_mail_delivery SET state = ? WHERE delivery_key = ? AND state IN ('sending', 'unknown')", [$accepted ? 'done' : 'rejected', $key]);
+                if (1 === $updated || !$accepted || !$legacyWarning) {
+                    return 1 === $updated;
+                }
+
+                // The aggregate warning from before checkpoints can refer to a verified acceptance with no row yet.
+                $db->executeStatement("INSERT INTO itk_request_mail_delivery (delivery_key, state) VALUES (?, 'done') ON CONFLICT (delivery_key) DO NOTHING", [$key]);
+
+                return 'done' === $db->fetchOne('SELECT state FROM itk_request_mail_delivery WHERE delivery_key = ?', [$key]);
+            });
         } finally {
             $db->close();
         }

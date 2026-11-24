@@ -53,6 +53,8 @@ return static function (ContainerConfigurator $container): void {
             '../src/Content/ContentException.php',
             '../src/Request/{SendRequestNotification,RequestNotDeliveredException,RequestText,MessageParts,MessageSplitter,PlainText}.php',
             '../src/Request/Max/MaxDeliveryException.php',
+            '../src/Request/SingleAttemptHttpClient.php',
+            '../src/Request/SingleAttemptTelegramTransport.php',
             '../src/Media/GenerateImageVariants.php',
             '../src/Notification/Notification.php',
             '../src/Health/HealthResult.php',

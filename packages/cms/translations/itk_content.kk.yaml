@@ -171,6 +171,7 @@
 'content.history_page_restored': 'Бет себеттен қайтарылды'
 'content.history_item_restored': 'Жазба себеттен қайтарылды'
 'content.history_baseline': 'Тарих басталғанға дейінгі нұсқа'
+'content.history_details_restricted': 'Бұл нұсқаның мәліметтері жасырылған: ескі өрістерге қолжетімділікті тексеру мүмкін емес.'
 'content.setting_tg_on': 'Telegram хабарландырулары'
 'content.setting_tg_routes': 'Өтінімдерге арналған чаттар'
 'content.setting_max_on': 'MAX хабарландырулары'

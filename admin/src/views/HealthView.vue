@@ -12,6 +12,7 @@ import { useToast } from '@/components/ui/useToast.js'
 import { useConfirm } from '@/components/ui/useConfirm.js'
 import { fmtDT } from '@/utils/format.js'
 import { checkChip } from '@/components/settings/healthChecks.js'
+import { resendOutcome } from '@/composables/requestMeta.js'
 import { formatNumber, t } from '@/i18n/index.js'
 
 const toast = useToast()
@@ -83,14 +84,11 @@ async function resend(r) {
   if (busy.value) return
   busy.value = 'resend:' + r.id
   try {
-    const res = await api.health.resendRequest(r.id)
-    const failedChannel = Object.values(res.outcomes || {}).find((outcome) => outcome.state === 'failed')
-    if (failedChannel) toast.error(failedChannel.error || t('settings.health_resend_failed'))
-    else if (res.queuedChannels?.length) {
-      toast.show(t('ui.rd_queued'))
-    } else if (res.delivery === 'sent') toast.show(t('settings.health_resent', { id: r.id }))
-    else if (res.delivery === 'pending') toast.error(t('settings.health_resend_pending'))
-    else toast.error(res.error || t('settings.health_resend_failed'))
+    const outcome = resendOutcome(await api.health.resendRequest(r.id))
+    if (outcome.state === 'queued') toast.show(t('ui.rd_queued'))
+    else if (outcome.state === 'sent') toast.show(t('settings.health_resent', { id: r.id }))
+    else if (outcome.state === 'pending') toast.error(t('settings.health_resend_pending'))
+    else toast.error(outcome.error || t('settings.health_resend_failed'))
   } catch (e) {
     toast.error(e.message || t('settings.health_resend_failed'))
   } finally {

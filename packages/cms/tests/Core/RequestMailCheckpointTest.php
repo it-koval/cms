@@ -11,14 +11,17 @@ use Itk\Cms\Entity\Request;
 use Itk\Cms\Mail\MailDeliveryException;
 use Itk\Cms\Mail\MailDeliveryUnknownException;
 use Itk\Cms\Mail\MailerFactory;
+use Itk\Cms\Mail\MailFailureListener;
 use Itk\Cms\Mail\MailSettings;
 use Itk\Cms\Mail\MailStatus;
 use Itk\Cms\Mail\RequestMailCheckpoint;
 use Itk\Cms\Mail\RequestMailTransportGuard;
+use Itk\Cms\Mail\RequestMailWarnings;
 use Itk\Cms\Mail\SendMail;
 use Itk\Cms\Mail\SendMailHandler;
 use Itk\Cms\Mail\SiteMailer;
-use Itk\Cms\Notification\NotificationInbox;
+use Itk\Cms\Notification\Notification;
+use Itk\Cms\Notification\NotifierInterface;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\RequiresPhpExtension;
 use PHPUnit\Framework\Attributes\Test;
@@ -34,11 +37,15 @@ use Symfony\Component\Mailer\Exception\UnexpectedResponseException;
 use Symfony\Component\Mailer\Transport\Smtp\SmtpTransport;
 use Symfony\Component\Mailer\Transport\Smtp\Stream\AbstractStream;
 use Symfony\Component\Messenger\Envelope;
+use Symfony\Component\Messenger\Event\WorkerMessageFailedEvent;
 use Symfony\Component\Messenger\Exception\HandlerFailedException;
 use Symfony\Component\Messenger\Handler\HandlersLocator;
 use Symfony\Component\Messenger\MessageBus;
 use Symfony\Component\Messenger\Middleware\HandleMessageMiddleware;
 use Symfony\Component\Messenger\Stamp\ReceivedStamp;
+use Symfony\Component\Messenger\Stamp\TransportMessageIdStamp;
+use Symfony\Component\Messenger\Transport\Receiver\ListableReceiverInterface;
+use Symfony\Component\Messenger\Transport\Sender\SenderInterface;
 use Symfony\Component\Mime\Email;
 
 final class RequestMailCheckpointTest extends KernelTestCase
@@ -74,7 +81,7 @@ final class RequestMailCheckpointTest extends KernelTestCase
             $db->executeStatement('DELETE FROM itk_request_mail_delivery WHERE delivery_key = ?', [$key]);
         }
         $db->executeStatement('DELETE FROM itk_request WHERE id = ?', [$this->request->id]);
-        $db->executeStatement('DELETE FROM itk_notification WHERE dedupe_key = ?', ['mail.failed:' . $this->request->id]);
+        $db->executeStatement('DELETE FROM itk_notification WHERE dedupe_key IN (?, ?) OR dedupe_key LIKE ?', ['mail.failed:' . $this->request->id, 'mail_failed:' . $this->request->id, 'mail.failed:' . $this->request->id . ':%']);
         $db->executeStatement('DELETE FROM itk_setting WHERE setting_key = ? AND locale = ?', [MailSettings::KEY, '*']);
         if (false !== $this->previous) {
             $db->insert('itk_setting', ['setting_key' => MailSettings::KEY, 'locale' => '*', 'setting_value' => $this->previous]);
@@ -113,6 +120,224 @@ final class RequestMailCheckpointTest extends KernelTestCase
             $this->dispatch($this->mail($to));
         }
         self::assertSame(2, $attempts, 'same request and recipient stays delivered across duplicate envelopes');
+    }
+
+    #[Test]
+    public function oneRecipientsSuccessOrDuplicateDoesNotHideAnotherRecipientsFailure(): void
+    {
+        $a = $this->mail('first@example.com');
+        $b = $this->mail('second@example.com');
+        $c = self::getContainer();
+        $listener = new MailFailureListener($c->get(NotifierInterface::class), new NullLogger());
+        foreach ([$a, $b] as $mail) {
+            $listener(new WorkerMessageFailedEvent(new Envelope($mail), 'async', new MailDeliveryException('SMTP fixture failure')));
+        }
+        $db = $c->get(Connection::class);
+        $exists = static fn (SendMail $mail): bool => (bool) $db->fetchOne('SELECT 1 FROM itk_notification WHERE dedupe_key = ?', [MailFailureListener::key($mail)]);
+        self::assertNotSame(MailFailureListener::key($a), MailFailureListener::key($b));
+        self::assertTrue($exists($a));
+        self::assertTrue($exists($b));
+        $this->transport(static fn (MessageEvent $event) => $event->reject());
+        $this->dispatch($b);
+        self::assertTrue($exists($a), 'a success clears only the same recipient warning');
+        self::assertFalse($exists($b));
+        $listener(new WorkerMessageFailedEvent(new Envelope($b), 'async', new MailDeliveryException('Late fixture failure')));
+        $this->dispatch($b);
+        self::assertTrue($exists($a));
+        self::assertFalse($exists($b), 'a done checkpoint repairs its own warning on replay');
+        $this->dispatch($a);
+        self::assertFalse($exists($a), 'a newly successful send clears its own warning');
+        self::assertFalse($exists($b));
+    }
+
+    #[Test]
+    public function manualConfirmationOfDeliveryClearsOnlyTheConfirmedRecipientsWarning(): void
+    {
+        $a = $this->mail('first@example.com');
+        $b = $this->mail('second@example.com');
+        $c = self::getContainer();
+        $db = $c->get(Connection::class);
+        $listener = new MailFailureListener($c->get(NotifierInterface::class), new NullLogger());
+        foreach ([$a, $b] as $mail) {
+            $db->insert('itk_request_mail_delivery', ['delivery_key' => RequestMailCheckpoint::key($mail), 'state' => 'unknown']);
+            $listener(new WorkerMessageFailedEvent(new Envelope($mail), 'async', new MailDeliveryUnknownException('SMTP fixture unknown')));
+        }
+        $exists = static fn (SendMail $mail): bool => (bool) $db->fetchOne('SELECT 1 FROM itk_notification WHERE dedupe_key = ?', [MailFailureListener::key($mail)]);
+        self::assertTrue($exists($a));
+        self::assertTrue($exists($b));
+        $command = new CommandTester((new Application(self::$kernel))->find('itk:requests:mail:resolve'));
+        self::assertSame(0, $command->execute(['request' => (string) $this->request->id, 'recipient' => \strtoupper($a->to), 'outcome' => 'sent']));
+        self::assertFalse($exists($a), 'verified SMTP acceptance settles the warning without requiring a resend');
+        self::assertTrue($exists($b), 'another recipient remains unresolved');
+        $attempts = 0;
+        $this->transport(static function (MessageEvent $event) use (&$attempts): void {
+            ++$attempts;
+            $event->reject();
+        });
+        $this->dispatch($a);
+        self::assertSame(0, $attempts, 'verified acceptance still prevents duplicate delivery');
+        self::assertSame(0, $command->execute(['request' => (string) $this->request->id, 'recipient' => $b->to, 'outcome' => 'rejected']));
+        self::assertTrue($exists($b), 'a verified rejection leaves the warning until this recipient is sent successfully');
+    }
+
+    #[Test]
+    #[DataProvider('legacyMailRoutes')]
+    public function legacyWarningsRequireOperatorVerificationEvenAfterKnownRecipientsAreDone(bool $routeChanged, bool $hasCheckpoint): void
+    {
+        $a = $this->mail('first@example.com');
+        $b = $this->mail('second@example.com');
+        $c = self::getContainer();
+        $db = $c->get(Connection::class);
+        $routesKey = ['setting_key' => 'itk:mailRoutes', 'locale' => '*'];
+        $legacyRoutesKey = ['setting_key' => 'mailRoutes', 'locale' => '*'];
+        $previous = $db->fetchOne('SELECT setting_value FROM itk_setting WHERE setting_key = ? AND locale = ?', \array_values($routesKey));
+        $legacyPrevious = $db->fetchOne('SELECT setting_value FROM itk_setting WHERE setting_key = ? AND locale = ?', \array_values($legacyRoutesKey));
+        $settings = $c->get(SettingsService::class);
+        $original = ['call' => $a->to . ',' . $b->to];
+        $db->executeStatement('INSERT INTO itk_setting (setting_key, locale, setting_value) VALUES (?, ?, ?) ON CONFLICT (setting_key, locale) DO UPDATE SET setting_value = EXCLUDED.setting_value', ['mailRoutes', '*', \json_encode($original, \JSON_THROW_ON_ERROR)]);
+        $settings->set('itk:mailRoutes', $routeChanged ? ['call' => $a->to] : $original);
+        try {
+            $command = new CommandTester((new Application(self::$kernel))->find('itk:requests:mail:resolve'));
+            if (!$hasCheckpoint) {
+                self::assertSame(1, $command->execute(['request' => $b->ref, 'recipient' => $b->to, 'outcome' => 'sent']), 'a missing checkpoint requires a legacy warning');
+            }
+            $legacy = ['mail_failed:' . $this->request->id, 'mail.failed:' . $this->request->id];
+            foreach ($legacy as $key) {
+                $c->get(NotifierInterface::class)->notify(new Notification(Notification::MAIL_FAILED, 'Legacy warning', key: $key));
+            }
+            $count = static fn (): int => (int) $db->fetchOne('SELECT COUNT(*) FROM itk_notification WHERE dedupe_key IN (?, ?)', $legacy);
+            self::assertSame(2, $count());
+            if ($hasCheckpoint) {
+                $db->insert('itk_request_mail_delivery', ['delivery_key' => RequestMailCheckpoint::key($b), 'state' => 'unknown']);
+            }
+            $attempts = 0;
+            $this->transport(static function (MessageEvent $event) use (&$attempts): void {
+                ++$attempts;
+                $event->reject();
+            });
+            $this->dispatch($a);
+            self::assertSame(2, $count(), 'one recipient still has an unresolved delivery');
+
+            if (!$hasCheckpoint) {
+                self::assertSame(1, $command->execute(['request' => $b->ref, 'recipient' => $b->to, 'outcome' => 'rejected']));
+                self::assertSame(2, $count());
+            }
+            self::assertSame(0, $command->execute(['request' => $b->ref, 'recipient' => $b->to, 'outcome' => 'sent']));
+            self::assertSame(2, $count(), 'routes do not prove the complete historical recipient list');
+            self::assertSame('done', $db->fetchOne('SELECT state FROM itk_request_mail_delivery WHERE delivery_key = ?', [RequestMailCheckpoint::key($b)]));
+            $this->dispatch($b);
+            self::assertSame(1, $attempts, 'verified legacy acceptance prevents duplicate delivery');
+            self::assertSame(0, $command->execute(['request' => $b->ref, '--legacy-checked' => true]));
+            self::assertSame(0, $count(), 'explicit verification closes both aggregate aliases');
+        } finally {
+            $db->delete('itk_setting', $routesKey);
+            if (false !== $previous) {
+                $db->insert('itk_setting', $routesKey + ['setting_value' => $previous]);
+            }
+            $db->delete('itk_setting', $legacyRoutesKey);
+            if (false !== $legacyPrevious) {
+                $db->insert('itk_setting', $legacyRoutesKey + ['setting_value' => $legacyPrevious]);
+            }
+            $settings->reset();
+        }
+    }
+
+    /** @return iterable<string, array{bool, bool}> */
+    public static function legacyMailRoutes(): iterable
+    {
+        yield 'unchanged route' => [false, true];
+        yield 'one recipient removed after upgrade' => [true, true];
+        yield 'legacy send has no checkpoint' => [false, false];
+        yield 'legacy send has no checkpoint and recipient was removed after upgrade' => [true, false];
+    }
+
+    #[Test]
+    public function aRecipientRemovedBeforeUpgradeCannotBeForgottenByADoneReplay(): void
+    {
+        $b = $this->mail('second@example.com');
+        $c = self::getContainer();
+        $db = $c->get(Connection::class);
+        $settings = $c->get(SettingsService::class);
+        $rows = [];
+        foreach (['mailRoutes', 'itk:mailRoutes'] as $key) {
+            $rows[$key] = $db->fetchOne('SELECT setting_value FROM itk_setting WHERE setting_key = ? AND locale = ?', [$key, '*']);
+            // A failed at first@example.com, then was removed before either route snapshot existed.
+            $db->executeStatement('INSERT INTO itk_setting (setting_key, locale, setting_value) VALUES (?, ?, ?) ON CONFLICT (setting_key, locale) DO UPDATE SET setting_value = EXCLUDED.setting_value', [$key, '*', \json_encode(['call' => $b->to], \JSON_THROW_ON_ERROR)]);
+        }
+        $settings->reset();
+        $legacy = ['mail_failed:' . $b->ref, 'mail.failed:' . $b->ref];
+        try {
+            foreach ($legacy as $key) {
+                $c->get(NotifierInterface::class)->notify(new Notification(Notification::MAIL_FAILED, 'Legacy warning', key: $key));
+            }
+            $db->insert('itk_request_mail_delivery', ['delivery_key' => RequestMailCheckpoint::key($b), 'state' => 'done']);
+            $this->transport(static fn (MessageEvent $event) => self::fail('done recipient must not send'));
+            $this->dispatch($b);
+            self::assertSame(2, (int) $db->fetchOne('SELECT COUNT(*) FROM itk_notification WHERE dedupe_key IN (?, ?)', $legacy), 'B acceptance cannot settle an unknown historical recipient A');
+        } finally {
+            foreach ($rows as $key => $value) {
+                $db->delete('itk_setting', ['setting_key' => $key, 'locale' => '*']);
+                if (false !== $value) {
+                    $db->insert('itk_setting', ['setting_key' => $key, 'locale' => '*', 'setting_value' => $value]);
+                }
+            }
+            $settings->reset();
+        }
+    }
+
+    #[Test]
+    public function checkingALegacyAggregateDoesNotAlterRecipientWarningsOrCheckpoints(): void
+    {
+        $mail = $this->mail();
+        $c = self::getContainer();
+        $db = $c->get(Connection::class);
+        $listener = new MailFailureListener($c->get(NotifierInterface::class), new NullLogger());
+        $listener(new WorkerMessageFailedEvent(new Envelope($mail), 'async', new MailDeliveryUnknownException('SMTP fixture unknown')));
+        $db->insert('itk_request_mail_delivery', ['delivery_key' => RequestMailCheckpoint::key($mail), 'state' => 'unknown']);
+        $aggregate = 'mail_failed:' . $mail->ref;
+        $c->get(NotifierInterface::class)->notify(new Notification(Notification::MAIL_FAILED, 'Legacy warning', key: $aggregate));
+        $command = new CommandTester((new Application(self::$kernel))->find('itk:requests:mail:resolve'));
+        self::assertSame(2, $command->execute(['request' => $mail->ref, 'recipient' => $mail->to, 'outcome' => 'sent', '--legacy-checked' => true]), 'aggregate verification and recipient resolution cannot be mixed');
+        self::assertNotFalse($db->fetchOne('SELECT 1 FROM itk_notification WHERE dedupe_key = ?', [$aggregate]));
+        self::assertSame(0, $command->execute(['request' => $mail->ref, '--legacy-checked' => true]));
+        self::assertFalse($db->fetchOne('SELECT 1 FROM itk_notification WHERE dedupe_key = ?', [$aggregate]));
+        self::assertNotFalse($db->fetchOne('SELECT 1 FROM itk_notification WHERE dedupe_key = ?', [MailFailureListener::key($mail)]));
+        self::assertSame('unknown', $db->fetchOne('SELECT state FROM itk_request_mail_delivery WHERE delivery_key = ?', [RequestMailCheckpoint::key($mail)]));
+        self::assertSame(1, $command->execute(['request' => $mail->ref, '--legacy-checked' => true]), 'a missing aggregate does not report a successful change');
+    }
+
+    #[Test]
+    public function rejectionAlwaysShowsTheAddressedRetryAndOnlyNamesAKnownFailedEnvelope(): void
+    {
+        $mail = $this->mail();
+        $c = self::getContainer();
+        $db = $c->get(Connection::class);
+        $key = RequestMailCheckpoint::key($mail);
+        $db->insert('itk_request_mail_delivery', ['delivery_key' => $key, 'state' => 'unknown']);
+        $app = new Application(self::$kernel);
+        $command = new CommandTester($app->find('itk:requests:mail:resolve'));
+        $input = ['request' => $mail->ref, 'recipient' => $mail->to, 'outcome' => 'rejected'];
+        $targeted = 'itk:requests:resend ' . $mail->ref . ' --channel=mail --recipient=' . \escapeshellarg($mail->to);
+        self::assertSame(0, $command->execute($input));
+        self::assertStringContainsString($targeted, $command->getDisplay());
+        self::assertStringNotContainsString('messenger:failed:retry', $command->getDisplay());
+
+        $db->update('itk_request_mail_delivery', ['state' => 'unknown'], ['delivery_key' => $key]);
+        $failed = $c->get('messenger.transport.failed');
+        self::assertInstanceOf(ListableReceiverInterface::class, $failed);
+        self::assertInstanceOf(SenderInterface::class, $failed);
+        $envelope = $failed->send(new Envelope($mail));
+        $id = (string) $envelope->last(TransportMessageIdStamp::class)?->getId();
+        try {
+            self::assertSame(0, $command->execute($input));
+            self::assertStringContainsString($targeted, $command->getDisplay());
+            self::assertStringContainsString("messenger:failed:retry --transport='failed' " . \escapeshellarg($id), $command->getDisplay());
+        } finally {
+            $stored = $failed->find($id);
+            if (null !== $stored) {
+                $failed->reject($stored);
+            }
+        }
     }
 
     #[Test]
@@ -176,22 +401,22 @@ final class RequestMailCheckpointTest extends KernelTestCase
         $settings->save(['enabled' => false, 'fromAddress' => 'site@example.com']);
         $factory = new MailerFactory($settings, $c->get(SettingsService::class), $c->get('event_dispatcher'), $strategy . '(smtp://first.example.test:25 smtp://second.example.test:25)');
         $mailer = new SiteMailer($factory, $c->get(MailStatus::class), $c->get('messenger.default_bus'), new NullLogger());
-        $handler = new SendMailHandler($mailer, $c->get(NotificationInbox::class), $c->get(RequestMailCheckpoint::class));
+        $handler = new SendMailHandler($mailer, $c->get(RequestMailWarnings::class), $c->get(RequestMailCheckpoint::class));
 
         return new MessageBus([new HandleMessageMiddleware(new HandlersLocator([SendMail::class => [$handler]]))]);
     }
 
     #[Test]
     #[DataProvider('compoundStrategies')]
-    public function compoundTransportCannotRepeatAnAmbiguousAcceptanceInsideOneSend(string $strategy): void
+    public function compoundTransportCannotRepeatAfterANonTransportListenerFailure(string $strategy): void
     {
         $bus = $this->compoundBus($strategy);
         $attempts = 0;
         $this->transport(static function (MessageEvent $event) use (&$attempts): void {
             ++$attempts;
-            // Simulate accepted DATA followed by a lost response at the real Symfony leaf boundary.
+            // A listener's non-transport failure cannot establish a safe SMTP result.
             if (1 === $attempts) {
-                throw new TransportException('fixture accepted DATA, then lost the response');
+                throw new \RuntimeException('fixture listener failed with an unconfirmed outcome');
             }
             $event->reject(); // A second leaf would accept the same letter; never open a network connection.
         });
@@ -227,6 +452,48 @@ final class RequestMailCheckpointTest extends KernelTestCase
         self::assertSame('done', self::getContainer()->get(Connection::class)->fetchOne('SELECT state FROM itk_request_mail_delivery WHERE delivery_key = ?', [RequestMailCheckpoint::key($mail)]));
         $bus->dispatch(new Envelope($mail, [new ReceivedStamp('async')]));
         self::assertSame(2, $attempts, 'an accepted fallback is not sent again by a duplicate envelope');
+    }
+
+    #[Test]
+    #[DataProvider('compoundStrategies')]
+    public function compoundTransportCanFallBackAfterAPreDataConnectionFailure(string $strategy): void
+    {
+        $bus = $this->compoundBus($strategy);
+        $attempts = 0;
+        $this->transport(static function (MessageEvent $event) use (&$attempts): void {
+            if (1 === ++$attempts) {
+                throw new TransportException('fixture connect refused before DATA');
+            }
+            $event->reject();
+        });
+        $mail = $this->mail();
+        $bus->dispatch(new Envelope($mail, [new ReceivedStamp('async')]));
+        self::assertSame(2, $attempts, 'a pre-DATA transport failure permits the next configured SMTP leaf');
+        self::assertSame('done', self::getContainer()->get(Connection::class)->fetchOne('SELECT state FROM itk_request_mail_delivery WHERE delivery_key = ?', [RequestMailCheckpoint::key($mail)]));
+    }
+
+    #[Test]
+    public function preDataFailuresRemainRetryableAndARecoveredRecipientCanSend(): void
+    {
+        $attempts = 0;
+        $this->transport(static function (MessageEvent $event) use (&$attempts): void {
+            if (1 === ++$attempts) {
+                throw new TransportException('fixture connect timeout before DATA');
+            }
+            $event->reject();
+        });
+        $mail = $this->mail();
+        try {
+            $this->dispatch($mail);
+            self::fail('the pre-DATA failure must reach Messenger for retry');
+        } catch (HandlerFailedException $failure) {
+            self::assertInstanceOf(MailDeliveryException::class, $failure->getPrevious());
+            self::assertTrue($failure->getPrevious()->safeToRetry);
+        }
+        self::assertSame('rejected', self::getContainer()->get(Connection::class)->fetchOne('SELECT state FROM itk_request_mail_delivery WHERE delivery_key = ?', [RequestMailCheckpoint::key($mail)]));
+        $this->dispatch($mail);
+        self::assertSame(2, $attempts);
+        self::assertSame('done', self::getContainer()->get(Connection::class)->fetchOne('SELECT state FROM itk_request_mail_delivery WHERE delivery_key = ?', [RequestMailCheckpoint::key($mail)]));
     }
 
     #[Test]

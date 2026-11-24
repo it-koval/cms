@@ -15,7 +15,7 @@ import scopeSource from '@/components/settings/LangScope.vue?raw'
 import MenusEditor from '@/components/settings/MenusEditor.vue'
 import menusSource from '@/components/settings/MenusEditor.vue?raw'
 
-const mocks = vi.hoisted(() => ({ get: vi.fn(), update: vi.fn(), getMenus: vi.fn(), saveMenus: vi.fn(), getMenuAreas: vi.fn(), forms: vi.fn(), list: vi.fn(), confirm: vi.fn() }))
+const mocks = vi.hoisted(() => ({ get: vi.fn(), update: vi.fn(), getNotifications: vi.fn(), updateNotifications: vi.fn(), getMenus: vi.fn(), saveMenus: vi.fn(), getMenuAreas: vi.fn(), forms: vi.fn(), list: vi.fn(), confirm: vi.fn() }))
 vi.mock('@/api/index.js', () => ({ api: { site: { currentSiteSync: () => ({}) }, pages: { list: mocks.list }, settings: mocks, requests: { forms: mocks.forms } } }))
 vi.mock('@/components/ui/useConfirm.js', () => ({ useConfirm: () => mocks.confirm }))
 vi.mock('@/components/ui/Icon.vue', () => ({ default: { render: () => null } }))
@@ -31,6 +31,10 @@ vi.mock('@/components/ui/LanguageSelect.vue', () => ({ default: {
 vi.mock('@/components/settings/SettingsFormTab.vue', () => ({ default: {
   props: ['sections', 'data', 'marks'], emits: ['set', 'revert'], inheritAttrs: false,
   render() { return this.sections.flatMap((s) => s.fields.map((f) => h('input', { name: f.k, value: this.data[f.k], 'data-shared': this.marks && !f.tr, onInput: (event) => this.$emit('set', f.k, event.target.value) }))) },
+} }))
+vi.mock('@/components/settings/NotificationsPanel.vue', () => ({ default: {
+  props: ['data', 'saved', 'forms'], emits: ['set'],
+  render() { return ['tgRoutes', 'maxRoutes', 'mailRoutes'].map((key) => h('input', { name: key + '-0', value: this.data[key]?.['0'] || '', onInput: (event) => this.$emit('set', key, { ...this.data[key], '0': event.target.value }) })) },
 } }))
 vi.mock('@/components/settings/MenuAreaDialog.vue', () => ({ default: { render: () => null } }))
 vi.mock('@/components/ui/SortableTree.vue', () => ({ default: {
@@ -59,6 +63,7 @@ beforeEach(() => {
   app.user = { perms: { 'set:contact': ['view', 'edit'], 'set:menus': ['view', 'edit'], pages: ['view'] } }
   loadSchema({ settings: { groups: [{ key: 'contact', title: 'Contact', fields: [{ k: 'headline', t: 'text', label: 'Headline', tr: true, req: true }, { k: 'phone', t: 'text', label: 'Phone' }] }] } })
   mocks.get.mockImplementation(async (locale) => values[locale])
+  mocks.getNotifications.mockResolvedValue({})
   mocks.forms.mockResolvedValue([])
   mocks.getMenus.mockImplementation(async (locale) => ({ header: locale === 'zh' ? [] : [{ _id: 'item', label: `${locale} menu`, link: { kind: 'page', page: `/${locale}` } }] }))
   mocks.getMenuAreas.mockResolvedValue([{ key: 'header', name: 'Header', depth: 1, usedIn: [] }])
@@ -82,6 +87,30 @@ const language = () => box.querySelector(`select[aria-label="${t('settings.conte
 const field = (name) => box.querySelector(`input[name="${name}"]`)
 function edit(name, value) { field(name).value = value; field(name).dispatchEvent(new Event('input')) }
 function choose(locale) { language().value = locale; language().dispatchEvent(new Event('change')) }
+
+it.each(['objects', 'legacy arrays'])('keeps numeric notification routes from %s on load and after saving', async (shape) => {
+  app.user.perms['set:notifications'] = ['view', 'edit']
+  const routes = (telegram) => ({
+    tgRoutes: shape === 'objects' ? { '0': telegram } : [telegram],
+    maxRoutes: shape === 'objects' ? { '0': '-23' } : ['-23'],
+    mailRoutes: shape === 'objects' ? { '0': 'numeric@example.test' } : ['numeric@example.test'],
+  })
+  mocks.getNotifications.mockResolvedValueOnce(routes('-10012345'))
+  const router = await mountSettings('/settings/general')
+  await router.push('/settings/notifications')
+  await vi.waitFor(() => expect(field('tgRoutes-0')?.value).toBe('-10012345'))
+  expect(field('maxRoutes-0').value).toBe('-23')
+  expect(field('mailRoutes-0').value).toBe('numeric@example.test')
+  mocks.updateNotifications.mockResolvedValueOnce(routes('-10054321'))
+  edit('tgRoutes-0', '-10054321')
+  await vi.waitFor(() => expect(box.querySelector('.savebar .primary')).toBeTruthy())
+  box.querySelector('.savebar .primary').click()
+  await vi.waitFor(() => expect(mocks.updateNotifications).toHaveBeenCalledWith({ tgRoutes: { '0': '-10054321' } }))
+  await vi.waitFor(() => expect(box.querySelector('.savebar .primary')).toBeNull())
+  expect(field('tgRoutes-0').value).toBe('-10054321')
+  expect(field('maxRoutes-0').value).toBe('-23')
+  expect(field('mailRoutes-0').value).toBe('numeric@example.test')
+})
 
 it('keeps missing translations empty and saves a shared field even when a required translation is missing', async () => {
   await mountSettings('/settings/general?lang=kk')

@@ -509,8 +509,8 @@ All methods return the field, and you can call them in any order.
 | `pattern($regex, $message)` | Server-side check of a site form value |
 | `inputType(string)` | The HTML input type, for example `email` |
 | `translatable()` | The setting is stored separately for each language |
-| `readonly()` | The editor sees the value but cannot change it. The server ignores the editor's value. Code and hooks can write it |
-| `canSee('set:users' \| 'col:tours:edit' \| fn (Viewer $v): bool)` | Who can see the field. For everyone else, the server leaves the field out of the schema, records and history, and does not accept its value |
+| `readonly()` | The editor can see a top-level field but cannot change it. Code and hooks can write it |
+| `canSee('set:users' \| 'col:tours:edit' \| fn (Viewer $v): bool)` | Who can see and submit a top-level field. The server omits the field from the schema, records and history for other viewers |
 | `raw()` | Multi-line text is output as raw HTML with scripts. Only a person with the permission to manage users can add or change the value. Nobody can do it through MCP |
 | `half()` | The field takes half a form row. Two neighboring fields with `half()` stand side by side |
 | `section('Heading')` | A form section heading before the field |
@@ -519,7 +519,7 @@ All methods return the field, and you can call them in any order.
 | `variant()` | A `Select` field becomes the section style option of the section |
 | `noun()`, `addLabel()` | The noun for a repeater item and the label of the add button |
 
-`readonly()` and `canSee()` apply to collection records, template fields, section fields (top level) and settings. In settings, values of a group for which the person lacks the **View** level of the `set:<group>` permission are not returned either.
+`readonly()` and `canSee()` apply to top-level fields in collection records, templates, sections and settings. They do not enforce read or write access for nested fields, including fields inside a `Repeater`. Store restricted values in a separate top-level field. `itk:schema:lint` reports nested declarations of these options. Viewing a settings group's values also requires **View** on `set:<group>`.
 
 ### Repeater row
 
@@ -967,7 +967,7 @@ The API offers `GET seo-rules?q=&locale=`, `POST seo-rules` and `PATCH|DELETE se
 The core serves `GET /sitemap.xml` from the published pages. The site does not need to write a sitemap.
 
 - The sitemap includes published pages, each with `<loc>` and `<lastmod>`. Pages with indexing turned off (in the page SEO or by a URL rule) are left out. Collection records are not included.
-- On a single-language site, URLs use the **Site address** setting (`domain`) and default to `https://` when the scheme is omitted. A multilingual site uses the trusted public base for links in both HTML and the sitemap. The generated route returns 404 when its base is missing. [Multilingual indexing and operations](#multilingual-indexing-and-operations)
+- In every language mode, URLs use the normalized `itk_cms.public_url` when valid, then the **Site address** setting (`domain`). A `domain` without a scheme uses `https://`. The generated route returns 404 when its base is missing. [Multilingual indexing and operations](#multilingual-indexing-and-operations)
 - The sitemap is cached for an hour. The cache is cleared when a page is published, unpublished, changed or deleted, and when a URL rule changes.
 - A site's own `public/sitemap.xml` file wins, because the web server serves it before PHP.
 
@@ -1164,10 +1164,10 @@ The owner pastes a Yandex OAuth token once on the **Today** screen. After that, 
 The **IndexNow: tell search engines** toggle (`indexNow`) is in the **Analytics and webmaster tools** group. When it is on, the core tells Yandex and Bing about a changed page URL using the [IndexNow](https://www.indexnow.org/) protocol: publication, a new URL (both the old and the new one are sent), unpublication, deletion, restoration.
 
 - The URLs of pages from the sitemap are sent. Collection records are not sent.
-- The worker collects up to 100 URLs and sends them in one request. The full URL is built from the **Site address** at the moment of sending.
+- The worker collects up to 100 URLs and sends them in one request. At send time it uses a valid `itk_cms.public_url` first, then the **Site address** setting (`domain`). The selected origin must be public.
 - Responses `200` and `202` count as success. `429`, `5xx` and a dropped connection are retried by the `retry_strategy` of the `async` transport. Other `4xx` go straight to the failure transport.
 - The key is computed from the site address and `APP_SECRET`, and nothing is stored. The key file `GET /{key}.txt` responds while the toggle is on.
-- Nothing is sent while the **Site address** is empty or not public, or without `symfony/http-client`.
+- Sending requires a public configured origin and `symfony/http-client`.
 - The `indexnow.endpoint` option sets the receiver URL (by default `https://yandex.com/indexnow`). IndexNow search engines pass the notifications to each other. Google does not support IndexNow.
 
 ## Requests and notifications
@@ -1180,7 +1180,7 @@ The site sends the form to `POST /request/{form}`. The hidden `itk_hp` field (a 
 
 The request body limit is 256 KiB by default (`itk_cms.requests.max_body`, in bytes). Larger submissions return HTTP 413. JSON accepts one object with up to 1,000 scalar or null values. Malformed JSON and nested values return HTTP 422. For conventional form posts, the CMS uses the fields declared in the schema.
 
-The Docker kit applies a `256k` nginx body limit and PHP `post_max_size=256K` on `/request/`. Larger bodies are refused before PHP parses them, including chunked requests. If you change `max_body`, change both route limits to match. With another proxy, enforce the limit before passing multipart bodies to PHP.
+The Docker kit buffers public `/request/{form}` bodies in nginx and enforces `client_max_body_size 256k`, including chunked requests. If you change `max_body`, set the matching nginx limit and ensure PHP's `post_max_size` accommodates the permitted body. With another proxy, enforce the form limit before passing multipart bodies to PHP.
 
 The request is saved and appears in the **Requests** section (the `requests` area). Then the `request.new` notification goes to the channels: the admin bell, Telegram, MAX and e-mail. A request has its own status for each messenger (`channels`). The overall `delivery` status is `failed` if the request did not reach at least one messenger, otherwise `sent` if it reached at least one. A messenger that is not connected leaves the status at `pending`, which is not a failure. To retry undelivered requests, use the button in the admin panel or `php bin/console itk:requests:resend`. The request JSON also has `sendable`: the messengers that never got the request and can take it now (connected, on, with a chat for the form). The request drawer shows **Send to MAX** or **Send to Telegram** for each of them and calls `POST requests/{id}/resend {channel}`.
 
@@ -1188,7 +1188,9 @@ The request is saved and appears in the **Requests** section (the `requests` are
 
 A text too long for one message is split at line breaks. Telegram allows 4,096 visible characters. MAX allows 4,000 HTML characters. Parts go out in order with a one-second pause, or 3.1 seconds for Telegram deliveries of more than 20 parts. A resend of up to 20 parts per channel runs in the request. If a channel needs more than 20 parts, the worker sends them and the API returns HTTP 202 with `queuedChannels` after the queue accepts the job. The admin panel shows **Queued**.
 
-A rejected part stops that chat's delivery and the error shows which part failed. The next attempt starts from the first part for each chat, so some messages may appear twice. The built-in `async` transport retries request delivery after 60, 120 and 240 seconds, then moves it to the failure transport. Transport settings supplied by the site take precedence.
+A rejected part stops that chat's delivery and the error shows which part failed. Retries of the current operation use its saved text and skip parts already accepted for each recipient. A manual resend after a fully refused attempt renders fresh text. The built-in `async` transport retries confirmed failures after 60, 120 and 240 seconds, then moves them to the failure transport. Transport settings supplied by the site take precedence. An unknown result also appears as a delivery error. That part waits for operator review while confirmed refusals can still retry. Check the destination and run `itk:requests:resolve <request> <telegram|max> <recipient> <sent|rejected>` for the affected chat. Use `sent` only after confirming acceptance or `rejected` only after confirming refusal. Then use the request's resend action to continue with outstanding parts.
+
+Place `--` before a negative chat ID, as in `itk:requests:resolve 123 telegram -- -100123456 sent`.
 
 The **Requests** screen has a **Board** view with the columns **New**, **In progress** and **Closed**.
 
@@ -1229,7 +1231,7 @@ MAX (max.ru) works alongside Telegram and independently of it.
 
 The **MAX** switch (`maxOn`) and the `itk_cms.max.enabled: false` option work the same way as for Telegram. The **Test** button sends a test message. A MAX failure does not change the Telegram status, and the other way round.
 
-The `set:notifications` area uses `tgOn`, `tgRoutes`, `maxOn`, `maxRoutes` and `mailRoutes`. Read and update them through `GET settings?scope=notifications` and `PATCH settings?scope=notifications`. The response also includes `tgFallback`, `maxFallback` (a chat is set in the configuration), `tgReady`, `maxReady` and `mailReady`. `POST settings/telegram-test` and `POST settings/max-test {form?, chatId?}` send a test message.
+The `set:notifications` area uses `forms` (accept new requests), `tgOn`, `tgRoutes`, `maxOn`, `maxRoutes` and `mailRoutes`. Read and update them through `GET settings?scope=notifications` and `PATCH settings?scope=notifications`. The response also includes `tgFallback`, `maxFallback` (a chat is set in the configuration), `tgReady`, `maxReady` and `mailReady`. `POST settings/telegram-test` and `POST settings/max-test {form?, chatId?}` send a test message.
 
 ### Bots
 
@@ -1262,7 +1264,11 @@ The sender address comes from **Settings** → **Mail**. With only `MAILER_DSN` 
 - `POST {admin}/api/settings/mail-test {to?}` sends a test e-mail right away, without the queue. The server's refusal reason comes in the response (502). At most 10 e-mails per hour per person (429).
 - `ssl` uses `smtps://` and `starttls` requires TLS. Choose either when saving a password. `none` is available for servers without a password. The SMTP dialog is excluded from logs. If the active `MAILER_DSN` uses password authentication with optional TLS, `itk:doctor` and **Site status** show a warning. Use `smtps://` or set `require_tls=1` on `smtp://`.
 
-**Errors.** A delivery that exhausts its retries stays in the failure transport and raises a `mail.failed` notification. Password and invitation deliveries store a job. The worker creates its one-time link for each attempt and revokes it when the attempt fails.
+**Errors.** A delivery that exhausts its retries raises a `mail.failed` notification. Messenger retains the failed job only if a failure transport is configured. The worker creates a one-time link for each password reset or invitation attempt and revokes it if the attempt fails.
+
+Request emails track SMTP acceptance and warnings per recipient. If acceptance is uncertain, check the SMTP server and run `itk:requests:mail:resolve <request> <recipient> <sent|rejected>`. After `sent`, a replay of the envelope is acknowledged without sending. After `rejected`, use the addressed retry printed by the command, `itk:requests:resend <id> --channel=mail --recipient=<address>`. Use this retry with `failure_transport: null` as well. If `mail:resolve` finds a matching failed envelope, it also prints a retry command with the transport name and envelope ID.
+
+For an aggregate mail warning left by 0.2.2, verify SMTP acceptance and run `itk:requests:mail:resolve <request> <recipient> sent` for each confirmed recipient. The command can record acceptance even when the old send has no checkpoint. Old warnings contain no complete recipient list, and routes may have changed, so recipient acceptance does not close the aggregate. After checking every original recipient and settling any failures, run `itk:requests:mail:resolve <request> --legacy-checked` to close the old aggregate warning. This only removes the aggregate warning; it does not change recipient warnings, delivery checkpoints or queued jobs.
 
 **Request e-mails.** **Settings** → **Notifications** → **Emails about new requests** (`mailRoutes`, the `set:notifications` area): comma-separated addresses for all forms and a separate list for each form, up to 10 addresses. Each address gets an e-mail with the form fields and a link to the request.
 
@@ -1606,7 +1612,13 @@ Each line is `ok`, `off`, `warning` or `ERROR`. `off` marks a module that is not
 | `itk:schema:lint` | Checks the schema and the Twig templates |
 | `itk:user:password <email> [--password=]` | Sets a password |
 | `itk:user:reset-2fa <email>` | Resets two-step sign-in |
-| `itk:requests:resend` | Queues all undelivered requests |
+| `itk:requests:resend` | Queues new attempts for requests with confirmed messenger delivery failures |
+| `itk:requests:resend <request> --channel=<telegram\|max>` | Retries outstanding parts of the selected messenger delivery |
+| `itk:requests:resend <request> --channel=mail --recipient=<address>` | Queues a new attempt for one rejected request email |
+| `itk:requests:recover` | Publishes due request delivery jobs and recovers pending delivery events, up to 500 of each per run |
+| `itk:requests:resolve <request> <telegram\|max> <recipient> <sent\|rejected>` | Records a verified outcome for an unresolved messenger part |
+| `itk:requests:mail:resolve <request> <recipient> <sent\|rejected>` | Records a verified SMTP outcome for one request and recipient |
+| `itk:requests:mail:resolve <request> --legacy-checked` | Closes an old aggregate mail warning after operator verification |
 | `itk:media:warm [--width=]` | Creates copies of the media library images |
 | `itk:cache:clear` | Clears the page cache |
 | `itk:critical-css:generate` | Queues pages without ready critical CSS. `--all` for all pages, `--page=<id>`, `--locale=`, `--dry-run`, `--now` in this process with a failure report |
@@ -1618,6 +1630,7 @@ Each line is `ok`, `off`, `warning` or `ERROR`. `off` marks a module that is not
 | `itk:make:template`, `itk:make:section`, `itk:make:collection`, `itk:make:settings`, `itk:make:field`, `itk:make:plugin` | Code generators, see [Code generators](#code-generators) |
 
 Cron usually runs `itk:history:prune`, `itk:notifications:prune` and `cache:pool:prune` once a day.
+Schedule `itk:requests:recover` on your site if recovery must run independently of the Messenger worker.
 
 ## Configuration reference
 
@@ -1721,7 +1734,7 @@ In Twig, `page.locale` is the version's language code, `page.html_lang` is the t
 
 Menus, `site`, `itk_settings()`, `itk_listing()`, `itk_pages()`, `itk_collection()` and `itk_page_url()` use the page's language. A menu link to a page requires a published version in that language. Literal URL links keep their address. Translatable settings read the current language without fallback to the main language. Shared settings have one value across languages, and unsaved settings use their schema defaults.
 
-On a site with `itk_cms.locales`, `POST /request/{form}` records the language from `?locale=` if supplied. Without the query parameter, the form uses the decoded page address from a same-origin `Referer`. The default port may be present or omitted. With no same-origin referrer the form uses the main language. An unlisted explicit code uses the main language for `429` and returns `422` if the request passes the rate limiter and honeypot checks. To pass the language explicitly, use `action="/request/callback?locale={{ page.locale }}"` on the form. For AJAX, pass the same address and send the form data.
+On a site with `itk_cms.locales`, `POST /request/{form}` records a supported explicit `?locale=`. If that code is stale or unsupported, a valid submission is saved in the main language and the server logs a warning. Without the parameter, the form uses the decoded page address from a same-origin `Referer`. The default port may be present or omitted. With no same-origin referrer the form uses the main language. To pass the language explicitly, use `action="/request/callback?locale={{ page.locale }}"` on the form. For AJAX, submit the form data to the same address.
 
 Form messages, including `429`, use the submission language whenever the bundle provides a translation. This also applies to sites without `itk_cms.locales`. `admin_locales` controls the admin interface.
 
@@ -1741,7 +1754,7 @@ const result = await response.json();
 
 With two or more configured content languages, `itk_seo().alternates` contains `{hreflang, href}` for the indexable published versions of the same page, including the current version. Language tags use `html_lang`, so `zh` may produce `zh-CN`. The main version comes first, followed by configuration order. At least two indexable versions are required. `x-default` points to the main version when it is published and indexable. Preview and a current `noindex` page expose no SEO alternatives. The language switcher can still use `page.translations` to link to published `noindex` versions.
 
-Absolute links use the trusted base resolved from `itk_cms.public_url`, a request whose host is covered by `framework.trusted_hosts`, or the `domain` site setting, in that order. Debug mode can fall back to the request URL. Configure `public_url` or the site address for consistent links in HTTP requests and workers. If the base is missing or invalid, public pages keep working with relative language links, no `hreflang` and no canonical derived from the base. The generated sitemap returns `404`, and generated `llms.txt` uses relative links. Doctor reports an invalid base. A live multilingual page uses its own absolute canonical URL when the page SEO, a rule and the `itk_seo()` defaults leave it empty.
+Absolute SEO links and the SEO base check in `itk:doctor` use a valid normalized `itk_cms.public_url`, then the `domain` site setting. `framework.trusted_hosts` and debug mode have no effect on the SEO origin. Without a valid configured origin, public pages use relative language links and omit generated `hreflang` and canonical URLs. The generated sitemap returns `404`, and generated `llms.txt` uses relative links. In every language mode, a live page with a configured origin uses its own absolute canonical URL if the page SEO, a rule and the `itk_seo()` defaults leave it empty.
 
 The stock layout prints the links after the canonical and emits `og:locale` when the language has an Open Graph locale. A custom layout can use the same loop.
 
@@ -1929,7 +1942,7 @@ The `worker` service is built from the same image and runs `messenger:consume as
 
 ### Critical CSS in Docker
 
-Node, crittr and Chrome must be in the same image as PHP. The `php` and `worker` services use `docker/chrome-seccomp.json`. It starts from the Docker Engine 27.5.1 built-in profile and permits the `clone` and `unshare` flags needed for user, PID, network and mount namespaces. Keep the profile on both services. Run Chromium as an unprivileged user with Linux user namespaces available.
+Node, crittr and Chrome must be in the same image as PHP. The dev and production Compose files attach `docker/chrome-seccomp.json` to `php` and `worker` regardless of the `CRITICAL_CSS` build argument. The profile starts from the Docker Engine 27.5.1 built-in profile and permits the `clone` and `unshare` flags needed for user, PID, network and mount namespaces. Run Chromium as an unprivileged user with Linux user namespaces available.
 
 The renderer serves files whose resolved paths are inside the site's `public/`. Copy needed assets there when links in `public/` point elsewhere.
 

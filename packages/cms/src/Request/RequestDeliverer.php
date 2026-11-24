@@ -37,6 +37,7 @@ use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 final class RequestDeliverer
 {
     private const LEASE_SECONDS = 3600;
+    private const LEGACY_RESEND_QUARANTINE = 'legacy-resend-quarantine';
     /** @var array<string, true> */
     private static array $announcing = [];
 
@@ -66,11 +67,24 @@ final class RequestDeliverer
     {
         return $em->wrapInTransaction(static function () use ($em, $id, $channel, $resend, $onReserved, $onlyIfFailed): ?string {
             $request = self::load($em, $id, LockMode::PESSIMISTIC_WRITE);
-            if (null === $request || \in_array($channel, $request->queuedChannels(), true) || (!$resend && Request::DELIVERY_SENT === $request->channelState($channel))) {
+            if (null === $request) {
+                return null;
+            }
+            if ($request->hasUnresolvedChannelParts($channel) && !\in_array($request->channelJobPhase($channel), ['queued', 'processing', 'retry', 'failed', 'uncertain'], true)) {
+                // Quarantine old done/pending metadata: hiding a route or disabling a channel never confirms its provider call.
+                $request->markChannel($channel, Request::DELIVERY_FAILED, I18n::t('http.request_delivery_uncertain'));
+                $request->markChannelJob($channel, $request->channelJob($channel) ?? \bin2hex(\random_bytes(16)), 'uncertain', preserveProgress: true);
+
+                return null;
+            }
+            if (\in_array($channel, $request->queuedChannels(), true) || (!$resend && Request::DELIVERY_SENT === $request->channelState($channel))) {
                 return null;
             }
             if ($onlyIfFailed && Request::DELIVERY_FAILED !== $request->channelState($channel)) {
                 return null;
+            }
+            if ('uncertain' === $request->channelJobPhase($channel)) {
+                return null; // a lost response needs an explicit operator action
             }
             if ('processing' === $request->channelJobPhase($channel)) {
                 $key = EditLock::key('request-delivery', $id . ':' . $channel);
@@ -79,7 +93,7 @@ final class RequestDeliverer
                     return null;
                 }
             }
-            $continued = \in_array($request->channelJobPhase($channel), ['queued', 'processing', 'retry', 'failed'], true) && [] !== $request->channelParts($channel);
+            $continued = self::continuesOperation($request, $channel, $resend);
             $job = ($continued ? $request->channelJob($channel) : null) ?? \bin2hex(\random_bytes(16));
             $request->markChannelJob($channel, $job, 'queued', \time() + self::LEASE_SECONDS);
             $onReserved?->__invoke($em, $job);
@@ -134,14 +148,20 @@ final class RequestDeliverer
             }
         }
         $busyUntil = 0;
+        $quarantined = false;
         // The row lock also verifies that an ambient transaction is not holding the request before irreversible network I/O.
-        $request = $manager->wrapInTransaction(static function () use ($manager, $requestId, $channel, $resend, $jobId, &$busyUntil): ?Request {
+        $request = $manager->wrapInTransaction(function () use ($manager, $requestId, $channel, $resend, $jobId, &$busyUntil, &$quarantined): ?Request {
             $request = self::load($manager, $requestId, LockMode::PESSIMISTIC_WRITE);
             if (null === $request) {
                 return null;
             }
             if ('legacy' === $jobId && null === $request->channelJob($channel)) {
-                if (!$resend && Request::DELIVERY_SENT === $request->channelState($channel)) {
+                if (Request::DELIVERY_SENT === $request->channelState($channel)) {
+                    if ($resend) {
+                        $this->quarantineLegacyResend($request, $channel);
+                        $quarantined = true;
+                    }
+
                     return null;
                 }
                 $request->markChannelJob($channel, $jobId, 'queued', \time() + self::LEASE_SECONDS);
@@ -159,6 +179,9 @@ final class RequestDeliverer
 
             return $request;
         });
+        if ($quarantined) {
+            $this->announceLegacyQuarantine($manager, $independent, $requestId, $channel);
+        }
         if ($busyUntil > 0) {
             // Throw after commit: wrapInTransaction closes the entity manager on an exception.
             throw new RecoverableMessageHandlingException('Request delivery is already running.', retryDelay: ($busyUntil - \time() + 1) * 1000);
@@ -173,16 +196,50 @@ final class RequestDeliverer
             return true;
         }
         $resend = $request->channelResend($channel) ?? $resend;
-        $progress = new DeliveryProgress($request->channelParts($channel), static function (string $key, ?array $part) use ($manager, $requestId, $channel, $jobId): void {
-            $manager->wrapInTransaction(static function () use ($manager, $requestId, $channel, $jobId, $key, $part): void {
-                $current = self::load($manager, $requestId, LockMode::PESSIMISTIC_WRITE);
-                if (null !== $current) {
+        $hasFrozenText = null !== $request->channelTexts($channel);
+        try {
+            if (!$hasFrozenText) {
+                // Freeze formatting before the first provider call, including when that call is definitely refused.
+                $texts = $this->locale->runDefault(static fn (): array => $notifier->parts($request, $resend)->texts);
+                $request = $manager->wrapInTransaction(static function () use ($manager, $requestId, $channel, $jobId, $texts): Request {
+                    $current = self::load($manager, $requestId, LockMode::PESSIMISTIC_WRITE);
+                    if (null === $current || $jobId !== $current->channelJob($channel)) {
+                        throw new DeliveryUncertainException(I18n::t('http.request_delivery_uncertain'));
+                    }
+                    $current->markChannelTexts($channel, $texts);
+
+                    return $current;
+                });
+            }
+            $knownParts = $request->channelParts($channel);
+            $texts = $request->channelTexts($channel);
+            \assert(null !== $texts);
+            $progress = new DeliveryProgress($knownParts, static function (string $key, ?array $part) use ($manager, $requestId, $channel, $jobId, $resend, $texts, &$knownParts): void {
+                $saved = $manager->wrapInTransaction(static function () use ($manager, $requestId, $channel, $jobId, $resend, $texts, $knownParts, $key, $part): bool {
+                    $current = self::load($manager, $requestId, LockMode::PESSIMISTIC_WRITE);
+                    if (null === $current || (null !== $current->channelJob($channel) && $jobId !== $current->channelJob($channel))) {
+                        return false;
+                    }
+                    self::restoreLegacyProgress($current, $channel, $jobId, $resend, $texts, $knownParts);
                     $current->markChannelJob($channel, $jobId, 'processing', \time() + self::LEASE_SECONDS);
                     $current->markChannelPart($channel, $key, $part);
+
+                    return true;
+                });
+                if (!$saved) {
+                    if ('sending' === ($part['state'] ?? null)) {
+                        // Abort before provider I/O, after commit: throwing inside wrapInTransaction closes the manager.
+                        throw new DeliveryUncertainException(I18n::t('http.request_delivery_uncertain'));
+                    }
+
+                    return; // post-call bookkeeping cannot revive a deleted request or supersede another operation
+                }
+                if (null === $part) {
+                    unset($knownParts[$key]);
+                } else {
+                    $knownParts[$key] = $part;
                 }
             });
-        });
-        try {
             // a chat is read by many, in admin_locale: also when a sync transport runs this inside the request of one person
             $outcome = $this->locale->runDefault(static fn (): ChannelOutcome => $notifier->attempt($request, $resend, $progress));
         } catch (\Throwable $e) {
@@ -193,14 +250,25 @@ final class RequestDeliverer
             }
             throw $e;
         }
-        $recorded = $manager->wrapInTransaction(static function () use ($manager, $requestId, $channel, $jobId, $outcome, $resend): ?Request {
+        $uncertainError = $this->locale->runDefault(static fn (): string => I18n::t('http.request_delivery_uncertain'));
+        $pausedError = $this->locale->runDefault(static fn (): string => I18n::t('ops.requests_delivery_paused'));
+        $recorded = $manager->wrapInTransaction(static function () use ($manager, $requestId, $channel, $jobId, &$outcome, $resend, $uncertainError, $pausedError, $texts, $knownParts, $hasFrozenText): ?Request {
             $request = self::load($manager, $requestId, LockMode::PESSIMISTIC_WRITE);
             if (null === $request || (null !== $request->channelJob($channel) && $jobId !== $request->channelJob($channel))) {
                 return null;
             }
+            self::restoreLegacyProgress($request, $channel, $jobId, $resend, $texts, $knownParts);
+            if ($request->hasUnresolvedChannelParts($channel) && !$outcome->isFailed()) {
+                // A removed route or disabled channel cannot turn an unconfirmed provider call into success or cancellation.
+                $outcome = ChannelOutcome::uncertain($uncertainError);
+            }
+            if ($outcome->isPending() && ($hasFrozenText || [] !== $request->channelParts($channel))) {
+                // Temporarily disabling a route pauses the unfinished operation, preserving its snapshot and accepted parts.
+                $outcome = ChannelOutcome::failed($request->channelError($channel) ?? $pausedError);
+            }
             // A pre-job worker can replace the JSON while recording the other messenger.
             // Restore missing metadata, but never overwrite another job's identity.
-            if (!$resend && Request::DELIVERY_SENT === $request->channelState($channel) && Request::DELIVERY_SENT !== $outcome->state) {
+            if (!$resend && !$request->hasUnresolvedChannelParts($channel) && Request::DELIVERY_SENT === $request->channelState($channel) && Request::DELIVERY_SENT !== $outcome->state) {
                 $request->markChannelJob($channel, $jobId, 'done');
 
                 return null;
@@ -223,11 +291,98 @@ final class RequestDeliverer
         return !$outcome->isFailed() || $outcome->uncertain;
     }
 
+    /**
+     * A pre-job worker can replace the channel JSON while another messenger is delivering.
+     * Restore this operation only when its identity was lost; an explicit replacement always wins.
+     *
+     * @param non-empty-list<string> $texts
+     * @param array<string, array{hash: string, state: string}> $parts
+     */
+    private static function restoreLegacyProgress(Request $request, string $channel, string $job, bool $resend, array $texts, array $parts): void
+    {
+        if (null !== $request->channelJob($channel)) {
+            return;
+        }
+        $request->markChannelJob($channel, $job, 'processing', \time() + self::LEASE_SECONDS, preserveProgress: true);
+        $request->markChannelResend($channel, $resend);
+        $request->markChannelTexts($channel, $texts);
+        foreach ($parts as $key => $part) {
+            $request->markChannelPart($channel, $key, $part);
+        }
+    }
+
     public function partCount(Request $request, string $channel, bool $resend): int
     {
         $notifier = Request::CHANNEL_MAX === $channel ? $this->max : $this->telegram;
 
-        return $this->locale->runDefault(static fn (): int => \count($notifier->parts($request, $resend)->texts));
+        return $this->locale->runDefault(static fn (): int => \count((self::continuesOperation($request, $channel, $resend) ? $request->channelTexts($channel) : null) ?? $notifier->parts($request, $resend)->texts));
+    }
+
+    private static function continuesOperation(Request $request, string $channel, bool $resend): bool
+    {
+        $phase = $request->channelJobPhase($channel);
+        if ($resend && [] === $request->channelParts($channel) && \in_array($phase, ['failed', 'retry'], true)) {
+            // An explicit resend can reformat after definite refusals. Automatic retries use their existing job and frozen texts.
+            return false;
+        }
+
+        return \in_array($phase, ['queued', 'processing', 'retry', 'failed', 'uncertain'], true)
+            && ([] !== $request->channelParts($channel) || null !== $request->channelTexts($channel));
+    }
+
+    /** Record a provider-verified interrupted part, or all historical destinations of a legacy quarantine with recipient '*'. Never sends. */
+    public function resolve(int $id, string $channel, string $recipient, bool $accepted): bool
+    {
+        $continuationError = $this->locale->runDefault(static fn (): string => I18n::t('ops.requests_resolve_continue_required'));
+
+        return true === self::serialized($this->em, $id, $channel, function (EntityManagerInterface $manager, ?Connection $independent) use ($id, $channel, $recipient, $accepted, $continuationError): bool {
+            $resolved = $manager->wrapInTransaction(static function () use ($manager, $id, $channel, $recipient, $accepted, $continuationError): bool {
+                $request = self::load($manager, $id, LockMode::PESSIMISTIC_WRITE);
+                if (null === $request) {
+                    return false;
+                }
+                if ('*' === $recipient) {
+                    if (self::LEGACY_RESEND_QUARANTINE !== $request->channelJob($channel) || 'uncertain' !== $request->channelJobPhase($channel) || $request->hasUnresolvedChannelParts($channel)) {
+                        return false;
+                    }
+                    $request->markChannel($channel, $accepted ? Request::DELIVERY_SENT : Request::DELIVERY_FAILED, $accepted ? null : $continuationError);
+                    $request->markChannelJob($channel, \bin2hex(\random_bytes(16)), $accepted ? 'done' : 'failed', preserveProgress: true);
+                    if ($accepted) {
+                        $request->enqueueChannelAnnouncement($channel, ['delivered' => true, 'cancelled' => false, 'error' => null]);
+                    }
+
+                    return true;
+                }
+                $parts = $request->channelParts($channel);
+                // Old checkpoints contain only a hash. Ordered delivery guarantees that index < checkpoint count.
+                for ($index = 0; $index < \count($parts); ++$index) {
+                    $key = \hash('sha256', $recipient . ':' . $index);
+                    $part = $parts[$key] ?? null;
+                    if (null === $part || 'sending' !== $part['state']) {
+                        continue;
+                    }
+                    if ($accepted) {
+                        $part['state'] = 'sent';
+                        $request->markChannelPart($channel, $key, $part);
+                    } else {
+                        $request->markChannelPart($channel, $key, null);
+                    }
+                    $request->markChannel($channel, Request::DELIVERY_FAILED, $request->channelError($channel) ?? $continuationError);
+                    // Invalidate every old envelope while retaining accepted parts and the frozen operation.
+                    $request->markChannelJob($channel, \bin2hex(\random_bytes(16)), 'failed', preserveProgress: true);
+
+                    return true;
+                }
+
+                return false;
+            });
+            if ($resolved && '*' === $recipient && $accepted) {
+                $notifier = Request::CHANNEL_MAX === $channel ? $this->max : $this->telegram;
+                $this->locale->runDefault(fn () => self::dispatchPending($manager, $independent, $id, $channel, $notifier->announce(...), $this->logger));
+            }
+
+            return $resolved;
+        });
     }
 
     public function queueFailed(int $id, string $channel, string $job, string $error): void
@@ -238,8 +393,9 @@ final class RequestDeliverer
     /** Explicit retry of the failed queue: stale/completed jobs cannot revive a superseded delivery. */
     public function resumeJob(SendRequestNotification $message): bool
     {
-        return true === self::serialized($this->em, $message->requestId, $message->channel, static function (EntityManagerInterface $manager) use ($message): bool {
-            return $manager->wrapInTransaction(static function () use ($manager, $message): bool {
+        return true === self::serialized($this->em, $message->requestId, $message->channel, function (EntityManagerInterface $manager, ?Connection $independent) use ($message): bool {
+            $quarantined = false;
+            $resumed = $manager->wrapInTransaction(function () use ($manager, $message, &$quarantined): bool {
                 $request = self::load($manager, $message->requestId, LockMode::PESSIMISTIC_WRITE);
                 if (null === $request) {
                     return false;
@@ -247,7 +403,12 @@ final class RequestDeliverer
                 $job = $message->jobId ?? 'legacy';
                 $phase = $request->channelJobPhase($message->channel);
                 if ('legacy' === $job && null === $request->channelJob($message->channel)) {
-                    return $message->resend || Request::DELIVERY_SENT !== $request->channelState($message->channel);
+                    if ($message->resend && Request::DELIVERY_SENT === $request->channelState($message->channel)) {
+                        $this->quarantineLegacyResend($request, $message->channel);
+                        $quarantined = true;
+                    }
+
+                    return Request::DELIVERY_SENT !== $request->channelState($message->channel) && !$quarantined;
                 }
                 if ($job !== $request->channelJob($message->channel) || \in_array($phase, ['done', 'uncertain'], true)) {
                     return false;
@@ -258,7 +419,30 @@ final class RequestDeliverer
 
                 return true;
             });
+            if ($quarantined) {
+                $this->announceLegacyQuarantine($manager, $independent, $message->requestId, $message->channel);
+            }
+
+            return $resumed;
         });
+    }
+
+    private function quarantineLegacyResend(Request $request, string $channel): void
+    {
+        $hasUnknownParts = $request->hasUnresolvedChannelParts($channel);
+        $error = $this->locale->runDefault(static fn (): string => I18n::t($hasUnknownParts ? 'http.request_delivery_uncertain' : 'ops.requests_legacy_resend_quarantined'));
+        $request->markChannel($channel, Request::DELIVERY_FAILED, $error);
+        // No historical destination or text snapshot exists in a 0.2.2 envelope. Do not invent provider checkpoints.
+        // Existing interrupted checkpoints still require their exact recipient's per-part resolution.
+        $request->markChannelJob($channel, $hasUnknownParts ? \bin2hex(\random_bytes(16)) : self::LEGACY_RESEND_QUARANTINE, 'uncertain', preserveProgress: true);
+        $request->enqueueChannelAnnouncement($channel, ['delivered' => false, 'cancelled' => false, 'error' => $error]);
+    }
+
+    private function announceLegacyQuarantine(EntityManagerInterface $manager, ?Connection $independent, int $id, string $channel): void
+    {
+        $this->logger?->warning('Legacy request resend quarantined pending operator verification.', ['requestId' => $id, 'channel' => $channel]);
+        $notifier = Request::CHANNEL_MAX === $channel ? $this->max : $this->telegram;
+        $this->locale->runDefault(fn () => self::dispatchPending($manager, $independent, $id, $channel, $notifier->announce(...), $this->logger));
     }
 
     public function settlePhase(int $id, string $channel, string $job, string $phase, ?string $error = null): void

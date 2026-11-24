@@ -34,7 +34,7 @@ SQL;
 
     public function getDescription(): string
     {
-        return 'ITK CMS: isolate SMTP settings without moving unrelated site mail values';
+        return 'ITK CMS: isolate SMTP settings without modifying legacy site mail values';
     }
 
     public function up(Schema $schema): void
@@ -44,11 +44,11 @@ SQL;
             return;
         }
 
-        // Also repair a site value renamed by an earlier broad namespace migration; never overwrite either existing destination.
-        $this->addSql('UPDATE itk_setting s SET setting_key = ? WHERE s.setting_key = ? AND s.locale = ? AND NOT ' . self::SMTP_OBJECT
-            . ' AND NOT EXISTS (SELECT 1 FROM itk_setting d WHERE d.setting_key = ? AND d.locale = ?)', ['mail', 'itk:mail', '*', 'mail', '*']);
-        $this->addSql('UPDATE itk_setting s SET setting_key = ? WHERE s.setting_key = ? AND s.locale = ? AND ' . self::SMTP_OBJECT
-            . ' AND NOT EXISTS (SELECT 1 FROM itk_setting d WHERE d.setting_key = ? AND d.locale = ?)', ['itk:mail', 'mail', '*', 'itk:mail', '*']);
+        // Copy back a site value renamed by an earlier namespace migration; retain both sources.
+        $this->addSql('INSERT INTO itk_setting (setting_key, locale, setting_value) SELECT ?, s.locale, s.setting_value FROM itk_setting s WHERE s.setting_key = ? AND s.locale = ? AND NOT ' . self::SMTP_OBJECT
+            . ' ON CONFLICT (setting_key, locale) DO NOTHING', ['mail', 'itk:mail', '*']);
+        $this->addSql('INSERT INTO itk_setting (setting_key, locale, setting_value) SELECT ?, s.locale, s.setting_value FROM itk_setting s WHERE s.setting_key = ? AND s.locale = ? AND ' . self::SMTP_OBJECT
+            . ' ON CONFLICT (setting_key, locale) DO NOTHING', ['itk:mail', 'mail', '*']);
     }
 
     public function down(Schema $schema): void

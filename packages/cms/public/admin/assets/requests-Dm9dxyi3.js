@@ -1,0 +1,1 @@
+import{t as s}from"./index-Cd5ThLxR.js";const r=[["new",s("forms.status_new")],["progress",s("forms.status_progress")],["closed",s("forms.status_closed")],["spam",s("forms.status_spam")]],e=o=>(r.find(t=>t[0]===o)||[o,o])[1];export{r as W,e as w};

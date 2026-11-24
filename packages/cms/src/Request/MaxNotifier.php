@@ -94,9 +94,11 @@ final class MaxNotifier implements ChannelNotifier
             return ChannelOutcome::pending();
         }
 
-        $parts = $this->parts($r, $resend);
+        $texts = $r->channelTexts(Request::CHANNEL_MAX);
+        $parts = null === $texts ? $this->parts($r, $resend) : MessageParts::restore($texts, Request::CHANNEL_MAX);
         $errors = [];
         $uncertain = false;
+        $refused = false;
         foreach (\array_unique($chats) as $chat) {
             foreach ($parts->texts as $i => $text) {
                 try {
@@ -109,6 +111,7 @@ final class MaxNotifier implements ChannelNotifier
                     });
                 } catch (DeliveryRefusedException|DeliveryUncertainException $e) {
                     $uncertain = $uncertain || $e instanceof DeliveryUncertainException;
+                    $refused = $refused || $e instanceof DeliveryRefusedException;
                     $error = $parts->failure($i, $e->getMessage());
                     $errors[] = $chat . ': ' . $error;
                     $this->logger->error('MAX delivery failed for request #{id}, chat {chat}: {error}', ['id' => $r->id, 'chat' => $chat, 'error' => $error]);
@@ -117,7 +120,8 @@ final class MaxNotifier implements ChannelNotifier
             }
         }
 
-        return $uncertain ? ChannelOutcome::uncertain(\implode("\n", $errors)) : ([] !== $errors ? ChannelOutcome::failed(\implode("\n", $errors)) : ChannelOutcome::sent());
+        // An uncertain chat keeps its checkpoint and waits for an operator; other chats' definite refusals still need the queue retry.
+        return $uncertain && !$refused ? ChannelOutcome::uncertain(\implode("\n", $errors)) : ([] !== $errors ? ChannelOutcome::failed(\implode("\n", $errors)) : ChannelOutcome::sent());
     }
 
     /** @internal */

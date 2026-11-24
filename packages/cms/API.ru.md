@@ -127,6 +127,9 @@
 - `Itk\Cms\Notification\NotifierInterface`
 - `Itk\Cms\Notification\Notification`
 - `Itk\Cms\Notification\NotificationChannelInterface`
+- `Itk\Cms\Request\RequestQueue`
+
+Чтобы поставить новую доставку заявки в очередь из доверенного PHP-кода, внедрите `RequestQueue` и вызовите `enqueue($requestId, $channel, resend: true)`. Используйте `Entity\Request::CHANNEL_TELEGRAM` или `Entity\Request::CHANNEL_MAX`. Операция и задание записываются вместе. Публикация начинается после фиксации транзакции. Если транзакцией управляет вызывающий код, задание публикует механизм восстановления. Пока доставка в очереди, повторные вызовы используют ту же операцию. После её завершения новый вызов может начать новую отправку. Если результат неизвестен, сперва проверьте получателя. Остальные методы `RequestQueue` внутренние.
 
 ### Безопасность и свои MCP-инструменты
 
@@ -180,6 +183,8 @@
 - `Itk\Cms\KnowledgeBase\Model\SyncKnowledge`
 
 Сайт может направлять эти сообщения в свои транспорты. `GenerateCriticalCss(string $translationId, When $when = When::Outdated)` задаёт перевод страницы. `When::Outdated` генерирует отсутствующий или устаревший CSS, `When::NotReady` также повторяет неудачную генерацию, а `When::Always` запускает генерацию независимо от актуальности CSS. Методы проверки политики, обработчики сообщений, реализация почты и остальные модели критического CSS относятся к внутренней реализации.
+
+Для новой доставки через `SendRequestNotification` используйте `RequestQueue::enqueue()`. Старый конверт без ID задания может продолжить только исходную операцию.
 
 ## Операции PageService
 

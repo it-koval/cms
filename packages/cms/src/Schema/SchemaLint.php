@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Itk\Cms\Schema;
 
+use Itk\Cms\Field\AbstractField;
+use Itk\Cms\Field\FieldInterface;
 use Itk\Cms\I18n\I18n;
 use Twig\Environment;
 
@@ -33,14 +35,25 @@ final class SchemaLint
         $warnings = [];
         $loader = $this->twig->getLoader();
         foreach ($schema->sections() as $key => $section) {
+            $warnings = [...$warnings, ...$this->nestedAccessWarnings(I18n::t('model.problem_at_section', ['key' => $key]), $section->allFields())];
             if (!$loader->exists($section->templatePath())) {
                 $errors[] = I18n::t('model.lint_section_template', ['key' => $key, 'path' => $section->templatePath()]);
             }
         }
-        foreach ($schema->templates() as $key => $_) {
+        foreach ($schema->templates() as $key => $template) {
+            $warnings = [...$warnings, ...$this->nestedAccessWarnings(I18n::t('model.problem_at_template', ['key' => $key]), $template->fieldList())];
             if (!$loader->exists('pages/' . $key . '.html.twig') && !$loader->exists('@ItkCms/pages/' . $key . '.html.twig')) {
                 $warnings[] = I18n::t('model.lint_page_template', ['key' => $key]);
             }
+        }
+
+        foreach ($schema->collections() as $key => $collection) {
+            foreach ($collection->tabList() as $tab) {
+                $warnings = [...$warnings, ...$this->nestedAccessWarnings(I18n::t('model.problem_at_collection', ['key' => $key]), $tab['fields'])];
+            }
+        }
+        foreach ($schema->settingsGroups() as $key => $group) {
+            $warnings = [...$warnings, ...$this->nestedAccessWarnings(I18n::t('model.problem_at_settings', ['key' => $key]), $group->fieldList())];
         }
 
         foreach ($schema->forms() as $key => $form) {
@@ -52,5 +65,35 @@ final class SchemaLint
         }
 
         return ['errors' => $errors, 'warnings' => $warnings];
+    }
+
+    /**
+     * @param list<FieldInterface> $fields
+     *
+     * @return list<string>
+     */
+    private function nestedAccessWarnings(string $at, array $fields, string $parent = '', string $topLevel = ''): array
+    {
+        $warnings = [];
+        foreach ($fields as $field) {
+            $path = '' === $parent ? $field->key() : $parent . '.' . $field->key();
+            $root = '' === $parent ? $field->key() : $topLevel;
+            if ('' !== $parent) {
+                $flags = [];
+                // isPublic() reads the declaration; visibleTo() would execute a site's closure and depend on a viewer.
+                if ($field instanceof AbstractField && !$field->isPublic()) {
+                    $flags[] = 'canSee()';
+                }
+                if ($field->isLocked()) {
+                    $flags[] = 'readonly()';
+                }
+                if ([] !== $flags) {
+                    $warnings[] = I18n::t('model.lint_nested_access', ['at' => $at, 'path' => $path, 'flags' => \implode(', ', $flags), 'parent' => $root]);
+                }
+            }
+            $warnings = [...$warnings, ...$this->nestedAccessWarnings($at, $field->subFields(), $path, $root)];
+        }
+
+        return $warnings;
     }
 }

@@ -173,7 +173,7 @@ final class HistoryService
     public function settings(string $locale, array $before, array $after, array $keys, string $action = Revision::EDIT, bool $notifications = false): void
     {
         if ($notifications) {
-            $this->write(Revision::SETTINGS, 'notifications', 'notifications', $locale, $action, $this->settingsOf('notifications', $after), $this->settingsOf('notifications', $before));
+            $this->write(Revision::SETTINGS, 'notifications', Revision::NOTIFICATION_SETTINGS_KEY, $locale, $action, $this->settingsOf('notifications', $after), $this->settingsOf('notifications', $before));
 
             return;
         }
@@ -253,7 +253,7 @@ final class HistoryService
     private function write(string $kind, string $id, string $key, string $locale, string $action, array $snapshot, ?array $before, ?array $summary = null): void
     {
         $edit = Revision::EDIT === $action || Revision::RESTORE === $action;
-        $last = $this->revisions->latest($kind, $id, $locale);
+        $last = $this->revisions->latest($kind, $id, $locale, Revision::SETTINGS === $kind && Revision::NOTIFICATION_SETTINGS_KEY === $key ? $key : null);
 
         if ($edit && null !== $before && Json::same($before, $snapshot) && (null === $last || Json::same($last->snapshot, $snapshot))) {
             return; // nothing changed

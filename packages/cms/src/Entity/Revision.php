@@ -33,6 +33,8 @@ class Revision
     public const MENU = 'menu';
     public const KINDS = [self::PAGE, self::ITEM, self::SETTINGS, self::MENU];
 
+    public const NOTIFICATION_SETTINGS_KEY = 'itk:notifications';
+
     public const EDIT = 'edit';
     public const PUBLISH = 'publish';
     public const UNPUBLISH = 'unpublish';
@@ -113,5 +115,16 @@ class Revision
     public function isBaseline(): bool
     {
         return 'baseline' === ($this->summary[0]['kind'] ?? null);
+    }
+
+    public function settingsGroup(): string
+    {
+        return self::SETTINGS === $this->kind && self::NOTIFICATION_SETTINGS_KEY === $this->resourceKey ? 'notifications' : $this->resourceKey;
+    }
+
+    public function isLegacyNotificationSettings(): bool
+    {
+        // Before the namespace, site fields and system values could share the same snapshot key.
+        return self::SETTINGS === $this->kind && 'notifications' === $this->resourceKey;
     }
 }

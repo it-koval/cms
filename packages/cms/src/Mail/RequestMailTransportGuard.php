@@ -14,6 +14,7 @@ use Symfony\Component\Mailer\Exception\UnexpectedResponseException;
 use Symfony\Component\Mailer\SentMessage;
 use Symfony\Component\Mailer\Transport;
 use Symfony\Component\Mailer\Transport\Dsn;
+use Symfony\Component\Mailer\Transport\Smtp\EsmtpTransportFactory;
 use Symfony\Component\Mailer\Transport\Smtp\SmtpTransport;
 use Symfony\Component\Mailer\Transport\TransportFactoryInterface;
 use Symfony\Component\Mailer\Transport\TransportInterface;
@@ -48,7 +49,11 @@ final class RequestMailTransportGuard implements EventDispatcherInterface
 
                 public function create(Dsn $dsn): TransportInterface
                 {
-                    return $this->guard->protect($this->factory->create($dsn));
+                    $transport = $this->factory instanceof EsmtpTransportFactory
+                        ? RequestMailSmtpTransport::fromDsn($dsn, $this->guard)
+                        : $this->factory->create($dsn);
+
+                    return $this->guard->protect($transport);
                 }
             };
         }
@@ -80,8 +85,11 @@ final class RequestMailTransportGuard implements EventDispatcherInterface
         try {
             return $transport->send($message, $envelope);
         } catch (TransportExceptionInterface $error) {
+            // Connect, TLS and AUTH cannot deliver a letter. Only a DATA-stage interruption is ambiguous.
+            $beforeData = $transport instanceof RequestMailSmtpTransport && !$transport->dataStarted();
             // A 4xx/5xx after acceptance can come from a listener or an SMTP reconnect.
-            if (!$this->accepted && $transport instanceof SmtpTransport && $error instanceof UnexpectedResponseException && $error->getCode() >= 400 && $error->getCode() <= 599) {
+            $refused = $transport instanceof SmtpTransport && $error instanceof UnexpectedResponseException && $error->getCode() >= 400 && $error->getCode() <= 599;
+            if (!$this->accepted && ($beforeData || $refused)) {
                 throw $error;
             }
 

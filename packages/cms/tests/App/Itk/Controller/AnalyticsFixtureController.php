@@ -16,6 +16,9 @@ use Symfony\Component\Routing\Attribute\Route;
 final class AnalyticsFixtureController extends AbstractController
 {
     #[Route('/test-analytics/controller/{embed}', name: 'app_analytics_fixture', defaults: ['embed' => 'none'])]
+    #[Route('/kk/test-analytics/controller/{embed}', name: 'app_analytics_kk_fixture', defaults: ['embed' => 'none'])]
+    #[Route('/kk/test-analytics/explicit-locale', name: 'app_analytics_explicit_locale_fixture', defaults: ['embed' => 'none', '_locale' => 'ru'])]
+    #[Route('/kk/кафе', name: 'app_analytics_cyrillic_fixture', defaults: ['embed' => 'none'])]
     public function page(string $embed): Response
     {
         return $this->render('analytics/controller.html.twig', ['embed' => $embed]);

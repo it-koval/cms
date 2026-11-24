@@ -50,19 +50,23 @@ final class SeoAddressCheck
         $path = SeoRuleService::normalizePath($address);
         [$requestedPath, $requestedQuery] = \array_pad(\explode('?', \trim($address), 2), 2, '');
         \parse_str($requestedQuery, $query);
+        $seoPath = SeoRuleService::requestPathKey($requestedPath);
         $decodedPath = \rawurldecode($requestedPath);
         $pathOnly = Url::fromPath($decodedPath);
         $pageLocale = $this->locales->fromPath($pathOnly);
         $route = $this->routeOf($requestedPath);
         $routeName = $route['_route'] ?? null;
         $ownRoute = null !== $routeName && self::CATCH_ALL !== $routeName;
+        if ($ownRoute && \is_string($route['_locale'] ?? null)) {
+            $pageLocale = $route['_locale'];
+        }
         $redirect = $ownRoute ? null : $this->redirects->lookup($pathOnly, $requestedQuery);
         $t = $ownRoute || null !== $redirect ? null : $this->translations->findLiveAtPath($pageLocale, $pathOnly, $pageLocale !== $this->locales->main());
         $snapshot = $t->published ?? [];
         $stored = (string) ($snapshot['url'] ?? $pathOnly);
-        $applied = $this->resolver->best($stored, $query, $pageLocale);
+        $applied = $this->resolver->best(isset($snapshot['url']) ? $stored : $seoPath, $query, $pageLocale);
 
-        $matches = $this->resolver->matches($pathOnly, $query, $locale ?? $pageLocale);
+        $matches = $this->resolver->matches($seoPath, $query, $locale ?? $pageLocale);
         $rules = [];
         foreach ($matches as $rule) {
             $rules[] = ['id' => $rule->id, 'path' => $rule->path, 'match' => $rule->matchType, 'locale' => $rule->locale, 'winner' => $rule->id === $applied?->id];

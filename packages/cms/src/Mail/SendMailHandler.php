@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Itk\Cms\Mail;
 
-use Itk\Cms\Notification\NotificationInbox;
 use Symfony\Component\Messenger\Attribute\AsMessageHandler;
 
 /**
@@ -18,7 +17,7 @@ final class SendMailHandler
 {
     public function __construct(
         private readonly SiteMailer $mailer,
-        private readonly NotificationInbox $inbox,
+        private readonly RequestMailWarnings $warnings,
         private readonly RequestMailCheckpoint $checkpoint,
     ) {
     }
@@ -32,7 +31,7 @@ final class SendMailHandler
         $this->checkpoint->deliver($mail, fn () => $this->mailer->deliver($mail));
         if (SendMail::REQUEST === $mail->kind && null !== $mail->ref) {
             try {
-                $this->inbox->resolve(MailFailureListener::key($mail)); // it went out in the end: the bell takes the warning back
+                $this->warnings->accepted($mail->ref, $mail->to); // Also repairs warnings when the checkpoint is already done.
             } catch (\Throwable) {
             }
         }

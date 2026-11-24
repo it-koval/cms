@@ -9,7 +9,6 @@ use Itk\Cms\I18n\I18n;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\Exception\EnvNotFoundException;
 use Symfony\Component\HttpClient\HttpClient;
-use Symfony\Component\HttpClient\RetryableHttpClient;
 use Symfony\Component\Notifier\Bridge\Telegram\TelegramOptions;
 use Symfony\Component\Notifier\Bridge\Telegram\TelegramTransport;
 use Symfony\Component\Notifier\Message\ChatMessage;
@@ -27,7 +26,7 @@ final class TelegramConnection implements ResetInterface
 {
     private bool $resolved = false;
     private ?TransportInterface $transport = null;
-    private ?TelegramTransport $adminTransport = null;
+    private ?TransportInterface $adminTransport = null;
     private ?string $adminToken = null;
 
     /** @param (\Closure(): ?object)|null $chatter builds the chatter on first use, reading the site's optional TELEGRAM_DSN */
@@ -81,6 +80,9 @@ final class TelegramConnection implements ResetInterface
         if (null !== $this->bots?->token('telegram') && !$this->adminPackagesAvailable()) {
             return I18n::t('http.telegram_packages_missing');
         }
+        if (($transport = $this->transport()) instanceof RefusedTelegramTransport) {
+            return $transport->problem();
+        }
         if ($includeUnconfigured && !$this->isConnected()) {
             return I18n::t('http.telegram_problem_token');
         }
@@ -102,8 +104,7 @@ final class TelegramConnection implements ResetInterface
         }
         if ($token !== $this->adminToken || null === $this->adminTransport) {
             $this->adminToken = $token;
-            $client = $this->http instanceof RetryableHttpClient ? $this->http->withOptions(['max_retries' => 0]) : $this->http;
-            $this->adminTransport = new TelegramTransport($token, client: $client);
+            $this->adminTransport = TelegramTransportGuard::transport(new TelegramTransport($token, client: $this->http ?? HttpClient::create()), $this->logger);
         }
 
         return $this->adminTransport;
@@ -130,7 +131,7 @@ final class TelegramConnection implements ResetInterface
         }
         try {
             $chatter = ($this->chatter)();
-            $this->transport = $chatter instanceof TransportInterface && self::canDeliver($chatter) ? $chatter : null;
+            $this->transport = $chatter instanceof TransportInterface && self::canDeliver($chatter) ? TelegramTransportGuard::transport($chatter, $this->logger) : null;
         } catch (EnvNotFoundException) {
             // TELEGRAM_DSN is not set: Telegram is not used on this site
         } catch (\Throwable $e) {

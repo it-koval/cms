@@ -12,7 +12,7 @@ use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
 
 /** @internal */
-#[AsCommand(name: 'itk:requests:recover', description: 'Publish committed request notification intents that have not reached Messenger.')]
+#[AsCommand(name: 'itk:requests:recover', description: 'ops.cmd_requests_recover_description')]
 final class RecoverRequestQueueCommand extends Command
 {
     public function __construct(private readonly RequestQueue $queue, private readonly RequestDeliverer $deliverer)

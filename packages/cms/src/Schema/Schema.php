@@ -17,6 +17,9 @@ final class Schema
     public const ACTIONS = ['view', 'edit', 'publish', 'delete'];
 
     /** Keys of Settings that are not in any group (Notifications tab): Telegram and MAX on/off and chats per form, e-mail addresses per form, accept requests. */
+    /** Dedicated permission areas and history identities; site/analytics remain extensible schema groups. */
+    public const RESERVED_SETTINGS_GROUP_KEYS = ['menus', 'redirects', 'seo', 'notifications', 'mail', 'bots', 'theme', 'languages', 'users', 'mcp', 'seo-files'];
+
     public const CORE_SETTING_KEYS = ['tgOn', 'tgRoutes', 'maxOn', 'maxRoutes', 'mailRoutes', 'forms'];
 
     /** Credential rows belong to their dedicated API and can never be fields of a site settings group. */

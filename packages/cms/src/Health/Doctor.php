@@ -175,11 +175,7 @@ final class Doctor
         } catch (\Throwable $e) {
             $out[] = [I18n::t('ops.doctor_name_locale_conflicts'), HealthResult::warn(I18n::t('ops.doctor_check_unavailable', ['error' => MessengerMonitor::scrub($e->getMessage())]))];
         }
-        $base = $this->publicUrl(accountLinks: false);
-        if (HealthResult::WARN === $base->status && I18n::t('ops.doctor_public_url_missing') === $base->message) {
-            $base = HealthResult::warn(I18n::t('ops.doctor_seo_base_missing'));
-        }
-        $out[] = [I18n::t('ops.doctor_name_seo_base'), $base];
+        $out[] = [I18n::t('ops.doctor_name_seo_base'), $this->publicUrl(accountLinks: false)];
         try {
             $settings = $this->services->get(SettingsService::class);
             $schema = $this->services->get(Schema::class);
@@ -254,7 +250,7 @@ final class Doctor
     {
         try {
             $urls = $this->services->get(PublicUrl::class);
-            $base = $accountLinks ? $urls->trustedBase() : $urls->base();
+            $base = $accountLinks ? $urls->trustedBase() : $urls->seoBase();
         } catch (\UnexpectedValueException $e) {
             return HealthResult::fail($e->getMessage());
         } catch (\Throwable $e) {
@@ -262,7 +258,7 @@ final class Doctor
         }
 
         return null === $base
-            ? HealthResult::warn(I18n::t('ops.doctor_public_url_missing'))
+            ? HealthResult::warn($accountLinks ? I18n::t('ops.doctor_public_url_missing') : I18n::t('ops.doctor_seo_base_missing'))
             : HealthResult::ok($base);
     }
 

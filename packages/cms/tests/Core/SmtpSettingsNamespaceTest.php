@@ -85,14 +85,14 @@ final class SmtpSettingsNamespaceTest extends KernelTestCase
     }
 
     #[Test]
-    public function migrationMovesTheKnownSmtpObjectAndLeavesLocalizedSiteValues(): void
+    public function migrationCopiesTheKnownSmtpObjectAndLeavesLocalizedSiteValues(): void
     {
         $smtp = self::smtpFixture();
         $this->insert('mail', $smtp);
         $this->insert('mail', 'localized-site@example.test', 'en');
         $this->migrate();
 
-        self::assertFalse($this->rowExists('mail'));
+        self::assertTrue($this->rowExists('mail'));
         self::assertEquals($smtp, $this->value('itk:mail'));
         self::assertSame('localized-site@example.test', $this->value('mail', 'en'));
         $this->migrate();
@@ -114,10 +114,11 @@ final class SmtpSettingsNamespaceTest extends KernelTestCase
             $this->migrate();
             self::assertTrue($this->rowExists('mail'));
             self::assertSame($siteValue, $this->value('mail'));
-            self::assertFalse($this->rowExists('itk:mail'));
+            self::assertTrue($this->rowExists('itk:mail'));
             $this->migrate();
             self::assertSame($siteValue, $this->value('mail'));
             $this->db->delete('itk_setting', ['setting_key' => 'mail', 'locale' => '*']);
+            $this->db->delete('itk_setting', ['setting_key' => 'itk:mail', 'locale' => '*']);
         }
     }
 

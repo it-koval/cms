@@ -26,8 +26,10 @@ Enter the administrator password when prompted. Sign in and publish the home pag
 
 ## Update
 
+If you are switching an existing 0.2.2 site to this kit, back up the old environment and transfer its uploads before starting nginx. Follow [First adoption of the production kit](../UPGRADE.md#first-adoption-of-the-production-kit).
+
 1. Keep the previous image tag, the Compose file and the runtime settings. Set the new `DEPLOY_IMAGE_TAG`. Build both images with `docker compose -f compose.prod.yaml build php nginx`.
-2. Put the site in maintenance at the HTTPS proxy. Stop `nginx`, `php` and `worker` so the database and uploads stay in sync during backup.
+2. Put the site in maintenance at the HTTPS proxy and block form intake. Keep the currently running workers (0.2.2 when upgrading to 0.3.0) processing the queue until it drains, including delayed retries. Use `docker compose -f compose.prod.yaml exec -T php php bin/console messenger:stats` (or the same command in your existing setup) to check the queue and confirm **0** with a check that includes delayed and in-flight messages. For Doctrine, count all rows in `messenger_messages` (or the configured table), grouped by `queue_name`. Resolve any failed messages before proceeding. Then stop `nginx`, `php`, `worker` and any other database/upload writers before backup.
 3. Back up both volumes. Check that the archives are readable before proceeding.
 
    ```sh
@@ -53,8 +55,10 @@ Expect a healthy endpoint and a running worker. Open the public home page and si
 
 ## Roll back
 
+The 0.3.0 migrations are incompatible with the 0.2.2 code, and some are irreversible. A rollback from 0.3.0 to 0.2.2 requires restoring the pre-upgrade database and uploads and switching to the matching code and configuration. If this was the first adoption of the kit, follow [UPGRADE → Rollback to 0.2.2](../UPGRADE.md#rollback-to-022) to restore the original deployment. The steps below apply to a site that already used this production kit before the update.
+
 1. Put the site in maintenance and stop `nginx`, `php` and `worker`. Set `DEPLOY_IMAGE_TAG` to the previous value. Use the Compose file and runtime settings that match that release.
-2. If the old code works with the migrated database, skip data recovery. For incompatible migrations, preserve the current data first. Then restore the pre-update database and uploads together. This replaces data changed after the backup.
+2. For an incompatible release pair such as 0.3.0 → 0.2.2, take a separate backup of the current database and uploads first. For release pairs with compatible schema and data, proceed to step 3.
 
    ```sh
    docker compose -f compose.prod.yaml exec -T database sh -c 'pg_dump -U postgres -Fc "$POSTGRES_DB"' > "$BACKUP_DIR/before-rollback.dump"
@@ -68,4 +72,5 @@ Expect a healthy endpoint and a running worker. Open the public home page and si
    docker compose -f compose.prod.yaml run --rm -T --no-deps --entrypoint sh php -ec 'cd /app/public/uploads && find . -mindepth 1 -delete && tar -xf -' < "$BACKUP_DIR/before-deploy-uploads.tar"
    ```
 
-3. Run `docker compose -f compose.prod.yaml up -d --wait --no-build php nginx worker`. Verify the site again before lifting maintenance.
+3. For 0.3.0 → 0.2.2, validate the restored queue before starting any 0.2.2 worker, including delayed retries and failed messages (`messenger_messages` for Doctrine, or the site's external transport). Match each envelope to the delivery outcomes in the 0.3.0 backup `before-rollback.dump` using the request ID, channel, any job ID and, for mail, the recipient. For a resend without a job ID, verify delivery of that attempt in the provider records. Delete individual envelopes only after confirming that 0.3.0 delivered them. Keep uncertain envelopes out of consumption until their delivery is reconciled, using provider evidence where necessary. Restoring old queue data can otherwise repeat deliveries made after the backup.
+4. Run `docker compose -f compose.prod.yaml up -d --wait --no-build php nginx worker`. Verify the site again before lifting maintenance.

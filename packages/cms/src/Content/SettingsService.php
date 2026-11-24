@@ -22,7 +22,7 @@ use Symfony\Contracts\Service\ResetInterface;
  */
 final class SettingsService implements ResetInterface
 {
-    private const NOTIFICATION_KEYS = ['tgOn', 'maxOn', 'tgRoutes', 'maxRoutes', 'mailRoutes'];
+    private const NOTIFICATION_KEYS = ['tgOn', 'maxOn', 'tgRoutes', 'maxRoutes', 'mailRoutes', 'forms'];
 
     /** The longest text of robots.txt / llms.txt, in bytes. */
     public const CRAWLER_TEXT_MAX = 65536;
@@ -74,9 +74,6 @@ final class SettingsService implements ResetInterface
             if (!\array_key_exists($key, $out)) {
                 $out[$key] = $value;
             }
-        }
-        if (!isset($out['forms'])) {
-            $out['forms'] = $shared['forms'] ?? true;
         }
         foreach (Schema::CRAWLER_SETTING_KEYS as $k) {
             if (!isset($out[$k])) { // a site field of the same key keeps its meaning, as with `forms`
@@ -132,9 +129,11 @@ final class SettingsService implements ResetInterface
     public function notificationSettings(): array
     {
         $shared = $this->load()[Setting::ALL] ?? [];
-        $out = ['forms' => $shared['forms'] ?? true];
+        $out = [];
         foreach (self::NOTIFICATION_KEYS as $key) {
-            $out[$key] = $shared['itk:' . $key] ?? (\str_ends_with($key, 'On') ? true : []);
+            $flag = \str_ends_with($key, 'On') || 'forms' === $key;
+            $value = $shared['itk:' . $key] ?? ($flag ? true : []);
+            $out[$key] = $flag ? (bool) $value : $value;
         }
 
         return $out;
@@ -194,14 +193,29 @@ final class SettingsService implements ResetInterface
         if ([] !== $errors) {
             throw ContentException::invalid(I18n::t('content.settings_required'), $errors);
         }
-        $before = $notifications ? $this->notificationSettings() : $this->all($locale);
+        $before = $this->all($locale);
         $after = $before;
+        $notificationBefore = $this->notificationSettings();
+        $notificationAfter = $notificationBefore;
         $touched = [];
+        $notificationTouched = [];
         foreach ($write as $items) {
-            $after = $items + $after;
-            \array_push($touched, ...\array_keys($items));
+            foreach ($items as $key => $value) {
+                if ('itk:' . $key === $this->storageKey($key, $notifications)) {
+                    $notificationAfter[$key] = $value;
+                    $notificationTouched[] = $key;
+                } else {
+                    $after[$key] = $value;
+                    $touched[] = $key;
+                }
+            }
         }
-        $this->history->settings($locale, $before, $after, $touched, $action, $notifications);
+        $this->history->settings($locale, $before, $after, $touched, $action);
+        if ([] !== $notificationTouched) {
+            // Every writer takes complete notification snapshots from the internal namespace.
+            // all() deliberately exposes colliding site fields, so it cannot be the history source.
+            $this->history->settings($locale, $notificationBefore, $notificationAfter, $notificationTouched, $action, true);
+        }
         foreach ($write as $scope => $items) {
             foreach ($items as $key => $value) {
                 $key = $this->storageKey($key, $notifications);
@@ -388,7 +402,7 @@ final class SettingsService implements ResetInterface
 
     public function acceptsRequests(): bool
     {
-        return (bool) ($this->load()[Setting::ALL]['forms'] ?? true);
+        return (bool) ($this->load()[Setting::ALL]['itk:forms'] ?? true);
     }
 
     /** '' when the value can be the text of robots.txt / llms.txt (null is fine: it means «the standard one»), else the reason. */

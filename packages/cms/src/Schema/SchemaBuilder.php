@@ -187,6 +187,13 @@ final class SchemaBuilder
 
     public function build(): Schema
     {
+        $reserved = \array_intersect(\array_keys($this->settings), Schema::RESERVED_SETTINGS_GROUP_KEYS);
+        if ([] !== $reserved) {
+            throw new \LogicException(\sprintf(
+                'Settings group keys %s are reserved for CMS permissions and history. Rename the group in SchemaBuilder::settings() or SettingsResource::key(), then update saved role permissions and field canSee references to set:<new-key>. Keep field keys unchanged to retain their stored values.',
+                \implode(', ', \array_map(static fn (string $key): string => '"' . $key . '"', $reserved)),
+            ));
+        }
         foreach ($this->collections as $collection) {
             $collection->checkViews();
         }

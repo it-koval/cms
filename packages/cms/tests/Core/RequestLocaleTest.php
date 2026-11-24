@@ -6,6 +6,7 @@ namespace Itk\Cms\Tests\Core;
 
 use Doctrine\DBAL\Connection;
 use Itk\Cms\I18n\I18n;
+use Itk\Cms\Tests\App\RecordingLogger;
 use Itk\Cms\Tests\App\TestKernel;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
@@ -92,6 +93,7 @@ final class RequestLocaleTest extends WebTestCase
     public static function invalidLocales(): iterable
     {
         yield 'unknown' => ['?locale=zz'];
+        yield 'removed from configuration' => ['?locale=de'];
         yield 'empty' => ['?locale='];
         yield 'array' => ['?locale[]=kk'];
         yield 'nested array' => ['?locale[code]=kk'];
@@ -99,12 +101,15 @@ final class RequestLocaleTest extends WebTestCase
 
     #[Test]
     #[DataProvider('invalidLocales')]
-    public function invalidExplicitLocaleIsRejectedWithoutWriting(string $query): void
+    public function invalidExplicitLocaleIsSavedInThePrimaryLanguageAndLogged(string $query): void
     {
-        $out = $this->post($query, 'http://localhost/kk/contact', status: 422);
-        self::assertFalse($out['success']);
-        self::assertSame('Такого языка нет', $out['message']);
-        self::assertSame([], $this->stored());
+        $logger = self::getContainer()->get('logger');
+        self::assertInstanceOf(RecordingLogger::class, $logger);
+        $logger->records = [];
+        $referer = 'http://localhost/kk/contact';
+        self::assertTrue($this->post($query, $referer)['success']);
+        self::assertSame([['locale' => 'ru', 'source_url' => $referer]], $this->stored());
+        self::assertContains(['level' => 'warning', 'message' => 'ITK CMS: invalid request form locale; using the primary locale.', 'context' => ['form' => 'maintenance', 'locale' => 'ru']], $logger->records);
     }
 
     /** @return iterable<array-key, mixed> */
@@ -163,7 +168,7 @@ final class RequestLocaleTest extends WebTestCase
     }
 
     #[Test]
-    public function rateLimitUsesThePublicLanguageBeforeReadingTheBodyOrRejectingAnInvalidLocale(): void
+    public function rateLimitUsesThePublicLanguageAndStillBlocksAnInvalidLocaleSubmission(): void
     {
         $this->startLimitedForm(['adminLocales' => ['ru', 'en']]);
         $this->post('?locale=kk', fields: ['itk_hp' => 'robot']);
@@ -189,10 +194,14 @@ final class RequestLocaleTest extends WebTestCase
     }
 
     #[Test]
-    public function honeypotStillSucceedsBeforeLocaleValidationAndWritesNothing(): void
+    public function honeypotStillSucceedsWithoutSavingOrLoggingALocaleWarning(): void
     {
+        $logger = self::getContainer()->get('logger');
+        self::assertInstanceOf(RecordingLogger::class, $logger);
+        $logger->records = [];
         self::assertSame(['success' => true], $this->post('?locale[]=kk', fields: ['itk_hp' => 'robot']));
         self::assertSame([], $this->stored());
+        self::assertNotContains('ITK CMS: invalid request form locale; using the primary locale.', $logger->messages('warning'));
     }
 
     #[Test]

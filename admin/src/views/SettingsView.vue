@@ -86,9 +86,10 @@ function normalizeNotifications(s) {
   const o = clone(s)
   o.tgOn ??= true
   o.maxOn ??= true
-  if (!o.tgRoutes || Array.isArray(o.tgRoutes)) o.tgRoutes = {} // an empty PHP array arrives as []
-  if (!o.maxRoutes || Array.isArray(o.maxRoutes)) o.maxRoutes = {}
-  if (!o.mailRoutes || Array.isArray(o.mailRoutes)) o.mailRoutes = {}
+  for (const key of ['tgRoutes', 'maxRoutes', 'mailRoutes']) {
+    // Legacy responses may encode the map as an array when the form key is "0".
+    o[key] = o[key] && typeof o[key] === 'object' ? { ...o[key] } : {}
+  }
   o.forms ??= true
   return o
 }

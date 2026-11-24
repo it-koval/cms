@@ -901,6 +901,249 @@ final class LongRequestDeliveryTest extends WebTestCase
     }
 
     #[Test]
+    public function integrationCanQueueANewResendWhileOldMessagesRemainReplays(): void
+    {
+        $c = self::getContainer();
+        $em = $c->get(EntityManagerInterface::class);
+        $r = self::request(['items' => 'integration-resend']);
+        $em->persist($r);
+        $em->flush();
+        $bus = new class implements \Symfony\Component\Messenger\MessageBusInterface {
+            /** @var list<\Itk\Cms\Request\SendRequestNotification> */
+            public array $messages = [];
+
+            public function dispatch(object $message, array $stamps = []): \Symfony\Component\Messenger\Envelope
+            {
+                \assert($message instanceof \Itk\Cms\Request\SendRequestNotification);
+                $this->messages[] = $message;
+
+                return new \Symfony\Component\Messenger\Envelope($message, $stamps);
+            }
+        };
+        $queue = new \Itk\Cms\Request\RequestQueue($em, $bus, new NullLogger());
+        $handler = new \Itk\Cms\Request\SendRequestNotificationHandler(new RequestDeliverer($em, $this->telegram, $this->max, $c->get(AdminLocale::class)));
+        $queue->enqueue((int) $r->id, 'telegram');
+        $initial = $bus->messages[0];
+        $handler($initial);
+        self::assertCount(1, $this->api->texts('telegram'));
+
+        $queue->enqueue((int) $r->id, 'telegram', resend: true);
+        $resend = $bus->messages[1];
+        self::assertNotSame($initial->jobId, $resend->jobId);
+        $queue->enqueue((int) $r->id, 'telegram', resend: true);
+        self::assertCount(2, $bus->messages, 'a live reservation coalesces repeated integration calls');
+        $handler($initial);
+        $handler(new \Itk\Cms\Request\SendRequestNotification((int) $r->id, true, 'telegram'));
+        self::assertCount(1, $this->api->texts('telegram'), 'old identities cannot masquerade as a new resend');
+        $handler($resend);
+        $handler($resend);
+        self::assertCount(2, $this->api->texts('telegram'));
+        self::assertSame(0, (int) $em->getConnection()->fetchOne('SELECT COUNT(*) FROM itk_request_queue WHERE request_id = ?', [$r->id]));
+    }
+
+    #[Test]
+    #[DataProvider('channels')]
+    public function aLegacyResendOfAnAlreadySentRequestWaitsForOperatorVerification(string $channel): void
+    {
+        $c = self::getContainer();
+        $em = $c->get(EntityManagerInterface::class);
+        $r = self::request(['items' => '0.2.2 resend without an operation identity']);
+        $r->markChannel($channel, Request::DELIVERY_SENT);
+        $em->persist($r);
+        $em->flush();
+        $logger = new class extends \Psr\Log\AbstractLogger {
+            /** @var list<array{string, string, array<string, mixed>}> */
+            public array $records = [];
+
+            public function log($level, string|\Stringable $message, array $context = []): void
+            {
+                $this->records[] = [(string) $level, (string) $message, $context];
+            }
+        };
+        $deliverer = new RequestDeliverer($em, $this->telegram, $this->max, $c->get(AdminLocale::class), $logger);
+        $handler = new \Itk\Cms\Request\SendRequestNotificationHandler($deliverer);
+        $message = new \Itk\Cms\Request\SendRequestNotification((int) $r->id, true, $channel);
+
+        $handler($message);
+        $em->refresh($r);
+        self::assertSame([], $this->api->texts($channel), 'a 0.2.2 replay must never become a fresh resend');
+        self::assertSame('uncertain', $r->channelJobPhase($channel));
+        self::assertNotSame('legacy', $r->channelJob($channel));
+        self::assertSame('failed', $r->channelState($channel));
+        self::assertNotEmpty($r->channelError($channel));
+        self::assertSame([], $r->channelParts($channel), 'historical recipients and parts must never be guessed');
+        self::assertSame('legacy-resend-quarantine', $r->channelJob($channel));
+        self::assertSame('warning', $logger->records[0][0]);
+        self::assertSame($r->id, $logger->records[0][2]['requestId']);
+        self::assertSame($channel, $logger->records[0][2]['channel']);
+        $quarantined = $em->getConnection()->fetchOne('SELECT channels FROM itk_request WHERE id = ?', [$r->id]);
+        $handler($message);
+        self::assertFalse($deliverer->resumeJob($message));
+        self::assertSame($quarantined, $em->getConnection()->fetchOne('SELECT channels FROM itk_request WHERE id = ?', [$r->id]), 'duplicate redelivery must preserve the quarantine');
+        self::assertCount(1, $logger->records);
+        self::assertSame([], $this->api->texts($channel));
+    }
+
+    #[Test]
+    #[DataProvider('legacyResendResolutions')]
+    public function aLegacyResendQuarantineHasAnExplicitChannelScopeResolution(string $channel, bool $accepted, bool $preflight): void
+    {
+        $c = self::getContainer();
+        $em = $c->get(EntityManagerInterface::class);
+        $r = self::request(['items' => 'historical recipients and text were never checkpointed']);
+        $r->markChannel($channel, Request::DELIVERY_SENT);
+        $em->persist($r);
+        $em->flush();
+        $deliverer = new RequestDeliverer($em, $this->telegram, $this->max, $c->get(AdminLocale::class));
+        $handler = new \Itk\Cms\Request\SendRequestNotificationHandler($deliverer);
+        $message = new \Itk\Cms\Request\SendRequestNotification((int) $r->id, true, $channel);
+        if ($preflight) {
+            self::assertFalse($deliverer->resumeJob($message));
+        } else {
+            $handler($message);
+        }
+        self::assertSame([], $this->api->texts($channel));
+        self::assertSame('uncertain', $r->channelJobPhase($channel));
+        $key = $channel . '.failed:' . $r->id;
+        self::assertSame(1, (int) $em->getConnection()->fetchOne('SELECT count(*) FROM itk_notification WHERE dedupe_key = ?', [$key]), 'quarantine appears in the existing operator bell');
+        $tester = new \Symfony\Component\Console\Tester\CommandTester(new \Itk\Cms\Command\ResolveRequestDeliveryCommand($deliverer));
+        self::assertSame(1, $tester->execute(['request' => $r->id, 'channel' => $channel, 'recipient' => self::CHATS[$channel], 'outcome' => 'sent']), 'a guessed current recipient cannot verify a historical channel');
+        self::assertSame(0, $tester->execute(['request' => $r->id, 'channel' => $channel, 'recipient' => '*', 'outcome' => $accepted ? 'sent' : 'rejected']));
+        self::assertSame([], $this->api->texts($channel), 'resolution never sends');
+        $handler($message);
+        self::assertFalse($deliverer->resumeJob($message));
+        self::assertSame([], $this->api->texts($channel), 'old envelope stays inert after operator resolution');
+        self::assertSame($accepted ? 'sent' : 'failed', $r->channelState($channel));
+        self::assertSame($accepted ? 'done' : 'failed', $r->channelJobPhase($channel));
+        self::assertSame($accepted ? 0 : 1, (int) $em->getConnection()->fetchOne('SELECT count(*) FROM itk_notification WHERE dedupe_key = ?', [$key]));
+        self::assertSame(1, $tester->execute(['request' => $r->id, 'channel' => $channel, 'recipient' => '*', 'outcome' => 'rejected']), 'channel-scope resolution cannot change a completed judgment');
+        if (!$accepted) {
+            $deliverer->deliverSynchronously((int) $r->id, $channel, true);
+            self::assertCount(1, $this->api->texts($channel), 'only an explicit fresh resend is released after rejection verification');
+            self::assertSame('sent', $r->channelState($channel));
+        }
+    }
+
+    /** @return iterable<string, array{string, bool, bool}> */
+    public static function legacyResendResolutions(): iterable
+    {
+        foreach (\array_keys(Request::CHANNELS) as $channel) {
+            foreach ([false, true] as $preflight) {
+                yield $channel . ' sent ' . (int) $preflight => [$channel, true, $preflight];
+                yield $channel . ' rejected ' . (int) $preflight => [$channel, false, $preflight];
+            }
+        }
+    }
+
+    #[Test]
+    #[DataProvider('channels')]
+    public function aLegacyResendStillDeliversAnUndeliveredRequestOnlyOnce(string $channel): void
+    {
+        $c = self::getContainer();
+        $em = $c->get(EntityManagerInterface::class);
+        $r = self::request(['items' => '0.2.2 resend which never reached the messenger']);
+        $em->persist($r);
+        $em->flush();
+        $deliverer = new RequestDeliverer($em, $this->telegram, $this->max, $c->get(AdminLocale::class));
+        $handler = new \Itk\Cms\Request\SendRequestNotificationHandler($deliverer);
+        $message = new \Itk\Cms\Request\SendRequestNotification((int) $r->id, true, $channel);
+
+        self::assertTrue($deliverer->resumeJob($message));
+        $handler($message);
+        $handler($message);
+
+        self::assertCount(1, $this->api->texts($channel));
+        self::assertSame('sent', $r->channelState($channel));
+        self::assertSame('done', $r->channelJobPhase($channel));
+        self::assertSame('legacy', $r->channelJob($channel));
+        self::assertFalse($deliverer->resumeJob($message));
+    }
+
+    #[Test]
+    public function aLegacyResendAlsoQuarantinesTheHistoricalTelegramAggregate(): void
+    {
+        $c = self::getContainer();
+        $em = $c->get(EntityManagerInterface::class);
+        $r = self::request(['items' => 'row predating channel metadata']);
+        $r->delivery = Request::DELIVERY_SENT;
+        $em->persist($r);
+        $em->flush();
+        $deliverer = new RequestDeliverer($em, $this->telegram, $this->max, $c->get(AdminLocale::class));
+
+        (new \Itk\Cms\Request\SendRequestNotificationHandler($deliverer))(new \Itk\Cms\Request\SendRequestNotification((int) $r->id, true));
+
+        self::assertSame([], $this->api->texts('telegram'));
+        self::assertSame('uncertain', $r->channelJobPhase('telegram'));
+        self::assertSame('legacy-resend-quarantine', $r->channelJob('telegram'));
+        self::assertNull($r->channelTexts('telegram'));
+    }
+
+    #[Test]
+    #[DataProvider('channels')]
+    public function aLegacyResendPreservesRealInterruptedPartsForRecipientResolution(string $channel): void
+    {
+        $c = self::getContainer();
+        $em = $c->get(EntityManagerInterface::class);
+        $r = self::request(['items' => 'known interrupted checkpoint without job metadata']);
+        $texts = $this->notifier($channel)->parts($r)->texts;
+        $r->markChannel($channel, Request::DELIVERY_SENT);
+        $r->markChannelTexts($channel, $texts);
+        $partKey = \hash('sha256', self::CHATS[$channel] . ':0');
+        $r->markChannelPart($channel, $partKey, ['hash' => \hash('sha256', $texts[0]), 'state' => 'sending']);
+        $em->persist($r);
+        $em->flush();
+        $deliverer = new RequestDeliverer($em, $this->telegram, $this->max, $c->get(AdminLocale::class));
+        $handler = new \Itk\Cms\Request\SendRequestNotificationHandler($deliverer);
+        $message = new \Itk\Cms\Request\SendRequestNotification((int) $r->id, true, $channel);
+
+        $handler($message);
+
+        self::assertSame([], $this->api->texts($channel));
+        self::assertSame('uncertain', $r->channelJobPhase($channel));
+        self::assertSame($texts, $r->channelTexts($channel));
+        self::assertSame('sending', $r->channelParts($channel)[$partKey]['state']);
+        self::assertFalse($deliverer->resolve((int) $r->id, $channel, '*', true), 'channel-scope judgment must not erase a real unknown part');
+        self::assertTrue($deliverer->resolve((int) $r->id, $channel, self::CHATS[$channel], true));
+        $handler($message);
+        $deliverer->deliverSynchronously((int) $r->id, $channel, true);
+        self::assertSame([], $this->api->texts($channel), 'the actual accepted checkpoint remains skipped');
+        self::assertSame('sent', $r->channelState($channel));
+    }
+
+    #[Test]
+    public function bulkRequeueCountsOnlyRequestsWithAStagedJob(): void
+    {
+        $c = self::getContainer();
+        $em = $c->get(EntityManagerInterface::class);
+        $requests = [];
+        foreach (['uncertain', 'queued', 'failed'] as $phase) {
+            $r = self::request(['items' => 'bulk-count-' . $phase]);
+            $r->markChannel('telegram', Request::DELIVERY_FAILED, 'test');
+            $r->markChannelJob('telegram', 'bulk-count-' . $phase, $phase, 'queued' === $phase ? \time() + 3600 : 0);
+            $em->persist($r);
+            $requests[$phase] = $r;
+        }
+        $em->flush();
+        $transport = $c->get('messenger.transport.async');
+        \assert($transport instanceof \Symfony\Component\Messenger\Transport\InMemory\InMemoryTransport);
+        $transport->reset();
+
+        $count = $c->get(\Itk\Cms\Request\RequestService::class)->requeueFailed();
+
+        $ids = [];
+        foreach ($transport->getSent() as $envelope) {
+            $message = $envelope->getMessage();
+            if ($message instanceof \Itk\Cms\Request\SendRequestNotification) {
+                $ids[$message->requestId] = true;
+            }
+        }
+        self::assertArrayHasKey($requests['failed']->id, $ids);
+        self::assertArrayNotHasKey($requests['uncertain']->id, $ids);
+        self::assertArrayNotHasKey($requests['queued']->id, $ids);
+        self::assertSame(\count($ids), $count);
+    }
+
+    #[Test]
     public function f1TerminalListenerWithAClosedManagerPreservesTheWorkerFailure(): void
     {
         $c = self::getContainer();
@@ -1187,6 +1430,656 @@ final class LongRequestDeliveryTest extends WebTestCase
         $em->refresh($r);
         self::assertSame('done', $r->channelJobPhase('telegram'));
         self::assertCount(1, $this->api->texts('telegram'));
+    }
+
+    #[Test]
+    #[DataProvider('channels')]
+    public function aResendCannotResolveAnUncertainDelivery(string $channel): void
+    {
+        $em = self::getContainer()->get(EntityManagerInterface::class);
+        $r = self::request(['items' => LongText::order(12000)]);
+        $parts = $this->notifier($channel)->parts($r)->texts;
+        $r->markChannel($channel, Request::DELIVERY_FAILED, 'response lost for part two');
+        $r->markChannelJob($channel, 'operator-uncertain', 'uncertain');
+        $r->markChannelResend($channel, false);
+        foreach ([0 => 'sent', 1 => 'sending'] as $index => $state) {
+            $r->markChannelPart($channel, \hash('sha256', self::CHATS[$channel] . ':' . $index), ['hash' => \hash('sha256', $parts[$index]), 'state' => $state]);
+        }
+        $em->persist($r);
+        $em->flush();
+
+        $out = $this->f1Service(new \Symfony\Component\Messenger\MessageBus())->resendResult((int) $r->id, $channel);
+
+        self::assertSame([], $this->api->texts($channel), 'resend must not guess whether an interrupted provider call succeeded');
+        self::assertSame('failed', $out['outcomes'][$channel]['state']);
+        self::assertSame('sending', $r->channelParts($channel)[\hash('sha256', self::CHATS[$channel] . ':1')]['state']);
+        self::assertSame('operator-uncertain', $r->channelJob($channel));
+    }
+
+    #[Test]
+    #[DataProvider('channels')]
+    public function aDefiniteRefusalStillRetriesWhileAnotherChatWaitsForTheOperator(string $channel): void
+    {
+        $chat = self::CHATS[$channel];
+        $uncertainChat = '-1009999999998';
+        $refusedChat = '-1009999999999';
+        $this->setting('telegram' === $channel ? 'tgRoutes' : 'maxRoutes', ['*' => $chat . ', ' . $uncertainChat . ', ' . $refusedChat]);
+        $em = self::getContainer()->get(EntityManagerInterface::class);
+        $r = self::request(['items' => 'mixed recipient outcomes']);
+        $text = $this->notifier($channel)->buildText($r);
+        $r->markChannelJob($channel, 'mixed-outcomes', 'retry');
+        $r->markChannelResend($channel, false);
+        $r->markChannelPart($channel, \hash('sha256', $chat . ':0'), ['hash' => \hash('sha256', $text), 'state' => 'sent']);
+        $r->markChannelPart($channel, \hash('sha256', $uncertainChat . ':0'), ['hash' => \hash('sha256', $text), 'state' => 'sending']);
+        $em->persist($r);
+        $em->flush();
+        $deliverer = new RequestDeliverer($em, $this->telegram, $this->max, self::getContainer()->get(AdminLocale::class));
+        $this->api->refuseAttempt = 1;
+
+        self::assertFalse($deliverer->deliver((int) $r->id, $channel, false, 'mixed-outcomes'), 'only the definite refusal requests an automatic retry');
+        self::assertSame('retry', $r->channelJobPhase($channel));
+        self::assertSame([], $this->api->texts($channel));
+
+        $this->api->forget();
+        self::assertTrue($deliverer->deliver((int) $r->id, $channel, false, 'mixed-outcomes'));
+        self::assertSame([$text], $this->api->texts($channel, $refusedChat));
+        self::assertSame([], $this->api->texts($channel, $chat));
+        self::assertSame([], $this->api->texts($channel, $uncertainChat));
+        self::assertSame('uncertain', $r->channelJobPhase($channel), 'the lost response remains for an operator after definite failures are resolved');
+    }
+
+    #[Test]
+    #[DataProvider('verifiedMessengerOutcomes')]
+    public function onlyAnOperatorResolutionReleasesAnInterruptedRecipient(string $channel, bool $accepted, bool $staleProcessing): void
+    {
+        $c = self::getContainer();
+        $em = $c->get(EntityManagerInterface::class);
+        $r = self::request(['items' => LongText::order(12000)]);
+        $parts = $this->notifier($channel)->parts($r)->texts;
+        $r->markChannel($channel, $staleProcessing ? Request::DELIVERY_PENDING : Request::DELIVERY_FAILED, $staleProcessing ? null : 'lost response');
+        $r->markChannelJob($channel, 'interrupted-operation', $staleProcessing ? 'processing' : 'uncertain');
+        $r->markChannelResend($channel, false);
+        $r->markChannelTexts($channel, $parts);
+        foreach ([0 => 'sent', 1 => 'sending'] as $index => $state) {
+            $r->markChannelPart($channel, \hash('sha256', self::CHATS[$channel] . ':' . $index), ['hash' => \hash('sha256', $parts[$index]), 'state' => $state]);
+        }
+        $em->persist($r);
+        $em->flush();
+        $deliverer = new RequestDeliverer($em, $this->telegram, $this->max, $c->get(AdminLocale::class));
+        $command = new \Itk\Cms\Command\ResolveRequestDeliveryCommand($deliverer);
+        $tester = new \Symfony\Component\Console\Tester\CommandTester($command);
+        $input = new \Symfony\Component\Console\Input\StringInput($r->id . ' ' . $channel . ' -- ' . self::CHATS[$channel] . ' ' . ($accepted ? 'sent' : 'rejected'));
+        self::assertSame(0, $command->run($input, new \Symfony\Component\Console\Output\BufferedOutput()));
+        self::assertSame([], $this->api->texts($channel), 'resolving records judgment and never sends');
+        $em->refresh($r);
+        self::assertNotSame('interrupted-operation', $r->channelJob($channel));
+        self::assertSame('failed', $r->channelState($channel));
+        self::assertNotEmpty($r->channelError($channel));
+        self::assertTrue($deliverer->deliver((int) $r->id, $channel, false, 'interrupted-operation'));
+        self::assertFalse($deliverer->resumeJob(new \Itk\Cms\Request\SendRequestNotification((int) $r->id, false, $channel, 'interrupted-operation')));
+        self::assertSame([], $this->api->texts($channel), 'stale envelopes cannot resume the resolved operation');
+        self::assertSame(1, $tester->execute(['request' => $r->id, 'channel' => $channel, 'recipient' => self::CHATS[$channel], 'outcome' => 'rejected']), 'a second judgment cannot clear a confirmed part');
+
+        $r->data = ['items' => 'edited after provider verification'];
+        $em->flush();
+        $bus = new \Symfony\Component\Messenger\MessageBus();
+        $resend = new \Itk\Cms\Command\ResendRequestsCommand($this->f1Service($bus), $c->get(\Itk\Cms\Repository\RequestRepository::class), $c->get(\Itk\Cms\Mail\RequestMailCheckpoint::class), $c->get(\Itk\Cms\Mail\MailComposer::class), new \Itk\Cms\Request\RequestQueue($em, $bus, new NullLogger()));
+        $resendTester = new \Symfony\Component\Console\Tester\CommandTester($resend);
+        self::assertSame(0, $resendTester->execute(['request' => $r->id, '--channel' => $channel]));
+
+        self::assertSame(\array_slice($parts, $accepted ? 2 : 1), $this->api->texts($channel), 'remaining parts retain order and every accepted part is skipped');
+        self::assertSame('sent', $r->channelState($channel));
+    }
+
+    /** @return iterable<string, array{string, bool, bool}> */
+    public static function verifiedMessengerOutcomes(): iterable
+    {
+        foreach (\array_keys(Request::CHANNELS) as $channel) {
+            foreach ([false, true] as $staleProcessing) {
+                yield $channel . 'accepted' . (int) $staleProcessing => [$channel, true, $staleProcessing];
+                yield $channel . 'rejected' . (int) $staleProcessing => [$channel, false, $staleProcessing];
+            }
+        }
+    }
+
+    #[Test]
+    #[DataProvider('channels')]
+    public function aPartialRetryKeepsRenderedTextsAfterDataTemplateAndLocaleChange(string $channel): void
+    {
+        $c = self::getContainer();
+        $em = $c->get(EntityManagerInterface::class);
+        $r = self::request(['items' => LongText::order(12000)], 'long_plain');
+        $em->persist($r);
+        $em->flush();
+        $deliverer = new RequestDeliverer($em, $this->telegram, $this->max, $c->get(AdminLocale::class));
+        $original = $c->get(AdminLocale::class)->runDefault(fn (): array => $this->notifier($channel)->parts($r)->texts);
+        $this->api->refuseAttempt = 2;
+        self::assertFalse($deliverer->deliver((int) $r->id, $channel, false));
+        $accepted = $this->api->texts($channel);
+        $job = (string) $r->channelJob($channel);
+        $deliverer->queueFailed((int) $r->id, $channel, $job, 'exhausted');
+        $r->data = ['items' => 'changed while delivery was interrupted'];
+        $em->flush();
+        $c->get(Schema::class)->form('long_plain')->telegram('Changed title and template {items}');
+        $english = new AdminLocale('en', ['ru', 'en'], 'ru', new NullLogger(), $c->get('translator'), $c->get('translation.locale_switcher'));
+        $retry = new RequestDeliverer($em, $this->telegram, $this->max, $english);
+        self::assertNotSame($original, $english->runDefault(fn (): array => $this->notifier($channel)->parts($r)->texts));
+        $this->api->forget();
+
+        $retry->deliverSynchronously((int) $r->id, $channel, true);
+
+        self::assertSame($original, [...$accepted, ...$this->api->texts($channel)]);
+        self::assertSame('done', $r->channelJobPhase($channel));
+        self::assertSame($job, $r->channelJob($channel));
+    }
+
+    #[Test]
+    public function aConfiguredIncompatibleTelegramClientCreatesAFailedQueuedOperation(): void
+    {
+        $c = self::getContainer();
+        $em = $c->get(EntityManagerInterface::class);
+        $wire = new \Symfony\Component\HttpClient\MockHttpClient(new \Symfony\Component\HttpClient\Response\MockResponse('{"ok":true,"result":{"message_id":1}}'));
+        $typed = new class(new \Symfony\Component\HttpClient\RetryableHttpClient($wire)) extends \Symfony\Component\HttpClient\MockHttpClient {
+            public function __construct(private \Symfony\Component\HttpClient\RetryableHttpClient $decorated)
+            {
+                parent::__construct();
+            }
+
+            public function __destruct()
+            {
+                unset($this->decorated);
+            }
+        };
+        $connection = new \Itk\Cms\Request\TelegramConnection(static fn (): TransportInterface => new \Symfony\Component\Notifier\Bridge\Telegram\TelegramTransport('123456:private-token', client: $typed), new NullLogger());
+        $this->telegram = new TelegramNotifier($c->get(Schema::class), $c->get(SettingsService::class), new NullLogger(), $connection, $c->get('event_dispatcher'), true);
+        self::assertTrue($this->telegram->isActive());
+        $r = self::request(['items' => 'configured transport failure']);
+        $em->persist($r);
+        $em->flush();
+        $deliverer = new RequestDeliverer($em, $this->telegram, $this->max, $c->get(AdminLocale::class));
+        $handlers = new \Symfony\Component\Messenger\Handler\HandlersLocator([\Itk\Cms\Request\SendRequestNotification::class => [new \Itk\Cms\Request\SendRequestNotificationHandler($deliverer)]]);
+        $bus = new \Symfony\Component\Messenger\MessageBus([new \Symfony\Component\Messenger\Middleware\HandleMessageMiddleware($handlers)]);
+        (new \Itk\Cms\Request\RequestQueue($em, $bus, new NullLogger()))->enqueue((int) $r->id, 'telegram');
+        $em->refresh($r);
+        self::assertNotNull($r->channelJob('telegram'));
+        self::assertSame('failed', $r->channelJobPhase('telegram'));
+        self::assertSame(Request::DELIVERY_FAILED, $r->channelState('telegram'));
+        self::assertSame([], $r->channelParts('telegram'), 'guard failed before provider I/O, so no ambiguous checkpoint remains');
+        self::assertStringContainsString('decorated', (string) $r->channelError('telegram'));
+        self::assertStringNotContainsString('private-token', (string) $r->channelError('telegram'));
+        self::assertSame(0, $wire->getRequestsCount());
+    }
+
+    #[Test]
+    #[DataProvider('channels')]
+    public function legacyOtherChannelOverwriteRetainsFrozenTextsAndEveryAcceptedPart(string $channel): void
+    {
+        $c = self::getContainer();
+        $em = $c->get(EntityManagerInterface::class);
+        $r = self::request(['items' => LongText::order(12000)]);
+        $em->persist($r);
+        $em->flush();
+        $original = $this->notifier($channel)->parts($r)->texts;
+        $job = RequestDeliverer::reserve($em, (int) $r->id, $channel, false);
+        $deliverer = new RequestDeliverer($em, $this->telegram, $this->max, $c->get(AdminLocale::class));
+        $api = $this->api;
+        $api->refuseAttempt = 2;
+        $api->beforeAttempt = static function () use ($api, $em, $r, $channel): void {
+            if (1 !== $api->attempts) {
+                return;
+            }
+            $api->beforeAttempt = null;
+            $other = DriverManager::getConnection($em->getConnection()->getParams());
+            try {
+                $otherChannel = 'telegram' === $channel ? 'max' : 'telegram';
+                $other->executeStatement('UPDATE itk_request SET channels = ?, delivery = ? WHERE id = ?', [\json_encode([$otherChannel => ['state' => 'sent', 'error' => null]], \JSON_THROW_ON_ERROR), 'sent', $r->id]);
+            } finally {
+                $other->close();
+            }
+        };
+        self::assertFalse($deliverer->deliver((int) $r->id, $channel, false, $job));
+        self::assertSame($original, $r->channelTexts($channel));
+        self::assertFalse($r->channelResend($channel));
+        self::assertCount(1, $r->channelParts($channel));
+        self::assertSame('sent', $r->channelState('telegram' === $channel ? 'max' : 'telegram'));
+        $accepted = $api->texts($channel);
+        $r->data = ['items' => 'edited after a legacy worker replaced the channel JSON'];
+        $em->flush();
+        $api->forget();
+
+        self::assertTrue($deliverer->deliver((int) $r->id, $channel, false, $job));
+
+        self::assertSame($original, [...$accepted, ...$api->texts($channel)]);
+        self::assertSame(\array_slice($original, 1), $api->texts($channel));
+    }
+
+    #[Test]
+    #[DataProvider('channels')]
+    public function aDistinctSendAfterCompletionFormatsANewSnapshot(string $channel): void
+    {
+        $c = self::getContainer();
+        $em = $c->get(EntityManagerInterface::class);
+        $r = self::request(['items' => 'first operation']);
+        $em->persist($r);
+        $em->flush();
+        $deliverer = new RequestDeliverer($em, $this->telegram, $this->max, $c->get(AdminLocale::class));
+        self::assertTrue($deliverer->deliver((int) $r->id, $channel, false));
+        $firstJob = $r->channelJob($channel);
+        $r->data = ['items' => 'second operation after completion'];
+        $em->flush();
+        $this->api->forget();
+        self::assertTrue($deliverer->deliver((int) $r->id, $channel, true));
+        self::assertNotSame($firstJob, $r->channelJob($channel));
+        self::assertSame($c->get(AdminLocale::class)->runDefault(fn (): array => $this->notifier($channel)->parts($r, true)->texts), $this->api->texts($channel));
+    }
+
+    #[Test]
+    #[DataProvider('channels')]
+    public function anExplicitResendAfterEveryPartWasRejectedFormatsANewOperation(string $channel): void
+    {
+        $c = self::getContainer();
+        $em = $c->get(EntityManagerInterface::class);
+        $r = self::request(['items' => 'original text']);
+        $em->persist($r);
+        $em->flush();
+        $deliverer = new RequestDeliverer($em, $this->telegram, $this->max, $c->get(AdminLocale::class));
+        $original = $this->notifier($channel)->parts($r)->texts;
+        $this->api->refuseAttempt = 1;
+        self::assertFalse($deliverer->deliver((int) $r->id, $channel, false));
+        $job = (string) $r->channelJob($channel);
+        $deliverer->queueFailed((int) $r->id, $channel, $job, 'exhausted');
+        $r->data = ['items' => 'edited request'];
+        $em->flush();
+        $c->get(Schema::class)->form('long_text')->telegram('Updated template: {items}');
+        $this->api->forget();
+
+        $this->f1Service(new \Symfony\Component\Messenger\MessageBus())->resendResult((int) $r->id, $channel);
+
+        self::assertNotSame($original, $this->api->texts($channel));
+        self::assertSame($c->get(AdminLocale::class)->runDefault(fn (): array => $this->notifier($channel)->parts($r, true)->texts), $this->api->texts($channel));
+        self::assertNotSame($job, $r->channelJob($channel));
+    }
+
+    #[Test]
+    #[DataProvider('channels')]
+    public function automaticRetryAfterEveryPartWasRejectedKeepsItsFrozenSnapshot(string $channel): void
+    {
+        $c = self::getContainer();
+        $em = $c->get(EntityManagerInterface::class);
+        $r = self::request(['items' => 'original automatic operation']);
+        $em->persist($r);
+        $em->flush();
+        $deliverer = new RequestDeliverer($em, $this->telegram, $this->max, $c->get(AdminLocale::class));
+        $this->api->refuseAttempt = 1;
+        self::assertFalse($deliverer->deliver((int) $r->id, $channel, false));
+        $job = (string) $r->channelJob($channel);
+        $original = $r->channelTexts($channel);
+        $r->data = ['items' => 'edited after a definite rejection'];
+        $em->flush();
+        $this->api->forget();
+
+        self::assertTrue($deliverer->deliver((int) $r->id, $channel, false, $job));
+
+        self::assertSame($original, $this->api->texts($channel));
+        self::assertSame($job, $r->channelJob($channel));
+    }
+
+    #[Test]
+    #[DataProvider('disabledPartialRetries')]
+    public function disablingAnUnfinishedDeliveryPreservesItsAcceptedPartsAndSnapshot(string $channel, bool $manual, bool $twoRecipients): void
+    {
+        $c = self::getContainer();
+        $em = $c->get(EntityManagerInterface::class);
+        $firstChat = self::CHATS[$channel];
+        $secondChat = '-1009999999999';
+        if ($twoRecipients) {
+            $this->setting('telegram' === $channel ? 'tgRoutes' : 'maxRoutes', ['*' => $firstChat . ', ' . $secondChat]);
+        }
+        $r = self::request(['items' => $twoRecipients ? 'same message, two recipients' : LongText::order(12000)]);
+        $em->persist($r);
+        $em->flush();
+        $deliverer = new RequestDeliverer($em, $this->telegram, $this->max, $c->get(AdminLocale::class));
+        $this->api->refuseAttempt = 2;
+        self::assertFalse($deliverer->deliver((int) $r->id, $channel, false));
+        $job = (string) $r->channelJob($channel);
+        $texts = $r->channelTexts($channel);
+        $parts = $r->channelParts($channel);
+        $accepted = $this->api->texts($channel);
+        $enabled = 'telegram' === $channel ? 'tgOn' : 'maxOn';
+        $this->setting($enabled, false);
+        $this->api->forget();
+
+        self::assertFalse($deliverer->deliver((int) $r->id, $channel, false, $job));
+        self::assertSame('retry', $r->channelJobPhase($channel));
+        self::assertSame('failed', $r->channelState($channel));
+        self::assertSame($parts, $r->channelParts($channel));
+        self::assertSame($texts, $r->channelTexts($channel));
+        self::assertSame([], $this->api->texts($channel));
+        $r->data = ['items' => 'edited while the messenger was disabled'];
+        $em->flush();
+        $this->setting($enabled, true);
+        if ($manual) {
+            $deliverer->queueFailed((int) $r->id, $channel, $job, 'exhausted while disabled');
+            $this->f1Service(new \Symfony\Component\Messenger\MessageBus())->resendResult((int) $r->id, $channel);
+        } else {
+            self::assertTrue($deliverer->deliver((int) $r->id, $channel, false, $job));
+        }
+
+        if ($twoRecipients) {
+            self::assertSame($texts, $accepted);
+            self::assertSame([], $this->api->texts($channel, $firstChat), 'Chat A already accepted the message');
+            self::assertSame($texts, $this->api->texts($channel, $secondChat), 'Only chat B receives the frozen text');
+        } else {
+            self::assertSame($texts, [...$accepted, ...$this->api->texts($channel)]);
+            self::assertSame(\array_slice($texts, 1), $this->api->texts($channel));
+        }
+        self::assertSame($job, $r->channelJob($channel));
+        self::assertSame('done', $r->channelJobPhase($channel));
+    }
+
+    /** @return iterable<string, array{string, bool, bool}> */
+    public static function disabledPartialRetries(): iterable
+    {
+        foreach (\array_keys(Request::CHANNELS) as $channel) {
+            yield $channel . ' automatic parts' => [$channel, false, false];
+            yield $channel . ' manual parts' => [$channel, true, false];
+            yield $channel . ' automatic recipients' => [$channel, false, true];
+            yield $channel . ' manual recipients' => [$channel, true, true];
+        }
+    }
+
+    #[Test]
+    #[DataProvider('channels')]
+    public function anInterruptedOperationKeepsItsSavedTextWhileTheChannelIsDisabled(string $channel): void
+    {
+        $c = self::getContainer();
+        $em = $c->get(EntityManagerInterface::class);
+        $r = self::request(['items' => 'saved before a worker interruption']);
+        $job = 'paused-frozen-operation';
+        $texts = $c->get(AdminLocale::class)->runDefault(fn (): array => $this->notifier($channel)->parts($r)->texts);
+        $r->markChannelJob($channel, $job, 'retry');
+        $r->markChannelTexts($channel, $texts);
+        $em->persist($r);
+        $em->flush();
+        $enabled = 'telegram' === $channel ? 'tgOn' : 'maxOn';
+        $this->setting($enabled, false);
+        $deliverer = new RequestDeliverer($em, $this->telegram, $this->max, $c->get(AdminLocale::class));
+
+        self::assertFalse($deliverer->deliver((int) $r->id, $channel, false, $job));
+        self::assertSame('retry', $r->channelJobPhase($channel));
+        self::assertSame([], $this->api->texts($channel));
+        $r->data = ['items' => 'edited after a worker interruption'];
+        $em->flush();
+        $this->setting($enabled, true);
+
+        self::assertTrue($deliverer->deliver((int) $r->id, $channel, false, $job));
+        self::assertSame($texts, $this->api->texts($channel));
+        self::assertSame($job, $r->channelJob($channel));
+    }
+
+    #[Test]
+    #[DataProvider('unresolvedPhases')]
+    public function resendNeverDeletesAnUnresolvedPart(string $channel, string $phase): void
+    {
+        $c = self::getContainer();
+        $em = $c->get(EntityManagerInterface::class);
+        $r = self::request(['items' => 'unknown acceptance']);
+        $text = $this->notifier($channel)->buildText($r);
+        $r->markChannel($channel, Request::DELIVERY_FAILED, 'lost response');
+        $r->markChannelJob($channel, 'unresolved', $phase, 0);
+        $r->markChannelResend($channel, false);
+        $key = \hash('sha256', self::CHATS[$channel] . ':0');
+        $r->markChannelPart($channel, $key, ['hash' => \hash('sha256', $text), 'state' => 'sending']);
+        $em->persist($r);
+        $em->flush();
+        $deliverer = new RequestDeliverer($em, $this->telegram, $this->max, $c->get(AdminLocale::class));
+        $deliverer->deliverSynchronously((int) $r->id, $channel, true);
+        $em->refresh($r);
+
+        self::assertSame([], $this->api->texts($channel));
+        self::assertSame('sending', $r->channelParts($channel)[$key]['state']);
+        self::assertSame('unresolved', $r->channelJob($channel));
+    }
+
+    /** @return iterable<string, array{string, string}> */
+    public static function unresolvedPhases(): iterable
+    {
+        foreach (\array_keys(Request::CHANNELS) as $channel) {
+            foreach (['uncertain', 'failed', 'processing', 'retry'] as $phase) {
+                yield $channel . $phase => [$channel, $phase];
+            }
+        }
+    }
+
+    #[Test]
+    #[DataProvider('temporarilyHiddenUnknownRecipients')]
+    public function temporarilyHiddenUnknownRecipientsNeverBecomeAFreshOperation(string $channel, bool $disabled): void
+    {
+        $c = self::getContainer();
+        $em = $c->get(EntityManagerInterface::class);
+        $unknown = self::CHATS[$channel];
+        $r = self::request(['items' => 'an unknown recipient is temporarily hidden']);
+        $texts = $this->notifier($channel)->parts($r)->texts;
+        $r->markChannel($channel, Request::DELIVERY_FAILED, 'response lost');
+        $r->markChannelJob($channel, 'hidden-unknown', 'retry', 0);
+        $r->markChannelResend($channel, false);
+        $r->markChannelTexts($channel, $texts);
+        $key = \hash('sha256', $unknown . ':0');
+        $r->markChannelPart($channel, $key, ['hash' => \hash('sha256', $texts[0]), 'state' => 'sending']);
+        $em->persist($r);
+        $em->flush();
+        $routes = 'telegram' === $channel ? 'tgRoutes' : 'maxRoutes';
+        $enabled = 'telegram' === $channel ? 'tgOn' : 'maxOn';
+        if ($disabled) {
+            $this->setting($enabled, false);
+        } else {
+            $this->setting($routes, ['*' => '-1009999999999']);
+        }
+        $deliverer = new RequestDeliverer($em, $this->telegram, $this->max, $c->get(AdminLocale::class));
+        self::assertTrue($deliverer->deliver((int) $r->id, $channel, false, 'hidden-unknown'));
+        $em->refresh($r);
+        self::assertSame('uncertain', $r->channelJobPhase($channel));
+        self::assertSame('failed', $r->channelState($channel));
+        $this->setting($enabled, true);
+        $this->setting($routes, ['*' => $unknown]);
+        $this->api->forget();
+        $deliverer->deliverSynchronously((int) $r->id, $channel, true);
+        $em->refresh($r);
+        self::assertSame([], $this->api->texts($channel));
+        self::assertSame('sending', $r->channelParts($channel)[$key]['state']);
+        self::assertSame('hidden-unknown', $r->channelJob($channel));
+    }
+
+    /** @return iterable<string, array{string, bool}> */
+    public static function temporarilyHiddenUnknownRecipients(): iterable
+    {
+        foreach (\array_keys(Request::CHANNELS) as $channel) {
+            yield $channel . 'disabled' => [$channel, true];
+            yield $channel . 'route removed' => [$channel, false];
+        }
+    }
+
+    #[Test]
+    #[DataProvider('channels')]
+    public function legacyDoneWithAnUnresolvedPartIsQuarantinedBeforeNewReservation(string $channel): void
+    {
+        $c = self::getContainer();
+        $em = $c->get(EntityManagerInterface::class);
+        $r = self::request(['items' => 'a previous worker incorrectly marked this operation done']);
+        $texts = $this->notifier($channel)->parts($r)->texts;
+        $r->markChannel($channel, Request::DELIVERY_SENT);
+        $r->markChannelJob($channel, 'legacy-done-unknown', 'done');
+        $r->markChannelTexts($channel, $texts);
+        $key = \hash('sha256', self::CHATS[$channel] . ':0');
+        $r->markChannelPart($channel, $key, ['hash' => \hash('sha256', $texts[0]), 'state' => 'sending']);
+        $em->persist($r);
+        $em->flush();
+        $deliverer = new RequestDeliverer($em, $this->telegram, $this->max, $c->get(AdminLocale::class));
+        $deliverer->deliverSynchronously((int) $r->id, $channel, true);
+        $em->refresh($r);
+        self::assertSame([], $this->api->texts($channel));
+        self::assertSame('sending', $r->channelParts($channel)[$key]['state']);
+        self::assertSame('uncertain', $r->channelJobPhase($channel));
+        self::assertSame('failed', $r->channelState($channel));
+        self::assertSame('legacy-done-unknown', $r->channelJob($channel));
+    }
+
+    #[Test]
+    #[DataProvider('mixedManualRetries')]
+    public function everyManualRetryPreservesAnUnknownRecipientWhileContinuingDefiniteFailures(string $channel, string $phase, string $route): void
+    {
+        $chat = self::CHATS[$channel];
+        $unknown = '-1009999999998';
+        $refused = '-1009999999999';
+        $this->setting('telegram' === $channel ? 'tgRoutes' : 'maxRoutes', ['*' => $chat . ', ' . $unknown . ', ' . $refused]);
+        $c = self::getContainer();
+        $em = $c->get(EntityManagerInterface::class);
+        $r = self::request(['items' => 'mixed recipients after exhaustion or an expired worker lease']);
+        $texts = $this->notifier($channel)->parts($r)->texts;
+        $r->markChannel($channel, Request::DELIVERY_FAILED, 'response lost and another recipient refused');
+        $r->markChannelJob($channel, 'mixed-manual-operation', $phase, 0);
+        $r->markChannelResend($channel, false);
+        $r->markChannelTexts($channel, $texts);
+        foreach ([$chat => 'sent', $unknown => 'sending'] as $recipient => $state) {
+            $r->markChannelPart($channel, \hash('sha256', $recipient . ':0'), ['hash' => \hash('sha256', $texts[0]), 'state' => $state]);
+        }
+        $em->persist($r);
+        $em->flush();
+        $deliverer = new RequestDeliverer($em, $this->telegram, $this->max, $c->get(AdminLocale::class));
+        $handlers = new \Symfony\Component\Messenger\Handler\HandlersLocator([\Itk\Cms\Request\SendRequestNotification::class => [new \Itk\Cms\Request\SendRequestNotificationHandler($deliverer)]]);
+        $bus = new \Symfony\Component\Messenger\MessageBus([new \Symfony\Component\Messenger\Middleware\HandleMessageMiddleware($handlers)]);
+        $service = $this->f1Service($bus);
+        if ('bulk' === $route) {
+            $service->requeueFailedResult();
+        } else {
+            $service->resendResult((int) $r->id, 'targeted' === $route ? $channel : null);
+        }
+        $em->refresh($r);
+        self::assertSame([], $this->api->texts($channel, $chat));
+        self::assertSame([], $this->api->texts($channel, $unknown));
+        self::assertSame($texts, $this->api->texts($channel, $refused));
+        self::assertSame('sending', $r->channelParts($channel)[\hash('sha256', $unknown . ':0')]['state']);
+        self::assertSame('uncertain', $r->channelJobPhase($channel));
+        self::assertSame('mixed-manual-operation', $r->channelJob($channel));
+    }
+
+    /** @return iterable<string, array{string, string, string}> */
+    public static function mixedManualRetries(): iterable
+    {
+        foreach (\array_keys(Request::CHANNELS) as $channel) {
+            foreach (['failed', 'processing'] as $phase) {
+                foreach (['targeted', 'all', 'bulk'] as $route) {
+                    yield $channel . $phase . $route => [$channel, $phase, $route];
+                }
+            }
+        }
+    }
+
+    #[Test]
+    #[DataProvider('channels')]
+    public function bulkManualRetryDoesNotRepeatConfirmedParts(string $channel): void
+    {
+        $em = self::getContainer()->get(EntityManagerInterface::class);
+        $r = self::request(['items' => LongText::order(12000)]);
+        $em->persist($r);
+        $em->flush();
+        $deliverer = new RequestDeliverer($em, $this->telegram, $this->max, self::getContainer()->get(AdminLocale::class));
+        $this->api->refuseAttempt = 2;
+        self::assertFalse($deliverer->deliver((int) $r->id, $channel, false));
+        $first = $this->api->texts($channel);
+        $deliverer->queueFailed((int) $r->id, $channel, (string) $r->channelJob($channel), 'terminal refusal');
+        $this->api->forget();
+        $handlers = new \Symfony\Component\Messenger\Handler\HandlersLocator([\Itk\Cms\Request\SendRequestNotification::class => [new \Itk\Cms\Request\SendRequestNotificationHandler($deliverer)]]);
+        $bus = new \Symfony\Component\Messenger\MessageBus([new \Symfony\Component\Messenger\Middleware\HandleMessageMiddleware($handlers)]);
+
+        $this->f1Service($bus)->requeueFailed();
+
+        self::assertSame($this->notifier($channel)->buildText($r), \implode('', [...$first, ...$this->api->texts($channel)]));
+        self::assertSame('done', $r->channelJobPhase($channel));
+    }
+
+    #[Test]
+    #[DataProvider('bulkRoutingOutcomes')]
+    public function bulkResendCommandReportsSynchronousOutcomesInsteadOfQueueAcceptance(?bool $refused): void
+    {
+        $em = self::getContainer()->get(EntityManagerInterface::class);
+        $r = self::request(['items' => 'bulk synchronous refusal']);
+        $r->markChannel('telegram', Request::DELIVERY_FAILED, 'previous refusal');
+        $em->persist($r);
+        $em->flush();
+        $this->api->refuseAttempt = $refused ? 1 : 0;
+        $handlers = new \Symfony\Component\Messenger\Handler\HandlersLocator([\Itk\Cms\Request\SendRequestNotification::class => [new \Itk\Cms\Request\SendRequestNotificationHandler(new RequestDeliverer($em, $this->telegram, $this->max, self::getContainer()->get(AdminLocale::class)))]]);
+        $sync = new \Symfony\Component\Messenger\Transport\Sync\SyncTransport(new \Symfony\Component\Messenger\MessageBus([new \Symfony\Component\Messenger\Middleware\HandleMessageMiddleware($handlers)]));
+        $send = new class($sync) implements \Symfony\Component\Messenger\Middleware\MiddlewareInterface {
+            public function __construct(private readonly \Symfony\Component\Messenger\Transport\Sync\SyncTransport $transport)
+            {
+            }
+
+            public function handle(\Symfony\Component\Messenger\Envelope $envelope, \Symfony\Component\Messenger\Middleware\StackInterface $stack): \Symfony\Component\Messenger\Envelope
+            {
+                return $this->transport->send($envelope);
+            }
+        };
+        $bus = new \Symfony\Component\Messenger\MessageBus(null === $refused ? [] : [$send]);
+        $container = self::getContainer();
+        $tester = new \Symfony\Component\Console\Tester\CommandTester(new \Itk\Cms\Command\ResendRequestsCommand(
+            $this->f1Service($bus),
+            $container->get(\Itk\Cms\Repository\RequestRepository::class),
+            $container->get(\Itk\Cms\Mail\RequestMailCheckpoint::class),
+            $container->get(\Itk\Cms\Mail\MailComposer::class),
+            $container->get(\Itk\Cms\Request\RequestQueue::class),
+        ));
+
+        $tester->execute([]);
+
+        self::assertSame(null === $refused ? 'queued' : ($refused ? 'failed' : 'done'), $r->channelJobPhase('telegram'));
+        self::assertSame(null === $refused ? ['telegram'] : [], $r->queuedChannels());
+        self::assertStringContainsString('В очередь поставлено заявок: ' . (null === $refused ? '1' : '0') . '.', $tester->getDisplay());
+        if (null === $refused) {
+            self::assertStringContainsString('messenger:consume async', $tester->getDisplay());
+        } else {
+            self::assertStringContainsString($refused ? 'ошибок доставки: 1' : 'доставлено: 1', $tester->getDisplay());
+            self::assertStringNotContainsString('messenger:consume async', $tester->getDisplay(), 'there is nothing waiting for a worker');
+        }
+    }
+
+    #[Test]
+    public function bulkResendReportsSkippedUncertainChannelsSeparately(): void
+    {
+        $c = self::getContainer();
+        $em = $c->get(EntityManagerInterface::class);
+        $r = self::request(['items' => 'both messenger outcomes require operator verification']);
+        foreach (\array_keys(Request::CHANNELS) as $channel) {
+            $r->markChannel($channel, Request::DELIVERY_FAILED, 'response lost');
+            $r->markChannelJob($channel, 'waiting-' . $channel, 'uncertain');
+        }
+        $em->persist($r);
+        $em->flush();
+        $service = $this->f1Service(new \Symfony\Component\Messenger\MessageBus());
+        self::assertSame(['queued' => 0, 'sent' => 0, 'failed' => 0, 'pending' => 0, 'uncertain' => 2], $service->requeueFailedResult());
+        $tester = new \Symfony\Component\Console\Tester\CommandTester(new \Itk\Cms\Command\ResendRequestsCommand(
+            $service,
+            $c->get(\Itk\Cms\Repository\RequestRepository::class),
+            $c->get(\Itk\Cms\Mail\RequestMailCheckpoint::class),
+            $c->get(\Itk\Cms\Mail\MailComposer::class),
+            $c->get(\Itk\Cms\Request\RequestQueue::class),
+        ));
+
+        self::assertSame(0, $tester->execute([]));
+
+        self::assertStringContainsString('ждут решения оператора: 2 (itk:requests:resolve)', $tester->getDisplay());
+        self::assertStringNotContainsString('Завершённые отправки', $tester->getDisplay());
+        self::assertStringNotContainsString('messenger:consume', $tester->getDisplay());
+        self::assertSame([], $this->api->texts('telegram'));
+        self::assertSame([], $this->api->texts('max'));
+    }
+
+    /** @return iterable<string, array{?bool}> */
+    public static function bulkRoutingOutcomes(): iterable
+    {
+        yield 'synchronous refusal' => [true];
+        yield 'synchronous success' => [false];
+        yield 'asynchronous waiting' => [null];
     }
 
     private function dispatchDelivery(RequestDeliverer $deliverer, \Itk\Cms\Request\SendRequestNotification $message): void

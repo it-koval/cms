@@ -21,16 +21,22 @@ export const sendableOf = (r) => (Array.isArray(r.sendable) ? r.sendable : [])
 /** The chip status of a channel state: sent -> delivered. */
 export const chipOf = (state) => (state === 'sent' ? 'delivered' : state === 'failed' ? 'failed' : 'pending')
 
-/** What a resend answered, for the toast: { state: 'sent'|'failed'|'pending', error }. With a channel only that channel counts; without one the aggregate does. */
+/** Summarize the selected delivery attempts for the toast. Older responses may only contain the saved request state. */
 export function resendOutcome(r, channel) {
-  const outcomes = Object.values(r.outcomes || {})
-  const failed = channel ? r.outcomes?.[channel]?.state === 'failed' && r.outcomes[channel] : outcomes.find((outcome) => outcome.state === 'failed')
-  if (failed) return { state: 'failed', error: failed.error || '' }
+  if (r.outcomes) {
+    const outcomes = channel ? [r.outcomes[channel]].filter(Boolean) : Object.values(r.outcomes)
+    const issue = outcomes.find((outcome) => outcome.state === 'failed') || outcomes.find((outcome) => outcome.state === 'pending')
+    if (issue) return { state: issue.state, error: issue.error || '' }
+    if (outcomes.some((outcome) => outcome.state === 'queued')) return { state: 'queued', error: '' }
+    if (outcomes.length && outcomes.every((outcome) => outcome.state === 'sent')) return { state: 'sent', error: '' }
+    return { state: 'pending', error: '' }
+  }
   const queued = Array.isArray(r.queuedChannels) ? r.queuedChannels : []
   if (channel ? queued.includes(channel) : queued.length > 0) return { state: 'queued', error: '' }
   if (channel) {
     const c = channelsOf(r).find((x) => x.channel === channel)
     if (c) return { state: c.state, error: c.error || '' }
   }
-  return { state: r.delivery === 'failed' ? 'failed' : r.delivery === 'sent' ? 'sent' : r.delivery === 'pending' ? 'pending' : 'sent', error: r.deliveryError || '' }
+  const state = ['failed', 'sent'].includes(r.delivery) ? r.delivery : 'pending'
+  return { state, error: r.deliveryError || r.error || '' }
 }

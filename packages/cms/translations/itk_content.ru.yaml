@@ -171,6 +171,7 @@
 'content.history_page_restored': 'Страница восстановлена из корзины'
 'content.history_item_restored': 'Запись восстановлена из корзины'
 'content.history_baseline': 'Версия до начала истории'
+'content.history_details_restricted': 'Подробности этой версии скрыты: доступ к старым полям нельзя проверить.'
 'content.setting_tg_on': 'Уведомления в Telegram'
 'content.setting_tg_routes': 'Чаты для заявок'
 'content.setting_max_on': 'Уведомления в MAX'

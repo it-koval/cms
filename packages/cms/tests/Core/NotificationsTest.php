@@ -355,7 +355,7 @@ final class NotificationsTest extends KernelTestCase
             self::assertSame(0, $this->em->getRepository(StoredNotification::class)->count(['dedupeKey' => 'telegram.failed:' . $r->id]));
         } finally {
             foreach (['tgRoutes' => [$routesWereSet, $routesBefore], 'tgOn' => [$tgOnWasSet, $tgOnBefore]] as $key => [$was, $value]) {
-                $this->em->createQuery('DELETE FROM Itk\Cms\Entity\Setting s WHERE s.key = :k')->setParameter('k', $key)->execute();
+                $settings->remove($key);
                 if ($was) {
                     $settings->set($key, $value);
                 }

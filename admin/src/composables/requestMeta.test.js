@@ -31,7 +31,19 @@ describe('resendOutcome', () => {
     expect(resendOutcome(r, 'max').state).toBe('pending')
   })
 
-  it('uses the aggregate for a whole-request resend', () => {
+  it('ignores an old success when the selected channel could not send', () => {
+    const r = { delivery: 'sent', outcomes: { telegram: { state: 'pending' } }, queuedChannels: ['max'] }
+    expect(resendOutcome(r)).toEqual({ state: 'pending', error: '' })
+    expect(resendOutcome(r, 'telegram')).toEqual({ state: 'pending', error: '' })
+  })
+
+  it('reports success only when the selected channels sent', () => {
+    const r = { ...both, outcomes: { telegram: { state: 'sent' } } }
+    expect(resendOutcome(r)).toEqual({ state: 'sent', error: '' })
+    expect(resendOutcome({ delivery: 'sent', outcomes: [] }).state).toBe('pending')
+  })
+
+  it('uses the aggregate when the response lacks per-attempt outcomes', () => {
     expect(resendOutcome(both)).toEqual({ state: 'failed', error: 'MAX: refused' })
     expect(resendOutcome({ delivery: 'sent' }).state).toBe('sent')
     expect(resendOutcome({ delivery: 'pending' }).state).toBe('pending')
