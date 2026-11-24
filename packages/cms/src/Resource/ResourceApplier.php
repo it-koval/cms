@@ -143,6 +143,9 @@ final class ResourceApplier
         if (null !== $r->h1()) {
             $s->h1($r->h1());
         }
+        if (null !== $r->firstScreen()) {
+            $s->firstScreen($r->firstScreen());
+        }
     }
 
     private static function settings(SchemaBuilder $b, SettingsResource $r, string $source): void

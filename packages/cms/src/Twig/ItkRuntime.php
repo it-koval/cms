@@ -24,6 +24,7 @@ use Itk\Cms\Support\Url;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\HttpFoundation\RequestStack;
+use Symfony\Contracts\Service\ResetInterface;
 use Twig\Environment;
 use Twig\Extension\RuntimeExtensionInterface;
 use Twig\Markup;
@@ -60,7 +61,7 @@ use Twig\Markup;
  *
  * @internal
  */
-final class ItkRuntime implements RuntimeExtensionInterface
+final class ItkRuntime implements RuntimeExtensionInterface, ResetInterface
 {
     /** @var array<string, true> ratios already reported as not allowed (one warning per request) */
     private array $warnedRatios = [];
@@ -92,6 +93,13 @@ final class ItkRuntime implements RuntimeExtensionInterface
         private readonly ?MediaFileRepository $mediaFiles = null,
         private readonly ?LoggerInterface $logger = null,
     ) {
+    }
+
+    public function reset(): void
+    {
+        $this->warnedRatios = [];
+        $this->savedFrames = [];
+        $this->warned = [];
     }
 
     public function isPreview(): bool

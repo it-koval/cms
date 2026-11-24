@@ -248,7 +248,7 @@ final class PageCacheTest extends WebTestCase
         $c->get(MediaService::class)->update($file->id, ['crops' => ['16:9' => ['x' => 0, 'y' => 0, 'w' => 1, 'h' => 0.5]]]);
         $missed('a frame of a picture');
 
-        $item = $c->get(CollectionService::class)->create('tours', ['title' => 'Тур для кеша']);
+        $item = $c->get(CollectionService::class)->create('tours', ['city' => 'Тур для кеша', 'dateStart' => '2026-11-01', 'dateEnd' => '2026-11-09']);
         $this->items[] = $item['id'];
         $c->get(CollectionService::class)->publish('tours', $item['id']);
         $missed('a record of a collection that goes live');

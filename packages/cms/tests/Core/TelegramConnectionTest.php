@@ -74,7 +74,7 @@ final class TelegramConnectionTest extends TestCase
     {
         $class = new \ReflectionClass(SettingsService::class);
         $settings = $class->newInstanceWithoutConstructor();
-        foreach (['schema' => $schema, 'mainLocale' => 'ru', 'loaded' => [Setting::ALL => ['tgOn' => true, 'tgRoutes' => ['*' => '-10012345']]]] as $key => $value) {
+        foreach (['schema' => $schema, 'mainLocale' => 'ru', 'fallbackChatIds' => '', 'maxFallbackChatIds' => '', 'loaded' => [Setting::ALL => ['itk:tgOn' => true, 'itk:tgRoutes' => ['*' => '-10012345']]]] as $key => $value) {
             $class->getProperty($key)->setValue($settings, $value);
         }
 

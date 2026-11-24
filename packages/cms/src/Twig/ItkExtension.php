@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Itk\Cms\Twig;
 
+use Itk\Cms\Admin\BundleAssets;
 use Itk\Cms\Admin\Theme\AdminFont;
 use Itk\Cms\CriticalCss\StylesheetsRuntime;
 use Itk\Cms\I18n\I18n;
@@ -39,6 +40,7 @@ final class ItkExtension extends AbstractExtension
             new TwigFunction('itk_page', [ItkRuntime::class, 'page']),
             new TwigFunction('itk_is_preview', [ItkRuntime::class, 'isPreview']),
             new TwigFunction('itk_cache', [ItkRuntime::class, 'cache']),
+            new TwigFunction('itk_asset', [BundleAssets::class, 'url']),
             new TwigFunction('itk_admin_font', [AdminFont::class, 'css'], ['is_safe' => ['html']]),
             new TwigFunction('itk_stylesheets', [StylesheetsRuntime::class, 'stylesheets'], ['is_safe' => ['html']]),
             new TwigFunction('itk_seo', [SeoRuntime::class, 'seo'], ['needs_context' => true]),

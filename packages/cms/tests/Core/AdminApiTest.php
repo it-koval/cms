@@ -130,6 +130,32 @@ final class AdminApiTest extends WebTestCase
     }
 
     #[Test]
+    public function customRequestDateFiltersRequireCalendarDatesInOrder(): void
+    {
+        self::assertSame([], $this->api('GET', 'requests?form=f2-date-filter&period=custom&from=2024-02-29&to=2024-02-29'));
+        foreach (['from=2024-02-30', 'from=tomorrow', 'from=2024-03-01&to=2024-02-29'] as $filter) {
+            $this->api('GET', 'requests?period=custom&' . $filter, [], 422);
+        }
+    }
+
+    #[Test]
+    public function redirectLengthsAreValidatedBeforeSaving(): void
+    {
+        $from = '/f2-length-' . \str_repeat('a', 244);
+        $to = '/' . \str_repeat('b', 511);
+        $row = $this->api('POST', 'redirects', ['from' => $from, 'to' => $to], 201);
+        try {
+            self::assertSame($from, $row['from']);
+            self::assertSame($to, $row['to']);
+            $this->api('PATCH', 'redirects/' . $row['id'], ['from' => $from . 'a', 'to' => $to . 'b'], 422);
+            $this->api('POST', 'redirects', ['from' => $from . 'a', 'to' => $to], 422);
+            $this->api('POST', 'redirects', ['from' => '/f2-length-other', 'to' => $to . 'b'], 422);
+        } finally {
+            $this->api('DELETE', 'redirects/' . $row['id']);
+        }
+    }
+
+    #[Test]
     public function requestPhoneSearchIgnoresFormattingAndPreservesTheDisplayValue(): void
     {
         $em = self::getContainer()->get(EntityManagerInterface::class);

@@ -174,7 +174,7 @@ final class HealthService
             }
             $out[] = [
                 'key' => $key, 'label' => $label, 'free' => (int) $free, 'total' => (int) $total, 'usedPct' => (int) \round(($total - $free) / $total * 100),
-                'status' => $free < self::DISK_FAIL ? HealthResult::FAIL : ($free < self::DISK_WARN ? HealthResult::WARN : HealthResult::OK),
+                'status' => 'uploads' === $key && !UploadsWritable::check($path) ? HealthResult::FAIL : ($free < self::DISK_FAIL ? HealthResult::FAIL : ($free < self::DISK_WARN ? HealthResult::WARN : HealthResult::OK)),
             ];
         }
 

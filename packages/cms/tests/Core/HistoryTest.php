@@ -357,6 +357,35 @@ final class HistoryTest extends ResourceKernelTestCase
     }
 
     #[Test]
+    public function trimmingWaitsForTheFlushThatSavesTheRevision(): void
+    {
+        $history = self::getContainer()->get(HistoryService::class);
+        $id = $this->page('default', 'F2 history rollback', '/test-f2-history-atomic')['id'];
+        $page = $this->pages->find($id);
+        $translation = $page->translation('ru');
+        self::assertNotNull($translation);
+        for ($i = 1; $i < $history->keep(); ++$i) {
+            $history->page($page, $translation, Revision::PUBLISH);
+            $this->em->flush();
+        }
+
+        $history->page($page, $translation, Revision::UNPUBLISH);
+        $this->em->clear(); // discard all writes scheduled by the caller before flush
+        self::assertCount($history->keep(), $this->log('page', $id));
+        self::assertSame(Revision::CREATE, $this->log('page', $id)[0]->action);
+
+        $page = $this->pages->find($id);
+        $translation = $page->translation('ru');
+        self::assertNotNull($translation);
+        $history->page($page, $translation, Revision::UNPUBLISH);
+        $this->em->flush();
+        $revisions = $this->log('page', $id);
+        self::assertCount($history->keep(), $revisions);
+        self::assertSame(Revision::UNPUBLISH, $revisions[\count($revisions) - 1]->action);
+        self::assertNotSame(Revision::CREATE, $revisions[0]->action);
+    }
+
+    #[Test]
     public function pruneKeepsTheNewestEntriesAndDropsTheOld(): void
     {
         $history = self::getContainer()->get(HistoryService::class);

@@ -143,6 +143,7 @@
 'http.max_not_delivered': 'Сообщение не доставлено: {reason}'
 'http.max_queue_failed': 'Не удалось поставить отправку в очередь: {reason}'
 'http.request_bad_channel': 'Неизвестный мессенджер'
+'http.request_delivery_requires_commit': 'Сохраните заявку перед отправкой.'
 'http.no_such_user': 'Пользователя «{email}» нет.'
 'http.user_removed': 'Пользователь удалён.'
 'http.no_role': 'Без роли'
@@ -266,3 +267,5 @@
 'http.request_body_too_large': 'Форма слишком большая. Сократите её и отправьте снова.'
 'http.request_bad_input': 'Передайте поля формы как текст, числа или значения да/нет.'
 'http.request_queue_failed': 'Не удалось поставить заявку в очередь. Попробуйте отправить её снова.'
+'http.request_date_invalid': 'Введите корректную дату в формате ГГГГ-ММ-ДД.'
+'http.request_date_range_invalid': 'Дата окончания не может быть раньше даты начала.'

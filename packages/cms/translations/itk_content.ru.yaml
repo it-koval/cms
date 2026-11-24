@@ -43,7 +43,6 @@
 'content.item_translation_last_required': 'Это последняя версия записи. Удалите запись целиком'
 'content.page_not_found': 'Страница не найдена'
 'content.page_title_required': 'Укажите название страницы'
-'content.page_url_slash': 'Адрес должен начинаться со слэша, например /about-us'
 'content.page_url_invalid': 'Введите локальный путь до 255 символов, например /about-us. Не используйте ?, # и обратную косую черту'
 'content.locale_unknown': 'Язык «{locale}» не настроен для этого сайта'
 'content.url_locale_prefix': 'Адрес {url} для языка «{language}» должен начинаться с {prefix}'
@@ -77,7 +76,6 @@
 'content.page_home_url_locked': 'Адрес главной страницы изменить нельзя'
 'content.page_home_template_locked': 'Шаблон главной страницы изменить нельзя'
 'content.page_own_parent': 'Страница не может быть родительской для самой себя'
-'content.page_parent_is_descendant': 'Страница не может быть дочерней для своей же дочерней страницы'
 'content.placement_template_unknown': 'Такого шаблона нет'
 'content.placement_home_exists': 'Главная уже есть'
 'content.placement_single': 'Страница с шаблоном «{template}» на сайте может быть только одна, и она уже есть'
@@ -227,3 +225,11 @@
 'content.history_entry_not_found': 'Такой записи в истории нет'
 'content.history_not_found': 'Такой истории нет'
 'content.no_permission': 'У вас нет прав на это действие'
+content.redirect_address_too_long: 'Адрес перенаправления может содержать не более {max} символов.'
+
+'content.field_max_length': 'Не более {count} символов'
+
+'content.field_choice_invalid': 'Выберите один из доступных вариантов'
+
+'content.field_date_invalid': 'Укажите правильную дату'
+content.settings_domain_invalid: 'Введите домен сайта без пути, параметров и фрагмента.'

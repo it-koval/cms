@@ -85,9 +85,7 @@ final class UserManager
      */
     public function setPassword(User $user, #[\SensitiveParameter] string $password): void
     {
-        if (\mb_strlen($password) < 8) {
-            throw ContentException::invalid(I18n::t('http.password_min', ['length' => 8]));
-        }
+        self::checkPasswordPolicy($password);
         $user->passwordHash = $this->hasher->hashPassword($user, $password);
         $this->em->wrapInTransaction(function () use ($user): void {
             $this->em->flush();

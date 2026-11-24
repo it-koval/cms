@@ -350,6 +350,20 @@ final class GeneratorsTest extends TestCase
     }
 
     #[Test]
+    public function reservedCollectionKeysAreRejectedBeforeWritingAClass(): void
+    {
+        foreach (['status', 'locales', 'position'] as $key) {
+            \file_put_contents($this->project . '/reserved.json', \json_encode([
+                'key' => 'test_gen_reserved', 'fields' => [['key' => $key, 'type' => 'text']],
+            ], \JSON_THROW_ON_ERROR));
+            $result = $this->exec($this->collectionCommand(), ['--from' => 'reserved.json']);
+            self::assertSame(Command::INVALID, $result->getStatusCode(), $key);
+            self::assertStringContainsString($key, $result->getDisplay());
+            self::assertDirectoryDoesNotExist($this->project . '/src');
+        }
+    }
+
+    #[Test]
     public function aBadJsonDescriptionIsExplained(): void
     {
         $cmd = $this->collectionCommand();
@@ -380,5 +394,32 @@ final class GeneratorsTest extends TestCase
         $t = $this->exec($this->collectionCommand(), ['key' => 'test_gen_map', '--from' => 'table:test_nothing', '--map' => 'city']);
         self::assertSame(Command::INVALID, $t->getStatusCode());
         self::assertStringContainsString('--map', $t->getDisplay());
+    }
+
+    #[Test]
+    public function builtinFieldTypesCannotBeReplacedByTheGenerator(): void
+    {
+        foreach (['image', 'repeater', 'relation', 'readonly', 'text'] as $key) {
+            $t = $this->exec(new MakeFieldCommand($this->make), ['key' => $key]);
+            self::assertSame(Command::FAILURE, $t->getStatusCode(), $t->getDisplay());
+        }
+        self::assertDirectoryDoesNotExist($this->project . '/src');
+        self::assertDirectoryDoesNotExist($this->project . '/public');
+    }
+
+    #[Test]
+    public function specFieldsUseTheSchemasKeyRuleAndRejectDuplicates(): void
+    {
+        foreach (['bad.key', 'space key', ''] as $bad) {
+            \file_put_contents($this->project . '/keys.json', (string) \json_encode(['key' => 'f2_keys', 'fields' => [['key' => $bad]]]));
+            self::assertSame(Command::INVALID, $this->exec($this->collectionCommand(), ['--from' => 'keys.json'])->getStatusCode());
+            self::assertDirectoryDoesNotExist($this->project . '/src');
+        }
+        \file_put_contents($this->project . '/keys.json', (string) \json_encode(['key' => 'f2_keys', 'fields' => [['key' => 'name'], ['key' => 'name']]]));
+        self::assertSame(Command::INVALID, $this->exec($this->collectionCommand(), ['--from' => 'keys.json'])->getStatusCode());
+        self::assertDirectoryDoesNotExist($this->project . '/src');
+        \file_put_contents($this->project . '/keys.json', (string) \json_encode(['key' => 'f2_keys', 'fields' => [['key' => '1-name'], ['key' => 'camelCase']]]));
+        $t = $this->exec($this->collectionCommand(), ['--from' => 'keys.json']);
+        self::assertSame(Command::SUCCESS, $t->getStatusCode(), $t->getDisplay());
     }
 }

@@ -102,4 +102,19 @@ final class KnowledgeBaseExtractorTest extends KernelTestCase
 
         self::assertSame([], self::flat(self::extractor()->extract($live)), 'the title is the heading, dates give no text: nothing to embed');
     }
+
+    #[Test]
+    public function templateFragmentsNameTheirActualFieldInsteadOfThePageTitle(): void
+    {
+        self::bootKernel();
+        self::getContainer()->get(Schema::class)->template('default')->fields(
+            \Itk\Cms\Field\Text::make('Вступление', 'intro'),
+            \Itk\Cms\Field\Text::make('Условия', 'terms'),
+        );
+        $blocks = self::extractor()->extract(self::page(['title' => 'Правила', 'fields' => ['intro' => 'Вступительный текст.', 'terms' => 'Условия возврата.']]));
+        self::assertSame([
+            [null, 'fields.intro', 'Правила', ['Вступительный текст.']],
+            [null, 'fields.terms', 'Правила', ['Условия возврата.']],
+        ], self::flat($blocks));
+    }
 }

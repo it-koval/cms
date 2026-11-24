@@ -6,6 +6,7 @@ namespace Itk\Cms\Controller\Admin;
 
 use Itk\Cms\Admin\AdminBuild;
 use Itk\Cms\Admin\AdminPath;
+use Itk\Cms\Admin\BundleAssets;
 use Itk\Cms\Admin\Theme\AdminTheme;
 use Itk\Cms\Content\SettingsService;
 use Itk\Cms\Extension\Registry;
@@ -70,6 +71,7 @@ final class AdminAppController
         private readonly string $uploadUrl,
         private readonly ?CsrfTokenManagerInterface $tokens = null,
         private readonly ?LogoutUrlGenerator $logoutUrls = null,
+        private readonly ?BundleAssets $bundleAssets = null,
     ) {
     }
 
@@ -97,7 +99,7 @@ final class AdminAppController
             'previewBase' => $this->admin->to('/preview'),
             'loginUrl' => $this->urls->generate('itk_admin_login'),
             'logoutUrl' => $this->logoutUrl(),
-            'assetsBase' => self::ASSETS_URL,
+            'assetsBase' => $this->bundleAssets?->url('admin/') ?? self::ASSETS_URL,
             'images' => ['uploadUrl' => \rtrim($this->uploadUrl, '/'), 'variantDir' => ImageVariants::DIR, 'widths' => $this->images->widths()],
             'theme' => $look['theme'],
         ];
@@ -187,7 +189,7 @@ final class AdminAppController
     {
         $dir = AdminBuild::DIR;
         foreach (AdminBuild::manifests($dir) as $manifest) {
-            $assets = self::manifestAssets($manifest, $locale);
+            $assets = self::manifestAssets($manifest, $locale, fn (string $file): string => $this->assetUrl($file));
             if (null !== $assets) {
                 return $assets;
             }
@@ -197,24 +199,31 @@ final class AdminAppController
         foreach (['bundle', 'assets'] as $sub) {
             $js = \glob($dir . '/' . $sub . '/index*.js') ?: [];
             if ([] !== $js) {
-                $css = \array_map(static fn (string $f): string => self::ASSETS_URL . $sub . '/' . \basename($f), \glob($dir . '/' . $sub . '/*.css') ?: []);
+                $css = \array_map(fn (string $f): string => $this->assetUrl($sub . '/' . \basename($f)), \glob($dir . '/' . $sub . '/*.css') ?: []);
 
-                return ['js' => self::ASSETS_URL . $sub . '/' . \basename($js[0]), 'css' => $css, 'preload' => []];
+                return ['js' => $this->assetUrl($sub . '/' . \basename($js[0])), 'css' => $css, 'preload' => []];
             }
         }
 
         return null;
     }
 
+    private function assetUrl(string $file): string
+    {
+        return $this->bundleAssets?->url('admin/' . $file) ?? self::ASSETS_URL . $file;
+    }
+
     /**
      * The entry files of one Vite manifest, or null when it names no entry. `$locale` is the language of the person: its catalogue and the fallback one are what the admin asks for first.
      *
      * @param array<mixed> $manifest
+     * @param (callable(string): string)|null $assetUrl
      *
      * @return array{js: string, css: list<string>, preload: list<string>}|null
      */
-    public static function manifestAssets(array $manifest, string $locale): ?array
+    public static function manifestAssets(array $manifest, string $locale, ?callable $assetUrl = null): ?array
     {
+        $assetUrl ??= static fn (string $file): string => self::ASSETS_URL . $file;
         $entry = $manifest['index.html'] ?? null;
         if (!\is_array($entry)) {
             foreach ($manifest as $candidate) {
@@ -230,16 +239,16 @@ final class AdminAppController
         $css = [];
         $preload = [];
         $seen = [];
-        $walk = static function (array $chunk) use (&$walk, $manifest, &$css, &$preload, &$seen): void {
+        $walk = static function (array $chunk) use (&$walk, $manifest, $assetUrl, &$css, &$preload, &$seen): void {
             foreach ((array) ($chunk['css'] ?? []) as $c) {
-                $css[] = self::ASSETS_URL . $c;
+                $css[] = $assetUrl((string) $c);
             }
             foreach ((array) ($chunk['imports'] ?? []) as $key) {
                 if (isset($seen[$key]) || !isset($manifest[$key]['file'])) {
                     continue;
                 }
                 $seen[$key] = true;
-                $preload[] = self::ASSETS_URL . $manifest[$key]['file'];
+                $preload[] = $assetUrl((string) $manifest[$key]['file']);
                 $walk($manifest[$key]);
             }
         };
@@ -249,16 +258,16 @@ final class AdminAppController
             }
             // the code of the app: its styles keep their place in the cascade ahead of the global ones of the entry, and come from here, so the theme after them still wins
             if (self::APP_CHUNK === ($chunk['name'] ?? null)) {
-                $preload[] = self::ASSETS_URL . $chunk['file'];
+                $preload[] = $assetUrl((string) $chunk['file']);
                 $walk($chunk);
             }
             // the catalogues the admin asks for first: its language and the fallback one
             if (1 === \preg_match(self::LANGUAGE_CHUNK, (string) ($chunk['name'] ?? ''), $language) && \in_array($language[1], [$locale, I18n::FALLBACK], true)) {
-                $preload[] = self::ASSETS_URL . $chunk['file'];
+                $preload[] = $assetUrl((string) $chunk['file']);
             }
         }
         $walk($entry);
-        $js = self::ASSETS_URL . $entry['file'];
+        $js = $assetUrl((string) $entry['file']);
 
         return ['js' => $js, 'css' => \array_values(\array_unique($css)), 'preload' => \array_values(\array_unique(\array_diff($preload, [$js])))];
     }

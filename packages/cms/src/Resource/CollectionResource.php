@@ -54,7 +54,7 @@ abstract class CollectionResource implements ResourceInterface
     }
 
     /**
-     * The views of the list: ['table', 'cards', 'calendar' => ['start' => 'dateFrom', 'end' => 'dateTo', 'title' => 'title'], 'kanban' => ['field' => 'status', 'columns' => [...]]].
+     * The views of the list: ['table', 'cards', 'calendar' => ['start' => 'dateFrom', 'end' => 'dateTo', 'title' => 'title'], 'kanban' => ['field' => 'state', 'columns' => [...]]].
      *
      * @return array<int|string, mixed>
      */

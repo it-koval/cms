@@ -335,10 +335,12 @@ return static function (SchemaBuilder $s): void {
 | `defaultSort([...])`, `perPage(int)` | Сортировка по умолчанию и размер страницы списка (50) |
 | `filters(...)`, `actions(...)`, `metrics(...)` | Фильтры, действия и метрики |
 | `tree()` | Записи вкладываются друг в друга |
-| `singleton('main')` | Коллекция из одной записи с этим id |
+| `singleton('main')` | Коллекция из одной записи с этим id. До явного сохранения чтение возвращает начальные значения |
 | `view('matrix')`, `matrix([...])` | Табличный редактор одной записи: `colFields`, `rowKinds`, `rowLabel` |
 | `singular()`, `newLabel()`, `icon()`, `describe()`, `emptyState()` | Подписи и значок в админке |
 | `menu(...)`, `visibleWhen(fn)` | Место в меню админки и видимость, раздел [Меню админки](#меню-админки) |
+
+Для колонки канбана используйте поле вроде `stage`. Поля коллекций не могут использовать ключи метаданных из `Collection::RESERVED_KEYS`. Админка, PHP, MCP и импорт коллекций проверяют значения одинаково. Свой тип поля может реализовать `Itk\Cms\Field\ValueValidatingFieldInterface` и вернуть переведённые ошибки из `validationErrors()`.
 
 ### Меню
 
@@ -354,6 +356,8 @@ return static function (SchemaBuilder $s): void {
 | `analytics` («Аналитика и вебмастера») | `yandexMetrikaId`, `yandexMetrikaWebvisor`, `googleAnalyticsId`, `yandexVerification`, `googleVerification`, `indexNow` |
 
 Сайт дополняет встроенную группу вызовом `$s->settings('site')->fields(...)`. Поле сайта с ключом встроенного поля заменяет поле ядра, в какой бы группе сайт его ни объявил.
+
+В `domain` укажите хост или адрес HTTP(S). Путь, параметры и фрагмент недопустимы. Для карты сайта, IndexNow и Вебмастера достаточно `itk_cms.public_url`. Международные имена хостов в ссылках записываются в ASCII. Внутренние настройки SMTP и токенов ботов хранятся в пространстве `itk:`.
 
 Код сайта читает настройки сервисом `Itk\Cms\Settings\Settings`. Значение приходит в типе поля:
 
@@ -389,6 +393,8 @@ $settings->all();                         // все настройки язык�
 
 ### Шаблоны Twig
 
+Размещайте переопределения в `templates/bundles/ItkCmsBundle/`. Для наследования оригинального шаблона используйте `@!ItkCms/…`. Ассеты админки и предпросмотра используют основной пакет Symfony Asset, если он доступен. Учитываются базовый путь и CDN.
+
 Сайт кладёт шаблоны в `templates/`:
 
 - `layout.html.twig` это макет. Он объявляет `{% block content %}`. Для `<title>` удобен `{% block title %}`.
@@ -419,6 +425,7 @@ $settings->all();                         // все настройки язык�
 | `itk_seo({...})` | Мета-теги текущего адреса, раздел [SEO-правила адресов](#seo-правила-адресов) |
 | `itk_cache(300)`, `itk_cache(false)` | Срок записи в кэше страниц, раздел [Кэш страниц](#кэш-страниц) |
 | `itk_stylesheets({nonce: x})` | Таблицы стилей сайта, раздел [Критический CSS](#критический-css) |
+| `itk_asset('preview.js')` | URL файла в `bundles/itkcms/`. Использует пакет Symfony Asset сайта или базовый путь запроса |
 | `itk_t('area.key', {...})`, `itk_locale()` | Текст и язык интерфейса админки. Для своих страниц входа и писем |
 | `itk_admin_font()` | Правила `@font-face` шрифта админки для своих страниц входа |
 
@@ -1203,7 +1210,7 @@ MAX (max.ru) работает рядом с Telegram и независимо о�
 
 Выключатель «MAX» (`maxOn`) и опция `itk_cms.max.enabled: false` работают так же, как у Telegram. Кнопка «Проверить» шлёт пробное сообщение. Отказ MAX не меняет статус Telegram, и наоборот.
 
-Получателей хранят настройки `tgOn`, `tgRoutes`, `maxOn`, `maxRoutes` и `mailRoutes` (область `set:notifications`). `GET settings` отдаёт их вместе с признаками `tgFallback`, `maxFallback` (чат задан в конфигурации), `tgReady`, `maxReady` и `mailReady`. Пробное сообщение отправляют `POST settings/telegram-test` и `POST settings/max-test {form?, chatId?}`.
+Область `set:notifications` использует настройки `tgOn`, `tgRoutes`, `maxOn`, `maxRoutes` и `mailRoutes`. Получайте и меняйте их через `GET settings?scope=notifications` и `PATCH settings?scope=notifications`. Ответ также содержит `tgFallback`, `maxFallback` (чат задан в конфигурации), `tgReady`, `maxReady` и `mailReady`. Пробное сообщение отправляют `POST settings/telegram-test` и `POST settings/max-test {form?, chatId?}`.
 
 ### Боты
 
@@ -1240,6 +1247,8 @@ MAX (max.ru) работает рядом с Telegram и независимо о�
 
 **Письма о заявках.** «Настройки → Уведомления → Письма о новых заявках» (`mailRoutes`, область `set:notifications`): адреса через запятую для всех форм и свой список для каждой формы, до 10 адресов. На каждый адрес уходит письмо с полями формы и ссылкой на заявку.
 
+Для своего периода заявок задавайте даты в формате `ГГГГ-ММ-ДД`. События доставки в Telegram и MAX вызываются после того, как CMS сохранит итог.
+
 **Шаблоны писем.** `@ItkCms/email/layout.html.twig` и пары `reset_password`, `invite`, `request`, `test` (`.html.twig` и `.txt.twig`). Сайт переопределяет любой файл своим файлом в `templates/email/`, например `templates/email/layout.html.twig`. Внутри можно расширить шаблон бандла: `{% extends '@ItkCms/email/reset_password.html.twig' %}`.
 
 ### Уведомления в админке и свои каналы
@@ -1263,7 +1272,7 @@ $notifier->notify(new Notification(
 - **`DatabaseChannel`** хранит уведомление для колокольчика. Человек видит уведомления по своим правам и роли, отправленные после его регистрации. Старые удаляет `php bin/console itk:notifications:prune [--days=90] [--dry-run]`, ставьте её в cron.
 - **`TelegramChannel`, `MaxChannel`, `EmailChannel`** доставляют только `request.new`.
 - **События ядра:** `request.new` (новая заявка, для права `requests`), `telegram.failed` и `max.failed` (заявка не дошла), `mail.failed` (письмо не ушло). Уведомление о сбое убирается, когда доставка удалась.
-- **Исход доставки** приходит событием Symfony `Itk\Cms\Event\RequestDelivery { request, delivered, error, cancelled, channel }`. `channel` равен `telegram` или `max`.
+- **Исход доставки** приходит событием Symfony `Itk\Cms\Event\RequestDelivery { request, delivered, error, cancelled, channel }` после фиксации статуса. `channel` равен `telegram` или `max`. Чтобы изменить заявку, слушатель загружает её по ID и явно сохраняет.
 - **Язык.** `new Notification(title: …)` хранит готовый текст. `Notification::translated(type: …, titleKey: 'area.key', titleParams: [...])` хранит ключ, и каждый читатель видит заголовок на своём языке.
 - **API.** `GET notifications?unread=1&limit=&offset=`, `POST notifications/read { ids } | { all: true }`. Каждый читает только своё.
 
@@ -1383,7 +1392,7 @@ foreach ($result->bySource() as $hit) {
 - Результат больше `max_kb` считается неудачей. Если в CSS есть `!important` или `@layer`, воркер пишет предупреждение: crittr их теряет.
 - Генератор не работает с транспортом `sync`.
 
-**CSP.** `<style>` требует `style-src 'unsafe-inline'` или nonce. `{{ itk_stylesheets({nonce: nonce}) }}` ставит `nonce` на каждый `<style>` и на ссылку. Атрибут `onload` nonce не покрывает. Для него разрешите хеш обработчика: `script-src 'unsafe-hashes' 'sha256-MhtPZXr7+LpJUY5qtMutB+qWfQtMaPccfe7QXtCcEYc='`. Без этого полный файл стилей останется с `media="print"`.
+**CSP.** Вызов `{{ itk_stylesheets({nonce: nonce}) }}` добавляет nonce к каждому критическому `<style>` и выводит обычные ссылки для полных файлов стилей. Разрешите их источник в CSP сайта.
 
 **В Docker** образ собирается с Node и Chromium аргументом `CRITICAL_CSS=1` (раздел [Критический CSS в Docker](#критический-css-в-docker)).
 
@@ -1572,7 +1581,7 @@ final class ToursCountTool extends AbstractMcpTool
 
 | Команда | Что делает |
 |---|---|
-| `itk:install` | Готовит роли, меню, настройки, очередь, главную страницу и первого администратора. Опции `--email`, `--password-file`, `--name`, `--site-name`, `--domain` и `--no-home` |
+| `itk:install` | Готовит роли, меню, настройки, очередь, главную страницу и первого администратора. Пароль первого администратора содержит от 10 до 200 символов. Опции `--email`, `--password-file`, `--name`, `--site-name`, `--domain` и `--no-home` |
 | `itk:doctor [--ci]` | Проверяет сайт |
 | `itk:schema:lint` | Проверяет схему и шаблоны Twig |
 | `itk:user:password <email> [--password=]` | Задаёт пароль |

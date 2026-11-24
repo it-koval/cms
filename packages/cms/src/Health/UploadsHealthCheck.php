@@ -27,10 +27,7 @@ final class UploadsHealthCheck implements HealthCheckInterface
 
     public function check(): HealthResult
     {
-        if (!\is_dir($this->uploadDir)) {
-            return HealthResult::warn(I18n::t('ops.health_uploads_missing'));
-        }
-        if (!\is_writable($this->uploadDir)) {
+        if (!UploadsWritable::check($this->uploadDir)) {
             return HealthResult::fail(I18n::t('ops.health_uploads_readonly'));
         }
 

@@ -161,11 +161,14 @@ final class CollectionService
     {
         $c = $this->collection($collection);
         $locale ??= $this->mainLocale;
-        $this->ensureSingleton($c);
         $this->hooks->loaded('item', $collection, $locale);
         $needle = \mb_strtolower(\trim($q));
         $out = [];
-        foreach ($this->items->findByCollection($collection) as $i) {
+        $items = $this->items->findByCollection($collection);
+        if ([] === $items && null !== ($initial = $this->initialSingleton($c))) {
+            $items[] = $initial;
+        }
+        foreach ($items as $i) {
             $row = $this->row($c, $i, $locale);
             if ('' !== $needle) {
                 $hay = \mb_strtolower((string) ($row[$c->titleFieldKey()] ?? '') . ' ' . (string) ($row[(string) ($c->toArray()['subField'] ?? '')] ?? ''));
@@ -193,9 +196,9 @@ final class CollectionService
     {
         $c = $this->collection($collection);
         $locale ??= $this->mainLocale;
-        $this->ensureSingleton($c);
         $this->hooks->loaded('item', $collection, $locale);
-        $i = $this->find($collection, $id);
+        $initial = $id === $c->singletonId() ? $this->initialSingleton($c) : null;
+        $i = $initial ?? $this->find($collection, $id);
         $t = $i->translations[$locale] ?? null;
         $live = null !== $t ? $this->live($t) : null;
         $hidden = $this->access->hiddenKeys($c->fieldList());
@@ -217,6 +220,17 @@ final class CollectionService
      */
     public function create(string $collection, array $data = [], ?string $locale = null, ?string $id = null): array
     {
+        return $this->createRecord($collection, $data, $locale, $id);
+    }
+
+    /**
+     * @param array<string, mixed> $data
+     * @param array<string, mixed>|null $firstUpdate a singleton's first PATCH, included in its single creation snapshot
+     *
+     * @return array<string, mixed>
+     */
+    private function createRecord(string $collection, array $data, ?string $locale, ?string $id, ?array $firstUpdate = null): array
+    {
         $c = $this->collection($collection);
         $locale ??= $this->mainLocale;
         if (null !== $c->singletonId() && $this->items->find($c->singletonId())) {
@@ -231,10 +245,19 @@ final class CollectionService
         $i->position = $this->items->nextPosition($collection);
         $i->parentId = $parentId;
         $i->translations = [$locale => ['draft' => $draft, 'published' => null, 'status' => 'draft', 'updatedAt' => Json::now()]];
+        if (null !== $firstUpdate) {
+            $patch = $this->hooks->updating($this->record($c, $i, $locale), $this->access->input($c->fieldList(), $firstUpdate));
+            $next = $this->normalized($c, $patch) + $draft;
+            $this->raw->assertFields($c->fieldList(), $draft, $next);
+            $this->put($i, $locale, ['draft' => $next, 'published' => null, 'status' => 'draft', 'updatedAt' => Json::now()]);
+        }
         $this->em->persist($i);
         $this->history->item($collection, $i, $locale, Revision::CREATE);
         $this->em->flush();
         $this->hooks->created($this->record($c, $i, $locale));
+        if (null !== $firstUpdate) {
+            $this->hooks->updated($this->record($c, $i, $locale));
+        }
 
         return $this->flat($c, $i, $locale);
     }
@@ -333,6 +356,17 @@ final class CollectionService
             $this->hooks->updated($this->record($c, $i, $locale));
 
             return $this->flat($c, $i, $locale);
+        }, function (CollectionItem $initial) use ($collection, $id, $data, $locale, $action, $baseVersion): array {
+            if (null !== $baseVersion) {
+                $this->requireDraftVersion($initial, $this->mainLocale, $baseVersion);
+            }
+            if ($locale === $this->mainLocale) {
+                return $this->createRecord($collection, [], $this->mainLocale, $id, $data);
+            }
+            $this->create($collection, [], $this->mainLocale, $id);
+            $this->addTranslation($collection, $id, $locale, null);
+
+            return $this->update($collection, $id, $data, $locale, $action);
         });
     }
 
@@ -822,17 +856,35 @@ final class CollectionService
      * @template T
      *
      * @param \Closure(CollectionItem): T $work
+     * @param \Closure(CollectionItem): T|null $initialize operation-specific first save of an unpersisted singleton
      *
      * @return T
      */
-    private function mutate(string $collection, string $id, \Closure $work): mixed
+    private function mutate(string $collection, string $id, \Closure $work, ?\Closure $initialize = null): mixed
     {
-        return $this->lock->publish('item', $collection . ':' . $id, function () use ($collection, $id, $work): mixed {
-            $i = $this->find($collection, $id);
-            $this->em->refresh($i, LockMode::PESSIMISTIC_WRITE);
+        $materialized = false;
+        try {
+            return $this->lock->publish('item', $collection . ':' . $id, function () use ($collection, $id, $work, $initialize, &$materialized): mixed {
+                $c = $this->collection($collection);
+                if ($id === $c->singletonId() && null !== ($initial = $this->initialSingleton($c))) {
+                    $materialized = true;
+                    if (null !== $initialize) {
+                        return $initialize($initial);
+                    }
+                    // Only an explicit mutation enters here. GET uses the same defaults without hooks or history.
+                    $this->create($collection, [], $this->mainLocale, $id);
+                }
+                $i = $this->find($collection, $id);
+                $this->em->refresh($i, LockMode::PESSIMISTIC_WRITE);
 
-            return $work($i);
-        });
+                return $work($i);
+            });
+        } catch (\Throwable $e) {
+            if ($materialized) {
+                $this->em->clear(); // a failed first mutation must not retain objects from the rolled-back materialization
+            }
+            throw $e;
+        }
     }
 
     private function requireDraftVersion(CollectionItem $i, string $locale, string $expected): void
@@ -896,12 +948,25 @@ final class CollectionService
         return 'matrix' === $c->viewName() ? ['cols' => [], 'rows' => []] : [];
     }
 
-    /** @internal The only record of a singleton collection (the tariff matrix) exists from the first read. */
+    /** @internal Explicitly materialize a singleton; read paths use initialSingleton() instead. */
     public function ensureSingleton(Collection $c): void
     {
         if (null !== $c->singletonId() && null === $this->items->find($c->singletonId())) {
             $this->create($c->key(), [], null, $c->singletonId());
         }
+    }
+
+    /** @internal Initial singleton editor state; never persisted by a read. */
+    public function initialSingleton(Collection $c): ?CollectionItem
+    {
+        $id = $c->singletonId();
+        if (null === $id || null !== $this->items->find($id)) {
+            return null;
+        }
+        $item = new CollectionItem($c->key(), $id);
+        $item->translations = [$this->mainLocale => ['draft' => $this->values->defaults($c->fieldList()) + $this->matrixDefaults($c), 'published' => null, 'status' => 'draft']];
+
+        return $item;
     }
 
     /**

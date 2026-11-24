@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Itk\Cms\Content;
 
 use Doctrine\ORM\EntityManagerInterface;
+use Doctrine\Persistence\ManagerRegistry;
 use Itk\Cms\Entity\CollectionItem;
 use Itk\Cms\Field\FieldInterface;
 use Itk\Cms\I18n\I18n;
@@ -23,6 +24,8 @@ final class CollectionImporter
         private readonly CollectionItemRepository $items,
         private readonly EntityManagerInterface $em,
         private readonly Schema $schema,
+        private readonly EditLock $lock,
+        private readonly ManagerRegistry $registry,
     ) {
     }
 
@@ -41,29 +44,30 @@ final class CollectionImporter
         $known = $this->index($collection, $locale);
 
         $result = new ImportResult();
-        $seen = [];
+        $rowNumber = 0;
         foreach ($rows as [$sourceId, $values]) {
+            ++$rowNumber;
             $sourceId = (string) $sourceId;
-            $data = [];
-            foreach ($values as $key => $raw) {
-                if (isset($fields[$key])) {
-                    $data[$key] = $this->convert($fields[$key], $raw);
-                } elseif (!\in_array($key, $result->ignoredKeys, true)) {
-                    $result->ignoredKeys[] = (string) $key;
-                }
-            }
-            if (\count($result->preview) < 5) {
-                $result->preview[] = [$sourceId, $data];
-            }
-            $seen[$sourceId] = true;
-            $id = $known[$sourceId] ?? null;
-            if ($dryRun) {
-                null === $id ? ++$result->created : ++$result->updated;
-                continue;
-            }
-
+            $writing = false;
             try {
-                $id = $this->em->wrapInTransaction(function () use ($collection, $id, $data, $sourceId, $source, $locale): string {
+                $data = [];
+                foreach ($values as $key => $raw) {
+                    if (isset($fields[$key])) {
+                        $data[$key] = $this->convert($fields[$key], $raw);
+                    } elseif (!\in_array($key, $result->ignoredKeys, true)) {
+                        $result->ignoredKeys[] = (string) $key;
+                    }
+                }
+                if (\count($result->preview) < 5) {
+                    $result->preview[] = [$sourceId, $data];
+                }
+                $id = $known[$sourceId] ?? null;
+                if ($dryRun) {
+                    null === $id ? ++$result->created : ++$result->updated;
+                    continue;
+                }
+                $writing = true;
+                $id = $this->lock->transactional(function () use ($collection, $id, $data, $sourceId, $source, $locale): string {
                     if (null === $id) {
                         $id = (string) $this->collections->create($collection, $data)['id'];
                     } else {
@@ -78,8 +82,18 @@ final class CollectionImporter
                 if ($publish) {
                     $this->collections->publish($collection, $id);
                 }
-            } catch (ContentException $e) {
-                $result->failed[] = I18n::t('content.import_row_failed', ['row' => $sourceId, 'message' => $e->getMessage()]);
+            } catch (\Throwable $e) {
+                if (!$this->em->isOpen()) {
+                    // DoctrineBundle resets the shared lazy manager in place, including already injected services and repositories.
+                    $this->registry->resetManager();
+                } elseif ($writing) {
+                    $this->em->clear(); // discard objects changed by the rolled-back row
+                }
+                $row = (string) $rowNumber;
+                if ($sourceId !== $row) {
+                    $row .= ' (' . $sourceId . ')';
+                }
+                $result->failed[] = I18n::t('content.import_row_failed', ['row' => $row, 'message' => $e->getMessage()]);
             }
         }
 
@@ -134,6 +148,9 @@ final class CollectionImporter
     private function number(mixed $raw): int|float
     {
         $n = $raw + 0;
+        if (!\is_finite((float) $n)) {
+            throw ContentException::invalid(I18n::t('content.query_number_needed'));
+        }
 
         return \is_float($n) && \floor($n) === $n && \abs($n) < 1e15 ? (int) $n : $n;
     }
@@ -143,10 +160,16 @@ final class CollectionImporter
         if (!\is_scalar($raw) || '' === \trim((string) $raw) || \str_starts_with((string) $raw, '0000-00-00')) {
             return '';
         }
+        $value = \trim((string) $raw);
+        if (1 !== \preg_match('/^\d{4}-\d{2}-\d{2}(?:[ T]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z| ?[+-]\d{2}(?::?\d{2})?)?)?\z/', $value)) {
+            return $value; // preserve invalid input for the shared field validator to report
+        }
         try {
-            return (new \DateTimeImmutable((string) $raw))->format($format);
+            $date = new \DateTimeImmutable($value);
+
+            return false === \DateTimeImmutable::getLastErrors() ? $date->format($format) : $value;
         } catch (\Exception) {
-            return '';
+            return $value;
         }
     }
 }

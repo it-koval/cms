@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace Itk\Cms\Rendering;
 
+use Itk\Cms\Admin\BundleAssets;
 use Itk\Cms\Admin\Theme\AdminTheme;
 use Itk\Cms\Content\ContentException;
 use Itk\Cms\Content\H1Rule;
+use Itk\Cms\Content\HtmlSanitizer;
 use Itk\Cms\Content\PageService;
 use Itk\Cms\Content\PageVersions;
 use Itk\Cms\Content\SeoResolver;
@@ -66,6 +68,7 @@ final class PageRenderer
         private readonly ?LocaleSwitcher $locales = null,
         private readonly ?ContentLocales $contentLocales = null,
         private readonly ?PageVersions $versions = null,
+        private readonly ?BundleAssets $assets = null,
     ) {
     }
 
@@ -127,11 +130,13 @@ final class PageRenderer
         $render = fn (): string => $this->render($t, $t->draft, true, null);
         $html = $this->withLocale($t->locale, $render);
 
-        $head = '<style>' . $this->theme->previewCss() . '</style><link rel="stylesheet" href="' . self::PREVIEW_CSS . '">'; // the colours of the overlay follow the admin theme
-        $tail = '<script src="' . self::PREVIEW_JS . '" defer></script>';
-        if (!\str_contains($html, self::PREVIEW_JS)) { // a layout may include @ItkCms/preview/_markers.html.twig itself
-            $html = \str_contains($html, '</head>') ? \preg_replace('~</head>~i', $head . '</head>', $html, 1) : $head . $html;
-            $html = \str_contains($html, '</body>') ? \preg_replace('~</body>~i', $tail . '</body>', $html, 1) : $html . $tail;
+        $previewCss = HtmlSanitizer::escape($this->assets?->url('preview.css') ?? self::PREVIEW_CSS);
+        $previewJs = HtmlSanitizer::escape($this->assets?->url('preview.js') ?? self::PREVIEW_JS);
+        $head = '<style>' . $this->theme->previewCss() . '</style><link rel="stylesheet" href="' . $previewCss . '">'; // the colours of the overlay follow the admin theme
+        $tail = '<script src="' . $previewJs . '" defer></script>';
+        if (!\str_contains($html, $previewJs)) { // a layout may include @ItkCms/preview/_markers.html.twig itself
+            $html = \str_contains($html, '</head>') ? \preg_replace_callback('~</head>~i', static fn (): string => $head . '</head>', $html, 1) : $head . $html;
+            $html = \str_contains($html, '</body>') ? \preg_replace_callback('~</body>~i', static fn (): string => $tail . '</body>', $html, 1) : $html . $tail;
         }
 
         $response = new Response((string) $html);

@@ -24,6 +24,7 @@ use Itk\Cms\Request\SendRequestNotificationHandler;
 use Itk\Cms\Security\RequestPasswordLink;
 use Itk\Cms\Security\RoleLabel;
 use Itk\Cms\Security\UserManager;
+use Itk\Cms\Tests\App\TestKernel;
 use Itk\Cms\Tests\Core\Fixture\MailSupport;
 use PHPUnit\Framework\Attributes\Test;
 use Psr\Log\NullLogger;
@@ -31,6 +32,7 @@ use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 use Symfony\Component\HttpKernel\Event\ResponseEvent;
 use Symfony\Component\HttpKernel\KernelEvents;
+use Symfony\Component\HttpKernel\KernelInterface;
 use Symfony\Component\Messenger\Envelope;
 use Symfony\Component\Messenger\Event\WorkerMessageFailedEvent;
 use Symfony\Component\Messenger\Event\WorkerMessageReceivedEvent;
@@ -49,6 +51,11 @@ final class I18nLocaleTest extends WebTestCase
     private string $csrf = '';
     /** The language of the moment the answer was made: nothing can be read about it after the request. */
     private ?string $spoke = null;
+
+    protected static function createKernel(array $options = []): KernelInterface
+    {
+        return new TestKernel($options['environment'] ?? 'test', $options['debug'] ?? true, framework: ['default_locale' => 'en']);
+    }
 
     protected function setUp(): void
     {
@@ -254,7 +261,7 @@ final class I18nLocaleTest extends WebTestCase
     {
         $this->signIn($this->person(Role::ADMIN, 'kk'));
         self::assertSame('kk', $this->spoke);
-        self::assertSame('ru', I18n::locale(), 'between requests: the language of the site, not the one of the last person');
+        self::assertSame('en', I18n::locale(), 'between requests: framework.default_locale of the application');
 
         $this->client->restart();
         $this->client->request('GET', '/admin/login');
@@ -328,8 +335,8 @@ final class I18nLocaleTest extends WebTestCase
     #[Test]
     public function outsideARequestTheLanguageIsTheOneOfTheSite(): void
     {
-        self::assertSame('ru', I18n::locale());
-        self::assertSame('Выберите язык из списка', I18n::t('i18n.locale_unknown_field'));
+        self::assertSame('en', I18n::locale());
+        self::assertSame('Choose a language from the list', I18n::t('i18n.locale_unknown_field'));
     }
 
     #[Test]
@@ -376,7 +383,7 @@ final class I18nLocaleTest extends WebTestCase
         self::assertStringContainsString('<html lang="kk">', $letters[0]->html);
         self::assertStringContainsString('<html lang="ru">', $letters[1]->html);
         self::assertStringContainsString('<html lang="en">', $letters[2]->html);
-        self::assertSame('ru', I18n::locale());
+        self::assertSame('en', I18n::locale(), 'after the worker: framework.default_locale of the application');
     }
 
     #[Test]
@@ -387,7 +394,7 @@ final class I18nLocaleTest extends WebTestCase
 
         self::getContainer()->get('event_dispatcher')->dispatch(new WorkerMessageReceivedEvent(new Envelope(new \stdClass()), 'async'));
 
-        self::assertSame('ru', I18n::locale());
+        self::assertSame('en', I18n::locale());
     }
 
     #[Test]
@@ -395,14 +402,14 @@ final class I18nLocaleTest extends WebTestCase
     {
         $locale = self::getContainer()->get(AdminLocale::class);
         self::assertSame('kk', $locale->run('kk', static fn (): string => I18n::locale()));
-        self::assertSame('ru', I18n::locale());
+        self::assertSame('en', I18n::locale());
         try {
             $locale->run('en', static function (): void {
                 throw new \RuntimeException('in the middle of a letter');
             });
         } catch (\RuntimeException) {
         }
-        self::assertSame('ru', I18n::locale());
+        self::assertSame('en', I18n::locale());
     }
 
     #[Test]
@@ -456,7 +463,7 @@ final class I18nLocaleTest extends WebTestCase
         $reader = $this->person(Role::EDITOR, 'kk');
         $stored = self::getContainer()->get(EntityManagerInterface::class)->getRepository(StoredNotification::class)->findOneBy(['type' => 'test.i18n']);
         self::assertInstanceOf(StoredNotification::class, $stored);
-        self::assertSame('Заявка №7 не дошла в Telegram', $stored->title, 'the fallback, in the language of the moment');
+        self::assertSame('Request #7 did not reach Telegram', $stored->title, 'the fallback, in the language of the moment');
         $reader->createdAt = new \DateTimeImmutable('-1 day');
         self::getContainer()->get(EntityManagerInterface::class)->flush();
 
@@ -474,7 +481,7 @@ final class I18nLocaleTest extends WebTestCase
         self::assertInstanceOf(StoredNotification::class, $stored);
         $stored->i18n = ['title' => ['key' => 'i18n.left_the_catalogues', 'params' => []]];
         self::getContainer()->get(EntityManagerInterface::class)->flush();
-        self::assertSame('Заявка №7 не дошла в Telegram', $byType($this->api('GET', 'notifications'))['test.i18n']['title']);
+        self::assertSame('Request #7 did not reach Telegram', $byType($this->api('GET', 'notifications'))['test.i18n']['title']);
     }
 
     #[Test]
@@ -491,10 +498,10 @@ final class I18nLocaleTest extends WebTestCase
 
         $rows = $em->getRepository(StoredNotification::class)->findBy(['type' => Notification::MAIL_FAILED], ['id' => 'DESC'], 2);
         [$second, $first] = $rows;
-        self::assertSame('Письмо не отправлено: Проверка', $first->title);
-        self::assertSame('Почтовый сервер не принял письмо', $first->body);
+        self::assertSame('Email not sent: Проверка', $first->title);
+        self::assertSame('The mail server did not accept the email', $first->body);
         self::assertSame('i18n.notification_mail_refused', $first->i18n['body']['key'] ?? null);
-        self::assertSame('Письмо о заявке №77 не дошло', $second->title);
+        self::assertSame('The email about request #77 was not delivered', $second->title);
         self::assertSame('550 refused', $second->body);
         self::assertArrayNotHasKey('body', $second->i18n ?? []);
         self::assertSame('The email about request #77 was not delivered', self::getContainer()->get(AdminLocale::class)->run('en', static fn (): mixed => NotificationInbox::present($second, false)['title']));

@@ -43,7 +43,6 @@
 'content.item_translation_last_required': 'This is the last version of the record. Delete the whole record'
 'content.page_not_found': 'Page not found'
 'content.page_title_required': 'Enter the page title'
-'content.page_url_slash': 'The address must start with a slash, for example /about-us'
 'content.page_url_invalid': 'Enter a local path of up to 255 characters, for example /about-us. Do not use ?, # or backslashes'
 'content.locale_unknown': 'The language “{locale}” is not configured for this site'
 'content.url_locale_prefix': 'The address {url} for {language} must start with {prefix}'
@@ -77,7 +76,6 @@
 'content.page_home_url_locked': 'The address of the home page cannot be changed'
 'content.page_home_template_locked': 'The template of the home page cannot be changed'
 'content.page_own_parent': 'A page cannot be its own parent'
-'content.page_parent_is_descendant': 'A page cannot be a child of its own child page'
 'content.placement_template_unknown': 'There is no such template'
 'content.placement_home_exists': 'The home page already exists'
 'content.placement_single': 'There can be only one page with the template “{template}” on the site, and it already exists'
@@ -227,3 +225,11 @@
 'content.history_entry_not_found': 'History entry not found'
 'content.history_not_found': 'History not found'
 'content.no_permission': 'You do not have permission to do this'
+content.redirect_address_too_long: 'Redirect addresses can have at most {max} characters.'
+
+'content.field_max_length': 'At most {count} characters'
+
+'content.field_choice_invalid': 'Choose one of the available options'
+
+'content.field_date_invalid': 'Enter a valid date'
+content.settings_domain_invalid: 'Enter a site domain without a path, query string or fragment.'

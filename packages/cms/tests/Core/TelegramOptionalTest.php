@@ -73,7 +73,7 @@ final class TelegramOptionalTest extends WebTestCase
             $em->createQuery('DELETE FROM Itk\Cms\Entity\User u WHERE u.email LIKE :e')->setParameter('e', 'test-tg-%@example.com')->execute();
             $settings = self::getContainer()->get(SettingsService::class);
             foreach ($this->saved as $key => [$existed, $value]) {
-                $em->createQuery('DELETE FROM Itk\Cms\Entity\Setting s WHERE s.key = :k')->setParameter('k', $key)->execute();
+                $settings->remove($key);
                 if ($existed) {
                     $settings->set($key, $value);
                 }

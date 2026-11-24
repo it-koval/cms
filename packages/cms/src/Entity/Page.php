@@ -31,7 +31,7 @@ class Page
     #[ORM\Column(type: Types::STRING, length: 64)]
     public string $template = 'default';
 
-    #[ORM\Column(type: Types::DATETIME_IMMUTABLE)]
+    #[ORM\Column(name: 'created_at', type: Types::DATETIME_IMMUTABLE)]
     public \DateTimeImmutable $createdAt;
 
     /** @var Collection<string, PageTranslation> */

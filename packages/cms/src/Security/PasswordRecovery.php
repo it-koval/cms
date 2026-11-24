@@ -51,7 +51,6 @@ final class PasswordRecovery
         private readonly AdminPath $admin,
         private readonly LoggerInterface $logger,
         private readonly AdminLocale $locale,
-        #[Autowire(service: 'messenger.bus.default')]
         private readonly MessageBusInterface $bus,
         #[Autowire(service: 'limiter.itk_password_reset_ip')]
         private readonly RateLimiterFactoryInterface $perVisitor,

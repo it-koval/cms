@@ -152,7 +152,7 @@ final class I18n
             if ($translator instanceof TranslatorBagInterface) {
                 self::$translator = $translator;
             } else {
-                self::$locale = $admin->default(); // a site with framework.translator off: the files of the bundle
+                self::$locale = $admin->application(); // a site with framework.translator off: the files of the bundle
             }
         }
 

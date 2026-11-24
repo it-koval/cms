@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace Itk\Cms\Request;
 
+use Doctrine\DBAL\Connection;
 use Itk\Cms\Content\ContentException;
 use Itk\Cms\Content\SettingsService;
 use Itk\Cms\Entity\Request;
-use Itk\Cms\Event\RequestDelivery;
 use Itk\Cms\I18n\I18n;
 use Itk\Cms\Request\Max\MaxApiSender;
 use Itk\Cms\Request\Max\MaxSender;
@@ -110,32 +110,10 @@ final class MaxNotifier implements ChannelNotifier
     }
 
     /** Writes the outcome of attempt() into the request and announces it. Returns true when it needs no retry. */
-    public function record(Request $r, ChannelOutcome $outcome, bool $announce = true): bool
+    /** @param (\Closure(\Closure(): void): void)|null $defer */
+    public function record(Request $r, ChannelOutcome $outcome, ?\Closure $defer = null, ?Connection $deliveryConnection = null): bool
     {
-        if (!$announce) {
-            $r->markChannel(Request::CHANNEL_MAX, $outcome->state, $outcome->error);
-
-            return !$outcome->isFailed();
-        }
-        if ($outcome->isPending()) {
-            $wasFailed = Request::DELIVERY_FAILED === $r->channelState(Request::CHANNEL_MAX);
-            $r->markChannel(Request::CHANNEL_MAX, Request::DELIVERY_PENDING);
-            if ($wasFailed) {
-                $this->events->dispatch(new RequestDelivery($r, false, null, true, Request::CHANNEL_MAX));
-            }
-
-            return true;
-        }
-        if ($outcome->isFailed()) {
-            $r->markChannel(Request::CHANNEL_MAX, Request::DELIVERY_FAILED, $outcome->error);
-            $this->events->dispatch(new RequestDelivery($r, false, $outcome->error, false, Request::CHANNEL_MAX));
-
-            return false;
-        }
-        $r->markChannel(Request::CHANNEL_MAX, Request::DELIVERY_SENT);
-        $this->events->dispatch(new RequestDelivery($r, true, null, false, Request::CHANNEL_MAX));
-
-        return true;
+        return $outcome->record($r, Request::CHANNEL_MAX, $this->events, $defer, $deliveryConnection);
     }
 
     /**
@@ -166,16 +144,6 @@ final class MaxNotifier implements ChannelNotifier
     public function parts(Request $r, bool $resend = false): MessageParts
     {
         return MessageParts::max($this->buildText($r, $resend));
-    }
-
-    /** Called only after the durable delivery result has committed. */
-    public function announce(Request $r, ChannelOutcome $outcome): void
-    {
-        try {
-            $this->events->dispatch(new RequestDelivery($r, Request::DELIVERY_SENT === $outcome->state, $outcome->error, $outcome->isPending(), Request::CHANNEL_MAX));
-        } catch (\Throwable) {
-            $this->logger->error('A delivery listener failed for request #{id}.', ['id' => $r->id]);
-        }
     }
 
     /** MAX takes &, <, > and " as named entities; HtmlSanitizer::escape writes the apostrophe as a numeric entity, and MAX may show those as they are. */

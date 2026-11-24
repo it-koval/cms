@@ -151,8 +151,8 @@ final class AccountDeliverySecurityTest extends KernelTestCase
         self::assertNull($urls->trustedBase());
         self::assertSame('https://trusted.example', (new PublicUrl($requests, self::getContainer()->get(SettingsService::class), 'https://trusted.example/'))->trustedBase());
         $configured = new PublicUrl($requests, self::getContainer()->get(SettingsService::class), 'HTTPS://Trusted.Example:08443/');
-        self::assertSame('HTTPS://Trusted.Example:08443', $configured->trustedBase());
-        self::assertSame('HTTPS://Trusted.Example:08443', $configured->base(), 'An accepted configured origin retains its spelling and explicit port for ordinary links.');
+        self::assertSame('https://trusted.example:8443', $configured->trustedBase());
+        self::assertSame('https://trusted.example:8443', $configured->base(), 'An accepted configured origin keeps its explicit port for ordinary links, written as a normalized origin.');
     }
 
     public function testTrustedHostsDoNotAuthorizeACompletePasswordLinkOrigin(): void

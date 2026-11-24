@@ -70,9 +70,10 @@ final class MaxChannelTest extends WebTestCase
             $em->createQuery('DELETE FROM Itk\Cms\Entity\User u WHERE u.email LIKE :e')->setParameter('e', 'test-max-%@example.com')->execute();
             $settings = self::getContainer()->get(SettingsService::class);
             foreach ($this->saved as $key => [$existed, $value]) {
-                $em->createQuery('DELETE FROM Itk\Cms\Entity\Setting s WHERE s.key = :k')->setParameter('k', $key)->execute();
                 if ($existed) {
                     $settings->set($key, $value);
+                } else {
+                    $settings->remove($key);
                 }
             }
         }
@@ -877,6 +878,11 @@ final class MaxChannelTest extends WebTestCase
     public function theMaxSettingsAreSavedCheckedAndSeenOnlyByThoseWhoMaySeeNotifications(): void
     {
         $this->adminClient();
+        $settings = self::getContainer()->get(SettingsService::class);
+        foreach (['maxOn', 'maxRoutes'] as $key) {
+            $this->saved[$key] = [$settings->isSet($key), $settings->get($key)];
+            $settings->remove($key);
+        }
         $all = $this->api('GET', 'settings');
         self::assertTrue($all['maxOn']);
         self::assertSame([], $all['maxRoutes']);
@@ -887,8 +893,6 @@ final class MaxChannelTest extends WebTestCase
         $saved = $this->api('PATCH', 'settings', ['maxRoutes' => ['*' => ' -70001 , 70002', 'call' => '70003'], 'maxOn' => false]);
         self::assertSame(['*' => '-70001 , 70002', 'call' => '70003'], $saved['maxRoutes']);
         self::assertFalse($saved['maxOn']);
-        $this->saved['maxRoutes'] = [false, null];
-        $this->saved['maxOn'] = [false, null];
         self::assertSame(['-70001', '70002'], self::getContainer()->get(SettingsService::class)->maxChatIdsFor('page'));
 
         foreach (['@channel', 'abc', '12x', '1.5', '123456789012345678901'] as $bad) {

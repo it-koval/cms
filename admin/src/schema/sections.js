@@ -3,7 +3,7 @@
 //
 // ONE RULE for every section of every site (the CMS does common things the same way):
 //   - the heading of a section is a `headline` field (key `headline`, TipTap, line breaks; the «Градиент» mark only when the site design has it, see siteDesign());
-//   - the page's single <h1> is the headline of the first visible section of the group «Первый экран» (pageH1Id), every other headline is an <h2>;
+//   - the page's single <h1> is the headline of the first visible firstScreen section (pageH1Id), every other headline is an <h2>;
 //   - prose (descriptions, paragraphs, answers, card texts) is `{ t:'textarea', rich:true }` = the description editor (paragraphs, bold, italic, link, list);
 //   - short titles of repeater items (slide, card, step, FAQ question), button texts, eyebrows and one-line captions are plain `text` — they are labels,
 //     not headings and not prose. SEO fields and list-like fields («Модели, по одной на строку») stay plain too.
@@ -30,16 +30,16 @@ export const sectionName = (type) => { const t = getSectionType(type); return t 
 export const sectionFields = (type) => { const t = getSectionType(type); return t ? fieldsOf(t.fields) : [] }
 
 /**
- * The page's one <h1>: the headline of the FIRST VISIBLE section whose type is in the group «Первый экран» (pageH1Id); every other headline is an <h2>
+ * The page's one <h1>: the headline of the FIRST VISIBLE section marked firstScreen (pageH1Id); every other headline is an <h2>
  * (also the headline of a second first-screen section). Hidden sections do not count. Returns the section id, or null when the page has none.
  * A TEMPLATE with `h1` ({ field }) owns the H1 (schema/templates.js): pass the template and no section is the H1; `hasPageH1` tells whether the page has a main heading at all.
  */
 export function pageH1Id(sections, template = null) {
   if (template && template.h1) return null // the template gives the H1 (an article's title): no section carries it, every section headline is an <h2>
-  const s = (sections || []).find((x) => { const t = !x.hidden && getSectionType(x.type); return t && t.group === FIRST_SCREEN })
+  const s = (sections || []).find((x) => { const t = !x.hidden && getSectionType(x.type); return t && (t.firstScreen ?? t.group === FIRST_SCREEN) })
   return s ? s.id : null
 }
-/** Does the page have a main heading (H1): from its template, or from the first visible «Первый экран» section? */
+/** Does the page have a main heading (H1): from its template, or from the first visible first-screen section? */
 export const hasPageH1 = (sections, template = null) => !!(template && template.h1) || !!pageH1Id(sections)
 export const H1_LABEL = t('forms.h1_label')
 export const H1_HELP = t('forms.h1_help')

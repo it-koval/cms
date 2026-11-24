@@ -49,6 +49,9 @@ final class CriticalCssTest extends WebTestCase
     private bool $domainTouched = false;
     private bool $domainWasSet = false;
     private mixed $domainBefore = '';
+    private ?string $cssBefore = null;
+    private bool $cssTouched = false;
+    private bool $cssDirCreated = false;
 
     protected static function createKernel(array $options = []): KernelInterface
     {
@@ -68,31 +71,52 @@ final class CriticalCssTest extends WebTestCase
 
     protected function setUp(): void
     {
+        $this->cssBefore = \is_file(self::cssFile()) ? (string) \file_get_contents(self::cssFile()) : null;
+        $this->cssDirCreated = !\is_dir(\dirname(self::cssFile()));
         @\mkdir(\dirname(self::cssFile()), 0o777, true);
         \file_put_contents(self::cssFile(), 'body{margin:0}');
+        $this->cssTouched = true;
     }
 
     protected function tearDown(): void
     {
-        $c = self::getContainer();
-        foreach ($this->created as $id) {
+        try {
+            $c = self::getContainer();
+            // A failed assertion/flush must not leave a pending CriticalCss row pointing at a detached translation during cleanup.
+            $c->get(EntityManagerInterface::class)->clear();
+            foreach ($this->created as $id) {
+                try {
+                    $c->get(PageService::class)->remove($id);
+                } catch (\Throwable) {
+                }
+            }
+            if ($this->domainTouched) {
+                $settings = $c->get(SettingsService::class);
+                if ($this->domainWasSet) {
+                    $settings->set('domain', $this->domainBefore);
+                } else {
+                    $c->get(EntityManagerInterface::class)->createQuery("DELETE FROM Itk\\Cms\\Entity\\Setting s WHERE s.key = 'domain'")->execute();
+                }
+            }
+            $c->get(PageCache::class)->clear();
+            $c->get(FakeCssExtractor::class)->forget();
+            $c->get('messenger.transport.critical_css')->reset();
+        } finally {
             try {
-                $c->get(PageService::class)->remove($id);
-            } catch (\Throwable) {
+                if ($this->cssTouched) {
+                    if (null !== $this->cssBefore) {
+                        \file_put_contents(self::cssFile(), $this->cssBefore);
+                    } elseif (\is_file(self::cssFile())) {
+                        \unlink(self::cssFile());
+                    }
+                }
+                if ($this->cssDirCreated) {
+                    @\rmdir(\dirname(self::cssFile()));
+                }
+            } finally {
+                parent::tearDown();
             }
         }
-        if ($this->domainTouched) {
-            $settings = $c->get(SettingsService::class);
-            if ($this->domainWasSet) {
-                $settings->set('domain', $this->domainBefore);
-            } else {
-                $c->get(EntityManagerInterface::class)->createQuery("DELETE FROM Itk\\Cms\\Entity\\Setting s WHERE s.key = 'domain'")->execute();
-            }
-        }
-        $c->get(PageCache::class)->clear();
-        $c->get(FakeCssExtractor::class)->forget();
-        $c->get('messenger.transport.critical_css')->reset();
-        parent::tearDown();
     }
 
     /** @param array<string, mixed> $options */
@@ -538,7 +562,7 @@ final class CriticalCssTest extends WebTestCase
     }
 
     #[Test]
-    public function aNonceGoesOnTheStyleTagsAndTheSwapLink(): void
+    public function aNonceUsesStylesheetLinksWithoutInlineEventHandlers(): void
     {
         $this->client();
         $state = self::getContainer()->get(RenderState::class);
@@ -550,6 +574,8 @@ final class CriticalCssTest extends WebTestCase
         }
 
         self::assertStringContainsString('<style nonce="n1">a{x:1}<\/style><script></style>', $html);
-        self::assertMatchesRegularExpression('~<link rel="stylesheet" href="[^"]+" nonce="n1" media="print" onload="this\.media=\'all\'">~', $html);
+        self::assertMatchesRegularExpression('~<link rel="stylesheet" href="[^"]+" nonce="n1">~', $html);
+        self::assertStringNotContainsString('onload=', $html);
+        self::assertStringNotContainsString('media="print"', $html);
     }
 }

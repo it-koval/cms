@@ -155,7 +155,7 @@ final class HistoryAdmin
         match ($r->kind) {
             Revision::PAGE => $this->pages->restoreVersion($r->resourceId, $r->locale, (array) ($r->snapshot['draft'] ?? [])),
             Revision::ITEM => $this->collections->restoreVersion($r->resourceKey, $r->resourceId, (array) ($r->snapshot['draft'] ?? []), $r->locale),
-            Revision::SETTINGS => $this->settings->update($r->snapshot, $r->locale, Revision::RESTORE),
+            Revision::SETTINGS => 'notifications' === $r->resourceKey ? $this->settings->updateNotifications($r->snapshot, $r->locale, Revision::RESTORE) : $this->settings->update($r->snapshot, $r->locale, Revision::RESTORE),
             Revision::MENU => $this->menus->saveMenus([$r->resourceId => (array) ($r->snapshot['items'] ?? [])], $r->locale, Revision::RESTORE),
             default => throw ContentException::invalid(I18n::t('content.history_cannot_restore')),
         };
@@ -323,7 +323,7 @@ final class HistoryAdmin
                 return null !== $i ? $this->history->itemState($i, $r->locale) : null;
 
             case Revision::SETTINGS:
-                return $this->history->settingsOf($r->resourceId, $this->settings->all($r->locale));
+                return $this->history->settingsOf($r->resourceId, 'notifications' === $r->resourceKey ? $this->settings->notificationSettings() : $this->settings->all($r->locale));
 
             default:
                 $a = $this->areas->find($r->resourceId);

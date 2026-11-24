@@ -16,6 +16,13 @@ namespace Itk\Cms\CriticalCss\Model;
  */
 final class SourceCss
 {
+    private const STRING = <<<'REGEX'
+(?:"(?:\\[\s\S]|[^"\\])*"|'(?:\\[\s\S]|[^'\\])*')
+REGEX;
+    private const ESCAPE = '\\\\[\s\S]';
+    private const URL_VALUE = '(?:' . self::STRING . '|(?:' . self::ESCAPE . '|[^"\'()\\\\])*)';
+    private const SKIP_LITERALS = '(?:' . self::STRING . '|' . self::ESCAPE . ')(*SKIP)(*F)|';
+
     /**
      * @param list<string> $hrefs public paths in cascade order (/css/site.css)
      * @param \Closure(string): ?string $read the content of a public path, null when there is no such file
@@ -57,9 +64,9 @@ final class SourceCss
         $dir = self::dirOf($href);
         $css = self::stripComments($css);
         $css = \preg_replace_callback(
-            '~@import\s+(?:url\(\s*(["\']?)([^"\')]+)\1\s*\)|(["\'])([^"\']+)\3)\s*([^;]*);~i',
+            '~' . self::SKIP_LITERALS . '@import\s+(?:url\(\s*(?<url>' . self::URL_VALUE . ')\s*\)|(?<string>' . self::STRING . '))\s*(?<media>[^;]*);~i',
             static function (array $m) use ($dir, $href, $read): string {
-                $target = '' !== $m[2] ? $m[2] : $m[4];
+                [, $target] = self::urlValue('' !== $m['url'] ? $m['url'] : $m['string']);
                 if (self::isExternal($target)) {
                     return $m[0];
                 }
@@ -69,7 +76,7 @@ final class SourceCss
                     return '';
                 }
                 $imported = self::rebaseUrls(self::stripComments($imported), self::dirOf($path));
-                $media = \trim($m[5]);
+                $media = \trim($m['media']);
 
                 return '' === $media ? $imported : '@media ' . $media . '{' . $imported . '}';
             },
@@ -82,17 +89,30 @@ final class SourceCss
     public static function rebaseUrls(string $css, string $dir): string
     {
         return \preg_replace_callback(
-            '~url\(\s*(["\']?)([^"\')]+)\1\s*\)~i',
-            static fn (array $m): string => self::isExternal($m[2]) ? $m[0] : 'url(' . $m[1] . self::resolve($dir, $m[2]) . $m[1] . ')',
+            '~' . self::SKIP_LITERALS . 'url\(\s*(' . self::URL_VALUE . ')\s*\)~i',
+            static function (array $m) use ($dir): string {
+                [$quote, $url] = self::urlValue($m[1]);
+
+                return self::isExternal($url) ? $m[0] : 'url(' . $quote . self::resolve($dir, $url) . $quote . ')';
+            },
             $css,
         ) ?? $css;
+    }
+
+    /** @return array{string, string} the optional quote and the URL it encloses */
+    private static function urlValue(string $token): array
+    {
+        $token = \trim($token);
+        $quote = $token[0] ?? '';
+
+        return '"' === $quote || "'" === $quote ? [$quote, \substr($token, 1, -1)] : ['', $token];
     }
 
     public static function dropEmptyRules(string $css): string
     {
         do {
             $before = $css;
-            $css = \preg_replace('~(?<=^|[{};])\s*[^{};]*\{\s*\}~', '', $css) ?? $css;
+            $css = \preg_replace('~' . self::SKIP_LITERALS . '(?<=^|[{};])(?:' . self::STRING . '|' . self::ESCAPE . '|[^{};"\'\\\\])*\{\s*\}~', '', $css) ?? $css;
         } while ($css !== $before);
 
         return $css;
@@ -100,7 +120,7 @@ final class SourceCss
 
     private static function stripComments(string $css): string
     {
-        return \preg_replace('~/\*.*?\*/~s', '', $css) ?? $css;
+        return \preg_replace('~' . self::SKIP_LITERALS . '/\*.*?\*/~s', '', $css) ?? $css;
     }
 
     /** A URL that is not a relative path of the site: absolute, a scheme, protocol-relative, a fragment or data. */

@@ -143,6 +143,7 @@
 'http.max_not_delivered': 'Хабарлама жеткізілмеді: {reason}'
 'http.max_queue_failed': 'Жіберуді кезекке қою мүмкін болмады: {reason}'
 'http.request_bad_channel': 'Белгісіз мессенджер'
+'http.request_delivery_requires_commit': 'Жібермес бұрын өтінімді сақтаңыз.'
 'http.no_such_user': '«{email}» пайдаланушысы жоқ.'
 'http.user_removed': 'Пайдаланушы жойылған.'
 'http.no_role': 'Рөлсіз'
@@ -266,3 +267,5 @@
 'http.request_body_too_large': 'Форма тым үлкен. Оны қысқартып, қайта жіберіңіз.'
 'http.request_bad_input': 'Форма өрістерін мәтін, сан немесе иә/жоқ мәндері ретінде жіберіңіз.'
 'http.request_queue_failed': 'Өтінімді кезекке қою мүмкін болмады. Оны қайта жіберіп көріңіз.'
+'http.request_date_invalid': 'ЖЖЖЖ-АА-КК пішімінде жарамды күнді енгізіңіз.'
+'http.request_date_range_invalid': 'Аяқталу күні басталу күнінен ерте болмауы керек.'

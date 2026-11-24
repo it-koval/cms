@@ -30,7 +30,7 @@ final class I18nSiteConfigTest extends TestCase
      */
     private function boot(array $framework = [], array $itk = []): TestKernel
     {
-        $this->kernel = new TestKernel('test', true, null, '', $framework, [], $itk);
+        $this->kernel = new TestKernel('test', true, null, '', $framework + ['default_locale' => 'en'], [], $itk);
         $this->kernel->boot();
 
         return $this->kernel;
@@ -53,13 +53,13 @@ final class I18nSiteConfigTest extends TestCase
 
         self::assertSame(['kk', 'ru'], $locale->available());
         self::assertSame([['code' => 'kk', 'name' => 'Қазақша'], ['code' => 'ru', 'name' => 'Русский']], $locale->choices());
-        self::assertSame('Тілді тізімнен таңдаңыз', I18n::t('i18n.locale_unknown_field'), 'the console and the worker speak admin_locale');
+        self::assertSame('Choose a language from the list', I18n::t('i18n.locale_unknown_field'), 'the console and the worker keep framework.default_locale');
     }
 
     #[Test]
     public function whatIsSavedWithTheDataOfTheSiteIsInTheLanguageOfItsContent(): void
     {
-        $locale = $this->boot(itk: ['admin_locale' => 'ru', 'main_locale' => 'en'])->getContainer()->get(AdminLocale::class);
+        $locale = $this->boot(['default_locale' => 'ru'], itk: ['admin_locale' => 'ru', 'main_locale' => 'en'])->getContainer()->get(AdminLocale::class);
 
         self::assertSame('en', $locale->content());
         self::assertSame('Home', $locale->runContent(static fn (): string => I18n::t('model.core_home_name')));
@@ -97,7 +97,7 @@ final class I18nSiteConfigTest extends TestCase
     #[Test]
     public function aSiteOverridesOneTextOfADomainWithItsOwnFile(): void
     {
-        $this->boot(['translator' => ['default_path' => __DIR__ . '/Fixture/translations']]);
+        $this->boot(['default_locale' => 'ru', 'translator' => ['default_path' => __DIR__ . '/Fixture/translations']]);
 
         self::assertSame('Свой текст сайта', I18n::t('i18n.locale_unknown_field'), 'its text');
         self::assertSame('Заявка №3 не дошла в Telegram', I18n::t('i18n.notification_telegram_failed', ['id' => 3]), 'the other texts of the domain stay the bundle\'s');
@@ -106,7 +106,7 @@ final class I18nSiteConfigTest extends TestCase
     #[Test]
     public function aSiteWithoutATranslatorStillGetsTheTextsOfTheBundle(): void
     {
-        $locale = $this->boot(['translator' => false])->getContainer()->get(AdminLocale::class);
+        $locale = $this->boot(['default_locale' => 'ru', 'translator' => false], itk: ['admin_locale' => 'en'])->getContainer()->get(AdminLocale::class);
 
         self::assertSame('Выберите язык из списка', I18n::t('i18n.locale_unknown_field'));
         self::assertSame('kk', $locale->run('kk', static fn (): string => I18n::locale()));
@@ -151,7 +151,7 @@ final class I18nSiteConfigTest extends TestCase
     #[Test]
     public function aNumberDoesNotEatATextOfASite(): void
     {
-        $container = $this->boot(['translator' => ['default_path' => __DIR__ . '/Fixture/translations']])->getContainer();
+        $container = $this->boot(['default_locale' => 'ru', 'translator' => ['default_path' => __DIR__ . '/Fixture/translations']])->getContainer();
 
         self::assertSame('Found: 5', I18n::t('i18n.site_found', ['count' => 5]));
         self::assertSame('Пункт | 5', I18n::t('i18n.site_short', ['count' => 5]), 'too few forms: the text as it is');

@@ -230,8 +230,16 @@ final class CollectionTranslationsApiTest extends WebTestCase
         self::getContainer()->get(Schema::class)->collection(self::COLLECTION)->singleton($item['id']);
         $translated = $this->api('POST', '/' . $item['id'] . '/translations?locale=ru', ['from' => 'kk'], 201);
         self::assertSame($item['id'], $translated['id']);
-        $this->api('DELETE', '/' . $item['id'] . '/translations/kk');
-        self::assertSame($item['id'], $this->api('GET', '/' . $item['id'])['item']['id']);
+        $before = $this->api('GET', '/' . $item['id']);
+        self::assertTrue($before['translated']);
+        self::assertSame($item['id'], $before['item']['id']);
+        // Singleton permission areas have no delete right, including deletion of a language version.
+        $this->api('DELETE', '/' . $item['id'] . '/translations/kk', [], 403);
+        self::assertEquals($before, $this->api('GET', '/' . $item['id']));
+        $secondary = $this->api('GET', '/' . $item['id'] . '?locale=kk');
+        self::assertTrue($secondary['translated']);
+        self::assertSame($item['id'], $secondary['item']['id']);
+        self::assertSame('Only', $secondary['item']['title']);
     }
 
     #[Test]

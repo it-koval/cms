@@ -7,7 +7,7 @@ namespace Itk\Cms\Security;
 use Symfony\Component\Messenger\Attribute\AsMessageHandler;
 
 /** @internal */
-#[AsMessageHandler(bus: 'messenger.bus.default')]
+#[AsMessageHandler]
 final class DeliverPasswordLinkHandler
 {
     public function __construct(private readonly PasswordRecovery $recovery)

@@ -146,8 +146,7 @@ final class MessengerMonitor
     /** @return list<string> */
     private function transportNames(): array
     {
-        // the locator knows each transport twice: by its name and by its service id («messenger.transport.async»)
-        return \array_values(\array_filter(\array_keys($this->receivers->getProvidedServices()), static fn (string|int $k): bool => !\str_contains((string) $k, '.')));
+        return TransportNames::of($this->receivers);
     }
 
     /** The failure transport, built on the first call; null when the site has none or it cannot be built (the reason is in $failedProblem). */

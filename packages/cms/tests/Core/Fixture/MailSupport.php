@@ -82,7 +82,7 @@ trait MailSupport
         $em = self::getContainer()->get(EntityManagerInterface::class);
         $em->clear();
         $em->createQuery('DELETE FROM Itk\Cms\Entity\Setting s WHERE s.key IN (:keys) AND s.locale = :locale')
-            ->setParameter('keys', [MailSettings::KEY, MailStatus::KEY, 'mailRoutes'])
+            ->setParameter('keys', [MailSettings::KEY, MailStatus::KEY, 'itk:mailRoutes'])
             ->setParameter('locale', Setting::ALL)->execute();
     }
 

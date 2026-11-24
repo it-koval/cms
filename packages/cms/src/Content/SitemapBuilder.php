@@ -14,8 +14,8 @@ use Symfony\Contracts\Cache\ItemInterface;
 /**
  * GET /sitemap.xml: the indexable live versions, one <url> each, the same rule for every site.
  *  - the pages are the ones of IndexablePages: the enabled languages, without `noindex`;
- *  - multilingual addresses use PublicUrl, the same trusted base as HTML. Legacy sites keep the `domain` setting as their only base;
- *    without a base there is no sitemap (the route answers 404);
+ *  - multilingual addresses use PublicUrl, the same trusted base as HTML. A single-language site uses a valid public_url, then the `domain` setting
+ *    (written the way 0.2.2 wrote it); without a base there is no sitemap (the route answers 404);
  *  - <lastmod> is the day the page was published;
  *  - the XML is kept in the cache for an hour and dropped when a page is published, unpublished, changed or deleted, or an SEO rule changes (SitemapInvalidator).
  */
@@ -38,7 +38,7 @@ final class SitemapBuilder
     /** The XML, or null when the site address is not set. */
     public function xml(): ?string
     {
-        $base = $this->base();
+        $base = $this->xmlBase();
         if (null === $base) {
             return null;
         }
@@ -65,32 +65,34 @@ final class SitemapBuilder
         return $this->generation ?? new CrawlerCacheGeneration($this->cache);
     }
 
-    /** The trusted SEO base; legacy sites keep their domain-only behavior. Null when no address is available. */
-    public function base(): ?string
+    /** Domain-only single-language XML retains the spelling shipped by 0.2.2; other consumers use canonical origins. */
+    private function xmlBase(): ?string
     {
         if ($this->isMultilingual() && null !== $this->publicUrl) {
-            return $this->publicUrl->seoBase();
+            return $this->publicUrl->seoBase(); // the same base as the hreflang links of the HTML
         }
-
-        return $this->domainBase();
-    }
-
-    private function domainBase(): ?string
-    {
+        $base = $this->base();
+        if ($this->isMultilingual() || null !== $this->publicUrl?->configuredSiteAddress()) {
+            return $base;
+        }
         $domain = \rtrim(\trim((string) $this->settings->get('domain', null, '')), '/');
         if (1 !== \preg_match('~^(https?://)?[\p{L}\p{N}][\p{L}\p{N}.\-]*(:\d{1,5})?$~u', $domain)) {
-            return null;
+            return $base;
         }
 
         return \preg_match('~^https?://~i', $domain) ? $domain : 'https://' . $domain;
     }
 
-    /** The domain setting as a SiteAddress, kept independent of request-based SEO origins for host vouching and IndexNow. */
+    /** The trusted SEO base. Null when no address is available. */
+    public function base(): ?string
+    {
+        return $this->address()?->origin();
+    }
+
+    /** The configured address for host vouching and search engines. */
     public function address(): ?SiteAddress
     {
-        $base = $this->domainBase();
-
-        return null === $base ? null : SiteAddress::fromUrl($base);
+        return $this->publicUrl?->siteAddress() ?? SiteAddress::fromDomain((string) $this->settings->get('domain', null, ''));
     }
 
     public function isMultilingual(): bool

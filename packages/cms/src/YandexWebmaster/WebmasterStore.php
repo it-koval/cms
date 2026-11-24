@@ -18,7 +18,7 @@ use Psr\Cache\CacheItemPoolInterface;
  */
 final class WebmasterStore
 {
-    public const CONNECTION = 'yandexWebmaster';
+    public const CONNECTION = 'itk:yandexWebmaster';
     private const SNAPSHOT = 'itk_yandex_webmaster_snapshot';
 
     public function __construct(

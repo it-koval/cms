@@ -32,8 +32,8 @@ final class MaxBotHealthTest extends KernelTestCase
     {
         self::bootKernel();
         $rows = [
-            'maxOn' => new Setting('maxOn', '*', $on),
-            'maxRoutes' => new Setting('maxRoutes', '*', $routes ? ['*' => '-12345'] : []),
+            'itk:maxOn' => new Setting('itk:maxOn', '*', $on),
+            'itk:maxRoutes' => new Setting('itk:maxRoutes', '*', $routes ? ['*' => '-12345'] : []),
         ];
         $repo = $this->createStub(SettingRepository::class);
         $repo->method('find')->willReturnCallback(static function (array $id) use (&$rows): ?Setting {

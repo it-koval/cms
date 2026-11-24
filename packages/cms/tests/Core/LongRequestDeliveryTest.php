@@ -5,9 +5,14 @@ declare(strict_types=1);
 namespace Itk\Cms\Tests\Core;
 
 use Doctrine\DBAL\Connection;
+use Doctrine\DBAL\DriverManager;
 use Doctrine\ORM\EntityManagerInterface;
+use Doctrine\ORM\Mapping\ClassMetadata;
+use Doctrine\ORM\Query\Filter\SQLFilter;
+use Itk\Cms\Content\EditLock;
 use Itk\Cms\Content\SettingsService;
 use Itk\Cms\Entity\Request;
+use Itk\Cms\Event\RequestDelivery;
 use Itk\Cms\I18n\AdminLocale;
 use Itk\Cms\Request\Max\MaxApiSender;
 use Itk\Cms\Request\MaxNotifier;
@@ -67,14 +72,14 @@ final class LongRequestDeliveryTest extends WebTestCase
         $db->executeStatement("DELETE FROM itk_notification WHERE type = 'request.new' AND link IN (SELECT '/requests/' || id FROM itk_request WHERE form_key LIKE 'long_%')");
         $db->executeStatement("DELETE FROM itk_request WHERE form_key LIKE 'long_%'");
         $settings = self::getContainer()->get(SettingsService::class);
-        $em = self::getContainer()->get(EntityManagerInterface::class);
         foreach ($this->saved as $key => [$existed, $value]) {
-            $em->createQuery('DELETE FROM Itk\Cms\Entity\Setting s WHERE s.key = :k')->setParameter('k', $key)->execute();
             if ($existed) {
                 $settings->set($key, $value);
+            } else {
+                $settings->remove($key);
             }
         }
-        $em->createQuery("DELETE FROM Itk\\Cms\\Entity\\User u WHERE u.email = 'test-f1-resend@example.com'")->execute();
+        self::getContainer()->get(EntityManagerInterface::class)->createQuery("DELETE FROM Itk\\Cms\\Entity\\User u WHERE u.email = 'test-f1-resend@example.com'")->execute();
         parent::tearDown();
     }
 
@@ -422,6 +427,186 @@ final class LongRequestDeliveryTest extends WebTestCase
         self::assertSame($items, $r->data['items']);
         self::assertSame($this->notifier($channel)->buildText($r), \implode('', $this->sent($channel, $r)));
         self::assertStringContainsString(LongText::TOTAL, \implode('', $this->api->texts($channel)));
+    }
+
+    #[Test]
+    #[DataProvider('channels')]
+    public function deliveryIsSavedBeforeAListenerThrows(string $channel): void
+    {
+        $c = self::getContainer();
+        $em = $c->get(EntityManagerInterface::class);
+        $db = $em->getConnection();
+        $events = $c->get('event_dispatcher');
+        $r = self::request([], 'f2-delivery-' . \bin2hex(\random_bytes(5)));
+        $em->persist($r);
+        $em->flush();
+        $id = (int) $r->id;
+        $transaction = null;
+        $listener = static function () use ($db, &$transaction): never {
+            $transaction = $db->isTransactionActive();
+            throw new \RuntimeException('F2 test listener failed');
+        };
+        $events->addListener(RequestDelivery::class, $listener, 100);
+        $deliverer = new RequestDeliverer($em, $this->telegram, $this->max, $c->get(AdminLocale::class));
+
+        try {
+            self::assertTrue($deliverer->deliver($id, $channel, false));
+            self::assertFalse($transaction, 'listeners run after the delivery transaction commits');
+            $em->refresh($r);
+            self::assertSame(Request::DELIVERY_SENT, $r->channelState($channel));
+            self::assertTrue($deliverer->deliver($id, $channel, false));
+            self::assertSame(1, $this->api->attempts);
+        } finally {
+            $events->removeListener(RequestDelivery::class, $listener);
+            $db->delete('itk_request', ['id' => $id]);
+        }
+    }
+
+    #[Test]
+    #[DataProvider('channels')]
+    public function anOuterRollbackCannotUndoDeliveryOrCauseAnotherSend(string $channel): void
+    {
+        $c = self::getContainer();
+        $em = $c->get(EntityManagerInterface::class);
+        $db = $em->getConnection();
+        $view = DriverManager::getConnection($db->getParams());
+        $events = $c->get('event_dispatcher');
+        $r = self::request([], 'f2-committed-delivery-' . \bin2hex(\random_bytes(5)));
+        $em->persist($r);
+        $em->flush();
+        $id = (int) $r->id;
+        $states = [];
+        $observe = static function (RequestDelivery $event) use ($id, $view, &$states): void {
+            if ($id === $event->request->id) {
+                $states[] = $view->fetchOne('SELECT delivery FROM itk_request WHERE id = ?', [$id]);
+            }
+        };
+        $events->addListener(RequestDelivery::class, $observe);
+        $deliverer = new RequestDeliverer($em, $this->telegram, $this->max, $c->get(AdminLocale::class));
+
+        try {
+            $db->beginTransaction();
+            self::assertTrue($deliverer->deliver($id, $channel, false));
+            $db->rollBack();
+            self::assertTrue($deliverer->deliver($id, $channel, false));
+            self::assertSame(1, $this->api->attempts, 'a rollback elsewhere cannot cause a retry to send the request twice');
+            self::assertSame([Request::DELIVERY_SENT], $states, 'the outcome is visible on another connection before listeners run');
+        } finally {
+            if ($db->isTransactionActive()) {
+                $db->rollBack();
+            }
+            $events->removeListener(RequestDelivery::class, $observe);
+            $view->close();
+            $db->delete('itk_request', ['id' => $id]);
+        }
+    }
+
+    #[Test]
+    public function deliveryDuringAnAmbientTransactionRespectsRequestFilters(): void
+    {
+        $c = self::getContainer();
+        $em = $c->get(EntityManagerInterface::class);
+        $db = $em->getConnection();
+        $r = self::request([], 'f2-filtered-delivery-' . \bin2hex(\random_bytes(5)));
+        $em->persist($r);
+        $em->flush();
+        $id = (int) $r->id;
+        $filter = new class($em) extends SQLFilter {
+            public function addFilterConstraint(ClassMetadata $targetEntity, string $targetTableAlias): string
+            {
+                return Request::class === $targetEntity->name ? $targetTableAlias . '.id <> ' . $this->getParameter('id') : '';
+            }
+        };
+        $em->getConfiguration()->addFilter('f2_hide_request', $filter::class);
+        $em->getFilters()->enable('f2_hide_request')->setParameter('id', $id);
+        $deliverer = new RequestDeliverer($em, $this->telegram, $this->max, $c->get(AdminLocale::class));
+
+        try {
+            $db->beginTransaction();
+            self::assertNull($deliverer->deliver($id, Request::CHANNEL_TELEGRAM, false));
+            self::assertSame(0, $this->api->attempts);
+        } finally {
+            if ($db->isTransactionActive()) {
+                $db->rollBack();
+            }
+            $em->getFilters()->disable('f2_hide_request');
+            $db->delete('itk_request', ['id' => $id]);
+        }
+    }
+
+    #[Test]
+    public function deliveryFailureAndRecoveryUpdateTheBellOutsideTheAmbientTransaction(): void
+    {
+        $c = self::getContainer();
+        $em = $c->get(EntityManagerInterface::class);
+        $db = $em->getConnection();
+        $view = DriverManager::getConnection($db->getParams());
+        $r = self::request([], 'f2-delivery-bell-' . \bin2hex(\random_bytes(5)));
+        $em->persist($r);
+        $em->flush();
+        $id = (int) $r->id;
+        $bellKey = 'telegram.failed:' . $id;
+        $deliverer = new RequestDeliverer($em, $this->telegram, $this->max, $c->get(AdminLocale::class));
+        $count = static fn (): int => (int) $view->fetchOne('SELECT COUNT(*) FROM itk_notification WHERE dedupe_key = ?', [$bellKey]);
+
+        try {
+            $db->beginTransaction();
+            $this->api->refuseAttempt = 1;
+            self::assertFalse($deliverer->deliver($id, Request::CHANNEL_TELEGRAM, false));
+            self::assertSame(1, $count());
+            $db->rollBack();
+            self::assertSame(1, $count());
+
+            $db->beginTransaction();
+            self::assertTrue($deliverer->deliver($id, Request::CHANNEL_TELEGRAM, false));
+            self::assertSame(0, $count());
+            $db->rollBack();
+            self::assertSame(0, $count());
+        } finally {
+            if ($db->isTransactionActive()) {
+                $db->rollBack();
+            }
+            $view->close();
+            $db->delete('itk_notification', ['dedupe_key' => $bellKey]);
+            $db->delete('itk_request', ['id' => $id]);
+        }
+    }
+
+    #[Test]
+    public function theSameChannelIsReservedFromTheNetworkAttemptThroughTheBellUpdate(): void
+    {
+        $c = self::getContainer();
+        $em = $c->get(EntityManagerInterface::class);
+        $db = $em->getConnection();
+        $other = DriverManager::getConnection($db->getParams());
+        $events = $c->get('event_dispatcher');
+        $r = self::request([], 'f2-delivery-lock-' . \bin2hex(\random_bytes(5)));
+        $em->persist($r);
+        $em->flush();
+        $id = (int) $r->id;
+        $key = EditLock::key('request-delivery', $id . ':telegram');
+        $lockChecks = [];
+        $tryOtherWorker = static function () use ($key, $other, &$lockChecks): void {
+            $available = (bool) $other->fetchOne('SELECT pg_try_advisory_lock(?)', [$key]);
+            $lockChecks[] = $available;
+            if ($available) {
+                $other->fetchOne('SELECT pg_advisory_unlock(?)', [$key]);
+            }
+        };
+        $this->api->beforeAttempt = $tryOtherWorker;
+        $events->addListener(RequestDelivery::class, $tryOtherWorker);
+        $deliverer = new RequestDeliverer($em, $this->telegram, $this->max, $c->get(AdminLocale::class));
+
+        try {
+            self::assertTrue($deliverer->deliver($id, Request::CHANNEL_TELEGRAM, false));
+            $tryOtherWorker();
+            self::assertSame([false, false, true], $lockChecks, 'the reservation covers the send and event and is then released');
+        } finally {
+            $this->api->beforeAttempt = null;
+            $events->removeListener(RequestDelivery::class, $tryOtherWorker);
+            $other->close();
+            $db->delete('itk_request', ['id' => $id]);
+        }
     }
 
     #[Test]

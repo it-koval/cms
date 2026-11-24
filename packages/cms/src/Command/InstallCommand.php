@@ -12,6 +12,7 @@ use Itk\Cms\Entity\Role;
 use Itk\Cms\Entity\User;
 use Itk\Cms\Health\AppSecretHealthCheck;
 use Itk\Cms\Health\MessengerMonitor;
+use Itk\Cms\Health\TransportNames;
 use Itk\Cms\I18n\AdminLocale;
 use Itk\Cms\I18n\I18n;
 use Itk\Cms\Repository\PageRepository;
@@ -151,10 +152,7 @@ final class InstallCommand extends Command
     private function setupTransports(SymfonyStyle $io): void
     {
         $done = 0;
-        foreach (\array_keys($this->transports->getProvidedServices()) as $name) {
-            if (\str_contains((string) $name, '.')) { // the locator knows each transport twice: by its name and by its service id
-                continue;
-            }
+        foreach (TransportNames::of($this->transports) as $name) {
             try {
                 $transport = $this->transports->get((string) $name);
                 if ($transport instanceof SetupableTransportInterface) {

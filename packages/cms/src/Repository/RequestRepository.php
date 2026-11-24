@@ -6,7 +6,9 @@ namespace Itk\Cms\Repository;
 
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
 use Doctrine\Persistence\ManagerRegistry;
+use Itk\Cms\Content\ContentException;
 use Itk\Cms\Entity\Request;
+use Itk\Cms\I18n\I18n;
 
 /**
  * @extends ServiceEntityRepository<Request>
@@ -51,8 +53,13 @@ class RequestRepository extends ServiceEntityRepository
             case '30': $from = $today->modify('-29 days');
                 break;
             case 'custom':
-                $from = !empty($filter['from']) ? new \DateTimeImmutable($filter['from']) : null;
-                $to = !empty($filter['to']) ? (new \DateTimeImmutable($filter['to']))->modify('+1 day') : null;
+                $from = self::filterDate($filter['from'] ?? '', 'from');
+                $to = self::filterDate($filter['to'] ?? '', 'to');
+                if (null !== $from && null !== $to && $from > $to) {
+                    $message = I18n::t('http.request_date_range_invalid');
+                    throw ContentException::invalid($message, ['to' => $message]);
+                }
+                $to = $to?->modify('+1 day');
                 break;
         }
         if (null !== $from) {
@@ -72,6 +79,22 @@ class RequestRepository extends ServiceEntityRepository
         }
 
         return $qb->getQuery()->getResult();
+    }
+
+    private static function filterDate(string $value, string $key): ?\DateTimeImmutable
+    {
+        if ('' === $value) {
+            return null;
+        }
+        $date = 1 === \preg_match('~^[0-9]{4}-[0-9]{2}-[0-9]{2}$~D', $value)
+            ? \DateTimeImmutable::createFromFormat('!Y-m-d', $value)
+            : false;
+        if (false === $date || $date->format('Y-m-d') !== $value || \str_starts_with($value, '0000-')) {
+            $message = I18n::t('http.request_date_invalid');
+            throw ContentException::invalid($message, [$key => $message]);
+        }
+
+        return $date;
     }
 
     /** @return array{total: int, new: int, failed: int} */

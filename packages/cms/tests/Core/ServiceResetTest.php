@@ -79,16 +79,16 @@ final class ServiceResetTest extends KernelTestCase
     public function aWorkerDoesNotSendARequestToAChatThatWasRemovedFromTheSettings(): void
     {
         $settings = self::getContainer()->get(SettingsService::class);
-        $this->writeBehindTheBack('tgRoutes', ['*' => '-1001111111111']);
+        $this->writeBehindTheBack('itk:tgRoutes', ['*' => '-1001111111111']);
         self::assertSame(['-1001111111111'], $settings->chatIdsFor('call'), 'the worker has read the chat');
 
-        $this->writeBehindTheBack('tgRoutes', ['*' => '-1002222222222']); // the administrator changed the chat in the admin
+        $this->writeBehindTheBack('itk:tgRoutes', ['*' => '-1002222222222']); // the administrator changed the chat in the admin
         self::assertSame(['-1001111111111'], $settings->chatIdsFor('call'), 'without a reset the worker still has the old one');
 
         $this->betweenTwoMessages();
 
         self::assertSame(['-1002222222222'], self::getContainer()->get(SettingsService::class)->chatIdsFor('call'));
-        $this->writeBehindTheBack('tgOn', false);
+        $this->writeBehindTheBack('itk:tgOn', false);
         $this->betweenTwoMessages();
         self::assertFalse(self::getContainer()->get(SettingsService::class)->isTelegramOn());
     }
@@ -97,16 +97,16 @@ final class ServiceResetTest extends KernelTestCase
     public function aWorkerDoesNotSendARequestToAMaxChatThatWasRemovedFromTheSettings(): void
     {
         $settings = self::getContainer()->get(SettingsService::class);
-        $this->writeBehindTheBack('maxRoutes', ['*' => '-70001']);
+        $this->writeBehindTheBack('itk:maxRoutes', ['*' => '-70001']);
         self::assertSame(['-70001'], $settings->maxChatIdsFor('call'));
 
-        $this->writeBehindTheBack('maxRoutes', ['*' => '-70002']);
+        $this->writeBehindTheBack('itk:maxRoutes', ['*' => '-70002']);
         self::assertSame(['-70001'], $settings->maxChatIdsFor('call'), 'without a reset the worker still has the old one');
 
         $this->betweenTwoMessages();
 
         self::assertSame(['-70002'], self::getContainer()->get(SettingsService::class)->maxChatIdsFor('call'));
-        $this->writeBehindTheBack('maxOn', false);
+        $this->writeBehindTheBack('itk:maxOn', false);
         $this->betweenTwoMessages();
         self::assertFalse(self::getContainer()->get(SettingsService::class)->isMaxOn());
     }
@@ -116,7 +116,7 @@ final class ServiceResetTest extends KernelTestCase
     {
         $bots = self::getContainer()->get(BotSettings::class);
         $box = self::getContainer()->get(SecretBox::class);
-        foreach (['telegram' => 'telegramBot', 'max' => 'maxBot'] as $channel => $key) {
+        foreach (['telegram' => 'itk:telegramBot', 'max' => 'itk:maxBot'] as $channel => $key) {
             $this->writeBehindTheBack($key, ['token' => $box->seal('first-token')]);
             self::assertSame('first-token', $bots->token($channel));
             $this->writeBehindTheBack($key, ['token' => $box->seal('replacement-token')]);

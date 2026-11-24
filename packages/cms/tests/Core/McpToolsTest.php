@@ -8,6 +8,7 @@ use Doctrine\ORM\EntityManagerInterface;
 use Itk\Cms\Content\PageService;
 use Itk\Cms\Entity\Revision;
 use Itk\Cms\History\HistoryAdmin;
+use Itk\Cms\I18n\I18n;
 use Itk\Cms\Mcp\ApiTokenService;
 use Itk\Cms\Mcp\McpScopes;
 use Itk\Cms\Mcp\McpToolRegistry;
@@ -352,6 +353,29 @@ final class McpToolsTest extends KernelTestCase
     }
 
     #[Test]
+    public function pageAddressesWithSpacesCanBeCreatedChangedAndPublishedThroughMcp(): void
+    {
+        [$ctx] = $this->as('admin');
+        $base = '/test-mcp-' . \bin2hex(\random_bytes(6)) . '-блог';
+        $page = $this->mcpPage($ctx, 'TestMcp Legacy address', $base . ' (1)');
+        self::assertSame($base . ' (1)', $page['url']);
+
+        $url = $base . ' (2)//entry';
+        $updated = $this->mcpCall($ctx, 'page_update', ['id' => $page['id'], 'url' => $url]);
+        self::assertTrue($updated['ok'], $updated['text']);
+        self::assertSame($url, $updated['data']['page']['url']);
+        foreach (["/test-mcp\tentry", '/test-mcp?query', '//host/path'] as $invalid) {
+            $rejected = $this->mcpCall($ctx, 'page_update', ['id' => $page['id'], 'url' => $invalid]);
+            self::assertFalse($rejected['ok'], $invalid);
+            self::assertSame($url, $this->mcpCall($ctx, 'page_get', ['id' => $page['id']])['data']['url']);
+        }
+
+        $published = $this->mcpCall($ctx, 'page_publish', ['id' => $page['id']]);
+        self::assertTrue($published['ok'], $published['text']);
+        self::assertSame($url, $published['data']['page']['liveUrl']);
+    }
+
+    #[Test]
     public function aPageIsChangedByOneCallAtATimeAndTheLockIsReleased(): void
     {
         $lock = self::getContainer()->get(\Itk\Cms\Content\EditLock::class);
@@ -379,7 +403,8 @@ final class McpToolsTest extends KernelTestCase
         [$ctx] = $this->as('admin', self::WRITE);
         $r = $this->mcpCall($ctx, 'page_create', ['title' => 'TestMcp Bad', 'url' => 'no-slash', 'template' => 'test_flat', 'fields' => ['caption' => \str_repeat('x', 50), 'nope' => 1], 'seo' => ['title' => \str_repeat('t', 80), 'x' => 'y'], 'sections' => [['type' => 'text']]]);
         self::assertFalse($r['ok']);
-        foreach (['url: must start with /', 'fields.caption: at most 20', 'fields.nope: unknown field', 'seo.title: at most 70', 'seo.x: unknown key', 'the template "test_flat" has no sections'] as $part) {
+        // Address errors now use the same translated shape rule as normal content writes; aggregation stays intact.
+        foreach (['url: ' . I18n::t('content.page_url_invalid'), 'fields.caption: at most 20', 'fields.nope: unknown field', 'seo.title: at most 70', 'seo.x: unknown key', 'the template "test_flat" has no sections'] as $part) {
             self::assertStringContainsString($part, $r['text']);
         }
         self::assertSame(0, self::getContainer()->get('doctrine.dbal.default_connection')->fetchOne("SELECT COUNT(*) FROM itk_page_translation WHERE draft ->> 'title' = 'TestMcp Bad'"));

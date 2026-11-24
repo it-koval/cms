@@ -29,7 +29,7 @@ const mockPreview = () => ({
 export default defineConfig(({ mode }) => {
   const mock = loadEnv(mode, process.cwd(), 'VITE_').VITE_MOCK === '1'
   return {
-    base: '/bundles/itkcms/admin/',
+    base: './',
     plugins: [vue(), thirdPartyNotices(), ...(mock ? [mockPreview()] : [])],
     resolve: {
       alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) },

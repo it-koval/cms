@@ -27,6 +27,9 @@ final class FieldValues
         if ($f->hasDefault()) {
             return $f->defaultValue();
         }
+        if ('text' === $f->type() && \in_array($f->toArray()['inputType'] ?? '', ['date', 'datetime-local'], true)) {
+            return '';
+        }
 
         return match ($f->type()) {
             'text', 'textarea' => $f->isRequired() ? $this->placeholder('content.field_default_item') : '',
@@ -120,6 +123,9 @@ final class FieldValues
             if ($this->isMissing($f, $v)) {
                 $out[] = ['path' => $path, 'field' => $f->toArray(), 'message' => $this->requiredMessage($f)];
             }
+            foreach (FieldValueRules::problems($f, $v) as $problem) {
+                $out[] = ['path' => $path, 'field' => $f->toArray(), 'message' => $problem['message']];
+            }
             if ('repeater' === $f->type() && \is_array($v)) {
                 foreach (\array_values($v) as $i => $item) {
                     if (\is_array($item)) {
@@ -187,6 +193,10 @@ final class FieldValues
                 continue;
             }
             $v = $data[$f->key()];
+            $problems = FieldValueRules::problems($f, $v);
+            if ([] !== $problems) {
+                throw ContentException::invalid($problems[0]['message'], \array_map(static fn (array $problem): array => ['path' => $f->key(), 'field' => $f->toArray(), 'message' => $problem['message']], $problems));
+            }
             if ($f->isRich()) {
                 $v = $this->html->sanitize($v, (string) $f->richMode());
             } elseif ('repeater' === $f->type()) {

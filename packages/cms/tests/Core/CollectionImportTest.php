@@ -163,7 +163,8 @@ final class CollectionImportTest extends ResourceKernelTestCase
     public function aTableWithoutOnePrimaryKeyNeedsTheIdOption(): void
     {
         $this->table(primary: false);
-        $spec = (new TableReader())->inspect($this->db(), self::TABLE);
+        // Keep this test about the missing source identity: record metadata keys need an explicit field mapping.
+        $spec = (new TableReader())->inspect($this->db(), self::TABLE, ['id' => ['source_id', null]]);
         self::assertNull($spec->source['idColumn']);
         $this->expectExceptionMessageMatches('/--id=колонка/u');
         \iterator_to_array((new TableReader())->rows($this->db(), self::TABLE, $spec));

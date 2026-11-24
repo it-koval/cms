@@ -25,6 +25,7 @@ final class MessengerApi implements TransportInterface, HttpClientInterface
     /** The number of the send to refuse, counted from 1 over all chats; 0 = none. */
     public int $refuseAttempt = 0;
     public int $attempts = 0;
+    public ?\Closure $beforeAttempt = null;
     /** @var list<array{channel: string, chat: string, text: string}> */
     private array $taken = [];
     private float $now = 0.0;
@@ -64,6 +65,7 @@ final class MessengerApi implements TransportInterface, HttpClientInterface
 
     private function take(string $channel, string $chat, string $text): ?string
     {
+        $this->beforeAttempt?->__invoke();
         if (++$this->attempts === $this->refuseAttempt) {
             return 'test refusal';
         }

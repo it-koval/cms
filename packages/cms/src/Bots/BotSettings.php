@@ -13,8 +13,8 @@ use Itk\Cms\Security\TwoFactor\SecretBox;
 
 final class BotSettings
 {
-    public const TELEGRAM_KEY = 'telegramBot';
-    public const MAX_KEY = 'maxBot';
+    public const TELEGRAM_KEY = 'itk:telegramBot';
+    public const MAX_KEY = 'itk:maxBot';
     private const KEYS = ['telegram' => self::TELEGRAM_KEY, 'max' => self::MAX_KEY];
 
     public function __construct(

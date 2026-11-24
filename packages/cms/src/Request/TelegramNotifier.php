@@ -4,11 +4,11 @@ declare(strict_types=1);
 
 namespace Itk\Cms\Request;
 
+use Doctrine\DBAL\Connection;
 use Itk\Cms\Content\ContentException;
 use Itk\Cms\Content\HtmlSanitizer;
 use Itk\Cms\Content\SettingsService;
 use Itk\Cms\Entity\Request;
-use Itk\Cms\Event\RequestDelivery;
 use Itk\Cms\I18n\I18n;
 use Itk\Cms\Schema\Schema;
 use Psr\Log\LoggerInterface;
@@ -118,29 +118,10 @@ final class TelegramNotifier implements ChannelNotifier
     }
 
     /** Writes the outcome of attempt() into the request and announces it. Returns true when it needs no retry. */
-    public function record(Request $r, ChannelOutcome $outcome, bool $announce = true): bool
+    /** @param (\Closure(\Closure(): void): void)|null $defer */
+    public function record(Request $r, ChannelOutcome $outcome, ?\Closure $defer = null, ?Connection $deliveryConnection = null): bool
     {
-        if (!$announce) {
-            $r->markChannel(Request::CHANNEL_TELEGRAM, $outcome->state, $outcome->error);
-
-            return !$outcome->isFailed();
-        }
-        if ($outcome->isPending()) {
-            $wasFailed = Request::DELIVERY_FAILED === $r->channelState(Request::CHANNEL_TELEGRAM);
-            $r->markChannel(Request::CHANNEL_TELEGRAM, Request::DELIVERY_PENDING);
-            if ($wasFailed) {
-                $this->events->dispatch(new RequestDelivery($r, false, null, true));
-            }
-
-            return true;
-        }
-        if ($outcome->isFailed()) {
-            return $this->fail($r, (string) $outcome->error);
-        }
-        $r->markChannel(Request::CHANNEL_TELEGRAM, Request::DELIVERY_SENT);
-        $this->events->dispatch(new RequestDelivery($r, true));
-
-        return true;
+        return $outcome->record($r, Request::CHANNEL_TELEGRAM, $this->events, $defer, $deliveryConnection);
     }
 
     /**
@@ -175,23 +156,5 @@ final class TelegramNotifier implements ChannelNotifier
     public function parts(Request $r, bool $resend = false): MessageParts
     {
         return MessageParts::telegram($this->buildText($r, $resend));
-    }
-
-    /** Called only after the durable delivery result has committed. */
-    public function announce(Request $r, ChannelOutcome $outcome): void
-    {
-        try {
-            $this->events->dispatch(new RequestDelivery($r, Request::DELIVERY_SENT === $outcome->state, $outcome->error, $outcome->isPending()));
-        } catch (\Throwable) {
-            $this->logger->error('A delivery listener failed for request #{id}.', ['id' => $r->id]);
-        }
-    }
-
-    private function fail(Request $r, string $error): bool
-    {
-        $r->markChannel(Request::CHANNEL_TELEGRAM, Request::DELIVERY_FAILED, $error);
-        $this->events->dispatch(new RequestDelivery($r, false, $error));
-
-        return false;
     }
 }

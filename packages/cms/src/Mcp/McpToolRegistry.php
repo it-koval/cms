@@ -6,6 +6,7 @@ namespace Itk\Cms\Mcp;
 
 use Itk\Cms\Extension\Registry;
 use Itk\Cms\I18n\ContentLocales;
+use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\Attribute\AutowireIterator;
 
 /**
@@ -26,6 +27,7 @@ final class McpToolRegistry
         private readonly iterable $tools,
         private readonly Registry $extensions,
         private readonly ?ContentLocales $contentLocales = null,
+        private readonly ?LoggerInterface $logger = null,
     ) {
     }
 
@@ -39,12 +41,17 @@ final class McpToolRegistry
         foreach ($this->tools as $tool) {
             $this->add($list, $tool);
         }
+        $registered = \array_fill_keys(\array_map(static fn (McpToolInterface $tool): string => $tool::class, $list), true);
         foreach ($this->extensions->mcpToolClasses() as $class) {
+            if (isset($registered[$class])) {
+                continue;
+            }
             if (\class_exists($class) && \is_subclass_of($class, McpToolInterface::class)) {
                 try {
                     $tool = new $class();
-                } catch (\Throwable) {
-                    continue; // a tool that needs arguments must be a service: it is already in the list above
+                } catch (\Throwable $error) {
+                    $this->logger?->error('Could not create MCP tool: {tool}', ['tool' => $class, 'exception' => $error]);
+                    continue; // the other tools remain available; a tool needing arguments must be registered as a service
                 }
                 if ($tool instanceof AbstractMcpTool && null !== $this->contentLocales) {
                     $tool->setContentLocales($this->contentLocales);

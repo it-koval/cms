@@ -166,10 +166,12 @@ final class Schema
         foreach ($this->sections as $key => $s) {
             $at = I18n::t('model.problem_at_section', ['key' => $key]);
             $out = [...$out, ...$this->keyProblems($at, (string) $key), ...$this->fieldProblems($at, $s->allFields())];
+            $out = [...$out, ...$this->h1Problems($at, $s->declaredH1Field(), $s->fieldList())];
         }
         foreach ($this->templates as $key => $t) {
             $at = I18n::t('model.problem_at_template', ['key' => $key]);
             $out = [...$out, ...$this->keyProblems($at, (string) $key), ...$this->fieldProblems($at, $t->fieldList())];
+            $out = [...$out, ...$this->h1Problems($at, $t->h1Field(), $t->fieldList())];
             $parents = $t->parentRule();
             if (\is_array($parents)) {
                 $out = [...$out, ...$this->unknownTemplates($at, 'parents()', $parents)];
@@ -186,9 +188,9 @@ final class Schema
             }
             $out = [...$out, ...$this->keyProblems($at, (string) $key), ...$this->fieldProblems($at, $fields)];
             foreach ($fields as $f) {
-                if ('version' === $f->key()) {
+                if (\in_array($f->key(), Collection::RESERVED_KEYS, true)) {
                     // the record of a collection carries the version of its draft under this key (flat(), `baseVersion` of the autosave): a field of the same name would be covered by it
-                    $out[] = I18n::t('model.problem_version_taken', ['at' => $at]);
+                    $out[] = I18n::t('model.problem_record_key_taken', ['at' => $at, 'key' => $f->key()]);
                 }
             }
             $title = $c->declaredTitleField();
@@ -240,6 +242,9 @@ final class Schema
         $out = [];
         $seen = [];
         foreach ($fields as $f) {
+            if ($f->isNote()) {
+                continue;
+            }
             $key = $f->key();
             if (!Key::isValid($key)) {
                 $out[] = I18n::t('model.problem_field_key_invalid', ['at' => $at, 'key' => $key, 'rule' => Key::rule()]);
@@ -254,6 +259,16 @@ final class Schema
         }
 
         return $out;
+    }
+
+    /** @param list<FieldInterface> $fields @return list<string> */
+    private function h1Problems(string $at, ?string $key, array $fields): array
+    {
+        if (null === $key || \in_array($key, \array_map(static fn (FieldInterface $f): string => $f->key(), $fields), true)) {
+            return [];
+        }
+
+        return [I18n::t('model.problem_h1_field', ['at' => $at, 'key' => $key])];
     }
 
     /**

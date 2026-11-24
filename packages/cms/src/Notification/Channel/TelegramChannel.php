@@ -14,7 +14,6 @@ use Itk\Cms\Request\RequestDeliverer;
 use Itk\Cms\Request\SendRequestNotification;
 use Itk\Cms\Request\TelegramNotifier;
 use Psr\Log\LoggerInterface;
-use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\Messenger\MessageBusInterface;
 use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 
@@ -29,7 +28,6 @@ final class TelegramChannel implements NotificationChannelInterface
 {
     public function __construct(
         private readonly EntityManagerInterface $em,
-        #[Autowire(service: 'messenger.bus.default')]
         private readonly MessageBusInterface $bus,
         private readonly EventDispatcherInterface $events,
         private readonly LoggerInterface $logger,
@@ -66,7 +64,7 @@ final class TelegramChannel implements NotificationChannelInterface
             $write = static fn (): string => I18n::t('http.telegram_queue_failed', ['reason' => $e->getMessage()]);
             $error = null !== $this->locale ? $this->locale->runDefault($write) : $write();
             $this->logger->error('Could not queue Telegram notification for request #{id}: {error}', ['id' => $id, 'error' => $e->getMessage()]);
-            RequestDeliverer::recordQueueFailure($this->em, $this->events, $id, Request::CHANNEL_TELEGRAM, $error, $job);
+            RequestDeliverer::recordQueueFailure($this->em, $this->events, $id, Request::CHANNEL_TELEGRAM, $error, $job, $this->logger);
         }
     }
 }

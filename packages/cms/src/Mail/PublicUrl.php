@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Itk\Cms\Mail;
 
 use Itk\Cms\Content\SettingsService;
+use Itk\Cms\Content\SiteAddress;
 use Itk\Cms\I18n\I18n;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\HttpFoundation\Request;
@@ -34,30 +35,8 @@ final class PublicUrl
     /** Is this an address of the form «https://example.com» (a trailing slash is allowed, a path and a query are not)? */
     public static function isValid(string $url): bool
     {
-        if (\str_contains($url, '\\') || 1 === \preg_match('/[\x00-\x20\x7f]/', $url)) {
-            return false;
-        }
-        // Capture the original authority: parse_url() can replace bytes of an international hostname with underscores.
-        if (1 !== \preg_match('~^https?://(?<host>\[[0-9a-f:.]+\]|[^\s/?#@:\[\]]+)(?::(?<port>[0-9]+))?/?$~iuD', $url, $parts)) {
-            return false;
-        }
-        if (isset($parts['port']) && ((int) $parts['port'] < 1 || (int) $parts['port'] > 65535)) {
-            return false;
-        }
-        $host = $parts['host'];
-        if (\str_starts_with($host, '[')) {
-            return false !== \filter_var(\substr($host, 1, -1), \FILTER_VALIDATE_IP, \FILTER_FLAG_IPV6);
-        }
-
-        // Keep international domain names as configured; DNS resolution/IDNA is the transport's job.
-        $domain = \str_ends_with($host, '.') ? \substr($host, 0, -1) : $host;
-        foreach (\explode('.', $domain) as $label) {
-            if (1 !== \preg_match('~^[\p{L}\p{N}_](?:[\p{L}\p{M}\p{N}_-]*[\p{L}\p{M}\p{N}_])?$~uD', $label)) {
-                return false;
-            }
-        }
-
-        return true;
+        // A configured origin is written as is: whitespace or a control byte anywhere means it is not one.
+        return 1 !== \preg_match('/[\x00-\x20\x7f]/', $url) && null !== SiteAddress::fromUrl($url);
     }
 
     /**
@@ -65,50 +44,60 @@ final class PublicUrl
      *
      * @throws \UnexpectedValueException when itk_cms.public_url (an %env()% placeholder is only known now) holds something that is not an address
      */
-    public function base(): ?string
+    public function base(bool $strict = true): ?string
     {
-        $base = $this->trustedBase() ?? '';
-        if ('' === $base && [] !== Request::getTrustedHosts()) {
-            $base = $this->requests->getMainRequest()?->getSchemeAndHttpHost() ?? '';
+        $configured = $this->configuredAddress($strict);
+        if (null !== $configured) {
+            return $configured->origin();
         }
-        if ('' === $base) {
-            $domain = \trim((string) $this->settings->get('domain', null, ''));
-            if ('' !== $domain) {
-                $base = \preg_match('~^https?://~i', $domain) ? $domain : 'https://' . $domain;
-            }
-        }
-        if ('' === $base && $this->debug) {
-            $base = $this->requests->getMainRequest()?->getSchemeAndHttpHost() ?? '';
+        $request = $this->requests->getMainRequest();
+        $trusted = [] !== Request::getTrustedHosts() && null !== $request ? SiteAddress::fromUrl($request->getSchemeAndHttpHost()) : null;
+        $address = $trusted ?? $this->domainAddress();
+        if (null === $address && $this->debug && null !== $request) {
+            $address = SiteAddress::fromUrl($request->getSchemeAndHttpHost());
         }
 
-        return '' === $base ? null : \rtrim($base, '/');
+        return $address?->origin();
     }
 
-    /** A valid resolved SEO origin, or none; a bad runtime option must not break public HTML and crawler files. */
-    public function seoBase(): ?string
+    /** The address configured by the site, independent of the current request. */
+    public function siteAddress(): ?SiteAddress
     {
-        try {
-            $base = $this->base();
-        } catch (\UnexpectedValueException) {
-            return null;
+        return $this->configuredAddress(false) ?? $this->domainAddress();
+    }
+
+    /** Optional configured origin, without falling back to a request or the domain setting. */
+    public function configuredSiteAddress(): ?SiteAddress
+    {
+        return $this->configuredAddress(false);
+    }
+
+    private function configuredAddress(bool $strict = true): ?SiteAddress
+    {
+        $base = \trim((string) $this->configured);
+        $address = '' === $base ? null : SiteAddress::fromUrl($base);
+        if ($strict && '' !== $base && null === $address) {
+            throw new \UnexpectedValueException(I18n::t('http.mail_public_url_invalid', ['value' => $base]));
         }
 
-        return null !== $base && self::isValid($base) ? $base : null;
+        return $address;
+    }
+
+    private function domainAddress(): ?SiteAddress
+    {
+        return SiteAddress::fromDomain((string) $this->settings->get('domain', null, ''));
+    }
+
+    /** The resolved SEO origin, or none; a bad optional public_url is skipped (the domain setting answers) so it never breaks public HTML and crawler files. */
+    public function seoBase(): ?string
+    {
+        return $this->base(false);
     }
 
     /** Password and invitation links require a configured full origin: trusted_hosts validates only a hostname, not a scheme or port. */
     public function trustedBase(): ?string
     {
-        $base = \trim((string) $this->configured);
-        if ('' !== $base) {
-            if (!self::isValid($base)) {
-                throw new \UnexpectedValueException(I18n::t('http.mail_public_url_invalid', ['value' => $base]));
-            }
-
-            return \rtrim($base, '/');
-        }
-
-        return null;
+        return $this->configuredAddress()?->origin();
     }
 
     /**

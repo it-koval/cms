@@ -34,7 +34,6 @@ final class RequestService
         private readonly MaxNotifier $max,
         private readonly RequestDeliverer $deliverer,
         private readonly NotifierInterface $notifier,
-        #[Autowire(service: 'messenger.bus.default')]
         private readonly MessageBusInterface $bus,
         #[Autowire(param: 'kernel.secret')]
         private readonly string $secret,
@@ -66,20 +65,21 @@ final class RequestService
                 $errors[$f->key()] = I18n::t('http.request_field_required', ['label' => $f->label()]);
                 continue;
             }
-            if (!$empty && \is_string($value)) {
-                $max = $f->maxLength() ?? self::MAX_LENGTH;
-                if (\mb_strlen($value) > $max) {
-                    $errors[$f->key()] = I18n::t('http.request_field_too_long', ['label' => $f->label(), 'count' => $max]);
-                    continue;
-                }
-                if (null !== $f->regex() && !self::matches($f->regex(), $value)) {
-                    $errors[$f->key()] = $f->regexMessage();
-                    continue;
-                }
+            if ($empty) {
+                continue;
             }
-            if (!$empty) {
-                $data[$f->key()] = $value;
+            if (\is_string($value) && null === $f->maxLength() && \mb_strlen($value) > self::MAX_LENGTH) {
+                $errors[$f->key()] = I18n::t('http.request_field_too_long', ['label' => $f->label(), 'count' => self::MAX_LENGTH]);
+                continue;
             }
+            $problems = \Itk\Cms\Content\FieldValueRules::problems($f, $value, plainText: true);
+            if ([] !== $problems) {
+                $errors[$f->key()] = 'max' === $problems[0]['code']
+                    ? I18n::t('http.request_field_too_long', ['label' => $f->label(), 'count' => $f->maxLength()])
+                    : $problems[0]['message'];
+                continue;
+            }
+            $data[$f->key()] = $value;
         }
         if ([] !== $errors) {
             throw ContentException::invalid((string) \reset($errors), $errors);
@@ -227,6 +227,9 @@ final class RequestService
             }
             $this->em->refresh($r);
             $outcomes[$one] = ['state' => \in_array($one, $r->queuedChannels(), true) ? 'queued' : $r->channelState($one), 'error' => $r->channelError($one)];
+        }
+        if ($this->em->getConnection()->isTransactionActive()) {
+            $this->em->refresh($r); // delivery committed on its own connection
         }
 
         $selectedQueued = \in_array('queued', \array_column($outcomes, 'state'), true);
@@ -391,18 +394,6 @@ final class RequestService
         return null !== $column && \is_string($sent) && \str_starts_with($sent, $column) ? $sent : (string) $column;
     }
 
-    /** A long value can exhaust the small stack of the PCRE JIT, and a valid value would be refused: then the interpreter checks it. */
-    private static function matches(string $regex, string $value): bool
-    {
-        $found = \preg_match($regex, $value);
-        if (false === $found && \PREG_JIT_STACKLIMIT_ERROR === \preg_last_error()) {
-            $regex = \ltrim($regex);
-            $found = \preg_match($regex[0] . '(*NO_JIT)' . \substr($regex, 1), $value);
-        }
-
-        return 1 === $found;
-    }
-
     private function work(string $w): string
     {
         return 'progress' === $w ? Request::WORK_IN_WORK : $w;
@@ -432,9 +423,7 @@ final class RequestService
             return null;
         }
 
-        $limit = $f->maxLength() ?? self::MAX_LENGTH;
-
-        // one character over max() is enough for submit() to refuse the value; min(): max(PHP_INT_MAX) must not overflow
-        return PlainText::from((string) $raw, \min($limit, \PHP_INT_MAX - 1) + 1);
+        // Explicit max() is checked on the whole cleaned text; an accepted value is never silently shortened.
+        return PlainText::from((string) $raw, null === $f->maxLength() ? self::MAX_LENGTH + 1 : \PHP_INT_MAX);
     }
 }

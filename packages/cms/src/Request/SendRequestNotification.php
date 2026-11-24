@@ -7,7 +7,7 @@ namespace Itk\Cms\Request;
 use Itk\Cms\Entity\Request;
 
 /**
- * Messenger message (async transport, bus messenger.bus.default): send a request to one messenger.
+ * Messenger message (async transport, default Messenger bus): send a request to one messenger.
  * `channel` is Request::CHANNEL_TELEGRAM or Request::CHANNEL_MAX; a message queued before MAX existed has none and goes to Telegram.
  */
 final class SendRequestNotification

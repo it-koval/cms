@@ -4,17 +4,35 @@ declare(strict_types=1);
 
 namespace Itk\Cms\Request;
 
+use Doctrine\Common\EventManager;
+use Doctrine\DBAL\Connection;
+use Doctrine\DBAL\Connections\PrimaryReadReplicaConnection;
+use Doctrine\DBAL\DriverManager;
 use Doctrine\DBAL\LockMode;
+use Doctrine\ORM\EntityManager;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\Query;
+use Itk\Cms\Content\ContentException;
+use Itk\Cms\Content\EditLock;
 use Itk\Cms\Entity\Request;
 use Itk\Cms\Event\RequestDelivery;
 use Itk\Cms\I18n\AdminLocale;
 use Itk\Cms\I18n\I18n;
+use Psr\Log\LoggerInterface;
 use Symfony\Component\Messenger\Exception\RecoverableMessageHandlingException;
 use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 
-/** Per-channel jobs reserve and claim under a short row lock; delivery and events hold no transaction. */
+/**
+ * Delivers a saved request to one messenger and records the outcome in the request. The one place where the queue handler and «Отправить снова» do that.
+ * Each delivery is a job of one channel: it is reserved before dispatch and claimed under a short row lock, so a stale or superseded job cannot send.
+ * One session lock reserves the request and channel from the first read through the outcome event. The network call holds no row lock.
+ * A short transaction refreshes the row and saves the outcome, including when the caller has its own transaction (then on a connection of its own):
+ * Telegram and MAX are delivered by separate messages, possibly by two workers at once, and each one writes the delivery state of the whole request.
+ * A messenger that already has the request is not sent it again by a queue retry (only «Отправить снова» does that).
+ * The next worker on the same channel sees the committed outcome before deciding whether to send. Events are dispatched after that commit.
+ * A long request is several messages (MessageParts), a second or more apart, and is delivered only when all went out. A retry sends all of them
+ * from the first: the chat may then see the first ones again, but a request that lacks its end is never taken for delivered.
+ */
 final class RequestDeliverer
 {
     private const LEASE_SECONDS = 3600;
@@ -24,6 +42,7 @@ final class RequestDeliverer
         private readonly TelegramNotifier $telegram,
         private readonly MaxNotifier $max,
         private readonly AdminLocale $locale,
+        private readonly ?LoggerInterface $logger = null,
     ) {
     }
 
@@ -42,26 +61,39 @@ final class RequestDeliverer
         });
     }
 
-    /** true needs no retry, false retries this job, null means the request was deleted. */
+    /**
+     * @param Request::CHANNEL_* $channel
+     *
+     * @return bool|null true needs no retry, false retries this job, null means the request was deleted
+     */
     public function deliver(int $requestId, string $channel, bool $resend, ?string $jobId = null): ?bool
+    {
+        return self::serialized($this->em, $requestId, $channel, fn (EntityManagerInterface $manager, ?Connection $independent): ?bool => $this->sendAndRecord($manager, $independent, $requestId, $channel, $resend, $jobId));
+    }
+
+    /** @param Request::CHANNEL_* $channel */
+    private function sendAndRecord(EntityManagerInterface $manager, ?Connection $independent, int $requestId, string $channel, bool $resend, ?string $jobId): ?bool
     {
         // Direct callers represent a new action. Old queue jobs share a stable legacy identity.
         if (null === $jobId) {
-            $jobId = self::reserve($this->em, $requestId, $channel, $resend);
+            $jobId = self::reserve($manager, $requestId, $channel, $resend);
             if (null === $jobId) {
-                $existing = self::load($this->em, $requestId);
+                $existing = self::load($manager, $requestId);
                 if (null === $existing) {
+                    self::checkNotUncommitted($this->em, $independent, $requestId);
+
                     return null;
                 }
                 if ('retry' !== $existing->channelJobPhase($channel)) {
                     return true;
                 }
-                $jobId = $existing->channelJob($channel);
+                $jobId = (string) $existing->channelJob($channel);
             }
         }
         $busyUntil = 0;
-        $request = $this->em->wrapInTransaction(function () use ($requestId, $channel, $resend, $jobId, &$busyUntil): ?Request {
-            $request = self::load($this->em, $requestId, LockMode::PESSIMISTIC_WRITE);
+        // The row lock also verifies that an ambient transaction is not holding the request before irreversible network I/O.
+        $request = $manager->wrapInTransaction(static function () use ($manager, $requestId, $channel, $resend, $jobId, &$busyUntil): ?Request {
+            $request = self::load($manager, $requestId, LockMode::PESSIMISTIC_WRITE);
             if (null === $request) {
                 return null;
             }
@@ -88,21 +120,29 @@ final class RequestDeliverer
             throw new RecoverableMessageHandlingException('Request delivery is already running.', retryDelay: ($busyUntil - \time() + 1) * 1000);
         }
         if (null === $request) {
-            return null === self::load($this->em, $requestId) ? null : true;
+            if (null === self::load($manager, $requestId)) {
+                self::checkNotUncommitted($this->em, $independent, $requestId);
+
+                return null;
+            }
+
+            return true;
         }
         $notifier = Request::CHANNEL_MAX === $channel ? $this->max : $this->telegram;
         try {
+            // a chat is read by many, in admin_locale: also when a sync transport runs this inside the request of one person
             $outcome = $this->locale->runDefault(static fn (): ChannelOutcome => $notifier->attempt($request, $resend));
         } catch (\Throwable $e) {
             try {
-                $this->settlePhase($requestId, $channel, $jobId, 'retry');
+                $this->settle($manager, $requestId, $channel, $jobId, 'retry');
             } catch (\Throwable) {
                 // Preserve the delivery exception if state persistence also failed; the lease is bounded.
             }
             throw $e;
         }
-        $recorded = $this->em->wrapInTransaction(function () use ($requestId, $channel, $jobId, $notifier, $outcome, $resend): ?Request {
-            $request = self::load($this->em, $requestId, LockMode::PESSIMISTIC_WRITE);
+        $announce = null;
+        $recorded = $manager->wrapInTransaction(static function () use ($manager, $independent, $requestId, $channel, $jobId, $notifier, $outcome, $resend, &$announce): ?Request {
+            $request = self::load($manager, $requestId, LockMode::PESSIMISTIC_WRITE);
             if (null === $request || (null !== $request->channelJob($channel) && $jobId !== $request->channelJob($channel))) {
                 return null;
             }
@@ -113,15 +153,19 @@ final class RequestDeliverer
 
                 return null;
             }
-            $notifier->record($request, $outcome, false);
+            $notifier->record($request, $outcome, static function (\Closure $dispatch) use (&$announce): void {
+                $announce = $dispatch;
+            }, $independent);
             $request->markChannelJob($channel, $jobId, $outcome->isFailed() ? 'retry' : 'done', $outcome->isFailed() ? \time() + self::LEASE_SECONDS : 0);
 
             return $request;
         });
         if (null === $recorded) {
-            return null === self::load($this->em, $requestId) ? null : true;
+            return null === self::load($manager, $requestId) ? null : true;
         }
-        $this->locale->runDefault(static fn () => $notifier->announce($recorded, $outcome));
+        if (null !== $announce) {
+            $this->locale->runDefault(fn () => self::announce($announce, $this->logger, $requestId, $channel));
+        }
 
         return !$outcome->isFailed();
     }
@@ -164,8 +208,13 @@ final class RequestDeliverer
 
     public function settlePhase(int $id, string $channel, string $job, string $phase, ?string $error = null): void
     {
-        $this->em->wrapInTransaction(function () use ($id, $channel, $job, $phase, $error): void {
-            $request = self::load($this->em, $id, LockMode::PESSIMISTIC_WRITE);
+        $this->settle($this->em, $id, $channel, $job, $phase, $error);
+    }
+
+    private function settle(EntityManagerInterface $manager, int $id, string $channel, string $job, string $phase, ?string $error = null): void
+    {
+        $manager->wrapInTransaction(function () use ($manager, $id, $channel, $job, $phase, $error): void {
+            $request = self::load($manager, $id, LockMode::PESSIMISTIC_WRITE);
             if (null === $request || $job !== $request->channelJob($channel) || 'done' === $request->channelJobPhase($channel)) {
                 return;
             }
@@ -184,32 +233,107 @@ final class RequestDeliverer
         });
     }
 
-    public static function recordQueueFailure(EntityManagerInterface $em, EventDispatcherInterface $events, int $requestId, string $channel, string $error, ?string $job = null): void
+    /**
+     * A queue failure may race with a worker for the same request, just like a messenger failure.
+     *
+     * @param Request::CHANNEL_* $channel
+     */
+    public static function recordQueueFailure(EntityManagerInterface $em, EventDispatcherInterface $events, int $requestId, string $channel, string $error, ?string $job = null, ?LoggerInterface $logger = null): void
     {
-        $request = $em->wrapInTransaction(static function () use ($em, $requestId, $channel, $error, $job): ?Request {
-            $request = self::load($em, $requestId, LockMode::PESSIMISTIC_WRITE);
-            if (null === $request || Request::DELIVERY_SENT === $request->channelState($channel)) {
-                return null;
-            }
-            if (null !== $job) {
-                if ($job !== $request->channelJob($channel) || 'done' === $request->channelJobPhase($channel)) {
+        self::serialized($em, $requestId, $channel, static function (EntityManagerInterface $manager, ?Connection $independent) use ($em, $events, $requestId, $channel, $error, $job, $logger): void {
+            $request = $manager->wrapInTransaction(static function () use ($manager, $em, $independent, $requestId, $channel, $error, $job): ?Request {
+                $request = self::load($manager, $requestId, LockMode::PESSIMISTIC_WRITE);
+                if (null === $request) {
+                    self::checkNotUncommitted($em, $independent, $requestId);
+
                     return null;
                 }
-                $request->markChannelJob($channel, $job, 'failed');
-            }
-            $request->markChannel($channel, Request::DELIVERY_FAILED, $error);
+                if (Request::DELIVERY_SENT === $request->channelState($channel)) {
+                    return null;
+                }
+                if (null !== $job) {
+                    if ($job !== $request->channelJob($channel) || 'done' === $request->channelJobPhase($channel)) {
+                        return null;
+                    }
+                    $request->markChannelJob($channel, $job, 'failed');
+                }
+                $request->markChannel($channel, Request::DELIVERY_FAILED, $error);
 
-            return $request;
-        });
-        if (null !== $request) {
-            try {
-                $events->dispatch(new RequestDelivery($request, false, $error, false, $channel));
-            } catch (\Throwable) {
+                return $request;
+            });
+            if (null !== $request) {
                 // Delivery state is committed; extension notifications are best effort.
+                self::announce(static fn () => $events->dispatch(new RequestDelivery($request, false, $error, false, $channel, $independent)), $logger, $requestId, $channel);
             }
+        });
+    }
+
+    /**
+     * @template T
+     *
+     * @param \Closure(EntityManagerInterface, ?Connection): T $work
+     *
+     * @return T|null
+     */
+    private static function serialized(EntityManagerInterface $em, int $id, string $channel, \Closure $work): mixed
+    {
+        $connection = $em->getConnection();
+        if ($connection instanceof PrimaryReadReplicaConnection) {
+            $connection->ensureConnectedToPrimary();
+        }
+        $lock = $id . ':' . $channel;
+        if (!$connection->isTransactionActive()) {
+            return EditLock::onConnection($connection, 'request-delivery', $lock, static fn () => $work($em, null));
+        }
+
+        $independent = DriverManager::getConnection($connection->getParams(), $connection->getConfiguration());
+        try {
+            $independent->setAutoCommit(true);
+            $independent->executeStatement("SET lock_timeout = '3s'");
+            $searchPath = $connection->fetchOne('SHOW search_path');
+            if (\is_string($searchPath)) {
+                $independent->executeQuery("SELECT set_config('search_path', ?, false)", [$searchPath]);
+            }
+            $events = $em->getEventManager();
+            $manager = new EntityManager($independent, $em->getConfiguration(), $events instanceof EventManager ? $events : null);
+
+            return EditLock::onConnection($independent, 'request-delivery', $lock, static function () use ($em, $id, $work, $manager, $independent): mixed {
+                // The new manager has no copy of the caller's enabled filters and their parameters.
+                if ($em->hasFilters() && [] !== $em->getFilters()->getEnabledFilters() && !self::visible($em, $id)) {
+                    return null;
+                }
+
+                return $work($manager, $independent);
+            });
+        } finally {
+            $independent->close();
         }
     }
 
+    private static function checkNotUncommitted(EntityManagerInterface $em, ?Connection $independent, int $requestId): void
+    {
+        if (null !== $independent && self::visible($em, $requestId)) {
+            throw ContentException::conflict(I18n::t('http.request_delivery_requires_commit'));
+        }
+    }
+
+    private static function visible(EntityManagerInterface $em, int $id): bool
+    {
+        return null !== $em->createQuery('SELECT r.id FROM ' . Request::class . ' r WHERE r.id = :id')
+            ->setParameter('id', $id)
+            ->getOneOrNullResult(Query::HYDRATE_SCALAR);
+    }
+
+    private static function announce(\Closure $dispatch, ?LoggerInterface $logger, int $requestId, string $channel): void
+    {
+        try {
+            $dispatch();
+        } catch (\Throwable $exception) {
+            $logger?->error('Request delivery listener failed for request #{id} ({channel}).', ['id' => $requestId, 'channel' => $channel, 'exception' => $exception]);
+        }
+    }
+
+    /** A query both refreshes a managed request and returns null when another process deleted it. */
     private static function load(EntityManagerInterface $em, int $requestId, LockMode $lock = LockMode::NONE): ?Request
     {
         return $em->createQuery('SELECT r FROM ' . Request::class . ' r WHERE r.id = :id')

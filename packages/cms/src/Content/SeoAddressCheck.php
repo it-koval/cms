@@ -56,7 +56,7 @@ final class SeoAddressCheck
         $route = $this->routeOf($requestedPath);
         $routeName = $route['_route'] ?? null;
         $ownRoute = null !== $routeName && self::CATCH_ALL !== $routeName;
-        $redirect = $ownRoute ? null : $this->redirects->lookup($pathOnly);
+        $redirect = $ownRoute ? null : $this->redirects->lookup($pathOnly, $requestedQuery);
         $t = $ownRoute || null !== $redirect ? null : $this->translations->findLiveAtPath($pageLocale, $pathOnly, $pageLocale !== $this->locales->main());
         $snapshot = $t->published ?? [];
         $stored = (string) ($snapshot['url'] ?? $pathOnly);

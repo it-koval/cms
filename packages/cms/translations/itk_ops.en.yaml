@@ -83,7 +83,7 @@
 'ops.install_admin_not_created_email': 'Administrator not created: pass --email (and --password) or run the command interactively.'
 'ops.install_user_exists': 'A user with this email already exists, skipping.'
 'ops.install_password_question': 'Password (at least {min} characters)'
-'ops.install_admin_not_created_password': 'Administrator not created. Enter a password in the terminal or pass its file with --password-file.'
+'ops.install_admin_not_created_password': 'Administrator not created: a password is required (--password-file, --password, the ITK_ADMIN_PASSWORD variable or terminal input).'
 'ops.install_admin_created': 'Administrator created: {email}'
 'ops.install_queue_failed': 'The queue “{name}” could not be prepared: {error}'
 'ops.install_queue_done': 'Message queue: transports prepared: {count}.'
@@ -148,7 +148,6 @@
 'ops.health_database_not_postgres': 'ITK CMS runs only on PostgreSQL 16 and newer, but DATABASE_URL points to {server}.'
 'ops.health_database_old': 'ITK CMS runs only on PostgreSQL 16 and newer, but the server is {server}. Update PostgreSQL.'
 'ops.health_uploads_name': 'Uploads folder'
-'ops.health_uploads_missing': 'The uploads folder does not exist yet: it appears when the first file is uploaded'
 'ops.health_uploads_readonly': 'The uploads folder is not writable. Media library files will not be saved.'
 'ops.health_uploads_ok': 'Files can be saved'
 'ops.health_secret_ok': 'Set'
@@ -375,3 +374,5 @@
 'ops.doctor_seo_base_missing': 'No trusted site URL: hreflang and sitemap are not generated. Set itk_cms.public_url or the site domain.'
 
 'ops.doctor_name_schema_warnings': 'Schema warnings'
+'ops.migration_page_created_description': 'Normalize itk_page.created_at without changing creation dates'
+'ops.migration_page_created_missing': 'The original itk_page creation date column was not found.'

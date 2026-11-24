@@ -320,6 +320,8 @@ final class CrawlerFilesTest extends WebTestCase
         self::assertStringEndsWith("\n", $body);
         self::assertSame('text/plain; charset=UTF-8', $this->client->getResponse()->headers->get('Content-Type'));
         self::assertSame('nosniff', $this->client->getResponse()->headers->get('X-Content-Type-Options'));
+
+        $this->get('/test-llms-%D0%B1%D0%BB%D0%BE%D0%B3%20%281%29');
     }
 
     #[Test]

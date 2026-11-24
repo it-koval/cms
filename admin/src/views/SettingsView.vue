@@ -34,7 +34,7 @@ import ReadOnlyNote from '@/components/ui/ReadOnlyNote.vue'
 import { domId } from '@/components/form/fieldProps.js'
 import { onLang } from '@/utils/langWords.js'
 import { textsLabel } from '@/components/settings/langText.js'
-import { GROUPS, NAV, buildSections, groupOfKey, itemAreas, itemOfKey, resolveTab, settingsErrors } from '@/components/settings/settingsSchema.js'
+import { GROUPS, NAV, buildSections, groupOfKey, itemAreas, resolveTab, settingsErrors } from '@/components/settings/settingsSchema.js'
 import { getSettingsFields } from '@/schema/settings.js'
 import { flattenItems, menuErrorCount } from '@/components/settings/menuModel.js'
 import { changedKeys } from '@/utils/fields.js'
@@ -71,6 +71,8 @@ const loadError = ref('')
 const saving = ref(false)
 const savedSettings = ref(null)
 const draftSettings = ref(null)
+const savedNotifications = ref(null)
+const draftNotifications = ref(null)
 const savedMenus = ref(null)
 const draftMenus = ref(null)
 const menuAreas = ref([])
@@ -78,7 +80,7 @@ const forms = ref([])
 
 const READ_ONLY = ['tgFallback', 'tgReady', 'maxFallback', 'mailReady', 'maxReady'] // yes / no answers of the server, never sent back
 
-function normalize(s) {
+function normalizeNotifications(s) {
   const o = clone(s)
   o.tgOn ??= true
   o.maxOn ??= true
@@ -86,6 +88,10 @@ function normalize(s) {
   if (!o.maxRoutes || Array.isArray(o.maxRoutes)) o.maxRoutes = {}
   if (!o.mailRoutes || Array.isArray(o.mailRoutes)) o.mailRoutes = {}
   o.forms ??= true
+  return o
+}
+function normalize(s) {
+  const o = clone(s)
   getSettingsFields().forEach((f) => { if (f.t === 'repeater') o[f.k] ??= [] })
   return o
 }
@@ -95,10 +101,12 @@ async function load() {
   try {
     // menus need the right to Меню; a role without it gets none (the server answers 403)
     const menus = can('set:menus')
-    const [s, m, f, areas] = await Promise.all([api.settings.get(LOC), menus ? api.settings.getMenus(LOC) : {}, api.requests.forms(), menus ? api.settings.getMenuAreas() : []])
+    const [s, m, f, areas, n] = await Promise.all([api.settings.get(LOC), menus ? api.settings.getMenus(LOC) : {}, api.requests.forms(), menus ? api.settings.getMenuAreas() : [], can('set:notifications') ? api.settings.getNotifications() : {}])
     menuAreas.value = areas
     savedSettings.value = normalize(s)
     draftSettings.value = clone(savedSettings.value)
+    savedNotifications.value = normalizeNotifications(n)
+    draftNotifications.value = clone(savedNotifications.value)
     savedMenus.value = m
     draftMenus.value = clone(m)
     forms.value = f
@@ -122,13 +130,15 @@ const cards = computed(() => GROUPS.filter((g) => can(g.area)).map((g) => {
 // the errors that stop saving: only of the places the role can edit (a group it only views cannot be fixed by it)
 const errors = computed(() => {
   if (!draftSettings.value) return {}
-  return Object.fromEntries(Object.entries(settingsErrors(draftSettings.value, changedPatch())).filter(([k]) => (['tgRoutes', 'maxRoutes', 'mailRoutes'].includes(k) ? can('set:notifications', 'edit') : can('set:' + groupOfKey(k), 'edit'))))
+  const site = Object.entries(settingsErrors(draftSettings.value, changedPatch(), 'site')).filter(([k]) => can('set:' + groupOfKey(k), 'edit'))
+  const notifications = can('set:notifications', 'edit') ? Object.entries(settingsErrors(draftNotifications.value, notificationPatch(), 'notifications')).map(([k, v]) => ['notification:' + k, v]) : []
+  return Object.fromEntries([...site, ...notifications])
 })
 
 const counts = computed(() => {
   if (!draftSettings.value) return {}
-  const d = draftSettings.value
-  const s = savedSettings.value
+  const d = draftNotifications.value
+  const s = savedNotifications.value
   return {
     notifications: (same(d.tgOn, s.tgOn) ? 0 : 1) + (same(d.forms, s.forms) ? 0 : 1) + (same(d.tgRoutes, s.tgRoutes) ? 0 : 1) + (same(d.maxOn, s.maxOn) ? 0 : 1) + (same(d.maxRoutes, s.maxRoutes) ? 0 : 1) + (same(d.mailRoutes, s.mailRoutes) ? 0 : 1),
     menus: menuAreas.value.filter((a) => !same(draftMenus.value[a.key], savedMenus.value[a.key])).length,
@@ -169,6 +179,10 @@ function changedPatch() {
   return Object.fromEntries(Object.keys(d).filter((k) => !READ_ONLY.includes(k) && !same(d[k], s[k])).map((k) => [k, d[k]]))
 }
 
+function notificationPatch() {
+  return Object.fromEntries(Object.entries(draftNotifications.value).filter(([k, v]) => !READ_ONLY.includes(k) && !same(v, savedNotifications.value[k])))
+}
+function setNotification(k, v) { draftNotifications.value = { ...draftNotifications.value, [k]: v } }
 function setField(k, v) { draftSettings.value = { ...draftSettings.value, [k]: v } }
 function revertField(k) {
   setField(k, clone(savedSettings.value[k]))
@@ -176,12 +190,13 @@ function revertField(k) {
 }
 function onBotsSaved(next) {
   for (const [key, bot] of [['tgReady', 'telegram'], ['maxReady', 'max']]) {
-    savedSettings.value[key] = draftSettings.value[key] = next[bot].ready
+    savedNotifications.value[key] = draftNotifications.value[key] = next[bot].ready
   }
 }
 function discard() {
   draftSettings.value = clone(savedSettings.value)
   draftMenus.value = clone(savedMenus.value)
+  draftNotifications.value = clone(savedNotifications.value)
   toast.show(t('settings.changes_discarded'))
 }
 
@@ -232,10 +247,11 @@ watch([() => route.params.tab, loading], ([, busy], old) => {
 
 // the field with an error: «Основное» (or the item the error belongs to), scrolled to, in focus
 async function reveal(k) {
-  const to = itemOfKey(k)
+  const to = k.startsWith('notification:') ? 'notifications' : 'general'
+  k = k.replace(/^notification:/, '')
   if (item.value !== to || (target.value && target.value.group)) await router.push({ name: 'settings', params: { tab: to } })
   await nextTick()
-  const prefix = { tgRoutes: 'tn-', maxRoutes: 'mx-', mailRoutes: 'mn-' }[k]
+  const prefix = to === 'notifications' ? { tgRoutes: 'tn-', maxRoutes: 'mx-', mailRoutes: 'mn-' }[k] : null
   const el = prefix
     ? document.querySelector(`input[id^="${prefix}"][aria-invalid="true"]`)
     : document.getElementById(domId('set', k))
@@ -253,7 +269,7 @@ function save() {
   if (saving.value || !total.value) return
   const keys = Object.keys(errors.value)
   if (settingsDirty.value && keys.length) {
-    reveal(keys.find((k) => itemOfKey(k) === item.value) || keys[0])
+    reveal(keys.find((k) => (k.startsWith('notification:') ? 'notifications' : 'general') === item.value) || keys[0])
     toast.error(t('settings.save_fix_fields'))
     return
   }
@@ -263,19 +279,26 @@ function save() {
     return
   }
   // Both requests use the data validated by this click. Edits made while either waits stay in the draft.
-  const patch = settingsDirty.value ? clone(changedPatch()) : null
+  const patch = counts.value.general ? clone(changedPatch()) : null
+  const notifications = counts.value.notifications ? clone(notificationPatch()) : null
+  const sentNotifications = notifications ? clone(draftNotifications.value) : null
   const sentSettings = patch ? clone(draftSettings.value) : null
   const sentMenus = menusDirty.value ? clone(draftMenus.value) : null
-  savePromise = persist(patch, sentSettings, sentMenus)
+  savePromise = persist(patch, sentSettings, notifications, sentNotifications, sentMenus)
 }
 
-async function persist(patch, sentSettings, sentMenus) {
+async function persist(patch, sentSettings, notifications, sentNotifications, sentMenus) {
   saving.value = true
   try {
     if (patch) {
       const res = normalize(await api.settings.update(patch, LOC))
       savedSettings.value = res
       draftSettings.value = rebaseSettings(res, sentSettings, draftSettings.value)
+    }
+    if (notifications) {
+      const res = normalizeNotifications(await api.settings.updateNotifications(notifications))
+      savedNotifications.value = res
+      draftNotifications.value = rebaseSettings(res, sentNotifications, draftNotifications.value)
     }
     if (sentMenus) {
       const res = await api.settings.saveMenus(sentMenus, LOC)
@@ -393,7 +416,7 @@ useLocaleGuard(() => confirmUnsaved(true))
                 <BotsPanel v-else-if="item === 'bots'" @saved="onBotsSaved" />
                 <McpPanel v-else-if="item === 'mcp'" />
                 <RedirectsPanel v-else-if="item === 'redirects'" />
-                <NotificationsPanel v-else-if="item === 'notifications'" :data="draftSettings" :saved="savedSettings" :forms="forms" @set="setField" />
+                <NotificationsPanel v-else-if="item === 'notifications'" :data="draftNotifications" :saved="savedNotifications" :forms="forms" @set="setNotification" />
               </div>
             </template>
           </template>

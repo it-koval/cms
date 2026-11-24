@@ -12,6 +12,7 @@ All notable changes to ITK CMS are recorded in this file. The format follows [Ke
 - Page and collection lists show translation status and open the selected version. Content editors, translated settings and menus have a language picker. The dashboard and collection counters cover all configured languages.
 - Page and record history can show one language or all languages. `GET /admin/api/history/{kind}/{id}?scope=all` paginates across languages, and restoring a revision targets its own draft.
 - `itk_cms.requests.max_body` sets the byte limit for public form submissions. `itk:install --password-file` reads the first administrator password from a mounted secret.
+- Section types can declare the first screen with `firstScreen()`. Site-defined fields can implement `ValueValidatingFieldInterface`.
 - Multilingual SEO emits reciprocal `hreflang` links, including `x-default` for an indexable main version. Published pages use their own canonical URL when none is set. The sitemap covers every indexable language version, and `llms.txt` groups pages by language. Both generated files refresh after committed page changes and revalidate with content ETags.
 - `itk:doctor` checks language prefixes, home pages, missing translations in settings and menus, and overrides of generated crawler files.
 - Public routes serve published language versions at addresses such as `/kk/about`.
@@ -27,6 +28,11 @@ All notable changes to ITK CMS are recorded in this file. The format follows [Ke
 - Forms use a 1,000-character limit for fields without `max()`. Schema lint and Site status report those fields. MCP `request_get` reads up to 6,000 characters of each form value.
 - The default async transport retries request delivery after 60, 120 and 240 seconds. A manual resend of more than 20 parts per channel is queued and the admin panel confirms it.
 - Page templates grant Author access via `forAuthors()`. Media usage calls require a `Viewer`. Custom fields may opt into knowledge-base extraction via `PublicFieldInterface`.
+- Singleton reads return initial values until the first explicit save. Collection fields with reserved metadata keys fail schema lint.
+- Admin and preview URLs use the Symfony Asset base path and CDN without the site's version or manifest. Standard Twig bundle overrides take priority.
+- Admin integrations can manage delivery settings through `settings?scope=notifications`. Those settings are stored separately from site fields with the same name.
+- Console and worker translations use the application's locale. CMS screens and recipient-specific emails retain their own locale.
+- Domain settings are validated on save. The sitemap and search integrations share a normalized origin and accept `itk_cms.public_url` alone.
 - `GET /admin/api/collections/{col}` always returns the paginated object `{ items, total, page, perPage, facets, metrics }`. Search, filters, status and translation selection apply before counting and pagination. Published versions with unpublished changes are included in the `draft` filter. Clients must read `items` and request further pages. See [UPGRADE.md](UPGRADE.md#030).
 - IndexNow submits the affected paths for all configured languages. Critical CSS is generated for the published versions of those languages.
 - Publishing or removing a translation refreshes the cached HTML and ETag of the other versions of the same page.
@@ -48,6 +54,12 @@ All notable changes to ITK CMS are recorded in this file. The format follows [Ke
 - Site status lists form fields that lack an explicit limit. Long request retries retain per-channel outcomes across reloads and release failed channels for another retry.
 - Malformed or nested JSON in public forms returns a validation error. Oversized submissions return HTTP 413 before decoding.
 - An existing SMTP setting with a password and disabled encryption reports how to restore mail delivery.
+- Collection imports continue after invalid rows. Republish hooks receive the published snapshot. Page edits share title and URL validation, normalize SEO fields and detect cycles at any depth. Bulk deletion handles children first.
+- Delivery status is committed before dispatching its event. Parallel attempts for the same request and channel are serialized. The database deduplicates notifications, and history retention runs in the same flush as the new revision.
+- Custom request dates and redirect lengths return validation errors. Redirects can match a query string. CSS strings and escapes survive critical stylesheet preparation.
+- MCP stdio and workers reset request state. MCP logs a failed tool constructor, while other tools remain available. Messenger handlers work with named buses.
+- The install, health and generator commands agree on upload checks, dotted transport names, field names and built-in types. Page creation dates have a stable database column.
+- Knowledge indexing retries temporary database failures, follows changes to `noindex` and labels fragments with their actual field keys.
 
 ### Security
 
@@ -56,6 +68,8 @@ All notable changes to ITK CMS are recorded in this file. The format follows [Ke
 - Queue jobs no longer carry rendered password links. The worker revokes each failed attempt's link.
 - Saved SMTP passwords require TLS. Site status and `itk:doctor` warn when `MAILER_DSN` uses a password with optional TLS. Sensitive parameters and transport errors use credential redaction. The installer checks passwords of 10 to 200 characters, including passwords read from a mounted file.
 - PHP and the admin editor reject control characters in HTML URLs. Critical CSS runs Chrome in its sandbox and restricts connections to the local render server. The search embedding cache is bounded.
+- Token services reject unknown scopes.
+- The editor and server agree on which rich-text URLs to keep. Stylesheets apply without an inline event handler when a CSP nonce is supplied.
 
 ## [0.2.2] - 2026-11-22
 

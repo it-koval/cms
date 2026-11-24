@@ -65,8 +65,27 @@ final class CollectionQuery
             $filterByRowStatus || \filter_var($params['onlyTranslated'] ?? false, \FILTER_VALIDATE_BOOLEAN),
             'missing' === $status,
         );
-        $total = $filterByRowStatus ? null : (int) (clone $qb)->select('COUNT(i.id)')->getQuery()->getSingleScalarResult();
         $this->order($qb, $c, $locale, $this->sorts($c, (string) ($params['sort'] ?? '')));
+        if (null !== ($initial = $this->collections->initialSingleton($c))) {
+            $row = $this->collections->row($c, $initial, $locale);
+            $matches = '' === $status || ('missing' === $status ? !$row['translated'] : $row['translated'] && 'draft' === $status);
+            if (\filter_var($params['onlyTranslated'] ?? false, \FILTER_VALIDATE_BOOLEAN) && !$row['translated']) {
+                $matches = false;
+            }
+            foreach (\is_array($params['filter'] ?? null) ? $params['filter'] : [] as $key => $value) {
+                $matches = $this->initialMatches($filters[$key], $row[$key] ?? null, $value) && $matches;
+            }
+            $needle = \mb_strtolower(\trim((string) ($params['q'] ?? '')));
+            if ('' !== $needle) {
+                $keys = \is_array($params['filter'] ?? null) ? $c->searchKeys() : [$c->titleFieldKey(), $c->subFieldKey()];
+                $haystack = \implode(' ', \array_map(static fn (?string $key): string => \is_scalar($row[$key ?? ''] ?? null) ? (string) $row[$key ?? ''] : '', $keys));
+                $matches = $matches && \str_contains(\mb_strtolower($haystack), $needle);
+            }
+            $rows = $matches ? [$row] : [];
+
+            return ['items' => 1 === $page ? $rows : [], 'total' => \count($rows), 'page' => $page, 'perPage' => $perPage, 'facets' => [], 'metrics' => $this->initialMetrics($c, $initial, $locale)];
+        }
+        $total = $filterByRowStatus ? null : (int) (clone $qb)->resetDQLPart('orderBy')->select('COUNT(i.id)')->getQuery()->getSingleScalarResult();
         $toRow = fn (CollectionItem $i): array => $this->collections->row($c, $i, $locale);
         $matchedItems = null;
         if (null === $total) {
@@ -98,6 +117,34 @@ final class CollectionQuery
     }
 
     /* ---------- filters ---------- */
+
+    /** Match the one unpersisted initial row, after base() has validated the same filter inputs as a stored row. */
+    private function initialMatches(FilterKind $kind, mixed $actual, mixed $value): bool
+    {
+        if (null === $value || '' === $value || [] === $value) {
+            return true;
+        }
+        $text = \is_scalar($actual) ? (\is_bool($actual) ? ($actual ? 'true' : 'false') : (string) $actual) : '';
+        if (FilterKind::DateRange === $kind || FilterKind::NumberRange === $kind) {
+            $range = \is_array($value) ? $value : ['from' => $value, 'to' => $value];
+            $number = FilterKind::NumberRange === $kind;
+            if ('' === $text || ($number && !\is_numeric($actual))) {
+                return false;
+            }
+            $actual = $number ? $actual + 0 : \substr($text, 0, 10);
+
+            return (!isset($range['from']) || '' === $range['from'] || $actual >= ($number ? $range['from'] + 0 : \substr((string) $range['from'], 0, 10)))
+                && (!isset($range['to']) || '' === $range['to'] || $actual <= ($number ? $range['to'] + 0 : \substr((string) $range['to'], 0, 10)));
+        }
+
+        return match ($kind) {
+            FilterKind::Text => \str_contains(\mb_strtolower($text), \mb_strtolower($this->scalar($value))),
+            FilterKind::Select => $text === $this->scalar($value),
+            FilterKind::Toggle => \filter_var($value, \FILTER_VALIDATE_BOOLEAN) ? 'true' === $text : '' === $text || 'false' === $text,
+            FilterKind::Multi => \in_array($text, \is_array($value) ? $value : \array_map('trim', \explode(',', $this->scalar($value))), true),
+            FilterKind::Relation => [] !== \array_intersect((array) $actual, (array) $value),
+        };
+    }
 
     /**
      * The filters the current person may use, by key: the collection's filter fields, and `status`.
@@ -326,6 +373,33 @@ final class CollectionQuery
         $out = [];
         foreach ($c->metricList() as $m) {
             $out[] = ['label' => $m->label, 'kind' => $m->kind, 'value' => $this->metric($c, $locale, $m)];
+        }
+
+        return $out;
+    }
+
+    /** The virtual row belongs to the same metric corpus as a stored singleton, independently of list filters. */
+    private function initialMetrics(Collection $c, CollectionItem $initial, string $locale): array
+    {
+        $translation = $initial->translations[$locale] ?? [];
+        $row = ['status' => $translation['status'] ?? null, 'updatedAt' => $translation['updatedAt'] ?? null] + ($translation['draft'] ?? []);
+        $out = [];
+        foreach ($c->metricList() as $m) {
+            $matches = true;
+            foreach ($m->filter as $key => $value) {
+                $actual = $row[$key] ?? null;
+                if (\is_bool($value)) {
+                    $matches = $matches && ($value ? true === $actual : null === $actual || false === $actual);
+                } elseif (\is_array($value) && !\array_is_list($value) && [] !== \array_intersect(['from', 'to'], \array_keys($value))) {
+                    $matches = $matches && $this->initialMatches($c->field($key) instanceof Number ? FilterKind::NumberRange : FilterKind::DateRange, $actual, $value);
+                } elseif (\is_array($value)) {
+                    $matches = $matches && \in_array(\is_scalar($actual) ? $this->scalar($actual) : '', \array_map($this->scalar(...), \array_values($value)), true);
+                } else {
+                    $matches = $matches && null !== $actual && \is_scalar($actual) && $this->scalar($actual) === $this->scalar($value);
+                }
+            }
+            $value = $matches ? ('sum' === $m->kind ? (\is_numeric($row[$m->field ?? ''] ?? null) ? $row[$m->field] + 0 : 0) : 1) : 0;
+            $out[] = ['label' => $m->label, 'kind' => $m->kind, 'value' => $value];
         }
 
         return $out;

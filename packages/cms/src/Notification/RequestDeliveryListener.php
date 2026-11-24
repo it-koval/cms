@@ -34,11 +34,11 @@ final class RequestDeliveryListener
         $key = $type . ':' . $r->id;
         try {
             if ($event->delivered || $event->cancelled) {
-                $this->inbox->resolve($key);
+                $this->inbox->resolve($key, $event->deliveryConnection());
 
                 return;
             }
-            $this->notifier->notify(Notification::translated(
+            $notification = Notification::translated(
                 type: $type,
                 titleKey: $titleKey,
                 titleParams: ['id' => $r->id],
@@ -48,7 +48,12 @@ final class RequestDeliveryListener
                 audience: 'requests:edit',
                 payload: ['requestId' => $r->id, 'form' => $r->form],
                 key: $key,
-            ));
+            );
+            if ($this->notifier instanceof Notifier) {
+                $this->notifier->notify($notification, $event->deliveryConnection());
+            } else {
+                $this->notifier->notify($notification);
+            }
         } catch (\Throwable $e) {
             $this->logger->error('Could not update the notification about request #{id}: {error}', ['id' => $r->id, 'error' => $e->getMessage()]);
         }

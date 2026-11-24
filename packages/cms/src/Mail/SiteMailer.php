@@ -7,7 +7,6 @@ namespace Itk\Cms\Mail;
 use Itk\Cms\Content\ContentException;
 use Itk\Cms\I18n\I18n;
 use Psr\Log\LoggerInterface;
-use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\Messenger\MessageBusInterface;
 use Symfony\Component\Mime\Address;
 use Symfony\Component\Mime\Email;
@@ -21,7 +20,6 @@ final class SiteMailer
     public function __construct(
         private readonly MailerFactory $factory,
         private readonly MailStatus $status,
-        #[Autowire(service: 'messenger.bus.default')]
         private readonly MessageBusInterface $bus,
         private readonly LoggerInterface $logger,
     ) {

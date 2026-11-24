@@ -9,6 +9,7 @@ use Itk\Cms\Entity\Redirect;
 use Itk\Cms\I18n\I18n;
 use Itk\Cms\Repository\RedirectRepository;
 use Itk\Cms\Support\Url;
+use Symfony\Component\HttpFoundation\Request;
 
 /** Redirects: the manual list (Настройки → Переадресации) and the automatic ones written when a published address changes. */
 final class RedirectService
@@ -25,15 +26,21 @@ final class RedirectService
         return $this->redirects->findBy([], ['createdAt' => 'DESC']);
     }
 
-    public function lookup(string $path): ?Redirect
+    public function lookup(string $path, ?string $query = null): ?Redirect
     {
-        return $this->redirects->findByFrom(Url::key($path));
+        $path = Url::key($path);
+        $general = $this->redirects->findByFrom($path);
+        if (null !== $general || null === $query || '' === $query) {
+            return $general;
+        }
+
+        return $this->redirects->findByFrom(self::key($path . '?' . $query));
     }
 
-    /** The address a redirect answers to is stored as Url::key(): a request matches it whatever its case, and two spellings cannot both be saved. */
+    /** Paths are compared case-insensitively. Query values keep their case. */
     public function create(string $from, string $to, int $code = 301): Redirect
     {
-        $from = Url::key($from);
+        $from = self::key($from);
         $this->check($from, $to, $code);
         if (null !== $this->redirects->findByFrom($from)) {
             throw ContentException::conflict(I18n::t('content.redirect_exists'));
@@ -48,7 +55,7 @@ final class RedirectService
     public function update(string $id, array $patch): Redirect
     {
         $r = $this->redirects->find($id) ?? throw ContentException::notFound(I18n::t('content.redirect_not_found'));
-        $from = \array_key_exists('from', $patch) ? Url::key((string) $patch['from']) : $r->fromPath;
+        $from = \array_key_exists('from', $patch) ? self::key((string) $patch['from']) : $r->fromPath;
         $to = \array_key_exists('to', $patch) ? \trim((string) $patch['to']) : $r->toPath;
         $code = \array_key_exists('code', $patch) ? (int) $patch['code'] : $r->code;
         $this->check($from, $to, $code);
@@ -111,18 +118,33 @@ final class RedirectService
         $details = [];
         if (!\str_starts_with($from, '/')) {
             $details['from'] = I18n::t('content.redirect_from_slash');
+        } elseif (\mb_strlen($from) > Redirect::FROM_MAX) {
+            $details['from'] = I18n::t('content.redirect_address_too_long', ['max' => Redirect::FROM_MAX]);
         }
         if ('' === $to) {
             $details['to'] = I18n::t('content.redirect_to_required');
+        } elseif (\mb_strlen($to) > Redirect::TO_MAX) {
+            $details['to'] = I18n::t('content.redirect_address_too_long', ['max' => Redirect::TO_MAX]);
         }
         if (!\in_array($code, [301, 302], true)) {
             $details['code'] = I18n::t('content.redirect_code');
         }
-        if ([] === $details && Url::key($from) === Url::key($to)) {
-            $details['to'] = I18n::t('content.redirect_same');
+        if ([] === $details) {
+            $target = self::key($to);
+            if ($from === $target || (!\str_contains($from, '?') && \str_starts_with($target, $from . '?'))) {
+                $details['to'] = I18n::t('content.redirect_same');
+            }
         }
         if ([] !== $details) {
             throw ContentException::invalid((string) \reset($details), $details);
         }
+    }
+
+    private static function key(string $address): string
+    {
+        [$path, $query] = \array_pad(\explode('?', \trim($address), 2), 2, '');
+        $query = Request::normalizeQueryString($query);
+
+        return Url::key($path) . ('' === $query ? '' : '?' . $query);
     }
 }

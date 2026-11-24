@@ -18,7 +18,7 @@ use Twig\Extension\RuntimeExtensionInterface;
  *     <link rel="stylesheet" href="/css/site.css?v=…">
  * The decision is PageRenderer's, not this function's: it prints what RenderState holds, so it has no way to inline in preview.
  * `</` inside the CSS is written `<\/` (a valid CSS escape), so a stylesheet can never close the <style> early.
- * With {nonce: x} the <style> tags and the swap link carry nonce="x" for a CSP site.
+ * With {nonce: x} style and link tags carry nonce="x"; full CSS loads normally without an inline onload handler.
  *
  * @internal
  */
@@ -38,7 +38,7 @@ final class StylesheetsRuntime implements RuntimeExtensionInterface
         $critical = $this->state->critical;
         $key = $this->state->source ? 'href' : 'versioned';
         if (null === $critical) {
-            return \implode('', \array_map(static fn (array $l): string => '<link rel="stylesheet" href="' . self::attr($l[$key]) . '">', $links));
+            return \implode('', \array_map(static fn (array $l): string => '<link rel="stylesheet" href="' . self::attr($l[$key]) . '"' . $nonce . '>', $links));
         }
         $html = '';
         foreach ($critical->blocks as $block) {
@@ -47,7 +47,11 @@ final class StylesheetsRuntime implements RuntimeExtensionInterface
         }
         foreach ($links as $l) {
             $href = self::attr($l[$key]);
-            $html .= '<link rel="stylesheet" href="' . $href . '"' . $nonce . ' media="print" onload="this.media=\'all\'">';
+            if ('' !== $nonce) {
+                $html .= '<link rel="stylesheet" href="' . $href . '"' . $nonce . '>';
+                continue;
+            }
+            $html .= '<link rel="stylesheet" href="' . $href . '" media="print" onload="this.media=\'all\'">';
             $html .= '<noscript><link rel="stylesheet" href="' . $href . '"></noscript>';
         }
 

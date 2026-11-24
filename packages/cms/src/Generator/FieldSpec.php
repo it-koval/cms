@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Itk\Cms\Generator;
 
 use Itk\Cms\I18n\I18n;
+use Itk\Cms\Schema\Key;
 
 /**
  * One field of a collection the generator is asked to write. `column` is where the value comes from when rows are imported.
@@ -32,8 +33,8 @@ final class FieldSpec
         public readonly array $options = [],
         public readonly ?string $column = null,
     ) {
-        if (1 !== \preg_match('/^[A-Za-z][A-Za-z0-9_]*$/', $key)) {
-            throw new \InvalidArgumentException(I18n::t('model.gen_field_key_invalid', ['key' => $key]));
+        if (!Key::isValid($key)) {
+            throw new \InvalidArgumentException(I18n::t('model.gen_field_key_invalid', ['key' => $key, 'rule' => Key::rule()]));
         }
         if (!isset(self::TYPES[$type])) {
             throw new \InvalidArgumentException(I18n::t('model.gen_field_type_unknown', ['key' => $key, 'type' => $type, 'types' => \implode(', ', \array_keys(self::TYPES))]));
