@@ -13,10 +13,6 @@ final class AfterBuildCache extends ArrayAdapter
 
     public function get(string $key, callable $callback, ?float $beta = null, ?array &$metadata = null): mixed
     {
-        if (\str_starts_with($key, 'itk_crawler_generation_')) {
-            return parent::get($key, $callback, $beta, $metadata);
-        }
-
         return parent::get($key, function (...$args) use ($callback): mixed {
             $value = $callback(...$args);
             $after = $this->afterBuild;

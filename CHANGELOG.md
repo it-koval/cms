@@ -23,6 +23,7 @@ All notable changes to ITK CMS are recorded in this file. The format follows [Ke
 - Publishing or removing a translation refreshes the cached HTML and ETag of the other versions of the same page.
 - On configured sites, live and preview templates translate text in the page's language. JSON-LD uses its HTML language tag.
 - Public forms record the locale from `?locale=`, the same-origin referrer or the main language on configured sites. Form messages, including `429`, use the submission language when the bundle provides a translation.
+- On sites without `itk_cms.locales`, form messages now use the site's main language when the bundle provides a translation. Previously, `admin_locales` determined the message language.
 - MCP load hooks run once per resource and language in each request.
 - `Mcp\AbstractMcpTool::locale()` is now non-static. Both `self::locale($args)` and `$this->locale($args)` work inside instance methods. Calls from a static context are no longer supported. See [UPGRADE.md](UPGRADE.md#030).
 - The admin API uses a shared language check and returns `422` for a code outside an explicitly configured list.

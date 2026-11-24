@@ -7,6 +7,7 @@ namespace Itk\Cms\Content;
 use Itk\Cms\Admin\AdminPath;
 use Itk\Cms\I18n\ContentLocales;
 use Itk\Cms\Support\Url;
+use Psr\Cache\CacheItemPoolInterface;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Contracts\Cache\CacheInterface;
 use Symfony\Contracts\Cache\ItemInterface;
@@ -39,7 +40,8 @@ final class CrawlerFiles
         private readonly SitemapBuilder $sitemap,
         private readonly IndexablePages $pages,
         private readonly AdminPath $admin,
-        private readonly CacheInterface $cache,
+        #[Autowire(service: 'cache.app')]
+        private readonly CacheInterface&CacheItemPoolInterface $cache,
         #[Autowire(param: 'kernel.project_dir')]
         private readonly string $projectDir,
         private readonly ?ContentLocales $locales = null,
@@ -178,7 +180,7 @@ final class CrawlerFiles
 
     private function generations(): CrawlerCacheGeneration
     {
-        return $this->generation ?? CrawlerCacheGeneration::forCache($this->cache);
+        return $this->generation ?? new CrawlerCacheGeneration($this->cache);
     }
 
     /** The name of the site (main language); else its address without the scheme; else «Site». */

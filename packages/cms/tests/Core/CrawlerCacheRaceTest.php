@@ -7,6 +7,7 @@ namespace Itk\Cms\Tests\Core;
 use Doctrine\DBAL\Connection;
 use Doctrine\ORM\EntityManagerInterface;
 use Itk\Cms\Admin\AdminPath;
+use Itk\Cms\Content\CrawlerCacheGeneration;
 use Itk\Cms\Content\CrawlerFiles;
 use Itk\Cms\Content\FieldAccess;
 use Itk\Cms\Content\FieldValues;
@@ -31,7 +32,6 @@ use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\HttpFoundation\RequestStack;
-use Symfony\Contracts\Cache\CacheInterface;
 
 #[Group('no-database')]
 final class CrawlerCacheRaceTest extends KernelTestCase
@@ -57,13 +57,13 @@ final class CrawlerCacheRaceTest extends KernelTestCase
         yield 'sitemap multilingual generation evicted' => [true, 'sitemap', true];
         yield 'llms mono generation evicted' => [false, 'llms', true];
         yield 'llms multilingual generation evicted' => [true, 'llms', true];
-        yield 'sitemap contract-only cache' => [true, 'sitemap', false, true];
-        yield 'llms contract-only cache' => [true, 'llms', false, true];
+        yield 'sitemap injected generation' => [true, 'sitemap', false, true];
+        yield 'llms injected generation' => [true, 'llms', false, true];
     }
 
     #[Test]
     #[DataProvider('generators')]
-    public function aLateOldBuildCannotReplaceTheFileCreatedAfterInvalidation(bool $multi, string $kind, bool $evict = false, bool $contractsOnly = false): void
+    public function aLateOldBuildCannotReplaceTheFileCreatedAfterInvalidation(bool $multi, string $kind, bool $evict = false, bool $injectGeneration = false): void
     {
         $c = self::getContainer();
         $repo = $this->createStub(SettingRepository::class);
@@ -83,23 +83,9 @@ final class CrawlerCacheRaceTest extends KernelTestCase
         $rules->method('findActive')->willReturn([]);
         $index = new IndexablePages($pages, new SeoResolver($rules, new RequestStack(), 'ru'), 'ru', $locales);
         $cache = new AfterBuildCache();
-        $adapter = !$contractsOnly ? $cache : new class($cache) implements CacheInterface {
-            public function __construct(private readonly AfterBuildCache $cache)
-            {
-            }
-
-            public function get(string $key, callable $callback, ?float $beta = null, ?array &$metadata = null): mixed
-            {
-                return $this->cache->get($key, $callback, $beta, $metadata);
-            }
-
-            public function delete(string $key): bool
-            {
-                return $this->cache->delete($key);
-            }
-        };
-        $sitemap = new SitemapBuilder($index, $settings, $adapter, new PageVersions($locales, $index), new PublicUrl(new RequestStack(), $settings, 'https://race.example.test'));
-        $files = new CrawlerFiles($settings, $sitemap, $index, $c->get(AdminPath::class), $adapter, __DIR__ . '/../App', $locales);
+        $generation = $injectGeneration ? new CrawlerCacheGeneration($cache) : null;
+        $sitemap = new SitemapBuilder($index, $settings, $cache, new PageVersions($locales, $index), new PublicUrl(new RequestStack(), $settings, 'https://race.example.test'), $generation);
+        $files = new CrawlerFiles($settings, $sitemap, $index, $c->get(AdminPath::class), $cache, __DIR__ . '/../App', $locales, $generation);
         $read = 'sitemap' === $kind ? $sitemap->xml(...) : static fn (): string => $files->defaultText(CrawlerFiles::LLMS);
         $fresh = null;
         $cache->afterBuild = static function () use ($t, $sitemap, $files, $read, $cache, $evict, $kind, &$fresh): void {

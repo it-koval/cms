@@ -6,6 +6,8 @@ namespace Itk\Cms\Content;
 
 use Itk\Cms\Mail\PublicUrl;
 use Itk\Cms\Support\Url;
+use Psr\Cache\CacheItemPoolInterface;
+use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Contracts\Cache\CacheInterface;
 use Symfony\Contracts\Cache\ItemInterface;
 
@@ -25,7 +27,8 @@ final class SitemapBuilder
     public function __construct(
         private readonly IndexablePages $pages,
         private readonly SettingsService $settings,
-        private readonly CacheInterface $cache,
+        #[Autowire(service: 'cache.app')]
+        private readonly CacheInterface&CacheItemPoolInterface $cache,
         private readonly ?PageVersions $versions = null,
         private readonly ?PublicUrl $publicUrl = null,
         private readonly ?CrawlerCacheGeneration $generation = null,
@@ -59,7 +62,7 @@ final class SitemapBuilder
 
     private function generations(): CrawlerCacheGeneration
     {
-        return $this->generation ?? CrawlerCacheGeneration::forCache($this->cache);
+        return $this->generation ?? new CrawlerCacheGeneration($this->cache);
     }
 
     /** The trusted SEO base; legacy sites keep their domain-only behavior. Null when no address is available. */
